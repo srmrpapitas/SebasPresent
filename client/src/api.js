@@ -14,7 +14,7 @@ const API_URL = (() => {
     return 'http://localhost:8787';
   }
   // CHANGE THIS to your deployed worker URL after first deploy:
-  return 'https://sebaspresent-api.YOUR-ACCOUNT.workers.dev';
+  return return 'https://sebaspresent.srmrpapitas.workers.dev';
 })();
 
 const TOKEN_KEY = 'sebaspresent.token';
