@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 srmrpapitas
+Copyright (c) 2026 SebasPresent
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+The MIT License above applies to the original source code in this repository
+(HTML, CSS, JavaScript, configuration files). It does NOT cover third-party
+assets bundled in this repository — see the "Credits & Third-Party Assets"
+section of README.md for details.
