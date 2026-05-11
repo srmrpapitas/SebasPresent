@@ -10,7 +10,7 @@ ALLOWED_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080"
 [[d1_databases]]
 binding = "DB"
 database_name = "sebaspresent-db"
-database_id = "PASTE_DATABASE_ID_HERE"
+database_id = "bd9c29c7-493d-4ece-ac6e-6f97d49558b9"
 
 # JWT_SECRET is set as a secret via:
 #   npx wrangler secret put JWT_SECRET
