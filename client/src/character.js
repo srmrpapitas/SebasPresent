@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
-const CDN_BASE = 'https://cdn.jsdelivr.net/gh/srmrpapitas/SebasPresent@main/assets';
+const CDN_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
 const URLS = {
   character: `${CDN_BASE}/character.fbx`,
