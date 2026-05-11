@@ -5,7 +5,7 @@ compatibility_date = "2025-01-01"
 # CORS — allow your Pages domain to call the Worker
 # In dev, allow localhost. Add your real Pages URL after first deploy.
 [vars]
-ALLOWED_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080"
+ALLOWED_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080,https://sebaspresent.pages.dev"
 
 [[d1_databases]]
 binding = "DB"
