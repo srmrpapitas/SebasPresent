@@ -21,7 +21,7 @@ const URLS = {
   run:       `${CDN_BASE}/anim_run.fbx`,
 };
 
-const CHARACTER_SCALE = 0.01;  // FBX is in cm, scene is in m
+const CHARACTER_SCALE = 0.07;  // FBX is in cm, scene is in m
 const CROSSFADE = 0.22;
 
 export class Character {
