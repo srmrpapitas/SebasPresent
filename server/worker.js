@@ -13,7 +13,7 @@
 
 // ---------- Configuration ----------
 
-const PBKDF2_ITERATIONS = 600_000;
+const PBKDF2_ITERATIONS = 100_000;
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,16}$/;
 const PASSWORD_MIN_LENGTH = 6;
