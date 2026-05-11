@@ -1,0 +1,493 @@
+/* ============================================================
+   SebasPresent — Slice 1 stylesheet
+   Aesthetic target: Old School RuneScape login + chathead UI
+   References: tan parchment, dark stone borders, IM Fell English
+               for body, Cinzel for display, red title accent.
+   ============================================================ */
+
+/* ---------- Reset / base ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  font-family: 'IM Fell English', 'Times New Roman', serif;
+  color: #2a1f12;
+  background: #0a0805;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input { user-select: text; -webkit-user-select: text; }
+
+button { font-family: inherit; cursor: pointer; }
+
+/* CSS variables — single source of truth for the palette */
+:root {
+  /* OSRS-ish palette */
+  --parchment:        #d9c89a;
+  --parchment-light:  #e8d8ab;
+  --parchment-shadow: #b89e6c;
+  --parchment-grain:  #c2a978;
+  --stone-dark:       #2a201a;
+  --stone-mid:        #3d2e22;
+  --stone-light:      #5a4836;
+  --ink-body:         #2a1f12;
+  --ink-faint:        #5a4528;
+  --osrs-red:         #8b1d1d;
+  --osrs-blue:        #0d2a8b;
+  --osrs-gold:        #c8a043;
+  --osrs-gold-bright: #e8c560;
+
+  /* Layout */
+  --frame-radius: 4px;
+  --shadow-deep: 0 24px 48px rgba(0,0,0,.75), 0 6px 18px rgba(0,0,0,.5);
+}
+
+.hidden { display: none !important; }
+
+/* ---------- Screen container ---------- */
+
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* ============================================================
+   SPLASH — pre-login intro that unlocks audio on click
+   ============================================================ */
+
+.splash-screen {
+  background: #0a0805;
+}
+
+.splash-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 30%, #3a2818 0%, #1a1108 45%, #050302 100%),
+    repeating-linear-gradient(45deg,
+      transparent 0 3px,
+      rgba(255,255,255,.012) 3px 6px);
+  z-index: 0;
+}
+
+.splash-fog {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 80%, rgba(180,150,80,.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(120,80,40,.08) 0%, transparent 50%);
+  pointer-events: none;
+  animation: drift 28s ease-in-out infinite alternate;
+  z-index: 1;
+}
+
+@keyframes drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(2%, -1%) scale(1.05); }
+}
+
+.splash-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  animation: fade-up 1.2s ease-out;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.brand-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: clamp(48px, 12vw, 110px);
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+  color: var(--osrs-gold-bright);
+  text-shadow:
+    0 0 1px #5a3a10,
+    0 2px 0 #5a3a10,
+    0 4px 0 #3a2408,
+    0 6px 0 #2a1804,
+    0 8px 16px rgba(0,0,0,.7),
+    0 0 32px rgba(232,197,96,.3);
+  line-height: 1;
+}
+
+.brand-tagline {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: clamp(16px, 3.5vw, 22px);
+  color: #c8a878;
+  margin: 0 0 48px;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+.splash-enter {
+  font-size: clamp(16px, 3.5vw, 19px);
+  padding: 14px 36px;
+  min-width: 220px;
+  animation: pulse-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: var(--shadow-deep), 0 0 0 rgba(232,197,96,0); }
+  50%      { box-shadow: var(--shadow-deep), 0 0 24px rgba(232,197,96,.4); }
+}
+
+/* ============================================================
+   LOGIN + REGISTER screens
+   ============================================================ */
+
+.login-screen {
+  background: #0a0805;
+}
+
+.login-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 40%, #2a1f15 0%, #14100a 50%, #050302 100%),
+    repeating-linear-gradient(45deg,
+      transparent 0 4px,
+      rgba(255,255,255,.008) 4px 8px);
+  z-index: 0;
+}
+
+.login-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 30% 70%, rgba(80,60,30,.15) 0%, transparent 40%),
+    radial-gradient(circle at 70% 30%, rgba(100,70,40,.12) 0%, transparent 40%);
+}
+
+/* ============================================================
+   Parchment frame — the iconic OSRS card
+   Layered structure:
+   - outer stone border (dark)
+   - inner parchment with subtle grain
+   - decorative corner ornaments
+   ============================================================ */
+
+.parchment-frame {
+  position: relative;
+  z-index: 2;
+  width: min(440px, calc(100vw - 32px));
+  background: var(--parchment);
+  border: 6px solid var(--stone-dark);
+  border-radius: var(--frame-radius);
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px var(--stone-light),
+    inset 0 0 0 3px var(--parchment-shadow),
+    inset 0 0 60px rgba(120,80,30,.18);
+  animation: fade-up 0.6s ease-out;
+}
+
+/* Parchment grain — subtle noise via repeating gradients */
+.parchment-frame::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  pointer-events: none;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0 2px,
+      rgba(120,90,40,.025) 2px 3px),
+    repeating-linear-gradient(90deg,
+      transparent 0 2px,
+      rgba(120,90,40,.02) 2px 3px),
+    radial-gradient(ellipse at 30% 20%, rgba(150,110,60,.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 80%, rgba(100,70,30,.1) 0%, transparent 60%);
+  z-index: 0;
+}
+
+/* Corner ornaments — a small dark diamond at each corner of the frame */
+.parchment-corner {
+  position: absolute;
+  width: 14px; height: 14px;
+  background: var(--stone-dark);
+  border: 1px solid var(--stone-light);
+  transform: rotate(45deg);
+  z-index: 3;
+  box-shadow: inset 0 0 0 2px var(--osrs-gold);
+}
+.parchment-corner.tl { top: -7px; left: -7px; }
+.parchment-corner.tr { top: -7px; right: -7px; }
+.parchment-corner.bl { bottom: -7px; left: -7px; }
+.parchment-corner.br { bottom: -7px; right: -7px; }
+
+.parchment-content {
+  position: relative;
+  z-index: 1;
+  padding: 36px 32px 28px;
+}
+
+/* ---------- Form elements ---------- */
+
+.osrs-heading {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 26px;
+  text-align: center;
+  margin: 0 0 24px;
+  color: var(--osrs-red);
+  text-shadow: 0 1px 0 var(--parchment-light);
+  letter-spacing: 0.02em;
+}
+
+.osrs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.osrs-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lbl-text {
+  font-family: 'IM Fell English SC', serif;
+  font-size: 15px;
+  color: var(--ink-body);
+  letter-spacing: 0.04em;
+}
+
+.lbl-hint {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+.osrs-input {
+  background: rgba(255, 245, 220, 0.55);
+  border: 2px solid var(--stone-dark);
+  border-radius: 2px;
+  padding: 10px 12px;
+  font-family: 'IM Fell English', serif;
+  font-size: 18px;
+  color: var(--ink-body);
+  outline: none;
+  box-shadow: inset 0 2px 0 rgba(0,0,0,.18), inset 0 0 0 1px var(--parchment-shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.osrs-input:focus {
+  border-color: var(--osrs-gold);
+  box-shadow:
+    inset 0 2px 0 rgba(0,0,0,.18),
+    inset 0 0 0 1px var(--osrs-gold),
+    0 0 0 3px rgba(200,160,67,.25);
+}
+
+.osrs-form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* ---------- OSRS Buttons ---------- */
+
+.osrs-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  font-family: 'Cinzel', serif;
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0.05em;
+  border: 2px solid var(--stone-dark);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: transform 0.06s, filter 0.12s, box-shadow 0.12s;
+  text-shadow: 0 1px 0 rgba(0,0,0,.4);
+}
+
+.osrs-btn-primary {
+  background: linear-gradient(180deg, #6e5230 0%, #4a3620 50%, #382818 100%);
+  color: var(--osrs-gold-bright);
+  box-shadow:
+    inset 0 1px 0 rgba(255,210,130,.3),
+    inset 0 -2px 0 rgba(0,0,0,.4),
+    0 3px 0 var(--stone-dark),
+    0 6px 12px rgba(0,0,0,.5);
+}
+
+.osrs-btn-primary:hover {
+  filter: brightness(1.15);
+}
+
+.osrs-btn-primary:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,210,130,.2),
+    inset 0 -1px 0 rgba(0,0,0,.4),
+    0 1px 0 var(--stone-dark),
+    0 2px 6px rgba(0,0,0,.5);
+}
+
+.osrs-btn-ghost {
+  background: linear-gradient(180deg, var(--parchment-light) 0%, var(--parchment) 50%, var(--parchment-shadow) 100%);
+  color: var(--ink-body);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.4),
+    inset 0 -2px 0 rgba(0,0,0,.18),
+    0 2px 0 var(--stone-dark),
+    0 4px 8px rgba(0,0,0,.4);
+}
+
+.osrs-btn-ghost:hover { filter: brightness(1.08); }
+.osrs-btn-ghost:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.3),
+    inset 0 -1px 0 rgba(0,0,0,.15),
+    0 0 0 var(--stone-dark),
+    0 2px 4px rgba(0,0,0,.4);
+}
+
+.osrs-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ---------- Error / feedback ---------- */
+
+.osrs-error {
+  margin: 4px 0 0;
+  min-height: 22px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--osrs-red);
+  font-style: italic;
+}
+
+.osrs-footnote {
+  margin: 24px 0 0;
+  text-align: center;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Version tag ---------- */
+
+.version-tag {
+  position: fixed;
+  bottom: 8px; left: 12px;
+  font-family: 'IM Fell English', serif;
+  font-size: 12px;
+  color: rgba(200,170,120,.45);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ============================================================
+   WELCOME screen
+   ============================================================ */
+
+.welcome-frame {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.welcome-greeting {
+  margin: 0 0 16px;
+  font-size: 22px;
+  text-align: center;
+  color: var(--ink-body);
+}
+
+.welcome-name {
+  font-weight: bold;
+  color: var(--osrs-red);
+}
+
+.welcome-body {
+  margin: 0 0 18px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--ink-body);
+  text-align: center;
+}
+
+.welcome-meta {
+  margin: 0 0 22px;
+  font-size: 14px;
+  font-style: italic;
+  text-align: center;
+  color: var(--ink-faint);
+}
+
+/* ============================================================
+   Loading overlay
+   ============================================================ */
+
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  z-index: 100;
+}
+
+.loading-spinner {
+  width: 48px; height: 48px;
+  border: 4px solid rgba(200,170,120,.25);
+  border-top-color: var(--osrs-gold-bright);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-family: 'Cinzel', serif;
+  font-size: 16px;
+  color: var(--osrs-gold-bright);
+  letter-spacing: 0.08em;
+}
+
+/* ============================================================
+   Mobile tweaks
+   ============================================================ */
+
+@media (max-width: 480px) {
+  .parchment-content { padding: 28px 22px 22px; }
+  .osrs-heading { font-size: 22px; margin-bottom: 18px; }
+  .osrs-input { font-size: 17px; }
+  .osrs-btn { font-size: 15px; padding: 11px 20px; }
+  .welcome-body { font-size: 16px; }
+}
+
+/* Prevent iOS auto-zoom on input focus */
+@supports (-webkit-touch-callout: none) {
+  .osrs-input { font-size: 16px; }
+}

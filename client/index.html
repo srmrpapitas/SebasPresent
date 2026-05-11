@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1a1410" />
+  <title>SebasPresent</title>
+
+  <!-- Distinctive fonts for OSRS aesthetic -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Audio: login theme. autoplay blocked by browsers until first user interaction. -->
+  <audio id="loginMusic" src="assets/music/login_theme.mp3" loop preload="auto"></audio>
+
+  <!-- ========== SPLASH (pre-login click prompt to unlock audio) ========== -->
+  <section id="splash" class="screen splash-screen">
+    <div class="splash-bg"></div>
+    <div class="splash-content">
+      <h1 class="brand-title">SebasPresent</h1>
+      <p class="brand-tagline">Un mundo te espera</p>
+      <button id="enterBtn" class="osrs-btn osrs-btn-primary splash-enter">Entrar al reino</button>
+    </div>
+    <div class="splash-fog"></div>
+  </section>
+
+  <!-- ========== LOGIN ========== -->
+  <section id="loginScreen" class="screen login-screen hidden">
+    <div class="login-bg"></div>
+
+    <div class="parchment-frame login-frame">
+      <div class="parchment-corner tl"></div>
+      <div class="parchment-corner tr"></div>
+      <div class="parchment-corner bl"></div>
+      <div class="parchment-corner br"></div>
+
+      <div class="parchment-content">
+        <h2 class="osrs-heading">Existing User</h2>
+
+        <form id="loginForm" class="osrs-form" autocomplete="off" novalidate>
+          <label class="osrs-label">
+            <span class="lbl-text">Login Name:</span>
+            <input type="text" id="loginUsername" class="osrs-input" maxlength="16" autocapitalize="off" autocomplete="username" required />
+          </label>
+          <label class="osrs-label">
+            <span class="lbl-text">Password:</span>
+            <input type="password" id="loginPassword" class="osrs-input" maxlength="64" autocomplete="current-password" required />
+          </label>
+
+          <div class="osrs-form-actions">
+            <button type="submit" class="osrs-btn osrs-btn-primary">Login</button>
+            <button type="button" class="osrs-btn osrs-btn-ghost" id="showRegisterBtn">Crear cuenta nueva</button>
+          </div>
+
+          <p class="osrs-error" id="loginError"></p>
+        </form>
+
+        <p class="osrs-footnote">El reino te recordará.</p>
+      </div>
+    </div>
+
+    <div class="version-tag">v0.1 · Slice 1</div>
+  </section>
+
+  <!-- ========== REGISTER ========== -->
+  <section id="registerScreen" class="screen login-screen hidden">
+    <div class="login-bg"></div>
+
+    <div class="parchment-frame login-frame">
+      <div class="parchment-corner tl"></div>
+      <div class="parchment-corner tr"></div>
+      <div class="parchment-corner bl"></div>
+      <div class="parchment-corner br"></div>
+
+      <div class="parchment-content">
+        <h2 class="osrs-heading">New User</h2>
+
+        <form id="registerForm" class="osrs-form" autocomplete="off" novalidate>
+          <label class="osrs-label">
+            <span class="lbl-text">Login Name:</span>
+            <input type="text" id="regUsername" class="osrs-input" maxlength="16" autocapitalize="off" autocomplete="username" required />
+            <span class="lbl-hint">3–16 caracteres. Letras, números y _</span>
+          </label>
+          <label class="osrs-label">
+            <span class="lbl-text">Password:</span>
+            <input type="password" id="regPassword" class="osrs-input" maxlength="64" autocomplete="new-password" required />
+            <span class="lbl-hint">Mínimo 6 caracteres.</span>
+          </label>
+          <label class="osrs-label">
+            <span class="lbl-text">Confirm:</span>
+            <input type="password" id="regPasswordConfirm" class="osrs-input" maxlength="64" autocomplete="new-password" required />
+          </label>
+
+          <div class="osrs-form-actions">
+            <button type="submit" class="osrs-btn osrs-btn-primary">Crear cuenta</button>
+            <button type="button" class="osrs-btn osrs-btn-ghost" id="showLoginBtn">Ya tengo cuenta</button>
+          </div>
+
+          <p class="osrs-error" id="registerError"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== WELCOME (placeholder, Slice 2 brings the 3D world) ========== -->
+  <section id="welcomeScreen" class="screen welcome-screen hidden">
+    <div class="login-bg"></div>
+
+    <div class="parchment-frame welcome-frame">
+      <div class="parchment-corner tl"></div>
+      <div class="parchment-corner tr"></div>
+      <div class="parchment-corner bl"></div>
+      <div class="parchment-corner br"></div>
+
+      <div class="parchment-content">
+        <h2 class="osrs-heading">Bienvenido a SebasPresent</h2>
+        <p class="welcome-greeting">Hola, <span id="welcomeUsername" class="welcome-name">—</span>.</p>
+        <p class="welcome-body">
+          El mundo aún no existe. Llega en el siguiente capítulo — un sandbox de Tenerife con
+          banco GP, NPCs, talar, minar y todo lo que prometimos. Por ahora tu cuenta está creada
+          y tu sesión persiste 30 días.
+        </p>
+        <p class="welcome-meta">Miembro desde: <span id="welcomeJoined">—</span></p>
+
+        <div class="osrs-form-actions">
+          <button type="button" class="osrs-btn osrs-btn-ghost" id="logoutBtn">Cerrar sesión</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== LOADING OVERLAY ========== -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Conectando…</div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
