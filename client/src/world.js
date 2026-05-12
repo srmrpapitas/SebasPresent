@@ -30,7 +30,7 @@ const TREE_GLB_URLS = {
   maple:      `${R2_BASE}/trees/maple.glb`,
   willow:     `${R2_BASE}/trees/willow.glb`,
   teak:       `${R2_BASE}/trees/teak.glb`,
-  magic:      `${R2_BASE}/trees/magic.glb`,
+  magic:      `${R2_BASE}/trees/magic_v2.glb`,
   bush:       `${R2_BASE}/trees/bush.glb`,
   bush_small: `${R2_BASE}/trees/bush_small.glb`,
 };
