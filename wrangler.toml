@@ -15,3 +15,6 @@ database_id = "bd9c29c7-493d-4ece-ac6e-6f97d49558b9"
 # JWT_SECRET is set as a secret via:
 #   npx wrangler secret put JWT_SECRET
 # Locally it's read from .dev.vars
+
+[triggers]
+crons = ["* * * * *"]
