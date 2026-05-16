@@ -2277,82 +2277,6 @@ button { font-family: inherit; cursor: pointer; }
    ============================================================ */
 
 /* ---------------------------------------------------------
-   Home Teleport — botón flotante (esquina superior izquierda)
-   --------------------------------------------------------- */
-.osrs-home-tele-btn {
-  position: fixed;
-  top: 84px;
-  left: 16px;
-  z-index: 80;
-  width: 64px;
-  min-height: 78px;
-  padding: 6px 4px;
-  background: rgba(20, 14, 8, 0.92);
-  border: 2px solid #c8a043;
-  border-radius: 6px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  font-family: 'Cinzel', serif;
-}
-.osrs-home-tele-btn:active {
-  background: rgba(40, 28, 16, 0.95);
-}
-.osrs-home-tele-btn.casting {
-  border-color: #88ddff;
-}
-.osrs-home-tele-btn.cooldown {
-  opacity: 0.55;
-  pointer-events: none;
-  border-color: #666;
-}
-.osrs-home-tele-icon {
-  font-size: 24px;
-  line-height: 1;
-  margin-bottom: 2px;
-}
-.osrs-home-tele-label {
-  font-size: 10px;
-  color: #f0e0b0;
-  font-weight: 700;
-  text-shadow: 1px 1px 0 #000;
-  letter-spacing: 0.4px;
-}
-.osrs-home-tele-progress {
-  width: 100%;
-  height: 4px;
-  margin-top: 4px;
-  background: rgba(0, 0, 0, 0.6);
-  border-radius: 2px;
-  overflow: hidden;
-  display: none;
-}
-.osrs-home-tele-btn.casting .osrs-home-tele-progress {
-  display: block;
-}
-.osrs-home-tele-bar {
-  width: 0%;
-  height: 100%;
-  background: linear-gradient(90deg, #88ddff, #c8a043);
-  transition: width 0.1s linear;
-}
-.osrs-home-tele-cd {
-  font-size: 9px;
-  color: #ff9090;
-  margin-top: 2px;
-  font-family: 'IM Fell English', serif;
-  display: none;
-}
-.osrs-home-tele-btn.cooldown .osrs-home-tele-cd {
-  display: block;
-}
-
-/* ---------------------------------------------------------
    NPC Action Menu — abierto con long-press sobre NPC
    --------------------------------------------------------- */
 .osrs-action-menu {
@@ -2472,4 +2396,114 @@ body:has(#worldScreen:not(.hidden)) #splash {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* ============================================================
+   SESIÓN 10 — Magic spellbook (Home Teleport movido aquí)
+   ============================================================
+   El botón flotante de Home Teleport vivía aquí en CSS y como
+   position:fixed esquina sup izq. Ahora vive dentro del panel
+   Magic 🔮 del sidebar como un "spell" estilo OSRS spellbook.
+   Las reglas .osrs-home-tele-* se eliminaron junto con la regla
+   de inyección del CSS desde home_teleport.js (ensureCss → no-op).
+   ============================================================ */
+.magic-root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.magic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 4px 2px;
+  border-bottom: 1px solid rgba(200, 160, 67, 0.25);
+}
+.magic-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--osrs-gold-bright);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+.magic-spell-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+}
+.magic-spell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: rgba(60, 45, 30, 0.55);
+  border: 1.5px solid #3a2a1a;
+  border-radius: 3px;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s, opacity 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+  font-family: 'IM Fell English', serif;
+}
+.magic-spell:active { transform: scale(0.94); }
+.magic-spell.casting {
+  border-color: #88ddff;
+  box-shadow: 0 0 6px rgba(136, 221, 255, 0.45);
+}
+.magic-spell.cooldown {
+  opacity: 0.55;
+  pointer-events: none;
+  border-color: #666;
+}
+.magic-spell-icon {
+  font-size: 18px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.7));
+  pointer-events: none;
+}
+.magic-spell-name {
+  font-size: 8px;
+  color: rgba(232, 220, 180, 0.85);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  pointer-events: none;
+}
+.magic-spell-cd {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ff9090;
+  background: rgba(0, 0, 0, 0.55);
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+}
+.magic-spell.cooldown .magic-spell-cd { display: flex; }
+.magic-spell-progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  pointer-events: none;
+}
+.magic-spell.casting .magic-spell-progress { display: block; }
+.magic-spell-bar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #88ddff, #c8a043);
+  transition: width 0.1s linear;
+}
+@media (max-width: 380px) {
+  .magic-spell-icon { font-size: 16px; }
+  .magic-spell-name { font-size: 7px; }
 }
