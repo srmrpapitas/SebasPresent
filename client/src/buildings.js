@@ -43,8 +43,9 @@ const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const BUILDING_URL = `${R2_BASE}/buildings/low_poly_building.glb`;
 
 // Altura objetivo del edificio en metros (escala player ~1.7m).
-// 8m = ~2 plantas + tejado. Si se ve muy grande/pequeño, mover.
-const TARGET_HEIGHT = 8.0;
+// 16m = edificio grande, ~3-4 plantas + tejado. Como el escalado es
+// uniforme, ancho y profundidad escalan en la misma proporción.
+const TARGET_HEIGHT = 16.0;
 
 /**
  * Ubicaciones de los 3 edificios. Cambia coords aquí si las quieres mover.
@@ -67,7 +68,7 @@ const TARGET_HEIGHT = 8.0;
  *   - 'desert': 60m al noroeste de Solquemado (1500, 100), idem.
  */
 const BUILDING_PLACEMENTS = [
-  { id: 'plaza',  x:   12, z:    0, rotY: -Math.PI / 2 },
+  { id: 'plaza',  x:   30, z:    0, rotY: -Math.PI / 2 },
   { id: 'forest', x: -260, z: -660, rotY: 0 },
   { id: 'desert', x: 1460, z:   60, rotY: Math.PI },
 ];
@@ -76,8 +77,13 @@ const BUILDING_PLACEMENTS = [
 // Estado del módulo (privado)
 // ============================================================
 let scene = null;
+let camera = null;
+let canvas = null;
+let feedLog = () => {};
 let instances = [];   // Group instances colocados en el world
 let templateGroup = null; // Group mergeado, se clona para cada instance
+let templateBox = null;   // { minX, maxX, minZ, maxZ } en coords locales tras escalado
+let raycaster = null;
 let started = false;
 
 // ============================================================
@@ -89,10 +95,14 @@ export async function start(opts) {
     stop();
   }
   scene = opts.scene;
+  camera = opts.camera || null;
+  canvas = opts.canvas || null;
+  feedLog = opts.feedLog || (() => {});
   if (!scene) {
     console.warn('[buildings] start() sin scene en opts');
     return;
   }
+  raycaster = new THREE.Raycaster();
 
   templateGroup = await loadAndMergeBuilding(BUILDING_URL, TARGET_HEIGHT);
   if (!templateGroup) {
@@ -100,6 +110,14 @@ export async function start(opts) {
     started = false;
     return;
   }
+
+  // Calcular AABB en coords locales del template (sin rotación de instance
+  // aplicada). Lo usamos en applyCollision para test punto-vs-OBB.
+  const tBox = new THREE.Box3().setFromObject(templateGroup);
+  templateBox = {
+    minX: tBox.min.x, maxX: tBox.max.x,
+    minZ: tBox.min.z, maxZ: tBox.max.z,
+  };
 
   for (const p of BUILDING_PLACEMENTS) {
     const inst = templateGroup.clone(true);
@@ -123,7 +141,12 @@ export function stop() {
     disposeGroup(templateGroup);
     templateGroup = null;
   }
+  templateBox = null;
+  raycaster = null;
   scene = null;
+  camera = null;
+  canvas = null;
+  feedLog = () => {};
   started = false;
 }
 
@@ -133,6 +156,80 @@ export function stop() {
  */
 export function getInstances() {
   return instances;
+}
+
+// ============================================================
+// API pública: colisión (slide style — igual patrón que terrain)
+// ============================================================
+
+/**
+ * Test punto vs OBB de cada edificio. Devuelve { x, z } ajustado para
+ * que el player no atraviese paredes. Patrón slide: si chocas en X
+ * pero no en Z, te dejamos resbalar pegado a la pared.
+ *
+ * Se llama desde world.js DESPUÉS de terrain.applyCollision, así
+ * encadenan: árboles primero, edificios después.
+ */
+export function applyCollision(x0, z0, x1, z1) {
+  if (!started || instances.length === 0 || !templateBox) return { x: x1, z: z1 };
+  const tryX = collidesAt(x1, z0);
+  const tryZ = collidesAt(x0, z1);
+  const finalX = tryX ? x0 : x1;
+  const finalZ = tryZ ? z0 : z1;
+  if (collidesAt(finalX, finalZ)) return { x: x0, z: z0 };
+  return { x: finalX, z: finalZ };
+}
+
+/**
+ * Punto (worldX, worldZ) ¿está dentro del OBB de algún edificio?
+ * Cada edificio tiene rotación rotY en Y. Llevamos el punto al
+ * espacio local del edificio (inversa de la rotación + translación)
+ * y comprobamos AABB sencillo contra templateBox.
+ */
+function collidesAt(worldX, worldZ) {
+  for (const p of BUILDING_PLACEMENTS) {
+    const dx = worldX - p.x;
+    const dz = worldZ - p.z;
+    // Inversa de la rotación rotY: rotar el punto -rotY
+    const c = Math.cos(-p.rotY);
+    const s = Math.sin(-p.rotY);
+    const lx = dx * c - dz * s;
+    const lz = dx * s + dz * c;
+    if (lx >= templateBox.minX && lx <= templateBox.maxX &&
+        lz >= templateBox.minZ && lz <= templateBox.maxZ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+// API pública: tap (placeholder — sesión 11b/c hará el "entrar")
+// ============================================================
+
+/**
+ * Si el tap impacta un edificio, hace feedLog y devuelve true (capturado).
+ * Si no, devuelve false (world.js sigue al siguiente check del raycast).
+ *
+ * Por ahora es solo placeholder: confirma al user que el tap se detecta.
+ * Cuando llegue 11c, este handler disparará el cambio de escena al interior.
+ */
+export function tryHandleTap(clientX, clientY) {
+  if (!started || !raycaster || !camera || !canvas || instances.length === 0) return false;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera({ x: nx, y: ny }, camera);
+  // intersectObjects con recursive=true porque cada instance es un Group
+  // con N meshes (uno por material) dentro.
+  const hits = raycaster.intersectObjects(instances, true);
+  if (hits.length === 0) return false;
+  // Subir por la jerarquía hasta encontrar el Group del edificio (kind='building')
+  let node = hits[0].object;
+  while (node && node.userData?.kind !== 'building') node = node.parent;
+  const buildingId = node?.userData?.buildingId || '?';
+  feedLog('info', `Edificio (${buildingId}). Próximamente podrás entrar.`);
+  return true;
 }
 
 // ============================================================

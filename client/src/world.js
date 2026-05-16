@@ -165,8 +165,12 @@ export async function startWorld(loggedInUser, token) {
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
+    // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
     showWorldLoading('Cargando edificios…');
-    await buildings.start({ scene });
+    await buildings.start({
+      scene, camera, canvas,
+      feedLog: (type, msg) => combat.feedLog?.(type, msg),
+    });
     await setupPlayer();
     setupMarker();
     setupInput();
@@ -1063,6 +1067,9 @@ function doCanvasTap(clientX, clientY) {
   //    cuando pases cerca del item el auto-pickup lo recoge solo.
   if (groundItems.tryHandleTap(clientX, clientY)) return;
 
+  // Sesión 11b parcial — Tap edificio → placeholder (en 11c será "entrar")
+  if (buildings.tryHandleTap(clientX, clientY)) return;
+
   // 3) Tap árbol → tooltip
   const treeHits = raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
   if (treeHits.length > 0) {
@@ -1171,7 +1178,8 @@ function updatePlayer(dt) {
     const speed = maxSpeed * speedScale;
     const nextX = player.position.x + wx * speed * dt;
     const nextZ = player.position.z + wz * speed * dt;
-    const adjusted = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
+    const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
+    const adjusted = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
     player.position.x = adjusted.x;
     player.position.z = adjusted.z;
     moveWx = wx;
@@ -1196,7 +1204,10 @@ function updatePlayer(dt) {
         nextX = player.position.x + nx * step;
         nextZ = player.position.z + nz * step;
       }
-      const adjusted = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
+      const adjusted = (() => {
+        const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
+        return buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
+      })();
       const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
       if (moved < 0.01) {
         playerTarget = null;
