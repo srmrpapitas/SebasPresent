@@ -80,6 +80,7 @@ let scene = null;
 let camera = null;
 let canvas = null;
 let feedLog = () => {};
+let onTapBuilding = null;  // callback opcional: (buildingId) => void
 let instances = [];   // Group instances colocados en el world
 let templateGroup = null; // Group mergeado, se clona para cada instance
 let templateBox = null;   // { minX, maxX, minZ, maxZ } en coords locales tras escalado
@@ -98,6 +99,7 @@ export async function start(opts) {
   camera = opts.camera || null;
   canvas = opts.canvas || null;
   feedLog = opts.feedLog || (() => {});
+  onTapBuilding = opts.onTapBuilding || null;
   if (!scene) {
     console.warn('[buildings] start() sin scene en opts');
     return;
@@ -147,6 +149,7 @@ export function stop() {
   camera = null;
   canvas = null;
   feedLog = () => {};
+  onTapBuilding = null;
   started = false;
 }
 
@@ -228,7 +231,13 @@ export function tryHandleTap(clientX, clientY) {
   let node = hits[0].object;
   while (node && node.userData?.kind !== 'building') node = node.parent;
   const buildingId = node?.userData?.buildingId || '?';
-  feedLog('info', `Edificio (${buildingId}). Próximamente podrás entrar.`);
+  // Si hay callback de entrar, llamarlo. Si no, mostrar placeholder feedLog.
+  if (typeof onTapBuilding === 'function') {
+    try { onTapBuilding(buildingId); }
+    catch (e) { console.warn('[buildings] onTapBuilding error:', e); }
+  } else {
+    feedLog('info', `Edificio (${buildingId}). Próximamente podrás entrar.`);
+  }
   return true;
 }
 

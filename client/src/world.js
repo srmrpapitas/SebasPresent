@@ -22,6 +22,7 @@ import * as homeTele from './home_teleport.js';
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
 import * as buildings from './buildings.js';
+import * as interiors from './interiors.js';
 import * as npcRenderer from './npc_renderer.js';
 import {
   PALETTE, PLACES, BIOMES,
@@ -166,10 +167,35 @@ export async function startWorld(loggedInUser, token) {
     await terrain.start({ scene });
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
     // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
+    // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
     showWorldLoading('Cargando edificios…');
     await buildings.start({
       scene, camera, canvas,
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
+      onTapBuilding: (id) => interiors.enter(id),
+    });
+    // Sesión 11c-1 — interiors (switch exterior↔interior, sin NPC todavía)
+    showWorldLoading('Cargando interior…');
+    await interiors.start({
+      scene,
+      getPlayer: () => player,
+      onEnter: (buildingId) => {
+        // Forzar disengage de combat si engaged (el NPC queda lejos)
+        try { window.__playerExitCombat?.(); } catch {}
+        npcRenderer.cancelAutoEngage?.();
+        playerTarget = null;
+        if (marker) marker.visible = false;
+        // Forzar refresh del label de región tras salir/entrar
+        lastRegionName = '';
+        const el = document.getElementById('worldRegion');
+        if (el) { el.textContent = 'Interior'; el.style.opacity = '1'; }
+      },
+      onLeave: () => {
+        try { terrain.primeChunks(player.position.x, player.position.z); } catch {}
+        lastRegionName = '';
+        playerTarget = null;
+        if (marker) marker.visible = false;
+      },
     });
     await setupPlayer();
     setupMarker();
@@ -215,7 +241,13 @@ export async function startWorld(loggedInUser, token) {
       apiBase:      API_BASE,
       getCombatHp:  () => combat.getStateSnapshot?.()?.hp ?? null,
       feedLog:      (type, msg) => combat.feedLog?.(type, msg),
-      onTeleported: () => { try { terrain.primeChunks(player.position.x, player.position.z); } catch {} },
+      onTeleported: () => {
+        // Sesión 11c-1 — si home-teleport mientras en interior, hay que
+        // limpiar el estado UI (el teleport ya cambió la posición a 0,0,
+        // así que NO podemos hacer leave() porque revertiría a coords interior).
+        try { if (interiors.isActive()) interiors.forceLeave(); } catch {}
+        try { terrain.primeChunks(player.position.x, player.position.z); } catch {}
+      },
     });
 
     // Sesión 4 refactor — arrancar ground_items (loot polling + auto-pickup)
@@ -250,6 +282,16 @@ export async function startWorld(loggedInUser, token) {
 }
 
 export function stopWorld() {
+  // Sesión 11c-1 — si estamos en interior, salir silenciosamente para que
+  // la posición guardada sea la exterior, no las coords (10000, 10000).
+  if (running && interiors.isActive()) {
+    const player2 = player;
+    if (player2) {
+      // forceLeave NO teleporta. leave() sí. Usamos leave() para volver
+      // a lastExteriorPos antes del save.
+      interiors.leave();
+    }
+  }
   if (running && player && authToken) savePositionBeacon(player.position.x, player.position.z);
   running = false;
 
@@ -273,6 +315,9 @@ export function stopWorld() {
 
   // Sesión 2 refactor — desenganchar input.js
   if (inputDispose) { try { inputDispose(); } catch {} inputDispose = null; }
+
+  // Sesión 11c-1 — interiors (limpia interior group, floor mesh, exit button)
+  interiors.stop();
 
   // Sesión 11a — buildings (GLB instances)
   buildings.stop();
@@ -487,6 +532,7 @@ function setupMinimap() {
   addL(el, 'pointerup', (ev) => {
     if (ev.button !== undefined && ev.button !== 0) return;
     ev.preventDefault();
+    if (interiors.isActive()) return; // dentro del interior, el minimap no navega
     const rect = el.getBoundingClientRect();
     const cx = ev.clientX - rect.left;
     const cy = ev.clientY - rect.top;
@@ -518,6 +564,13 @@ function setupMinimap() {
 
 function drawMinimap() {
   if (!minimapCtx || !player) return;
+  // Sesión 11c-1 — vista distinta para interior (no tiene sentido dibujar
+  // biomas/PLACES/NPCs porque el player está en coords (10000,10000) muy
+  // lejos del mundo real).
+  if (interiors.isActive()) {
+    drawMinimapInterior();
+    return;
+  }
   const ctx = minimapCtx;
   const W = minimapCanvas.width;
   const H = minimapCanvas.height;
@@ -665,6 +718,38 @@ function drawMinimap() {
   ctx.fillStyle = '#e8c560';
   ctx.font = 'bold 12px serif';
   ctx.textAlign = 'center';
+  ctx.fillText('N', cx, 14);
+}
+
+// Sesión 11c-1 — minimap minimalista para cuando estamos en interior.
+// No tiene sentido dibujar biomas/PLACES/NPCs reales (player en 10000,10000).
+function drawMinimapInterior() {
+  const ctx = minimapCtx;
+  const W = minimapCanvas.width;
+  const H = minimapCanvas.height;
+  const cx = W / 2, cy = H / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, W / 2 - 2, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = '#1a1410';
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+  // Punto central representando al player
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#000';
+  ctx.stroke();
+  // Label "Interior"
+  ctx.fillStyle = '#e8c560';
+  ctx.font = 'bold 11px "Cinzel", serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Interior', cx, cy - 12);
+  // Norte
+  ctx.font = 'bold 12px serif';
   ctx.fillText('N', cx, 14);
 }
 
@@ -988,6 +1073,7 @@ function showWelcomeBanner(region) {
 
 function applyWildernessVisuals(isWild) {
   if (!scene) return;
+  if (interiors.isActive()) return; // interiors gestiona bg/fog mientras dentro
   scene.background.setHex(isWild ? PALETTE.skyWild : PALETTE.sky);
   scene.fog.color.setHex(isWild ? PALETTE.fogWild : PALETTE.fog);
 }
@@ -1055,6 +1141,21 @@ function doCanvasTap(clientX, clientY) {
   const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
   const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
+
+  // Sesión 11c-1 — dentro del interior, solo aceptamos tap-to-walk en el
+  // floor interior (el resto de raycasts apuntan a coords del exterior).
+  // En 11c-2 añadiremos aquí el tap contra el NPC del mostrador.
+  if (interiors.isActive()) {
+    const floor = interiors.getFloorMesh();
+    if (floor) {
+      const hits = raycaster.intersectObject(floor);
+      if (hits.length > 0) {
+        const p = hits[0].point;
+        setPlayerTarget(p.x, p.z);
+      }
+    }
+    return;
+  }
 
   // 1) Tap NPC → auto-walk hacia él y engage cuando lleguemos cerca.
   //    npcRenderer hace raycast + proximidad screen-space (más perdonable en móvil)
@@ -1139,6 +1240,7 @@ function animate() {
 
 function updatePositionSave(dt) {
   if (!authToken) return;
+  if (interiors.isActive()) return; // no guardar coords del interior (10000,10000) al server
   positionSaveTimer += dt * 1000;
   if (positionSaveTimer < POSITION_SAVE_INTERVAL) return;
   positionSaveTimer = 0;
@@ -1179,7 +1281,8 @@ function updatePlayer(dt) {
     const nextX = player.position.x + wx * speed * dt;
     const nextZ = player.position.z + wz * speed * dt;
     const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
-    const adjusted = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
+    const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
+    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
     player.position.x = adjusted.x;
     player.position.z = adjusted.z;
     moveWx = wx;
@@ -1206,7 +1309,8 @@ function updatePlayer(dt) {
       }
       const adjusted = (() => {
         const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
-        return buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
+        const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
+        return interiors.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
       })();
       const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
       if (moved < 0.01) {
@@ -1336,6 +1440,7 @@ function updateNameTag() {
 }
 
 function updateRegionTracking() {
+  if (interiors.isActive()) return; // interiors gestiona bg/fog/label
   const region = getRegionInfo(player.position.x, player.position.z);
   applyWildernessVisuals(region.isWild);
   if (region.name !== lastRegionName) {
