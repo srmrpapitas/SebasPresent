@@ -19,6 +19,8 @@ import { Character } from './character.js';
 import * as combat from './combat.js';
 import * as input from './input.js';
 import * as multiplayer from './multiplayer.js';
+import * as homeTele from './home_teleport.js';
+import * as groundItems from './ground_items.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -365,7 +367,6 @@ export async function startWorld(loggedInUser, token) {
     setupFullMap();
     setupHud();
     setupNpcs();
-    setupHomeTeleportButton();
 
     if (authToken) {
       showWorldLoading('Restaurando tu posición…');
@@ -397,6 +398,25 @@ export async function startWorld(loggedInUser, token) {
       apiBase: API_BASE,
     });
 
+    // Sesión 4 refactor — arrancar home_teleport (botón + cast + cooldown)
+    homeTele.start({
+      getPlayer:    () => player,
+      getAuthToken: () => authToken,
+      apiBase:      API_BASE,
+      getCombatHp:  () => combat.getStateSnapshot?.()?.hp ?? null,
+      feedLog:      (type, msg) => combat.feedLog?.(type, msg),
+      onTeleported: () => { try { primeInitialChunks(); } catch {} },
+    });
+
+    // Sesión 4 refactor — arrancar ground_items (loot polling + auto-pickup)
+    groundItems.start({
+      scene, camera, canvas,
+      getPlayer:       () => player,
+      getAuthToken:    () => authToken,
+      apiBase:         API_BASE,
+      setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+    });
+
     hideWorldLoading();
     animate();
   } catch (err) {
@@ -418,6 +438,12 @@ export function stopWorld() {
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
   multiplayer.stop();
+
+  // Sesión 4 refactor — detener home_teleport (quita botón, clear interval)
+  homeTele.stop();
+
+  // Sesión 4 refactor — detener ground_items (quita meshes, limpia timers)
+  groundItems.stop();
 
   for (const { target, type, fn, opts } of listeners) {
     try { target.removeEventListener(type, fn, opts); } catch {}
@@ -2238,11 +2264,7 @@ function doCanvasTap(clientX, clientY) {
   //    Solo si el tap impacta DIRECTAMENTE el hitbox del item (sin
   //    proximidad screen-space). Si lo erras, el tap cae al suelo y
   //    cuando pases cerca del item el auto-pickup lo recoge solo.
-  const lootHit = findGroundItemAtTap();
-  if (lootHit) {
-    triggerGroundItemPickup(lootHit);
-    return;
-  }
+  if (groundItems.tryHandleTap(clientX, clientY)) return;
 
   // 3) Tap árbol → tooltip
   const treeHits = raycaster.intersectObjects(interactableMeshes, false);
@@ -2643,7 +2665,7 @@ function animate() {
   updateNpcHpBars();
   updateNpcPolling(dt);
   multiplayer.update(dt);
-  updateGroundItems(dt);
+  groundItems.update(dt);
   drawMinimap();
   updatePositionSave(dt);
   renderer.render(scene, camera);
@@ -2937,598 +2959,10 @@ function hideWorldLoading() {
 }
 
 // ============================================================
-// Home Teleport (Slice 5c) — botón flotante con cast 10s
+// Sesión 4 refactor:
+// Home Teleport vive ahora en ./home_teleport.js
+// Ground Items vive ahora en ./ground_items.js
+// World.js los inicia desde startWorld() y los para desde stopWorld().
+// groundItems.update(dt) se invoca desde el animate loop.
+// El tap sobre items lejanos se delega vía groundItems.tryHandleTap().
 // ============================================================
-// Botón discreto en esquina superior izquierda (debajo del Salir).
-// Click → cast de 10s con barra de progreso + sound visual.
-// Cancela si: te mueves (joystick activo o tap) o recibes daño.
-// Tras 10s sin interrupción → POST /api/magic/home_teleport/finish y TP.
-// Cooldown 15 min con tooltip "Disponible en X:XX".
-
-const HOME_TELE_CAST_MS_CLIENT = 10_000;
-const HOME_TELE_COOLDOWN_MS_CLIENT = 15 * 60 * 1000;
-
-let homeTeleBtnEl = null;
-let homeTeleBarEl = null;
-let homeTeleCdLabelEl = null;
-let homeTeleCastingUntil = 0;
-let homeTeleCooldownUntil = 0;
-let homeTelePlayerStartPos = null;   // posición al iniciar cast
-let homeTelePlayerStartHp = null;    // HP al iniciar cast
-let homeTeleRafHandle = null;
-
-function setupHomeTeleportButton() {
-  if (homeTeleBtnEl) return;
-  ensureHomeTeleCss();
-  const btn = document.createElement('div');
-  btn.className = 'osrs-home-tele-btn';
-  btn.innerHTML = `
-    <div class="osrs-home-tele-icon">🏠</div>
-    <div class="osrs-home-tele-label">Casa</div>
-    <div class="osrs-home-tele-progress"><div class="osrs-home-tele-bar"></div></div>
-    <div class="osrs-home-tele-cd"></div>
-  `;
-  document.body.appendChild(btn);
-  homeTeleBtnEl = btn;
-  homeTeleBarEl = btn.querySelector('.osrs-home-tele-bar');
-  homeTeleCdLabelEl = btn.querySelector('.osrs-home-tele-cd');
-
-  btn.addEventListener('click', onHomeTeleClick);
-  // Tick visual cada 100ms para actualizar barra y cooldown label
-  setInterval(updateHomeTeleVisuals, 100);
-}
-
-function ensureHomeTeleCss() {
-  if (document.getElementById('osrs-home-tele-css')) return;
-  const style = document.createElement('style');
-  style.id = 'osrs-home-tele-css';
-  style.textContent = `
-    .osrs-home-tele-btn {
-      position: fixed;
-      top: 84px;
-      left: 16px;
-      z-index: 80;
-      width: 64px;
-      min-height: 78px;
-      padding: 6px 4px;
-      background: rgba(20, 14, 8, 0.92);
-      border: 2px solid #c8a043;
-      border-radius: 6px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      user-select: none;
-      -webkit-user-select: none;
-      font-family: 'Cinzel', serif;
-    }
-    .osrs-home-tele-btn:active {
-      background: rgba(40, 28, 16, 0.95);
-    }
-    .osrs-home-tele-btn.casting {
-      border-color: #88ddff;
-    }
-    .osrs-home-tele-btn.cooldown {
-      opacity: 0.55;
-      pointer-events: none;
-      border-color: #666;
-    }
-    .osrs-home-tele-icon {
-      font-size: 24px;
-      line-height: 1;
-      margin-bottom: 2px;
-    }
-    .osrs-home-tele-label {
-      font-size: 10px;
-      color: #f0e0b0;
-      font-weight: 700;
-      text-shadow: 1px 1px 0 #000;
-      letter-spacing: 0.4px;
-    }
-    .osrs-home-tele-progress {
-      width: 100%;
-      height: 4px;
-      margin-top: 4px;
-      background: rgba(0,0,0,0.6);
-      border-radius: 2px;
-      overflow: hidden;
-      display: none;
-    }
-    .osrs-home-tele-btn.casting .osrs-home-tele-progress {
-      display: block;
-    }
-    .osrs-home-tele-bar {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #88ddff, #c8a043);
-      transition: width 0.1s linear;
-    }
-    .osrs-home-tele-cd {
-      font-size: 9px;
-      color: #ff9090;
-      margin-top: 2px;
-      font-family: 'IM Fell English', serif;
-      display: none;
-    }
-    .osrs-home-tele-btn.cooldown .osrs-home-tele-cd {
-      display: block;
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-async function onHomeTeleClick() {
-  if (homeTeleCastingUntil > Date.now()) return;   // ya casteando
-  if (homeTeleCooldownUntil > Date.now()) return;  // en cooldown
-  if (!authToken) return;
-
-  try {
-    const r = await fetch(`${API_BASE}/api/magic/home_teleport`, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + authToken },
-    });
-    const data = await r.json();
-    if (!r.ok || data.error) {
-      if (data.error === 'on_cooldown' && data.cooldown_remaining_ms) {
-        homeTeleCooldownUntil = Date.now() + data.cooldown_remaining_ms;
-        if (combat?.feedLog) combat.feedLog('warn', data.message || 'En cooldown');
-      } else {
-        if (combat?.feedLog) combat.feedLog('warn', 'No puedes teletransportarte ahora');
-      }
-      return;
-    }
-    // Cast iniciado
-    homeTeleCastingUntil = Date.now() + HOME_TELE_CAST_MS_CLIENT;
-    homeTelePlayerStartPos = { x: player.position.x, z: player.position.z };
-    // Si tenemos info de HP en combat state, la guardamos para detectar daño
-    const cs = combat?.getStateSnapshot?.();
-    homeTelePlayerStartHp = cs?.hp ?? null;
-    homeTeleBtnEl?.classList.add('casting');
-    if (combat?.feedLog) combat.feedLog('info', 'Concentrándote para teletransportarte... (10s)');
-  } catch (err) {
-    console.warn('home tele start failed:', err);
-  }
-}
-
-function cancelHomeTele(reason) {
-  if (homeTeleCastingUntil <= Date.now()) return;
-  homeTeleCastingUntil = 0;
-  homeTeleBtnEl?.classList.remove('casting');
-  fetch(`${API_BASE}/api/magic/home_teleport/cancel`, {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + authToken },
-  }).catch(() => {});
-  if (combat?.feedLog) {
-    combat.feedLog('warn', `Teletransporte cancelado (${reason}).`);
-  }
-}
-
-async function finishHomeTele() {
-  if (!authToken) return;
-  try {
-    const r = await fetch(`${API_BASE}/api/magic/home_teleport/finish`, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + authToken },
-    });
-    const data = await r.json();
-    if (!r.ok || data.error) {
-      if (combat?.feedLog) combat.feedLog('warn', 'No se pudo completar el teletransporte');
-      homeTeleBtnEl?.classList.remove('casting');
-      homeTeleCastingUntil = 0;
-      return;
-    }
-    // Teletransportar visualmente
-    player.position.x = data.spawn.x;
-    player.position.z = data.spawn.z;
-    if (typeof window !== 'undefined') {
-      window.scrollTo(0, 0);
-    }
-    homeTeleCastingUntil = 0;
-    homeTeleCooldownUntil = data.cooldown_until || (Date.now() + HOME_TELE_COOLDOWN_MS_CLIENT);
-    homeTeleBtnEl?.classList.remove('casting');
-    homeTeleBtnEl?.classList.add('cooldown');
-    if (combat?.feedLog) combat.feedLog('hit', '¡Estás en casa!');
-    // Resetear chunks alrededor del nuevo spawn
-    if (typeof primeInitialChunks === 'function') {
-      try { primeInitialChunks(); } catch {}
-    }
-  } catch (err) {
-    console.warn('home tele finish failed:', err);
-    homeTeleBtnEl?.classList.remove('casting');
-    homeTeleCastingUntil = 0;
-  }
-}
-
-function updateHomeTeleVisuals() {
-  if (!homeTeleBtnEl) return;
-  const now = Date.now();
-
-  // Casteando
-  if (homeTeleCastingUntil > 0) {
-    const remaining = homeTeleCastingUntil - now;
-    if (remaining <= 0) {
-      // Cast completado
-      finishHomeTele();
-    } else {
-      // Actualizar barra
-      const elapsed = HOME_TELE_CAST_MS_CLIENT - remaining;
-      const pct = Math.max(0, Math.min(100, (elapsed / HOME_TELE_CAST_MS_CLIENT) * 100));
-      if (homeTeleBarEl) homeTeleBarEl.style.width = pct + '%';
-      // Verificar cancelaciones: movimiento
-      if (homeTelePlayerStartPos && player) {
-        const dx = player.position.x - homeTelePlayerStartPos.x;
-        const dz = player.position.z - homeTelePlayerStartPos.z;
-        if (dx * dx + dz * dz > 0.25) {   // movido más de 0.5m
-          cancelHomeTele('te has movido');
-        }
-      }
-      // Verificar cancelaciones: daño recibido
-      if (homeTelePlayerStartHp !== null) {
-        const cs = combat?.getStateSnapshot?.();
-        if (cs && cs.hp !== null && cs.hp < homeTelePlayerStartHp) {
-          cancelHomeTele('recibiste daño');
-        }
-      }
-    }
-  }
-
-  // Cooldown
-  if (homeTeleCooldownUntil > now) {
-    homeTeleBtnEl.classList.add('cooldown');
-    const remaining = Math.ceil((homeTeleCooldownUntil - now) / 1000);
-    const m = Math.floor(remaining / 60);
-    const s = remaining % 60;
-    if (homeTeleCdLabelEl) {
-      homeTeleCdLabelEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
-    }
-  } else if (homeTeleCooldownUntil > 0) {
-    homeTeleCooldownUntil = 0;
-    homeTeleBtnEl.classList.remove('cooldown');
-    if (homeTeleCdLabelEl) homeTeleCdLabelEl.textContent = '';
-  }
-}
-
-// ============================================================
-// Slice 5c — Ground items (loot drops)
-// ============================================================
-// El server inserta items en la tabla ground_items cuando un NPC muere.
-// El cliente:
-//   1) Cada GROUND_ITEMS_POLL_INTERVAL ms pregunta /api/ground_items?x=&z=
-//      al server y recibe los items en radio 30m alrededor del player.
-//   2) Renderiza cada item como un sprite pequeño en el suelo. Items que
-//      ya no aparecen en la respuesta se quitan de la escena.
-//   3) Al tap sobre un item: si estás cerca → llama a /api/ground_items/pickup
-//      directamente. Si lejos → auto-walk al item, y al llegar haces pickup.
-// Los items se autodestruyen en server a los 120s (cron). El cliente no
-// gestiona expiraciones — confía en que dejen de venir en el poll.
-
-const GROUND_ITEMS_POLL_INTERVAL = 1000;   // ms entre polls al server
-const GROUND_ITEM_AUTO_RADIUS_M  = 2.2;    // si estás dentro de esto, pickup auto
-const GROUND_ITEM_PICKUP_RADIUS_M = 2.5;   // tolerancia para decidir "estoy cerca"
-const GROUND_ITEM_PICKUP_COOLDOWN_MS = 800; // entre intentos del mismo item
-
-// Mapa id → { id, item_id, qty, x, z, name, group(THREE.Group), lastSeen, lastAttempt }
-const groundItemsMap = new Map();
-let groundItemsPollTimer = 0;
-let groundItemsInFlight = false;
-let pendingPickupItemId = null;   // si lejos: auto-walk + pickup al llegar
-
-function updateGroundItems(dt) {
-  if (!authToken || !player) return;
-  try {
-    _updateGroundItemsImpl(dt);
-  } catch (err) {
-    // Defensivo: que un error suelto en el loot no congele el frame loop.
-    console.error('[ground_items/update]', err);
-  }
-}
-
-function _updateGroundItemsImpl(dt) {
-  // 1) Poll periódico
-  groundItemsPollTimer += dt * 1000;
-  if (groundItemsPollTimer >= GROUND_ITEMS_POLL_INTERVAL && !groundItemsInFlight) {
-    groundItemsPollTimer = 0;
-    pollGroundItems();
-  }
-
-  // 2) Auto-pickup: cualquier item dentro del radio se intenta recoger
-  //    automáticamente (cooldown por item para no spammear el server).
-  const now = Date.now();
-  for (const item of groundItemsMap.values()) {
-    const dx = item.x - player.position.x;
-    const dz = item.z - player.position.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 <= GROUND_ITEM_AUTO_RADIUS_M * GROUND_ITEM_AUTO_RADIUS_M) {
-      if (!item.lastAttempt || now - item.lastAttempt > GROUND_ITEM_PICKUP_COOLDOWN_MS) {
-        item.lastAttempt = now;
-        pickupGroundItem(item.id);
-      }
-    }
-  }
-
-  // 3) Pickup pendiente por tap (item lejos): si ya estamos cerca, dispararlo.
-  //    Es redundante con el auto-pickup de arriba, pero limpia el flag.
-  if (pendingPickupItemId !== null) {
-    const item = groundItemsMap.get(pendingPickupItemId);
-    if (!item) {
-      pendingPickupItemId = null;
-    } else {
-      const dx = item.x - player.position.x;
-      const dz = item.z - player.position.z;
-      const d = Math.hypot(dx, dz);
-      if (d <= GROUND_ITEM_PICKUP_RADIUS_M) {
-        pendingPickupItemId = null;
-      }
-    }
-  }
-
-  // 4) Animación leve de bobbing (los items "flotan" un poco para verse)
-  const t = performance.now() * 0.002;
-  for (const item of groundItemsMap.values()) {
-    if (item.group) {
-      item.group.position.y = 0.15 + Math.sin(t + item.id * 0.7) * 0.05;
-      item.group.rotation.y += dt * 1.2;
-    }
-  }
-}
-
-async function pollGroundItems() {
-  groundItemsInFlight = true;
-  try {
-    const r = await fetch(
-      `${API_BASE}/api/ground_items?x=${player.position.x.toFixed(2)}&z=${player.position.z.toFixed(2)}`,
-      { headers: { 'Authorization': 'Bearer ' + authToken } }
-    );
-    if (!r.ok) return;
-    const data = await r.json();
-    const items = data?.items || [];
-    const seenIds = new Set();
-    for (const it of items) {
-      seenIds.add(it.id);
-      upsertGroundItem(it);
-    }
-    // Quitar items que el server ya no devuelve (expiraron, recogidos por
-    // otro, salieron del radio…)
-    for (const id of Array.from(groundItemsMap.keys())) {
-      if (!seenIds.has(id)) removeGroundItem(id);
-    }
-  } catch (err) {
-    // Silencioso — reintenta al siguiente tick
-  } finally {
-    groundItemsInFlight = false;
-  }
-}
-
-function upsertGroundItem(it) {
-  let item = groundItemsMap.get(it.id);
-  if (item) {
-    // Actualizar metadatos por si cambian (qty no debería, pero por si acaso)
-    item.qty = it.qty;
-    item.lastSeen = Date.now();
-    return;
-  }
-  // Crear nuevo mesh visual
-  const group = new THREE.Group();
-  group.position.set(it.x, 0.15, it.z);
-
-  // Caja pequeña con color según tipo. Es un placeholder visual decente
-  // hasta que tengamos sprites/iconos reales.
-  const color = colorForItemId(it.item_id);
-  const mat = new THREE.MeshStandardMaterial({
-    color,
-    emissive: color,
-    emissiveIntensity: 0.25,
-    roughness: 0.6,
-    metalness: 0.2,
-  });
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), mat);
-  mesh.castShadow = false;
-  mesh.userData.kind = 'ground-item';
-  mesh.userData.itemDropId = it.id;
-  group.add(mesh);
-
-  // Hitbox invisible más grande para que tapearlo en móvil sea fácil.
-  // No tiene material visible pero el raycaster sí lo detecta.
-  const hitMat = new THREE.MeshBasicMaterial({ visible: false, depthWrite: false });
-  const hitMesh = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.0), hitMat);
-  hitMesh.position.y = 0.2;
-  hitMesh.userData.kind = 'ground-item-hitbox';
-  hitMesh.userData.itemDropId = it.id;
-  group.add(hitMesh);
-
-  // Etiqueta con el nombre (canvas sprite)
-  const label = makeGroundItemLabel(it.name || it.item_id, it.qty);
-  if (label) {
-    label.position.set(0, 0.6, 0);
-    group.add(label);
-  }
-
-  scene.add(group);
-
-  item = {
-    id: it.id,
-    item_id: it.item_id,
-    qty: it.qty,
-    x: it.x,
-    z: it.z,
-    name: it.name || it.item_id,
-    group,
-    mesh,
-    hitMesh,
-    lastSeen: Date.now(),
-  };
-  groundItemsMap.set(it.id, item);
-}
-
-function removeGroundItem(id) {
-  const item = groundItemsMap.get(id);
-  if (!item) return;
-  if (item.group) {
-    scene.remove(item.group);
-    item.group.traverse(obj => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
-      }
-    });
-  }
-  groundItemsMap.delete(id);
-  if (pendingPickupItemId === id) pendingPickupItemId = null;
-}
-
-function colorForItemId(itemId) {
-  // Colores rápidos por tipo. Si hay icono real, ya lo cambiaremos.
-  switch (itemId) {
-    case 'bones':       return 0xeeeecc;
-    case 'raw_beef':    return 0xc0392b;
-    case 'cowhide':     return 0x8b4513;
-    case 'raw_chicken': return 0xffd7a0;
-    case 'feather':     return 0xffffff;
-    case 'coins':       return 0xffd700;
-    case 'bronze_dagger': return 0xb87333;
-    case 'bronze_sword':  return 0xcd7f32;
-    case 'goblin_mail':   return 0x556b2f;
-    default:            return 0xaaaaaa;
-  }
-}
-
-function makeGroundItemLabel(name, qty) {
-  try {
-    const c = document.createElement('canvas');
-    c.width = 256; c.height = 64;
-    const ctx = c.getContext('2d');
-    ctx.font = 'bold 28px Arial';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(0, 0, 256, 64);
-    ctx.fillStyle = '#ffeb88';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const text = qty > 1 ? `${name} x${qty}` : name;
-    ctx.fillText(text, 128, 32);
-    const tex = new THREE.CanvasTexture(c);
-    tex.minFilter = THREE.LinearFilter;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-    const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(1.2, 0.3, 1);
-    sprite.renderOrder = 999;
-    return sprite;
-  } catch (e) {
-    return null;
-  }
-}
-
-function findGroundItemAtTap() {
-  // Solo raycast directo al hitbox del item. Y solo consideramos items
-  // LEJANOS (más allá del auto-pickup): los cercanos los recoge solo
-  // el auto-pickup, así no consumimos el tap y permitimos tap al suelo
-  // donde haya items cerca del player.
-  const meshList = [];
-  for (const item of groundItemsMap.values()) {
-    if (!item.hitMesh) continue;
-    const dx = item.x - player.position.x;
-    const dz = item.z - player.position.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 <= GROUND_ITEM_AUTO_RADIUS_M * GROUND_ITEM_AUTO_RADIUS_M) continue;
-    meshList.push(item.hitMesh);
-  }
-  if (meshList.length === 0) return null;
-  const hits = raycaster.intersectObjects(meshList, false);
-  if (hits.length === 0) return null;
-  const dropId = hits[0].object.userData.itemDropId;
-  return groundItemsMap.get(dropId) || null;
-}
-
-function triggerGroundItemPickup(item) {
-  if (!item) return;
-  const dx = item.x - player.position.x;
-  const dz = item.z - player.position.z;
-  const d = Math.hypot(dx, dz);
-  if (d <= GROUND_ITEM_AUTO_RADIUS_M) {
-    // Ya estamos encima → auto-pickup lo recogerá en el siguiente frame.
-    return;
-  }
-  // Lejos: caminamos hacia el item y dejamos que el auto-pickup haga su parte.
-  pendingPickupItemId = item.id;
-  setPlayerTarget(item.x, item.z);
-}
-
-async function pickupGroundItem(itemDropId) {
-  if (!authToken) return;
-  try {
-    const r = await fetch(`${API_BASE}/api/ground_items/pickup`, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + authToken,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ ids: [itemDropId] }),
-    });
-    if (!r.ok) return;
-    const data = await r.json();
-    // Procesar items recogidos: los quitamos de la escena
-    const pickedUp = data?.picked_up || [];
-    for (const pu of pickedUp) {
-      const id = pu.id || pu;
-      removeGroundItem(id);
-    }
-    // Procesar skipped: mostramos al user por qué no se pudo recoger
-    const skipped = data?.skipped || [];
-    for (const sk of skipped) {
-      const reason = sk.reason || 'unknown';
-      // Si fue too_far, no mostramos nada: el auto-pickup reintenta solo
-      // cuando el server vea al player cerca, no hay nada que decir al user.
-      if (reason === 'too_far') continue;
-      const item = groundItemsMap.get(sk.id);
-      const itemName = item ? item.name : 'item';
-      let msg = '';
-      switch (reason) {
-        case 'inventory_full': msg = 'Mochila llena'; break;
-        case 'private':        msg = `${itemName}: de otro jugador`; break;
-        case 'expired':        msg = `${itemName}: desapareció`; break;
-        default:               msg = `${itemName}: ${reason}`;
-      }
-      showLootToast(msg, '#e57373');
-    }
-    // Forzar próximo poll inmediato para refrescar el estado real
-    groundItemsPollTimer = GROUND_ITEMS_POLL_INTERVAL;
-  } catch (err) {
-    // Silencioso — el próximo poll corregirá
-  }
-}
-
-// Toast pequeño centrado-arriba para feedback de pickup. Reusamos el mismo
-// div si ya existe (overlay). Auto-oculta en 1.6s.
-let _lootToastEl = null;
-let _lootToastTimer = null;
-function showLootToast(text, color) {
-  try {
-    if (!_lootToastEl) {
-      _lootToastEl = document.createElement('div');
-      const s = _lootToastEl.style;
-      s.position = 'fixed';
-      s.left = '50%';
-      s.top = '14%';
-      s.transform = 'translateX(-50%)';
-      s.padding = '8px 14px';
-      s.background = 'rgba(20,14,8,0.92)';
-      s.color = '#ffd76e';
-      s.border = '1px solid #6b5536';
-      s.borderRadius = '8px';
-      s.font = 'bold 14px Arial, sans-serif';
-      s.zIndex = '9999';
-      s.pointerEvents = 'none';
-      s.transition = 'opacity 0.25s';
-      document.body.appendChild(_lootToastEl);
-    }
-    _lootToastEl.textContent = text;
-    if (color) _lootToastEl.style.color = color;
-    _lootToastEl.style.opacity = '1';
-    if (_lootToastTimer) clearTimeout(_lootToastTimer);
-    _lootToastTimer = setTimeout(() => {
-      if (_lootToastEl) _lootToastEl.style.opacity = '0';
-    }, 1600);
-  } catch (e) { /* silencioso */ }
-}
