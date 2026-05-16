@@ -63,6 +63,9 @@ let canvas = null;
 let cameraDist = 14;
 let cameraYaw = Math.PI * 0.25;
 let cameraPitch = 0.55;
+// Sesión 11c-1 — override de cámara mientras estamos en interior (sala pequeña)
+let savedCameraDist = null;
+let savedCameraPitch = null;
 
 let playerTarget = null;
 let joyState = { active: false, x: 0, y: 0 };
@@ -185,12 +188,21 @@ export async function startWorld(loggedInUser, token) {
         npcRenderer.cancelAutoEngage?.();
         playerTarget = null;
         if (marker) marker.visible = false;
+        // Sesión 11c-1 — cámara más cercana dentro del interior. La sala
+        // es ~10m, con cameraDist=14 la cámara está fuera de las paredes.
+        savedCameraDist = cameraDist;
+        savedCameraPitch = cameraPitch;
+        cameraDist = 6;
+        cameraPitch = 0.85;
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
         if (el) { el.textContent = 'Interior'; el.style.opacity = '1'; }
       },
       onLeave: () => {
+        // Sesión 11c-1 — restaurar cámara exterior
+        if (savedCameraDist !== null) { cameraDist = savedCameraDist; savedCameraDist = null; }
+        if (savedCameraPitch !== null) { cameraPitch = savedCameraPitch; savedCameraPitch = null; }
         try { terrain.primeChunks(player.position.x, player.position.z); } catch {}
         lastRegionName = '';
         playerTarget = null;
@@ -1192,8 +1204,11 @@ function doCanvasTap(clientX, clientY) {
 
 
 function setPlayerTarget(x, z) {
-  x = Math.max(-WORLD_HALF + 2, Math.min(WORLD_HALF - 2, x));
-  z = Math.max(-WORLD_HALF + 2, Math.min(WORLD_HALF - 2, z));
+  // Sesión 11c-1 — skip clamp si interior activo (coords 10000,10000 exceden WORLD_HALF)
+  if (!interiors.isActive()) {
+    x = Math.max(-WORLD_HALF + 2, Math.min(WORLD_HALF - 2, x));
+    z = Math.max(-WORLD_HALF + 2, Math.min(WORLD_HALF - 2, z));
+  }
   playerTarget = { x, z };
   marker.position.set(x, 0.05, z);
   marker.scale.set(1, 1, 1);
@@ -1357,8 +1372,13 @@ function updatePlayer(dt) {
     player.rotation.y = Math.atan2(moveWx, moveWz);
   }
 
-  player.position.x = Math.max(-WORLD_HALF + 1, Math.min(WORLD_HALF - 1, player.position.x));
-  player.position.z = Math.max(-WORLD_HALF + 1, Math.min(WORLD_HALF - 1, player.position.z));
+  // Sesión 11c-1 — skip clamp si estamos en el interior (coords 10000,10000
+  // exceden WORLD_HALF=2048 y los clamps lo metían de vuelta dentro del mundo,
+  // sacándolo del interior).
+  if (!interiors.isActive()) {
+    player.position.x = Math.max(-WORLD_HALF + 1, Math.min(WORLD_HALF - 1, player.position.x));
+    player.position.z = Math.max(-WORLD_HALF + 1, Math.min(WORLD_HALF - 1, player.position.z));
+  }
 
   if (character && character.loaded) {
     if (!isMoving) {
@@ -1405,10 +1425,16 @@ function updatePlayer(dt) {
 }
 
 function updateCamera(dt) {
-  const r = cameraDist;
-  const desiredX = player.position.x + Math.sin(cameraYaw) * Math.cos(cameraPitch) * r;
-  const desiredY = player.position.y + Math.sin(cameraPitch) * r;
-  const desiredZ = player.position.z + Math.cos(cameraYaw) * Math.cos(cameraPitch) * r;
+  // Sesión 11c-1 — dentro del interior, la cámara orbital normal (dist=14,
+  // pitch=0.55) queda por encima del techo de la sala (4m). Forzamos
+  // distancia menor y pitch más bajo para que la cámara esté DENTRO de
+  // la sala y mire al player desde un ángulo razonable.
+  const inInterior = interiors.isActive();
+  const r = inInterior ? 5 : cameraDist;
+  const pitch = inInterior ? 0.30 : cameraPitch;
+  const desiredX = player.position.x + Math.sin(cameraYaw) * Math.cos(pitch) * r;
+  const desiredY = player.position.y + Math.sin(pitch) * r;
+  const desiredZ = player.position.z + Math.cos(cameraYaw) * Math.cos(pitch) * r;
   camera.position.set(desiredX, desiredY, desiredZ);
   const lookHeight = characterFallback ? 0.5 : 1.0;
   camera.lookAt(player.position.x, player.position.y + lookHeight, player.position.z);
