@@ -31,10 +31,20 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const INTERIOR_URL = `${R2_BASE}/interiors/medieval_room.glb`;
 
-// Altura objetivo del interior tras escalado (en metros).
-// El modelo viene en Z-up (Blender). Tras rotación Z-up→Y-up, la altura
-// post-rotación se mide del eje Y del modelo (que era Z en Blender).
-// Modelo Z original ~120 unidades → con 4m target, scale ≈ 0.033.
+// MODO DEBUG SESIÓN 11c-1: temporalmente coloca el modelo SIEMPRE VISIBLE
+// cerca del spawn (50, 0, 0) y un cubo rojo a su lado, en lugar de ocultarlo
+// en (10000, 10000). Permite verificar visualmente que el GLB carga y se
+// renderiza bien, independiente del switch de enter/leave.
+//
+// Si el usuario camina 50m al este del spawn y ve:
+//   - el cubo rojo Y el modelo → todo bien, el problema era el switch
+//   - solo el cubo rojo → problema del modelo (carga/escala/material)
+//   - nada → problema más profundo (renderer/scene/coords)
+//
+// Cambiar a false cuando esté validado.
+const DEV_PREVIEW = true;
+const DEV_PREVIEW_POS = { x: 50, z: 0 };
+
 const INTERIOR_HEIGHT = 4.0;
 
 // Coords absolutas donde se coloca el interior en el mundo.
@@ -112,7 +122,11 @@ export async function start(opts) {
   // Colocar el interior. IMPORTANTE: el bbox se calcula ANTES de poner
   // visible=false, porque Box3.setFromObject ignora objetos invisibles
   // (devolvería bbox vacío ±Infinity y rompería la colisión y el floor mesh).
-  interiorRoot.position.set(INTERIOR_CENTER.x, 0, INTERIOR_CENTER.z);
+  // Colocar el interior en sus coords absolutas. En modo DEV_PREVIEW
+  // lo ponemos cerca del spawn (50,0,0) y SIEMPRE visible.
+  const centerX = DEV_PREVIEW ? DEV_PREVIEW_POS.x : INTERIOR_CENTER.x;
+  const centerZ = DEV_PREVIEW ? DEV_PREVIEW_POS.z : INTERIOR_CENTER.z;
+  interiorRoot.position.set(centerX, 0, centerZ);
   interiorRoot.updateMatrixWorld(true);
   scene.add(interiorRoot);
 
@@ -124,25 +138,26 @@ export async function start(opts) {
     interiorBox = null;
   } else {
     interiorBox = {
-      minX: worldBox.min.x - INTERIOR_CENTER.x + COLLISION_MARGIN,
-      maxX: worldBox.max.x - INTERIOR_CENTER.x - COLLISION_MARGIN,
-      minZ: worldBox.min.z - INTERIOR_CENTER.z + COLLISION_MARGIN,
-      maxZ: worldBox.max.z - INTERIOR_CENTER.z - COLLISION_MARGIN,
+      minX: worldBox.min.x - centerX + COLLISION_MARGIN,
+      maxX: worldBox.max.x - centerX - COLLISION_MARGIN,
+      minZ: worldBox.min.z - centerZ + COLLISION_MARGIN,
+      maxZ: worldBox.max.z - centerZ - COLLISION_MARGIN,
     };
     if (interiorBox.maxX <= interiorBox.minX || interiorBox.maxZ <= interiorBox.minZ) {
       console.warn('[interiors] bbox demasiado pequeño para margen; usando margen 0');
       interiorBox = {
-        minX: worldBox.min.x - INTERIOR_CENTER.x,
-        maxX: worldBox.max.x - INTERIOR_CENTER.x,
-        minZ: worldBox.min.z - INTERIOR_CENTER.z,
-        maxZ: worldBox.max.z - INTERIOR_CENTER.z,
+        minX: worldBox.min.x - centerX,
+        maxX: worldBox.max.x - centerX,
+        minZ: worldBox.min.z - centerZ,
+        maxZ: worldBox.max.z - centerZ,
       };
     }
     console.log(`[interiors] BBox local (con margen ${COLLISION_MARGIN}m): X[${interiorBox.minX.toFixed(2)},${interiorBox.maxX.toFixed(2)}] Z[${interiorBox.minZ.toFixed(2)},${interiorBox.maxZ.toFixed(2)}]`);
   }
 
-  // Ahora sí ocultar (bbox ya calculado)
-  interiorRoot.visible = false;
+  // En DEV_PREVIEW, dejamos el modelo VISIBLE siempre para diagnosticar.
+  // En producción, lo ocultamos hasta que enter() lo muestre.
+  interiorRoot.visible = DEV_PREVIEW;
 
   // Plano floor invisible — el raycaster lo intersecta para tap-to-walk
   // pero opacity:0 lo hace invisible visualmente. depthWrite:false evita
@@ -156,30 +171,32 @@ export async function start(opts) {
     side: THREE.DoubleSide, depthWrite: false,
   });
   interiorFloor = new THREE.Mesh(floorGeom, floorMat);
-  interiorFloor.position.set(INTERIOR_CENTER.x, 0.02, INTERIOR_CENTER.z);
+  interiorFloor.position.set(centerX, 0.02, centerZ);
   interiorFloor.userData = { kind: 'interior-floor' };
   interiorFloor.visible = false;
   scene.add(interiorFloor);
 
   // Luz ambiental extra — la global del exterior puede no iluminar bien
   // los meshes del interior tras los cambios de fog (corto) y bg (oscuro).
+  // En DEV_PREVIEW también la dejamos visible para que el modelo no quede
+  // a oscuras estando fuera del switch.
   interiorLight = new THREE.AmbientLight(0xffffff, 0.9);
-  interiorLight.visible = false;
+  interiorLight.visible = DEV_PREVIEW;
   scene.add(interiorLight);
 
-  // DEBUG sanity check: cubo rojo flotando 3m sobre el centro del interior.
-  // Si el cubo aparece al entrar pero NO el modelo, el problema es del modelo
-  // (carga/escala/material). Si NI el cubo aparece, el problema es del switch
-  // o de las coords. TEMPORAL: quitar cuando lo del interior se vea.
-  const dbgGeom = new THREE.BoxGeometry(2, 2, 2);
+  // DEBUG sanity check: cubo rojo GIGANTE al lado del modelo. Si NO ves
+  // ni el cubo ni el modelo caminando hacia (50, 0): problema profundo
+  // (carga/scene/coords). Si SOLO ves el cubo: problema del modelo.
+  // En DEV_PREVIEW, el cubo está visible siempre.
+  const dbgGeom = new THREE.BoxGeometry(4, 4, 4);
   const dbgMat = new THREE.MeshBasicMaterial({ color: 0xff2020 });
   debugBox = new THREE.Mesh(dbgGeom, dbgMat);
-  debugBox.position.set(INTERIOR_CENTER.x, 3, INTERIOR_CENTER.z);
-  debugBox.visible = false;
+  debugBox.position.set(centerX + 10, 2, centerZ);  // 10m al este del modelo
+  debugBox.visible = DEV_PREVIEW;
   scene.add(debugBox);
 
   started = true;
-  console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Floor mesh size: ${sizeX.toFixed(2)} x ${sizeZ.toFixed(2)}`);
+  console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Floor mesh size: ${sizeX.toFixed(2)} x ${sizeZ.toFixed(2)}. DEV_PREVIEW=${DEV_PREVIEW} centro=(${centerX},${centerZ}).`);
 }
 
 export function stop() {
