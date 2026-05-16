@@ -15,10 +15,10 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Character } from './character.js';
 import * as combat from './combat.js';
 import * as input from './input.js';
+import * as multiplayer from './multiplayer.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -254,17 +254,8 @@ let NPC_GEOMS = null;
 // ============================================================
 // Slice 5c.5 — Multiplayer (peers locales)
 // ============================================================
-const MP_HEARTBEAT_INTERVAL = 500;   // ms entre heartbeats al server
-const MP_PEERS_POLL_INTERVAL = 500;  // ms entre polls de peers cercanos
-const MP_PEER_INTERP_MS = 500;       // interpolación entre snapshots
-const MP_PEER_TIMEOUT_MS = 10_000;   // si no llega update en 10s, peer offline
-
-let mpHeartbeatTimer = 0;
-let mpPeersPollTimer = 0;
-let mpLastPeerMap = new Map();   // user_id → { group, mixer, actions, currentAction, fromX, fromZ, toX, toZ, fromYaw, toYaw, interpStart, state, nameTagDiv }
-let mpInFlightPeers = false;
-let mpInFlightHeartbeat = false;
-let mpPlayerState = 'idle';      // tu estado actual reportado al server
+// El estado y lógica del multiplayer vive ahora en ./multiplayer.js.
+// World.js solo lo arranca, lo actualiza por frame y lo detiene.
 
 let lastRegionName = '';
 let lastRegionWasWild = false;
@@ -394,6 +385,18 @@ export async function startWorld(loggedInUser, token) {
     clock = new THREE.Clock();
     running = true;
     primeInitialChunks();
+
+    // Sesión 3 refactor — arrancar multiplayer ahora que scene/camera/player
+    // están listos y tenemos token. character puede ser null (fallback capsule):
+    // multiplayer detecta eso y usa cápsulas para los peers también.
+    multiplayer.start({
+      scene, camera, canvas,
+      player,
+      character,
+      authToken,
+      apiBase: API_BASE,
+    });
+
     hideWorldLoading();
     animate();
   } catch (err) {
@@ -413,12 +416,8 @@ export function stopWorld() {
   npcPollTimer = 0;
   pendingEngageNpcId = null;
 
-  // Slice 5c.5 — Limpiar peers de multiplayer
-  for (const userId of Array.from(mpLastPeerMap.keys())) {
-    removeMpPeer(userId);
-  }
-  mpHeartbeatTimer = 0;
-  mpPeersPollTimer = 0;
+  // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
+  multiplayer.stop();
 
   for (const { target, type, fn, opts } of listeners) {
     try { target.removeEventListener(type, fn, opts); } catch {}
@@ -1747,9 +1746,8 @@ function drawMinimap() {
   }
 
   // Slice 5c.5 — Otros players como puntos azules brillantes en minimapa
-  for (const peer of mpLastPeerMap.values()) {
-    if (!peer.group) continue;
-    const dx = peer.group.position.x - px, dz = peer.group.position.z - pz;
+  for (const peer of multiplayer.getPeerPositions()) {
+    const dx = peer.x - px, dz = peer.z - pz;
     if (dx * dx + dz * dz > NPC_RAD_SQ) continue;
     const sx = cx + dx * scale, sy = cy + dz * scale;
     ctx.beginPath();
@@ -2644,7 +2642,7 @@ function animate() {
   updateNpcPatrol(dt);
   updateNpcHpBars();
   updateNpcPolling(dt);
-  updateMultiplayer(dt);
+  multiplayer.update(dt);
   updateGroundItems(dt);
   drawMinimap();
   updatePositionSave(dt);
@@ -2663,367 +2661,12 @@ function updatePositionSave(dt) {
 }
 
 // ============================================================
-// Slice 5c.5 — Multiplayer básico
+// Slice 5c.5 — Multiplayer
 // ============================================================
-// updateMultiplayer (llamado cada frame) hace tres cosas:
-//   1) Cada 500ms manda heartbeat al server con tu posición/yaw/estado
-//   2) Cada 500ms pide peers cercanos al server
-//   3) Cada frame interpola la posición de cada peer entre snapshots
-//      (los peers reciben actualizaciones cada 500ms, pero queremos verlos
-//      moviéndose suave sin teleports)
-
-function updateMultiplayer(dt) {
-  if (!authToken || !player) return;
-
-  // 1) Heartbeat periódico
-  mpHeartbeatTimer += dt * 1000;
-  if (mpHeartbeatTimer >= MP_HEARTBEAT_INTERVAL && !mpInFlightHeartbeat) {
-    mpHeartbeatTimer = 0;
-    sendMpHeartbeat();
-  }
-
-  // 2) Poll periódico de peers
-  mpPeersPollTimer += dt * 1000;
-  if (mpPeersPollTimer >= MP_PEERS_POLL_INTERVAL && !mpInFlightPeers) {
-    mpPeersPollTimer = 0;
-    pollMpPeers();
-  }
-
-  // 3) Interpolar visual de peers cada frame + actualizar sus mixers
-  const now = performance.now();
-  for (const [userId, peer] of mpLastPeerMap) {
-    if (!peer.group) continue;
-    // Quitar peers que llevan rato sin update
-    if (Date.now() - peer.lastUpdate > MP_PEER_TIMEOUT_MS) {
-      removeMpPeer(userId);
-      continue;
-    }
-    // Interpolación lineal entre fromXYZ y toXYZ
-    const t = Math.min(1, (now - peer.interpStart) / MP_PEER_INTERP_MS);
-    peer.group.position.x = peer.fromX + (peer.toX - peer.fromX) * t;
-    peer.group.position.z = peer.fromZ + (peer.toZ - peer.fromZ) * t;
-    // Yaw con shortest-path para no girar 350º cuando podía girar 10º
-    let dyaw = peer.toYaw - peer.fromYaw;
-    while (dyaw > Math.PI) dyaw -= Math.PI * 2;
-    while (dyaw < -Math.PI) dyaw += Math.PI * 2;
-    peer.group.rotation.y = peer.fromYaw + dyaw * t;
-
-    // Mixer del peer (si está usando Nico clonado, hace falta tick por frame)
-    if (peer.mixer) {
-      peer.mixer.update(dt);
-    }
-
-    // Crossfade idle ↔ run según state
-    if (peer.actions && Object.keys(peer.actions).length > 0) {
-      // Determinar acción deseada según state recibido
-      let desiredName = 'idle';
-      if (peer.state === 'run' || peer.state === 'walk') desiredName = 'run';
-      else if (peer.state === 'attack' && peer.actions.attack) desiredName = 'attack';
-      const desiredAction = peer.actions[desiredName] || peer.actions.idle;
-      if (desiredAction && desiredAction !== peer.currentAction) {
-        desiredAction.reset();
-        desiredAction.play();
-        if (peer.currentAction) {
-          desiredAction.crossFadeFrom(peer.currentAction, 0.22, true);
-        }
-        peer.currentAction = desiredAction;
-      }
-    }
-
-    // Updatear nameTag posición sobre la cabeza
-    if (peer.nameTagDiv) {
-      updateMpPeerNameTag(peer);
-    }
-  }
-}
-
-async function sendMpHeartbeat() {
-  mpInFlightHeartbeat = true;
-  try {
-    // Determinar estado de movimiento actual
-    const speed = computePlayerSpeed();
-    let state = 'idle';
-    if (speed > 0.1) state = speed > 4 ? 'run' : 'run'; // todo run por ahora (no tenemos walk anim)
-    mpPlayerState = state;
-
-    await fetch(`${API_BASE}/api/world/heartbeat`, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + authToken,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        x: player.position.x,
-        z: player.position.z,
-        yaw: player.rotation.y,
-        state,
-      }),
-    });
-  } catch (err) {
-    // Silencioso — no quereremos spammear si la red se cae 1s
-  } finally {
-    mpInFlightHeartbeat = false;
-  }
-}
-
-let _mpLastPlayerX = 0, _mpLastPlayerZ = 0, _mpLastSpeedTime = 0;
-function computePlayerSpeed() {
-  const now = performance.now();
-  if (!_mpLastSpeedTime) {
-    _mpLastSpeedTime = now;
-    _mpLastPlayerX = player.position.x;
-    _mpLastPlayerZ = player.position.z;
-    return 0;
-  }
-  const dt = (now - _mpLastSpeedTime) / 1000;
-  if (dt < 0.05) return 0;
-  const dx = player.position.x - _mpLastPlayerX;
-  const dz = player.position.z - _mpLastPlayerZ;
-  const dist = Math.hypot(dx, dz);
-  const speed = dist / dt;
-  _mpLastSpeedTime = now;
-  _mpLastPlayerX = player.position.x;
-  _mpLastPlayerZ = player.position.z;
-  return speed;
-}
-
-async function pollMpPeers() {
-  mpInFlightPeers = true;
-  try {
-    const r = await fetch(
-      `${API_BASE}/api/world/peers?x=${player.position.x.toFixed(2)}&z=${player.position.z.toFixed(2)}`,
-      { headers: { 'Authorization': 'Bearer ' + authToken } }
-    );
-    if (!r.ok) return;
-    const data = await r.json();
-    const peers = data?.peers || [];
-    const seenIds = new Set();
-    for (const p of peers) {
-      seenIds.add(p.user_id);
-      upsertMpPeer(p);
-    }
-    // Eliminar peers que ya no aparecen en la respuesta (salieron del radio)
-    for (const userId of mpLastPeerMap.keys()) {
-      if (!seenIds.has(userId)) {
-        // Le damos margen: si lleva más de 2s sin aparecer en la lista, quitar
-        const peer = mpLastPeerMap.get(userId);
-        if (Date.now() - peer.lastUpdate > 2000) {
-          removeMpPeer(userId);
-        }
-      }
-    }
-  } catch (err) {
-    // Silencioso
-  } finally {
-    mpInFlightPeers = false;
-  }
-}
-
-function upsertMpPeer(p) {
-  let peer = mpLastPeerMap.get(p.user_id);
-  if (!peer) {
-    peer = createMpPeer(p);
-    mpLastPeerMap.set(p.user_id, peer);
-  }
-  // Iniciar interpolación nueva: from = posición visual actual, to = nueva
-  peer.fromX = peer.group.position.x;
-  peer.fromZ = peer.group.position.z;
-  peer.fromYaw = peer.group.rotation.y;
-  peer.toX = p.x;
-  peer.toZ = p.z;
-  peer.toYaw = p.yaw || 0;
-  peer.state = p.state || 'idle';
-  peer.interpStart = performance.now();
-  peer.lastUpdate = Date.now();
-}
-
-function createMpPeer(p) {
-  // Slice 5c.5 — Nico clonado: si el character principal está cargado,
-  // clonamos su skeleton/mesh con SkeletonUtils para que cada peer se vea
-  // como Nico con su propio mixer (independiente del player principal).
-  // Si character no está listo aún, fallback a cápsula.
-
-  const group = new THREE.Group();
-  group.position.set(p.x, 0, p.z);
-  group.rotation.y = p.yaw || 0;
-
-  let peerMixer = null;
-  let peerActions = {};
-  let usedNico = false;
-
-  if (character?.loaded && character.mesh && character.clips) {
-    try {
-      // SkeletonUtils.clone preserva el esqueleto correctamente — un simple
-      // .clone() del mesh comparte el skeleton entre instancias y se queda quieto.
-      const clonedMesh = SkeletonUtils.clone(character.mesh);
-      // Aplicamos la misma escala que tu personaje principal (0.01).
-      // El SkeletonUtils clona la jerarquía pero NO copia las transforms del
-      // root parent, así que lo escalamos aquí.
-      clonedMesh.scale.copy(character.mesh.scale);
-      // Mismo Y offset que el player principal (-1.03) — sin esto los peers
-      // flotan en el aire porque el FBX tiene los pies sobre el origen.
-      clonedMesh.position.y = -1.03;
-
-      // Para distinguir peers entre sí, tintamos la ropa con un color por hash.
-      // Recorremos todas las meshes y multiplicamos su color base.
-      const hue = (hashStr(p.username || ('user' + p.user_id))) % 360;
-      const tint = new THREE.Color().setHSL(hue / 360, 0.45, 0.55);
-      clonedMesh.traverse(obj => {
-        if (obj.isMesh && obj.material) {
-          // Clonar el material para no afectar al player principal
-          if (Array.isArray(obj.material)) {
-            obj.material = obj.material.map(m => {
-              const cloned = m.clone();
-              if (cloned.color) cloned.color.multiply(tint);
-              return cloned;
-            });
-          } else {
-            obj.material = obj.material.clone();
-            if (obj.material.color) obj.material.color.multiply(tint);
-          }
-          obj.frustumCulled = false;
-        }
-      });
-
-      group.add(clonedMesh);
-
-      // Mixer + actions independientes para este peer
-      peerMixer = new THREE.AnimationMixer(clonedMesh);
-      for (const name of Object.keys(character.clips)) {
-        const clip = character.clips[name];
-        if (!clip) continue;
-        const action = peerMixer.clipAction(clip);
-        action.setEffectiveTimeScale(1);
-        action.setEffectiveWeight(1);
-        peerActions[name] = action;
-      }
-      // Empezar en idle
-      if (peerActions.idle) {
-        peerActions.idle.play();
-      }
-      usedNico = true;
-    } catch (err) {
-      console.warn('[mp] Failed to clone Nico for peer, fallback to capsule:', err.message);
-    }
-  }
-
-  // Fallback cápsula si no hay Nico disponible o si el clone falló
-  if (!usedNico) {
-    const hue = (hashStr(p.username || ('user' + p.user_id))) % 360;
-    const color = new THREE.Color().setHSL(hue / 360, 0.55, 0.50);
-    const bodyGeom = new THREE.CapsuleGeometry(0.35, 0.9, 4, 12);
-    const bodyMat = new THREE.MeshLambertMaterial({ color, flatShading: true });
-    const body = new THREE.Mesh(bodyGeom, bodyMat);
-    body.position.y = 0.85;
-    group.add(body);
-    const headGeom = new THREE.SphereGeometry(0.22, 16, 12);
-    const headMat = new THREE.MeshLambertMaterial({ color: 0xffd5b0, flatShading: true });
-    const head = new THREE.Mesh(headGeom, headMat);
-    head.position.y = 1.55;
-    group.add(head);
-  }
-
-  scene.add(group);
-
-  // Etiqueta DOM con username flotante sobre la cabeza
-  const nameTagDiv = document.createElement('div');
-  nameTagDiv.className = 'osrs-peer-nametag';
-  nameTagDiv.textContent = p.username || ('user' + p.user_id);
-  Object.assign(nameTagDiv.style, {
-    position: 'fixed',
-    pointerEvents: 'none',
-    background: 'rgba(20, 14, 8, 0.85)',
-    border: '1.5px solid #c8a043',
-    borderRadius: '3px',
-    padding: '2px 8px',
-    color: '#f0e0b0',
-    fontFamily: "'Cinzel', serif",
-    fontWeight: '600',
-    fontSize: '12px',
-    textShadow: '1px 1px 0 #000',
-    transform: 'translate(-50%, -50%)',
-    zIndex: '40',
-    display: 'none',
-  });
-  document.body.appendChild(nameTagDiv);
-
-  return {
-    group, nameTagDiv,
-    mixer: peerMixer,
-    actions: peerActions,
-    currentAction: peerActions.idle || null,
-    usedNico,
-    fromX: p.x, fromZ: p.z, fromYaw: p.yaw || 0,
-    toX: p.x,   toZ: p.z,   toYaw: p.yaw || 0,
-    state: p.state || 'idle',
-    interpStart: performance.now(),
-    lastUpdate: Date.now(),
-    username: p.username,
-  };
-}
-
-function removeMpPeer(userId) {
-  const peer = mpLastPeerMap.get(userId);
-  if (!peer) return;
-  if (peer.mixer) {
-    peer.mixer.stopAllAction();
-  }
-  if (peer.group) {
-    scene.remove(peer.group);
-    peer.group.traverse(o => {
-      if (o.geometry) o.geometry.dispose?.();
-      if (o.material) {
-        if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
-        else o.material.dispose?.();
-      }
-    });
-  }
-  if (peer.nameTagDiv) peer.nameTagDiv.remove();
-  mpLastPeerMap.delete(userId);
-}
-
-function updateMpPeerNameTag(peer) {
-  const v = new THREE.Vector3(peer.group.position.x, peer.group.position.y + 2.0, peer.group.position.z);
-  v.project(camera);
-  if (v.z > 1 || v.z < -1) {
-    peer.nameTagDiv.style.display = 'none';
-    return;
-  }
-  const rect = canvas.getBoundingClientRect();
-  const sx = (v.x * 0.5 + 0.5) * rect.width + rect.left;
-  const sy = (-v.y * 0.5 + 0.5) * rect.height + rect.top;
-  peer.nameTagDiv.style.left = sx + 'px';
-  peer.nameTagDiv.style.top = sy + 'px';
-  peer.nameTagDiv.style.display = 'block';
-}
-
-function hashStr(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h) + s.charCodeAt(i);
-    h |= 0;
-  }
-  return Math.abs(h);
-}
-
-// Hook global de debug — el usuario pidió poder ver peers desde Eruda
-if (typeof window !== 'undefined') {
-  window.__mpPlayers = () => {
-    const list = [];
-    for (const [uid, p] of mpLastPeerMap) {
-      list.push({
-        user_id: uid,
-        username: p.username,
-        x: p.group.position.x.toFixed(1),
-        z: p.group.position.z.toFixed(1),
-        state: p.state,
-        lastUpdate_ms_ago: Date.now() - p.lastUpdate,
-      });
-    }
-    console.table(list);
-    return list;
-  };
-}
+// Toda la lógica vive en ./multiplayer.js. La inicialización se hace
+// al final de startWorld() vía multiplayer.start(). El loop la llama
+// con multiplayer.update(dt). El minimap lee posiciones con
+// multiplayer.getPeerPositions().
 
 
 function updatePlayer(dt) {
