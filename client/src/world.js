@@ -22,11 +22,13 @@ import * as multiplayer from './multiplayer.js';
 import * as homeTele from './home_teleport.js';
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
+import * as npcRenderer from './npc_renderer.js';
 import {
   PALETTE, PLACES, BIOMES,
   WORLD_HALF, WILDERNESS_X, FOG_NEAR, FOG_FAR,
   biomeAt, getRegionInfo, bakeGlbModel,
 } from './terrain.js';
+import { NPC_MINIMAP_RADIUS } from './npc_renderer.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -47,70 +49,6 @@ const DECORATION_GLB_URLS = {
   grass:      `${R2_BASE}/decoration/grass.glb`,
 };
 
-// NPCs — sube los GLB a R2 bajo /npcs/<id>.glb. Si falta uno, placeholder.
-const NPC_GLB_URLS = {
-  chicken: `${R2_BASE}/npcs/chicken.glb`,
-  cow:     `${R2_BASE}/npcs/cow.glb`,
-  goblin:  `${R2_BASE}/npcs/goblin.glb`,
-};
-
-const NPC_FALLBACK_COLORS = {
-  chicken: 0xffffff,
-  cow:     0xeae0c8,
-  goblin:  0x4a8030,
-  wolf:    0x808080,
-};
-
-const NPC_TARGET_HEIGHTS = {
-  chicken: 1.0,   // bumped 0.6 → 1.0 (era demasiado pequeño, no se veía)
-  cow:     1.4,   // bumped 1.2 → 1.4 (vaca low-poly nueva, un poco más grande)
-  goblin:  1.6,   // bumped 1.3 → 1.6 (humanoide, debería ser ~tamaño player)
-  wolf:    1.0,
-};
-
-/**
- * Per-NPC: skip auto-detect Z-up. Para modelos cuyo bbox raw despista a
- * detectsZUp pero que en realidad son Y-up.
- */
-const NPC_GLB_FORCE_NO_ZUP = {
-  cow: true,   // bbox raw tiene Z alto pero el modelo es Y-up native
-};
-
-/**
- * Per-NPC config: cuándo forzar rotación Z-up.
- *
- * NOTA Slice 5b post-fix: la vaca low_poly_cow.glb originalmente
- * parecía Z-up por su bbox (alto en Y), pero tras probar tanto -π/2
- * como +π/2 en X resulta que es Y-up nativo con un bbox raro. Sin
- * rotación se ve correctamente.
- */
-const NPC_GLB_FORCE_ZUP = {
-  // cow: false   ← NO se rota
-};
-
-/**
- * Per-NPC: si Z-up estándar (rot X = -π/2) deja el modelo boca arriba,
- * invertimos a +π/2. (Por ahora ningún NPC lo necesita.)
- */
-const NPC_GLB_FORCE_ZUP_INVERT = {
-  // (vacío)
-};
-
-/**
- * Patrol / wander parameters. Cada NPC vivo deambula en círculo lento
- * alrededor de su spawn point. Cuando el player lo está atacando, se
- * queda quieto (engaged = paused).
- */
-const NPC_PATROL_RADIUS    = 3.0;    // metros del centro
-const NPC_PATROL_SPEED_RPS = 0.18;   // radianes/seg (vuelta cada ~35s)
-const NPC_PATROL_BOB_AMP   = 0.04;   // bob vertical sutil
-const NPC_PATROL_BOB_HZ    = 1.8;    // ciclos/seg de bob
-
-/**
- * Hit reaction params (empujón + flash rojo cuando reciben golpe).
- */
-const NPC_REACT_DURATION_S = 0.18;   // 180ms
-const NPC_REACT_KICK_DIST  = 0.35;   // metros que se desplaza al recibir hit
 
 // Constantes que se quedan en world (NO en terrain):
 const PLAYER_RUN = 7.0;
@@ -119,12 +57,6 @@ const POSITION_SAVE_INTERVAL = 10_000;
 const POSITION_SAVE_MIN_DELTA = 5.0;
 
 const API_BASE = 'https://sebaspresent.srmrpapitas.workers.dev';
-
-const NPC_POLL_INTERVAL_MS = 5000;
-const NPC_RENDER_RADIUS = 100;
-const NPC_MINIMAP_RADIUS = 500;
-const NPC_TAP_RANGE = 30;
-const NPC_ENGAGE_RANGE = 1.4;  // distancia para auto-engage (server attack_range=1.5)
 
 const CAMERA_DIST_MIN = 6;
 const CAMERA_DIST_MAX = 30;
@@ -158,8 +90,6 @@ let listeners = [];
 let resizeRaf = null;
 let inputDispose = null;
 
-let NPC_GEOMS = null;
-
 // ============================================================
 // Slice 5c.5 — Multiplayer (peers locales)
 // ============================================================
@@ -189,12 +119,6 @@ let positionSaveTimer = 0;
 let lastSavedX = 0;
 let lastSavedZ = 0;
 
-// NPC runtime
-const npcMeshes = new Map();
-let npcDataList = [];
-let npcPollTimer = 0;
-let combatUnsubscribe = null;
-let pendingEngageNpcId = null;  // NPC al que vamos a engage cuando lleguemos cerca
 let lastPlayerYNormalize = 0;   // timestamp para normalize bbox del player
 let regionFadeTimer = null;     // timer para fade-out del label de región
 
@@ -230,7 +154,7 @@ if (typeof window !== 'undefined') {
     info.lowestBones = info.bones.slice(0, 4);
     info.highestBones = info.bones.slice(-3);
     delete info.bones;
-    for (const [id, group] of npcMeshes.entries()) {
+    for (const [id, group] of npcRenderer.getNpcMeshes().entries()) {
       const b = new THREE.Box3().setFromObject(group);
       info.npcs.push({
         id, posY: +group.position.y.toFixed(3),
@@ -260,15 +184,12 @@ export async function startWorld(loggedInUser, token) {
     setupOcean();
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
-    showWorldLoading('Cargando criaturas…');
-    await loadGLBNpcs();
     await setupPlayer();
     setupMarker();
     setupInput();
     setupMinimap();
     setupFullMap();
     setupHud();
-    setupNpcs();
 
     if (authToken) {
       showWorldLoading('Restaurando tu posición…');
@@ -319,6 +240,18 @@ export async function startWorld(loggedInUser, token) {
       setPlayerTarget: (x, z) => setPlayerTarget(x, z),
     });
 
+    // Sesión 6 refactor — arrancar npc_renderer (mesh + patrol + hpbars +
+    // tap + auto-engage + hitsplats). Internamente registra los hooks
+    // window.__worldFlashNpcHit y window.__worldSpawnHitsplat para combat.js.
+    showWorldLoading('Cargando criaturas…');
+    await npcRenderer.start({
+      scene, camera, canvas,
+      getPlayer:         () => player,
+      setPlayerTarget:   (x, z) => setPlayerTarget(x, z),
+      clearPlayerTarget: () => { playerTarget = null; if (marker) marker.visible = false; },
+      feedLog:           (type, msg) => combat.feedLog?.(type, msg),
+    });
+
     hideWorldLoading();
     animate();
   } catch (err) {
@@ -331,12 +264,9 @@ export function stopWorld() {
   if (running && player && authToken) savePositionBeacon(player.position.x, player.position.z);
   running = false;
 
-  if (combatUnsubscribe) { combatUnsubscribe(); combatUnsubscribe = null; }
-  for (const m of npcMeshes.values()) { if (m.parent) m.parent.remove(m); }
-  npcMeshes.clear();
-  npcDataList = [];
-  npcPollTimer = 0;
-  pendingEngageNpcId = null;
+  // Sesión 6 refactor — npc_renderer (limpia meshes, hpbars, action menu,
+  // hitsplats layer, hooks window.__world*, polling timer)
+  npcRenderer.stop();
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
   multiplayer.stop();
@@ -357,13 +287,6 @@ export function stopWorld() {
 
   // Sesión 5 refactor — terrain (chunks, árboles, decoración, places, colliders)
   terrain.stop();
-
-  if (NPC_GEOMS) {
-    for (const n of Object.values(NPC_GEOMS)) {
-      if (n.glbParts) for (const p of n.glbParts) { p.geometry?.dispose(); p.material?.dispose(); }
-    }
-    NPC_GEOMS = null;
-  }
 
   if (character) { character.dispose(); character = null; }
   characterFallback = false;
@@ -406,395 +329,6 @@ export function stopWorld() {
   if (nameTag) { nameTag.classList.add('hidden'); nameTag.style.display = 'none'; }
 }
 
-
-// ============================================================
-//                       NPCs (Slice 5a v2)
-// ============================================================
-
-async function loadGLBNpcs() {
-  NPC_GEOMS = {};
-  const entries = Object.entries(NPC_GLB_URLS);
-  const loader = new GLTFLoader();
-  await Promise.all(entries.map(async ([typeId, url]) => {
-    try {
-      const gltf = await loader.loadAsync(url);
-      const baked = bakeGlbModel(
-        gltf.scene,
-        NPC_TARGET_HEIGHTS[typeId] || 1.0,
-        NPC_FALLBACK_COLORS[typeId] || 0x808080,
-        !!NPC_GLB_FORCE_ZUP[typeId],
-        !!NPC_GLB_FORCE_ZUP_INVERT[typeId],
-        !!NPC_GLB_FORCE_NO_ZUP[typeId],
-      );
-      if (!baked) return;
-      NPC_GEOMS[typeId] = { id: typeId, glbParts: baked.parts };
-      console.log(`Loaded NPC '${typeId}' — scaleFactor=${baked.scaleFactor.toFixed(4)} target=${NPC_TARGET_HEIGHTS[typeId] || 1.0}m`);
-    } catch (err) {
-      console.warn(`NPC '${typeId}' load failed, will use placeholder:`, err.message);
-    }
-  }));
-}
-
-// ============================================================
-//                       Scene
-// ============================================================
-
-function setupScene() {
-  canvas = document.getElementById('worldCanvas');
-  if (!canvas) throw new Error('No #worldCanvas element in DOM');
-  // Bloquear pinch-zoom nativo del browser sobre el canvas (sin tocar
-  // joystick/minimapa, que tienen sus propios listeners).
-  canvas.style.touchAction = 'none';
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(PALETTE.sky);
-  scene.fog = new THREE.Fog(PALETTE.fog, FOG_NEAR, FOG_FAR);
-  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, FOG_FAR + 50);
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
-  raycaster = new THREE.Raycaster();
-  const sun = new THREE.DirectionalLight(0xffeecc, 1.0);
-  sun.position.set(-30, 50, 20);
-  scene.add(sun);
-  const ambient = new THREE.AmbientLight(0x6088a0, 0.55);
-  scene.add(ambient);
-}
-
-function setupOcean() {
-  const oceanGeom = new THREE.PlaneGeometry(WORLD_HALF * 6, WORLD_HALF * 6);
-  oceanGeom.rotateX(-Math.PI / 2);
-  const oceanMat = new THREE.MeshLambertMaterial({ color: PALETTE.ocean, flatShading: true });
-  ocean = new THREE.Mesh(oceanGeom, oceanMat);
-  ocean.position.y = -0.4;
-  scene.add(ocean);
-}
-
-function setupNpcs() {
-  combatUnsubscribe = combat.onUpdate(({ npcs }) => {
-    if (!Array.isArray(npcs)) return;
-    npcDataList = npcs;
-    syncNpcMeshes();
-  });
-  combat.refresh().catch(e => console.warn('[world] combat refresh:', e));
-}
-
-function syncNpcMeshes() {
-  if (!scene || !player) return;
-  const px = player.position.x;
-  const pz = player.position.z;
-  const aliveIds = new Set();
-
-  for (const npc of npcDataList) {
-    const dx = npc.x - px;
-    const dz = npc.z - pz;
-    if (dx * dx + dz * dz > NPC_RENDER_RADIUS * NPC_RENDER_RADIUS) continue;
-    aliveIds.add(npc.id);
-
-    let mesh = npcMeshes.get(npc.id);
-    if (!mesh) {
-      mesh = createNpcMesh(npc);
-      if (!mesh) continue;
-      scene.add(mesh);
-      npcMeshes.set(npc.id, mesh);
-    }
-    // Server position = patrol CENTER (no posición visual). El movimiento
-    // visual lo añade updateNpcPatrol() cada frame sobre este centro.
-    // Solo re-anclamos si el server reportó un cambio grande (>2m), que
-    // indica un respawn o un reposicionamiento real.
-    const pp = mesh.userData.patrol;
-    if (pp) {
-      const ddx = npc.x - pp.centerX;
-      const ddz = npc.z - pp.centerZ;
-      if (ddx*ddx + ddz*ddz > 4.0) {
-        pp.centerX = npc.x;
-        pp.centerZ = npc.z;
-      }
-    }
-    updateNpcHpBar(mesh, npc.hp_current, npc.max_hp);
-    mesh.userData.npc = npc;
-  }
-
-  for (const [id, mesh] of npcMeshes.entries()) {
-    if (!aliveIds.has(id)) {
-      scene.remove(mesh);
-      mesh.traverse?.(obj => {
-        if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
-        if (obj.material && !obj.userData?.shared) {
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-      npcMeshes.delete(id);
-    }
-  }
-}
-
-function createNpcMesh(npc) {
-  const typeId = npc.def_id;
-  const group = new THREE.Group();
-  group.position.set(npc.x, 0, npc.z);
-  group.userData = {
-    kind: 'npc',
-    npc,
-    // Patrol: cada NPC arranca con ángulo random para que no estén todos
-    // sincronizados. Centro = posición inicial del server.
-    patrol: {
-      centerX: npc.x,
-      centerZ: npc.z,
-      angle:   Math.random() * Math.PI * 2,
-      bobT:    Math.random() * Math.PI * 2,
-    },
-    // Reacción: cuando reciben hit, kick vector que decae a cero.
-    reaction: { until: 0, kickX: 0, kickZ: 0 },
-    // Material refs para flash rojo. Se rellena abajo.
-    bodyMaterials: [],
-  };
-
-  const glb = NPC_GEOMS && NPC_GEOMS[typeId];
-  if (glb && glb.glbParts) {
-    for (const part of glb.glbParts) {
-      // Cada NPC necesita SU PROPIO material (no shared) para poder
-      // flashear independiente cuando recibe hit. Geometría sí compartida.
-      const ownMat = part.material.clone();
-      // Guardamos color base para restaurar tras el flash.
-      ownMat.userData = { baseColor: ownMat.color.clone() };
-      const mesh = new THREE.Mesh(part.geometry, ownMat);
-      mesh.userData = { kind: 'npc-body', npcId: npc.id, shared: true };
-      group.add(mesh);
-      group.userData.bodyMaterials.push(ownMat);
-    }
-  } else {
-    // Placeholder cubo coloreado
-    const h = NPC_TARGET_HEIGHTS[typeId] || 1.0;
-    const color = NPC_FALLBACK_COLORS[typeId] || 0x808080;
-    const geom = new THREE.BoxGeometry(h * 0.7, h, h * 0.7);
-    geom.translate(0, h / 2, 0);
-    const mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
-    mat.userData = { baseColor: mat.color.clone() };
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.userData = { kind: 'npc-body', npcId: npc.id };
-    group.add(mesh);
-    group.userData.bodyMaterials.push(mat);
-  }
-
-  const hpBar = createHpBar(npc.hp_current, npc.max_hp, NPC_TARGET_HEIGHTS[typeId] || 1.0);
-  group.add(hpBar);
-  group.userData.hpBar = hpBar;
-  return group;
-}
-
-function createHpBar(cur, max, npcHeight) {
-  const W = 1.0;
-  const H = 0.12;
-  const group = new THREE.Group();
-  group.position.y = (npcHeight || 1.0) + 0.4;
-  const bgMat = new THREE.MeshBasicMaterial({ color: 0x202020, depthTest: false, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-  const bg = new THREE.Mesh(new THREE.PlaneGeometry(W, H), bgMat);
-  bg.renderOrder = 999;
-  group.add(bg);
-  const ratio = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
-  const fillMat = new THREE.MeshBasicMaterial({ color: 0xc02020, depthTest: false, side: THREE.DoubleSide });
-  const fill = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(0.001, W * ratio), H * 0.85), fillMat);
-  fill.position.x = -W * (1 - ratio) / 2;
-  fill.position.z = 0.001;
-  fill.renderOrder = 1000;
-  group.add(fill);
-  group.userData.hpBar = { bg, fill, W, H, cur, max };
-  return group;
-}
-
-// ============================================================
-//             NPC patrol + hit reaction (Slice 5a v3)
-// ============================================================
-// Patrol: cada NPC vivo da vueltas lentas en círculo alrededor de su
-// spawn point (NPC_PATROL_RADIUS, NPC_PATROL_SPEED_RPS). Cuando el
-// player lo está atacando (combat.getStateSnapshot().currentTarget),
-// se queda quieto. NPCs muertos tampoco se mueven (no llegan aquí
-// porque syncNpcMeshes solo añade vivos al map).
-//
-// Reaction: cuando reciben hit, flashea el material a rojo y se
-// empuja hacia atrás ~0.35m que decae a cero en 180ms. Funciona
-// sobre cualquier GLB porque solo toca .position del Group y el
-// .color del material (sin necesidad de huesos / animaciones).
-
-function updateNpcPatrol(dt) {
-  if (!scene) return;
-  // ¿A quién está atacando el player? Si engaged, ese NPC se queda quieto.
-  let engagedId = null;
-  try {
-    const snap = combat.getStateSnapshot?.();
-    engagedId = snap ? snap.currentTarget : null;
-  } catch {}
-
-  const now = performance.now() / 1000;
-
-  for (const [npcId, group] of npcMeshes) {
-    const ud = group.userData;
-    if (!ud) continue;
-
-    // ---- Patrol loop ----
-    const p = ud.patrol;
-    if (p) {
-      let baseX = p.centerX;
-      let baseZ = p.centerZ;
-      let baseY = 0;
-
-      if (npcId !== engagedId) {
-        // Avanza ángulo
-        p.angle += NPC_PATROL_SPEED_RPS * dt;
-        p.bobT  += NPC_PATROL_BOB_HZ * Math.PI * 2 * dt;
-        const dx = Math.cos(p.angle) * NPC_PATROL_RADIUS;
-        const dz = Math.sin(p.angle) * NPC_PATROL_RADIUS;
-        baseX += dx;
-        baseZ += dz;
-        baseY  = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
-        // Orienta el modelo hacia la dirección de marcha (tangente al círculo).
-        const tx = -Math.sin(p.angle);
-        const tz =  Math.cos(p.angle);
-        group.rotation.y = Math.atan2(tx, tz);
-      }
-
-      // ---- Kick por reacción a hit (decae linealmente) ----
-      const r = ud.reaction;
-      let kickX = 0, kickZ = 0;
-      if (r && r.until > now) {
-        const remaining = (r.until - now) / NPC_REACT_DURATION_S; // 1 → 0
-        kickX = r.kickX * remaining;
-        kickZ = r.kickZ * remaining;
-      }
-
-      group.position.set(baseX + kickX, baseY, baseZ + kickZ);
-    }
-
-    // ---- Flash rojo del material (decae en paralelo al kick) ----
-    // SLICE 5b post-fix: usamos `emissive` (color añadido) en vez de `color`
-    // (color base). Tocar `color` machacaba el color base del material y
-    // sumado a la textura daba el bug "todos plateados". Con emissive el
-    // material conserva su look normal y solo añadimos un tinte rojo.
-    if (ud.bodyMaterials && ud.bodyMaterials.length) {
-      const r = ud.reaction;
-      if (r && r.until > now) {
-        const intensity = (r.until - now) / NPC_REACT_DURATION_S; // 1 → 0
-        for (const m of ud.bodyMaterials) {
-          if (m && m.emissive) {
-            m.emissive.setRGB(intensity * 0.8, 0, 0);
-          }
-        }
-      } else if (ud.reaction && ud.reaction.wasFlashing) {
-        // Restaurar emissive a negro (sin tinte) al terminar el flash
-        for (const m of ud.bodyMaterials) {
-          if (m && m.emissive) m.emissive.setRGB(0, 0, 0);
-        }
-        ud.reaction.wasFlashing = false;
-      }
-    }
-  }
-}
-
-const _redColor = new THREE.Color(0xff3030);
-
-/**
- * Dispara el efecto "recibí un hit" en un NPC: empujón + flash rojo.
- * Lo llama combat.js (via window.__worldFlashNpcHit) cuando el server
- * confirma que el ataque del player conectó.
- */
-function flashNpcHit(npcId) {
-  const group = npcMeshes.get(npcId);
-  if (!group || !group.userData) return;
-  // Vector empujón: alejándose del player (dirección NPC ← player)
-  const pp = group.userData.patrol;
-  const cx = pp ? pp.centerX : group.position.x;
-  const cz = pp ? pp.centerZ : group.position.z;
-  let dx = cx - player.position.x;
-  let dz = cz - player.position.z;
-  const len = Math.hypot(dx, dz);
-  if (len > 0.001) { dx /= len; dz /= len; }
-  else { dx = 0; dz = 1; }
-  const r = group.userData.reaction;
-  r.until = (performance.now() / 1000) + NPC_REACT_DURATION_S;
-  r.kickX = dx * NPC_REACT_KICK_DIST;
-  r.kickZ = dz * NPC_REACT_KICK_DIST;
-  r.wasFlashing = true;
-}
-
-// Hook global para que combat.js (u otros módulos) disparen el efecto
-// sin tener que importar world.js (evita riesgo de circular import).
-if (typeof window !== 'undefined') {
-  window.__worldFlashNpcHit = flashNpcHit;
-  // Slice 5b: trigger del swing del player. combat.js lo llama cada
-  // attack tick (hit O miss — OSRS anima ambos).
-  window.__playerPlayAttack = () => {
-    try { character?.playAttack?.(); } catch (e) { console.warn('[world] playAttack:', e); }
-  };
-  // Slice 5d: hooks de animación de combate. combat.js los llama al
-  // engage/disengage para que el player desenvaine/envaine la espada,
-  // y al morir/respawn para muerte y revive.
-  window.__playerEnterCombat = (npcId) => {
-    const wasEngaged = combatTargetNpcId !== null;
-    combatTargetNpcId = npcId;
-    // Solo desenvainar la primera vez (target switch sin envainar entre medio
-    // no debe rejugar la animación de draw).
-    if (!wasEngaged) {
-      try { character?.playDraw?.(); } catch (e) { console.warn('[world] playDraw:', e); }
-    }
-  };
-  window.__playerExitCombat = () => {
-    combatTargetNpcId = null;
-    try { character?.playSheath?.(); } catch (e) { console.warn('[world] playSheath:', e); }
-  };
-  window.__playerDeath = () => {
-    combatTargetNpcId = null;
-    try { character?.playDeath?.(); } catch (e) { console.warn('[world] playDeath:', e); }
-  };
-  window.__playerRevive = () => {
-    combatTargetNpcId = null;
-    try { character?.revive?.(); } catch (e) { console.warn('[world] revive:', e); }
-  };
-}
-
-function updateNpcHpBar(npcMesh, cur, max) {
-  const hpBarGroup = npcMesh.userData.hpBar;
-  if (!hpBarGroup || !hpBarGroup.userData?.hpBar) return;
-  const data = hpBarGroup.userData.hpBar;
-  if (data.cur === cur && data.max === max) return;
-  data.cur = cur;
-  data.max = max;
-  const ratio = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
-  data.fill.geometry.dispose();
-  data.fill.geometry = new THREE.PlaneGeometry(Math.max(0.001, data.W * ratio), data.H * 0.85);
-  data.fill.position.x = -data.W * (1 - ratio) / 2;
-}
-
-function updateNpcHpBars() {
-  if (!camera) return;
-  // Para que la HP bar mire siempre a cámara hace falta:
-  //  1) Usar el WORLD quaternion de la cámara (no su local), por si la
-  //     cámara cuelga de algún rig.
-  //  2) Descontar el world quaternion del padre (NPC group, que rota
-  //     con el patrol):  localQuat = invParentWorldQuat * cameraWorldQuat
-  //  3) Material a DoubleSide (lo hicimos en createHpBar) para que aunque
-  //     la cara frontal del plano quede al revés, se siga viendo.
-  const tmpParentQ = new THREE.Quaternion();
-  const tmpCamQ = new THREE.Quaternion();
-  const tmpResultQ = new THREE.Quaternion();
-  camera.getWorldQuaternion(tmpCamQ);
-  for (const mesh of npcMeshes.values()) {
-    const bar = mesh.userData.hpBar;
-    if (!bar || !bar.parent) continue;
-    bar.parent.getWorldQuaternion(tmpParentQ);
-    tmpParentQ.invert();
-    tmpResultQ.multiplyQuaternions(tmpParentQ, tmpCamQ);
-    bar.quaternion.copy(tmpResultQ);
-  }
-}
-
-function updateNpcPolling(dt) {
-  npcPollTimer += dt * 1000;
-  if (npcPollTimer < NPC_POLL_INTERVAL_MS) return;
-  npcPollTimer = 0;
-  combat.refresh().catch(() => {});
-}
-
 // ============================================================
 //                       Player
 // ============================================================
@@ -830,6 +364,46 @@ function setupMarker() {
   marker = new THREE.Mesh(geom, mat);
   marker.visible = false;
   scene.add(marker);
+}
+
+// ============================================================
+//   Player animation hooks (combat.js → character.js)
+// ============================================================
+// combat.js dispara estos hooks vía window.__player* para reproducir las
+// animaciones del personaje del jugador (atacar, desenvainar, morir...).
+// Los registramos al inicio del módulo (una sola vez) para que estén
+// disponibles antes incluso del primer startWorld(). Lo único que tocan es
+// el `character` del player y la variable `combatTargetNpcId` que viven
+// aquí en world.js.
+if (typeof window !== 'undefined') {
+  // Slice 5b: trigger del swing del player. combat.js lo llama cada
+  // attack tick (hit O miss — OSRS anima ambos).
+  window.__playerPlayAttack = () => {
+    try { character?.playAttack?.(); } catch (e) { console.warn('[world] playAttack:', e); }
+  };
+  // Slice 5d: animaciones de combate (engage/disengage = draw/sheath
+  // espada; death/revive cuando mueres/respawneas).
+  window.__playerEnterCombat = (npcId) => {
+    const wasEngaged = combatTargetNpcId !== null;
+    combatTargetNpcId = npcId;
+    // Solo desenvainar la primera vez (target switch sin envainar entre medio
+    // no debe rejugar la animación de draw).
+    if (!wasEngaged) {
+      try { character?.playDraw?.(); } catch (e) { console.warn('[world] playDraw:', e); }
+    }
+  };
+  window.__playerExitCombat = () => {
+    combatTargetNpcId = null;
+    try { character?.playSheath?.(); } catch (e) { console.warn('[world] playSheath:', e); }
+  };
+  window.__playerDeath = () => {
+    combatTargetNpcId = null;
+    try { character?.playDeath?.(); } catch (e) { console.warn('[world] playDeath:', e); }
+  };
+  window.__playerRevive = () => {
+    combatTargetNpcId = null;
+    try { character?.revive?.(); } catch (e) { console.warn('[world] revive:', e); }
+  };
 }
 
 
@@ -933,7 +507,7 @@ function drawMinimap() {
 
   // NUEVO: NPCs como puntos blancos
   const NPC_RAD_SQ = NPC_MINIMAP_RADIUS * NPC_MINIMAP_RADIUS;
-  for (const npc of npcDataList) {
+  for (const npc of npcRenderer.getNpcDataList()) {
     const dx = npc.x - px, dz = npc.z - pz;
     if (dx * dx + dz * dz > NPC_RAD_SQ) continue;
     const sx = cx + dx * scale, sy = cy + dz * scale;
@@ -1377,13 +951,13 @@ function setupInput() {
     joystickKnobEl: document.getElementById('joystickKnob'),
 
     // Al tocar la pantalla: cerrar el menú contextual si está abierto.
-    onTouchStart: () => closeActionMenu(),
+    onTouchStart: () => npcRenderer.closeActionMenu(),
 
     // Tap simple → goto / atacar NPC / pickup item / tooltip árbol
     onTap: (cx, cy) => doCanvasTap(cx, cy),
 
     // Long-press → menú contextual estilo OSRS
-    onLongPress: (cx, cy) => openActionMenuAt(cx, cy),
+    onLongPress: (cx, cy) => npcRenderer.openActionMenuAt(cx, cy),
 
     // Drag del dedo en canvas O rotación con dos dedos → rotar cámara
     onCameraDrag: (dyaw, dpitch) => {
@@ -1416,9 +990,6 @@ function setupInput() {
   addL(window, 'resize', onResize);
 }
 
-// Constante de tolerancia screen-space para tap sobre NPC (la usa findNpcNearTap)
-const NPC_TAP_SCREEN_PX = 56;
-
 function doCanvasTap(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -1426,14 +997,9 @@ function doCanvasTap(clientX, clientY) {
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
 
   // 1) Tap NPC → auto-walk hacia él y engage cuando lleguemos cerca.
-  // Probamos primero el raycast clásico (mesh exacto). Si falla, hacemos
-  // proximidad por screen-space (el dedo cubre ~40-50px; aceptamos taps
-  // dentro de NPC_TAP_SCREEN_PX del centro proyectado del NPC más cercano).
-  const npc = findNpcNearTap(clientX, clientY);
-  if (npc) {
-    triggerNpcTap(npc.id);
-    return;
-  }
+  //    npcRenderer hace raycast + proximidad screen-space (más perdonable en móvil)
+  //    y se encarga del auto-walk si está lejos.
+  if (npcRenderer.tryHandleTap(clientX, clientY)) return;
 
   // 2) Tap item del suelo → caminar hacia él (auto-pickup al llegar).
   //    Solo si el tap impacta DIRECTAMENTE el hitbox del item (sin
@@ -1460,340 +1026,6 @@ function doCanvasTap(clientX, clientY) {
   }
 }
 
-/**
- * Busca el NPC más cercano al tap. Estrategia en dos pasos:
- *  1. Raycast clásico contra los meshes de NPC (preciso).
- *  2. Si no hay hit, proyecta cada NPC vivo a screen space y devuelve
- *     el más cercano al tap dentro de NPC_TAP_SCREEN_PX píxeles.
- *
- * Resultado: el "área tappable" de un NPC es su mesh + un disco de
- * tolerancia en pantalla, mucho más perdonable en móvil.
- */
-function findNpcNearTap(clientX, clientY) {
-  // Paso 1: raycast clásico
-  const npcMeshList = [];
-  for (const group of npcMeshes.values()) {
-    group.traverse(obj => { if (obj.userData?.kind === 'npc-body') npcMeshList.push(obj); });
-  }
-  if (npcMeshList.length > 0) {
-    const npcHits = raycaster.intersectObjects(npcMeshList, false);
-    if (npcHits.length > 0) {
-      const npcId = npcHits[0].object.userData.npcId;
-      const npc = npcDataList.find(n => n.id === npcId);
-      if (npc) return npc;
-    }
-  }
-
-  // Paso 2: proximidad en pantalla. Proyectamos cada NPC vivo y nos
-  // quedamos con el más cercano al tap dentro de la tolerancia.
-  const rect = canvas.getBoundingClientRect();
-  const localX = clientX - rect.left;
-  const localY = clientY - rect.top;
-  const tmpV = new THREE.Vector3();
-  let best = null;
-  let bestDist = NPC_TAP_SCREEN_PX;
-  for (const [npcId, group] of npcMeshes) {
-    // Centro del cuerpo del NPC (encima del suelo). Usamos el centroide
-    // del bbox del grupo; suficientemente fiable.
-    const npcData = npcDataList.find(n => n.id === npcId);
-    if (!npcData) continue;
-    const targetH = NPC_TARGET_HEIGHTS[npcData.def_id] || 1.0;
-    tmpV.set(group.position.x, group.position.y + targetH * 0.5, group.position.z);
-    tmpV.project(camera);
-    // Si está detrás de la cámara, descartar.
-    if (tmpV.z > 1 || tmpV.z < -1) continue;
-    const sx = (tmpV.x * 0.5 + 0.5) * rect.width;
-    const sy = (-tmpV.y * 0.5 + 0.5) * rect.height;
-    const d = Math.hypot(sx - localX, sy - localY);
-    if (d < bestDist) { bestDist = d; best = npcData; }
-  }
-  return best;
-}
-
-/**
- * Lanza el tap "atacar" sobre un NPC: si estás cerca → engage directo,
- * si lejos → auto-walk hasta llegar y enganchar.
- */
-function triggerNpcTap(npcId) {
-  const npc = npcDataList.find(n => n.id === npcId);
-  if (!npc) return;
-  // BUG FIX: usar la posición VISUAL del NPC (orbitando) en lugar de
-  // npc.x/z (centro de patrol del server). El cliente dibuja al NPC
-  // orbitando hasta NPC_PATROL_RADIUS del centro, así que el centro no
-  // es donde el jugador ve al NPC. Caminar al centro hace que el player
-  // pase de largo o el marker amarillo aparezca lejos del NPC.
-  const mesh = npcMeshes.get(npcId);
-  const targetX = mesh ? mesh.position.x : npc.x;
-  const targetZ = mesh ? mesh.position.z : npc.z;
-  const dx = targetX - player.position.x;
-  const dz = targetZ - player.position.z;
-  const dist = Math.hypot(dx, dz);
-  pendingEngageNpcId = npcId;
-  if (dist <= NPC_ENGAGE_RANGE) {
-    pendingEngageNpcId = null;
-    combat.engageNpc(npcId);
-  } else {
-    setPlayerTarget(targetX, targetZ);
-    combat.feedLog?.('info', `Vas hacia ${npc.name}...`);
-  }
-}
-
-// ============================================================
-// Action menu OSRS (long-press) + Hitsplats (Slice 5b v2)
-// ============================================================
-// Menú contextual al hacer tap-largo sobre un NPC. Si el tap-largo cae
-// en suelo o vacío, no abre menú (al tap simple sigue caminando como
-// siempre). Si cae sobre NPC, muestra opciones:
-//    ⚔ Atacar  ·  🔍 Examinar  ·  ✕ Cancelar
-//
-// Hitsplats: pequeños sprites DOM (no Three.js) que aparecen sobre el NPC
-// al recibir hit. Gota roja con número blanco para daño > 0, cuadrado
-// azul con "0" para fallo/miss. Vida 900ms, sube ~30px, fade-out.
-
-let actionMenuEl = null;
-let hitsplatLayerEl = null;
-let cssInjectedActionMenu = false;
-
-function ensureActionMenuCss() {
-  if (cssInjectedActionMenu) return;
-  cssInjectedActionMenu = true;
-  const style = document.createElement('style');
-  style.id = 'osrs-action-menu-css';
-  style.textContent = `
-    .osrs-action-menu {
-      position: fixed;
-      z-index: 200;
-      min-width: 160px;
-      background: rgba(20, 14, 8, 0.97);
-      border: 2px solid #c8a043;
-      border-radius: 4px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.75);
-      padding: 4px;
-      font-family: 'IM Fell English', serif;
-      user-select: none;
-      -webkit-user-select: none;
-      animation: osrsMenuFadeIn 0.12s ease-out;
-    }
-    @keyframes osrsMenuFadeIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .osrs-action-menu-header {
-      padding: 4px 10px 6px 10px;
-      font-family: 'Cinzel', serif;
-      font-weight: 700;
-      font-size: 12px;
-      color: #e8c560;
-      text-shadow: 1px 1px 0 #000;
-      border-bottom: 1px solid rgba(200,160,67,0.3);
-      margin-bottom: 4px;
-    }
-    .osrs-action-row {
-      padding: 8px 12px;
-      font-size: 14px;
-      color: #f0e0b0;
-      cursor: pointer;
-      border-radius: 3px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      text-shadow: 1px 1px 0 #000;
-    }
-    .osrs-action-row:active {
-      background: rgba(200,160,67,0.25);
-      color: #fff;
-    }
-    .osrs-action-row.danger { color: #ff9090; }
-    .osrs-action-row.danger:active { background: rgba(180,40,40,0.35); }
-
-    /* Hitsplats */
-    .osrs-hitsplat-layer {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      overflow: visible;
-      z-index: 50;
-    }
-    .osrs-hitsplat {
-      position: absolute;
-      width: 26px;
-      height: 26px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'IM Fell English', serif;
-      font-weight: bold;
-      font-size: 13px;
-      color: #fff;
-      text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
-      transform: translate(-50%, -50%);
-      animation: osrsHitsplatFly 0.9s ease-out forwards;
-    }
-    /* Gota de sangre roja para daño */
-    .osrs-hitsplat.dmg {
-      background: radial-gradient(ellipse at 35% 35%, #c83030, #800000 70%);
-      border: 1.5px solid #200000;
-      border-radius: 50% 50% 50% 0;
-      transform-origin: center;
-      transform: translate(-50%, -50%) rotate(-45deg);
-    }
-    .osrs-hitsplat.dmg span { transform: rotate(45deg); display:block; }
-    /* Escudo azul para miss/bloqueo */
-    .osrs-hitsplat.miss {
-      background: radial-gradient(ellipse at 35% 35%, #4080d0, #1a3870 70%);
-      border: 1.5px solid #001030;
-      border-radius: 50% 50% 35% 35% / 50% 50% 65% 65%;
-    }
-    @keyframes osrsHitsplatFly {
-      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
-      15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
-      25%  { transform: translate(-50%, -50%) scale(1.0); }
-      100% { opacity: 0; transform: translate(-50%, -130%) scale(0.95); }
-    }
-    /* Variantes "dmg" tienen que mantener la rotación de la gota: */
-    .osrs-hitsplat.dmg {
-      animation: osrsHitsplatFlyDrop 0.9s ease-out forwards;
-    }
-    @keyframes osrsHitsplatFlyDrop {
-      0%   { opacity: 0; transform: translate(-50%, -50%) rotate(-45deg) scale(0.6); }
-      15%  { opacity: 1; transform: translate(-50%, -50%) rotate(-45deg) scale(1.1); }
-      25%  { transform: translate(-50%, -50%) rotate(-45deg) scale(1.0); }
-      100% { opacity: 0; transform: translate(-50%, -130%) rotate(-45deg) scale(0.95); }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function ensureHitsplatLayer() {
-  if (hitsplatLayerEl) return hitsplatLayerEl;
-  const parent = document.getElementById('worldScreen') || document.body;
-  hitsplatLayerEl = document.createElement('div');
-  hitsplatLayerEl.className = 'osrs-hitsplat-layer';
-  parent.appendChild(hitsplatLayerEl);
-  return hitsplatLayerEl;
-}
-
-function closeActionMenu() {
-  if (!actionMenuEl) return;
-  actionMenuEl.remove();
-  actionMenuEl = null;
-}
-
-/**
- * Abre el menú contextual en la posición (cx, cy). Detecta qué hay
- * debajo del tap (NPC, suelo) y muestra acciones apropiadas. Si no
- * hay nada interesante (suelo + nada), no abre nada.
- */
-function openActionMenuAt(cx, cy) {
-  closeActionMenu();
-  ensureActionMenuCss();
-
-  // ¿Hay un NPC bajo / cerca del tap?
-  const rect = canvas.getBoundingClientRect();
-  const nx = ((cx - rect.left) / rect.width) * 2 - 1;
-  const ny = -((cy - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera({ x: nx, y: ny }, camera);
-  const npc = findNpcNearTap(cx, cy);
-
-  if (!npc) {
-    // Tap-largo en suelo: no abrimos menú. (Podríamos meter "Caminar aquí"
-    // / "Examinar suelo" pero suma ruido sin valor en alpha.)
-    return;
-  }
-
-  // Construye el menú
-  const menu = document.createElement('div');
-  menu.className = 'osrs-action-menu';
-  menu.innerHTML = `
-    <div class="osrs-action-menu-header">${escapeHtmlSafe(npc.name)}</div>
-    <div class="osrs-action-row" data-act="attack">⚔ Atacar</div>
-    <div class="osrs-action-row" data-act="examine">🔍 Examinar</div>
-    <div class="osrs-action-row danger" data-act="cancel">✕ Cancelar</div>
-  `;
-
-  // Posicionado clamp-to-viewport
-  document.body.appendChild(menu);
-  const mw = menu.offsetWidth;
-  const mh = menu.offsetHeight;
-  let left = cx + 8;
-  let top = cy + 8;
-  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
-  if (top + mh > window.innerHeight - 4) top = cy - mh - 8;
-  if (top < 4) top = 4;
-  menu.style.left = left + 'px';
-  menu.style.top  = top + 'px';
-  actionMenuEl = menu;
-
-  menu.querySelectorAll('[data-act]').forEach(row => {
-    row.addEventListener('pointerup', ev => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const act = row.getAttribute('data-act');
-      closeActionMenu();
-      if (act === 'attack')        triggerNpcTap(npc.id);
-      else if (act === 'examine')  examineNpc(npc);
-      // 'cancel' no hace nada — solo cierra.
-    });
-  });
-
-  // Auto-close en 5s si el user no toca nada
-  setTimeout(() => { if (actionMenuEl === menu) closeActionMenu(); }, 5000);
-}
-
-function examineNpc(npc) {
-  // Por ahora un mensaje al feed con stats del NPC. Más adelante
-  // se puede meter un modal bonito.
-  const msg = `${npc.name} — nivel ${npc.attack_lvl}, ${npc.max_hp} HP.`;
-  combat.feedLog?.('info', msg);
-}
-
-function escapeHtmlSafe(s) {
-  if (s == null) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/**
- * Pinta un hitsplat OSRS sobre la cabeza del NPC.
- *   damage > 0 → gota roja con el número
- *   damage === 0 → escudo azul con "0"
- * Lo llama combat.js (via window.__worldSpawnHitsplat).
- */
-function spawnHitsplatOnNpc(npcId, damage) {
-  const group = npcMeshes.get(npcId);
-  if (!group) return;
-  ensureActionMenuCss();
-  const layer = ensureHitsplatLayer();
-
-  // Proyectar la cabeza del NPC a screen-space
-  const npc = npcDataList.find(n => n.id === npcId);
-  const targetH = npc ? (NPC_TARGET_HEIGHTS[npc.def_id] || 1.0) : 1.0;
-  const v = new THREE.Vector3(group.position.x, group.position.y + targetH * 0.85, group.position.z);
-  v.project(camera);
-  if (v.z > 1 || v.z < -1) return;  // detrás de cámara
-  const rect = canvas.getBoundingClientRect();
-  const sx = (v.x * 0.5 + 0.5) * rect.width;
-  const sy = (-v.y * 0.5 + 0.5) * rect.height;
-
-  // Jitter horizontal pequeño para que splats apilados no se solapen
-  const jitter = (Math.random() - 0.5) * 22;
-
-  const splat = document.createElement('div');
-  if (damage > 0) {
-    splat.className = 'osrs-hitsplat dmg';
-    splat.innerHTML = `<span>${damage}</span>`;
-  } else {
-    splat.className = 'osrs-hitsplat miss';
-    splat.textContent = '0';
-  }
-  splat.style.left = (sx + jitter) + 'px';
-  splat.style.top  = sy + 'px';
-  layer.appendChild(splat);
-  setTimeout(() => splat.remove(), 950);
-}
-
-if (typeof window !== 'undefined') {
-  window.__worldSpawnHitsplat = spawnHitsplatOnNpc;
-}
 
 function setPlayerTarget(x, z) {
   x = Math.max(-WORLD_HALF + 2, Math.min(WORLD_HALF - 2, x));
@@ -1834,9 +1066,7 @@ function animate() {
   }
   updateNameTag();
   updateRegionTracking();
-  updateNpcPatrol(dt);
-  updateNpcHpBars();
-  updateNpcPolling(dt);
+  npcRenderer.update(dt);
   multiplayer.update(dt);
   groundItems.update(dt);
   drawMinimap();
@@ -1873,7 +1103,7 @@ function updatePlayer(dt) {
 
   if (joyState.active && (Math.abs(joyState.x) > 0.15 || Math.abs(joyState.y) > 0.15)) {
     // User mueve con joystick → cancela cualquier auto-engage pendiente
-    if (pendingEngageNpcId !== null) pendingEngageNpcId = null;
+    npcRenderer.cancelAutoEngage();
     const len = Math.hypot(joyState.x, joyState.y);
     const speedScale = Math.min(1, len);
     const camForwardX = -Math.sin(cameraYaw);
@@ -1941,7 +1171,7 @@ function updatePlayer(dt) {
   // ============================================================
   let facingLockedToNpc = false;
   if (combatTargetNpcId !== null) {
-    const mesh = npcMeshes.get(combatTargetNpcId);
+    const mesh = npcRenderer.getNpcMeshes().get(combatTargetNpcId);
     if (mesh) {
       const tx = mesh.position.x - player.position.x;
       const tz = mesh.position.z - player.position.z;
@@ -1985,33 +1215,20 @@ function updatePlayer(dt) {
     }
   }
 
-  // Auto-engage cuando llegamos cerca de un NPC marcado como pending,
-  // y persigue al NPC si se mueve (actualiza el target con su posición actual)
-  if (pendingEngageNpcId !== null) {
-    const npc = npcDataList.find(n => n.id === pendingEngageNpcId);
-    if (npc) {
-      // Misma corrección que triggerNpcTap: usar pos visual del mesh.
-      const mesh = npcMeshes.get(pendingEngageNpcId);
-      const tx = mesh ? mesh.position.x : npc.x;
-      const tz = mesh ? mesh.position.z : npc.z;
-      const dx = tx - player.position.x;
-      const dz = tz - player.position.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist <= NPC_ENGAGE_RANGE) {
-        const id = pendingEngageNpcId;
-        pendingEngageNpcId = null;
-        playerTarget = null;
-        marker.visible = false;
-        combat.engageNpc(id);
-      } else if (playerTarget) {
-        // Persigue al NPC visual: actualiza el target a su pos orbitando
-        playerTarget.x = tx;
-        playerTarget.z = tz;
-        marker.position.set(tx, 0.05, tz);
+  // Auto-engage: npcRenderer mantiene el pending NPC y comprueba proximidad.
+  // World reacciona al resultado actualizando playerTarget/marker.
+  const ae = npcRenderer.tickAutoEngage(player.position.x, player.position.z);
+  if (ae) {
+    if (ae.reached) {
+      playerTarget = null;
+      if (marker) marker.visible = false;
+    } else if (ae.chasing) {
+      // Persigue al NPC visual: actualiza target a su pos orbitando
+      if (playerTarget) {
+        playerTarget.x = ae.targetX;
+        playerTarget.z = ae.targetZ;
       }
-    } else {
-      // NPC ya no existe (murió o se fue de rango). Cancelar.
-      pendingEngageNpcId = null;
+      if (marker) marker.position.set(ae.targetX, 0.05, ae.targetZ);
     }
   }
 }

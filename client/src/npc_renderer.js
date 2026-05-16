@@ -1,0 +1,833 @@
+/**
+ * SebasPresent — NPC Renderer module (Sesión 6 refactor)
+ *
+ * Todo lo relacionado con NPCs:
+ *   - Carga de GLBs por tipo (chicken, cow, goblin...) con placeholder fallback.
+ *   - Mesh creation por NPC con HP bar billboard + materiales propios.
+ *   - Patrol procedural (cada NPC orbita su spawn point).
+ *   - Hit reaction (kick + flash rojo emissive) al recibir golpe del player.
+ *   - HP bars 2D que miran a cámara.
+ *   - Tap (raycast + screen-space proximity) y long-press (menú acciones).
+ *   - Auto-engage: caminar hacia un NPC tapeado lejos y enganchar al llegar.
+ *   - Hitsplats DOM (gota roja con daño / escudo azul con miss).
+ *   - Polling periódico al server para refrescar NPCs vía combat.refresh().
+ *
+ * Cómo se usa desde world.js:
+ *
+ *   import * as npcRenderer from './npc_renderer.js';
+ *
+ *   await npcRenderer.start({
+ *     scene, camera, canvas,
+ *     getPlayer:         () => player,
+ *     setPlayerTarget:   (x, z) => setPlayerTarget(x, z),
+ *     clearPlayerTarget: () => { playerTarget = null; marker.visible = false; },
+ *     feedLog:           (type, msg) => combat.feedLog?.(type, msg),
+ *   });
+ *
+ *   // En animate():
+ *   npcRenderer.update(dt);
+ *
+ *   // En doCanvasTap (tap simple, antes que otros handlers):
+ *   if (npcRenderer.tryHandleTap(clientX, clientY)) return;
+ *
+ *   // En long-press handler:
+ *   npcRenderer.openActionMenuAt(clientX, clientY);
+ *
+ *   // En updatePlayer, cuando se mueve el joystick (cancela engage pendiente):
+ *   npcRenderer.cancelAutoEngage();
+ *
+ *   // En updatePlayer, proximity check del auto-engage cada frame:
+ *   const r = npcRenderer.tickAutoEngage(player.position.x, player.position.z);
+ *   if (r?.reached)       { playerTarget = null; marker.visible = false; }
+ *   else if (r?.chasing)  {
+ *     if (playerTarget) { playerTarget.x = r.targetX; playerTarget.z = r.targetZ; }
+ *     marker.position.set(r.targetX, 0.05, r.targetZ);
+ *   }
+ *
+ *   // En drawMinimap, para puntos blancos de NPCs:
+ *   for (const npc of npcRenderer.getNpcDataList()) { ... }
+ *
+ *   npcRenderer.stop();
+ */
+
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as combat from './combat.js';
+import { bakeGlbModel } from './terrain.js';
+
+const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
+
+// ============================================================
+// Datos NPC (catalogación por tipo)
+// ============================================================
+const NPC_GLB_URLS = {
+  chicken: `${R2_BASE}/npcs/chicken.glb`,
+  cow:     `${R2_BASE}/npcs/cow.glb`,
+  goblin:  `${R2_BASE}/npcs/goblin.glb`,
+};
+
+const NPC_FALLBACK_COLORS = {
+  chicken: 0xffffff,
+  cow:     0xeae0c8,
+  goblin:  0x4a8030,
+  wolf:    0x808080,
+};
+
+export const NPC_TARGET_HEIGHTS = {
+  chicken: 1.0,
+  cow:     1.4,
+  goblin:  1.6,
+  wolf:    1.0,
+};
+
+const NPC_GLB_FORCE_NO_ZUP = { cow: true };
+const NPC_GLB_FORCE_ZUP = {};
+const NPC_GLB_FORCE_ZUP_INVERT = {};
+
+// ============================================================
+// Constantes de comportamiento
+// ============================================================
+const NPC_PATROL_RADIUS    = 3.0;
+const NPC_PATROL_SPEED_RPS = 0.18;
+const NPC_PATROL_BOB_AMP   = 0.04;
+const NPC_PATROL_BOB_HZ    = 1.8;
+
+const NPC_REACT_DURATION_S = 0.18;
+const NPC_REACT_KICK_DIST  = 0.35;
+
+const NPC_POLL_INTERVAL_MS = 5000;
+const NPC_RENDER_RADIUS    = 100;
+export const NPC_MINIMAP_RADIUS = 500;
+const NPC_ENGAGE_RANGE     = 1.4;
+const NPC_TAP_SCREEN_PX    = 56;
+
+// ============================================================
+// Estado del módulo (privado)
+// ============================================================
+let scene = null;
+let camera = null;
+let canvas = null;
+let raycaster = null;
+
+let getPlayer = null;
+let setPlayerTargetCb = null;
+let clearPlayerTargetCb = null;
+let feedLog = null;
+
+let NPC_GEOMS = null;
+const npcMeshes = new Map();
+let npcDataList = [];
+let npcPollTimer = 0;
+let combatUnsubscribe = null;
+let pendingEngageNpcId = null;
+
+let actionMenuEl = null;
+let hitsplatLayerEl = null;
+let cssInjectedActionMenu = false;
+
+let started = false;
+
+// ============================================================
+// API pública — lifecycle
+// ============================================================
+export async function start(opts) {
+  if (started) {
+    console.warn('[npc_renderer] start() llamado dos veces sin stop()');
+    stop();
+  }
+  scene              = opts.scene;
+  camera             = opts.camera;
+  canvas             = opts.canvas;
+  getPlayer          = opts.getPlayer;
+  setPlayerTargetCb  = opts.setPlayerTarget    || (() => {});
+  clearPlayerTargetCb= opts.clearPlayerTarget  || (() => {});
+  feedLog            = opts.feedLog            || (() => {});
+
+  raycaster = new THREE.Raycaster();
+  npcPollTimer = 0;
+  pendingEngageNpcId = null;
+  npcDataList = [];
+
+  await loadGLBs();
+
+  combatUnsubscribe = combat.onUpdate(({ npcs }) => {
+    if (!Array.isArray(npcs)) return;
+    npcDataList = npcs;
+    syncMeshes();
+  });
+  combat.refresh().catch(e => console.warn('[npc_renderer] combat refresh:', e));
+
+  // Hooks globales para que combat.js dispare efectos visuales sin tener que
+  // importarnos directamente (evita circular imports).
+  if (typeof window !== 'undefined') {
+    window.__worldFlashNpcHit = flashHit;
+    window.__worldSpawnHitsplat = spawnHitsplat;
+  }
+
+  started = true;
+}
+
+export function stop() {
+  if (!started) return;
+  if (combatUnsubscribe) { combatUnsubscribe(); combatUnsubscribe = null; }
+  for (const m of npcMeshes.values()) {
+    if (m.parent) m.parent.remove(m);
+    m.traverse?.(obj => {
+      if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
+      if (obj.material && !obj.userData?.shared) {
+        if (Array.isArray(obj.material)) obj.material.forEach(mm => mm.dispose());
+        else obj.material.dispose();
+      }
+    });
+  }
+  npcMeshes.clear();
+  npcDataList = [];
+  npcPollTimer = 0;
+  pendingEngageNpcId = null;
+
+  if (NPC_GEOMS) {
+    for (const n of Object.values(NPC_GEOMS)) {
+      if (n.glbParts) for (const p of n.glbParts) { p.geometry?.dispose(); p.material?.dispose(); }
+    }
+    NPC_GEOMS = null;
+  }
+
+  closeActionMenu();
+  if (hitsplatLayerEl) { hitsplatLayerEl.remove(); hitsplatLayerEl = null; }
+
+  if (typeof window !== 'undefined') {
+    if (window.__worldFlashNpcHit === flashHit) delete window.__worldFlashNpcHit;
+    if (window.__worldSpawnHitsplat === spawnHitsplat) delete window.__worldSpawnHitsplat;
+  }
+
+  scene = camera = canvas = raycaster = null;
+  getPlayer = setPlayerTargetCb = clearPlayerTargetCb = feedLog = null;
+  started = false;
+}
+
+export function update(dt) {
+  if (!started) return;
+  updatePatrol(dt);
+  updateHpBars();
+  updatePolling(dt);
+}
+
+// ============================================================
+// API pública — queries para minimap
+// ============================================================
+export function getNpcDataList() { return npcDataList; }
+export function getNpcMeshes() { return npcMeshes; }
+
+// ============================================================
+// API pública — tap handling
+// ============================================================
+/**
+ * Tap simple. Devuelve true si era un NPC y se gestionó (auto-walk + engage
+ * o engage directo), false si no había NPC bajo el tap.
+ */
+export function tryHandleTap(clientX, clientY) {
+  if (!started) return false;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera({ x: nx, y: ny }, camera);
+
+  const npc = findNpcNearTap(clientX, clientY);
+  if (!npc) return false;
+  triggerNpcTap(npc.id);
+  return true;
+}
+
+/**
+ * Long-press: abrir menú contextual. Si no hay NPC bajo el tap, no abre.
+ * Devuelve true si abrió menú.
+ */
+export function openActionMenuAt(cx, cy) {
+  if (!started) return false;
+  closeActionMenu();
+  ensureActionMenuCss();
+
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((cx - rect.left) / rect.width) * 2 - 1;
+  const ny = -((cy - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera({ x: nx, y: ny }, camera);
+  const npc = findNpcNearTap(cx, cy);
+  if (!npc) return false;
+
+  const menu = document.createElement('div');
+  menu.className = 'osrs-action-menu';
+  menu.innerHTML = `
+    <div class="osrs-action-menu-header">${escapeHtmlSafe(npc.name)}</div>
+    <div class="osrs-action-row" data-act="attack">⚔ Atacar</div>
+    <div class="osrs-action-row" data-act="examine">🔍 Examinar</div>
+    <div class="osrs-action-row danger" data-act="cancel">✕ Cancelar</div>
+  `;
+  document.body.appendChild(menu);
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  let left = cx + 8;
+  let top = cy + 8;
+  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+  if (top + mh > window.innerHeight - 4) top = cy - mh - 8;
+  if (top < 4) top = 4;
+  menu.style.left = left + 'px';
+  menu.style.top  = top + 'px';
+  actionMenuEl = menu;
+
+  menu.querySelectorAll('[data-act]').forEach(row => {
+    row.addEventListener('pointerup', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const act = row.getAttribute('data-act');
+      closeActionMenu();
+      if (act === 'attack')        triggerNpcTap(npc.id);
+      else if (act === 'examine')  examineNpc(npc);
+    });
+  });
+
+  setTimeout(() => { if (actionMenuEl === menu) closeActionMenu(); }, 5000);
+  return true;
+}
+
+// ============================================================
+// API pública — auto-engage (proximity check + cancel)
+// ============================================================
+/**
+ * Llamar cada frame desde updatePlayer. Devuelve null si no hay engage
+ * pendiente, o un objeto:
+ *   { reached: true }                       → llegamos, cancela target en world
+ *   { chasing: true, targetX, targetZ }     → seguimos persiguiendo
+ */
+export function tickAutoEngage(playerX, playerZ) {
+  if (!started || pendingEngageNpcId === null) return null;
+  const npc = npcDataList.find(n => n.id === pendingEngageNpcId);
+  if (!npc) {
+    pendingEngageNpcId = null;
+    return null;
+  }
+  const mesh = npcMeshes.get(pendingEngageNpcId);
+  const tx = mesh ? mesh.position.x : npc.x;
+  const tz = mesh ? mesh.position.z : npc.z;
+  const dx = tx - playerX;
+  const dz = tz - playerZ;
+  if (Math.hypot(dx, dz) <= NPC_ENGAGE_RANGE) {
+    const id = pendingEngageNpcId;
+    pendingEngageNpcId = null;
+    combat.engageNpc(id);
+    return { reached: true };
+  }
+  return { chasing: true, targetX: tx, targetZ: tz };
+}
+
+/**
+ * Cancela el engage pendiente (típicamente cuando user mueve joystick).
+ */
+export function cancelAutoEngage() {
+  pendingEngageNpcId = null;
+}
+
+// ============================================================
+// Carga GLB
+// ============================================================
+async function loadGLBs() {
+  NPC_GEOMS = {};
+  const entries = Object.entries(NPC_GLB_URLS);
+  const loader = new GLTFLoader();
+  await Promise.all(entries.map(async ([typeId, url]) => {
+    try {
+      const gltf = await loader.loadAsync(url);
+      const baked = bakeGlbModel(
+        gltf.scene,
+        NPC_TARGET_HEIGHTS[typeId] || 1.0,
+        NPC_FALLBACK_COLORS[typeId] || 0x808080,
+        !!NPC_GLB_FORCE_ZUP[typeId],
+        !!NPC_GLB_FORCE_ZUP_INVERT[typeId],
+        !!NPC_GLB_FORCE_NO_ZUP[typeId],
+      );
+      if (!baked) return;
+      NPC_GEOMS[typeId] = { id: typeId, glbParts: baked.parts };
+      console.log(`Loaded NPC '${typeId}' — scaleFactor=${baked.scaleFactor.toFixed(4)} target=${NPC_TARGET_HEIGHTS[typeId] || 1.0}m`);
+    } catch (err) {
+      console.warn(`NPC '${typeId}' load failed, will use placeholder:`, err.message);
+    }
+  }));
+}
+
+// ============================================================
+// Sync mesh ↔ data list
+// ============================================================
+function syncMeshes() {
+  const player = getPlayer?.();
+  if (!scene || !player) return;
+  const px = player.position.x;
+  const pz = player.position.z;
+  const aliveIds = new Set();
+
+  for (const npc of npcDataList) {
+    const dx = npc.x - px;
+    const dz = npc.z - pz;
+    if (dx * dx + dz * dz > NPC_RENDER_RADIUS * NPC_RENDER_RADIUS) continue;
+    aliveIds.add(npc.id);
+
+    let mesh = npcMeshes.get(npc.id);
+    if (!mesh) {
+      mesh = createMesh(npc);
+      if (!mesh) continue;
+      scene.add(mesh);
+      npcMeshes.set(npc.id, mesh);
+    }
+    // Server pos = patrol CENTER. Solo re-anclamos si reportó cambio grande
+    // (>2m): respawn o reposicionamiento real.
+    const pp = mesh.userData.patrol;
+    if (pp) {
+      const ddx = npc.x - pp.centerX;
+      const ddz = npc.z - pp.centerZ;
+      if (ddx*ddx + ddz*ddz > 4.0) {
+        pp.centerX = npc.x;
+        pp.centerZ = npc.z;
+      }
+    }
+    updateHpBar(mesh, npc.hp_current, npc.max_hp);
+    mesh.userData.npc = npc;
+  }
+
+  for (const [id, mesh] of npcMeshes.entries()) {
+    if (!aliveIds.has(id)) {
+      scene.remove(mesh);
+      mesh.traverse?.(obj => {
+        if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
+        if (obj.material && !obj.userData?.shared) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+          else obj.material.dispose();
+        }
+      });
+      npcMeshes.delete(id);
+    }
+  }
+}
+
+function createMesh(npc) {
+  const typeId = npc.def_id;
+  const group = new THREE.Group();
+  group.position.set(npc.x, 0, npc.z);
+  group.userData = {
+    kind: 'npc',
+    npc,
+    patrol: {
+      centerX: npc.x,
+      centerZ: npc.z,
+      angle:   Math.random() * Math.PI * 2,
+      bobT:    Math.random() * Math.PI * 2,
+    },
+    reaction: { until: 0, kickX: 0, kickZ: 0 },
+    bodyMaterials: [],
+  };
+
+  const glb = NPC_GEOMS && NPC_GEOMS[typeId];
+  if (glb && glb.glbParts) {
+    for (const part of glb.glbParts) {
+      // Material propio por NPC para flashear independientemente.
+      // Geometría sí compartida.
+      const ownMat = part.material.clone();
+      ownMat.userData = { baseColor: ownMat.color.clone() };
+      const mesh = new THREE.Mesh(part.geometry, ownMat);
+      mesh.userData = { kind: 'npc-body', npcId: npc.id, shared: true };
+      group.add(mesh);
+      group.userData.bodyMaterials.push(ownMat);
+    }
+  } else {
+    const h = NPC_TARGET_HEIGHTS[typeId] || 1.0;
+    const color = NPC_FALLBACK_COLORS[typeId] || 0x808080;
+    const geom = new THREE.BoxGeometry(h * 0.7, h, h * 0.7);
+    geom.translate(0, h / 2, 0);
+    const mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
+    mat.userData = { baseColor: mat.color.clone() };
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.userData = { kind: 'npc-body', npcId: npc.id };
+    group.add(mesh);
+    group.userData.bodyMaterials.push(mat);
+  }
+
+  const hpBar = createHpBar(npc.hp_current, npc.max_hp, NPC_TARGET_HEIGHTS[typeId] || 1.0);
+  group.add(hpBar);
+  group.userData.hpBar = hpBar;
+  return group;
+}
+
+function createHpBar(cur, max, npcHeight) {
+  const W = 1.0;
+  const H = 0.12;
+  const group = new THREE.Group();
+  group.position.y = (npcHeight || 1.0) + 0.4;
+  const bgMat = new THREE.MeshBasicMaterial({ color: 0x202020, depthTest: false, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  const bg = new THREE.Mesh(new THREE.PlaneGeometry(W, H), bgMat);
+  bg.renderOrder = 999;
+  group.add(bg);
+  const ratio = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
+  const fillMat = new THREE.MeshBasicMaterial({ color: 0xc02020, depthTest: false, side: THREE.DoubleSide });
+  const fill = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(0.001, W * ratio), H * 0.85), fillMat);
+  fill.position.x = -W * (1 - ratio) / 2;
+  fill.position.z = 0.001;
+  fill.renderOrder = 1000;
+  group.add(fill);
+  group.userData.hpBar = { bg, fill, W, H, cur, max };
+  return group;
+}
+
+// ============================================================
+// Patrol + hit reaction
+// ============================================================
+function updatePatrol(dt) {
+  if (!scene) return;
+  let engagedId = null;
+  try {
+    const snap = combat.getStateSnapshot?.();
+    engagedId = snap ? snap.currentTarget : null;
+  } catch {}
+
+  const now = performance.now() / 1000;
+
+  for (const [npcId, group] of npcMeshes) {
+    const ud = group.userData;
+    if (!ud) continue;
+
+    const p = ud.patrol;
+    if (p) {
+      let baseX = p.centerX;
+      let baseZ = p.centerZ;
+      let baseY = 0;
+
+      if (npcId !== engagedId) {
+        p.angle += NPC_PATROL_SPEED_RPS * dt;
+        p.bobT  += NPC_PATROL_BOB_HZ * Math.PI * 2 * dt;
+        const dx = Math.cos(p.angle) * NPC_PATROL_RADIUS;
+        const dz = Math.sin(p.angle) * NPC_PATROL_RADIUS;
+        baseX += dx;
+        baseZ += dz;
+        baseY  = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
+        const tx = -Math.sin(p.angle);
+        const tz =  Math.cos(p.angle);
+        group.rotation.y = Math.atan2(tx, tz);
+      }
+
+      const r = ud.reaction;
+      let kickX = 0, kickZ = 0;
+      if (r && r.until > now) {
+        const remaining = (r.until - now) / NPC_REACT_DURATION_S;
+        kickX = r.kickX * remaining;
+        kickZ = r.kickZ * remaining;
+      }
+
+      group.position.set(baseX + kickX, baseY, baseZ + kickZ);
+    }
+
+    // Flash rojo via emissive (no .color, para no machacar texturas/base)
+    if (ud.bodyMaterials && ud.bodyMaterials.length) {
+      const r = ud.reaction;
+      if (r && r.until > now) {
+        const intensity = (r.until - now) / NPC_REACT_DURATION_S;
+        for (const m of ud.bodyMaterials) {
+          if (m && m.emissive) m.emissive.setRGB(intensity * 0.8, 0, 0);
+        }
+      } else if (ud.reaction && ud.reaction.wasFlashing) {
+        for (const m of ud.bodyMaterials) {
+          if (m && m.emissive) m.emissive.setRGB(0, 0, 0);
+        }
+        ud.reaction.wasFlashing = false;
+      }
+    }
+  }
+}
+
+function flashHit(npcId) {
+  const group = npcMeshes.get(npcId);
+  if (!group || !group.userData) return;
+  const player = getPlayer?.();
+  if (!player) return;
+  const pp = group.userData.patrol;
+  const cx = pp ? pp.centerX : group.position.x;
+  const cz = pp ? pp.centerZ : group.position.z;
+  let dx = cx - player.position.x;
+  let dz = cz - player.position.z;
+  const len = Math.hypot(dx, dz);
+  if (len > 0.001) { dx /= len; dz /= len; }
+  else { dx = 0; dz = 1; }
+  const r = group.userData.reaction;
+  r.until = (performance.now() / 1000) + NPC_REACT_DURATION_S;
+  r.kickX = dx * NPC_REACT_KICK_DIST;
+  r.kickZ = dz * NPC_REACT_KICK_DIST;
+  r.wasFlashing = true;
+}
+
+function updateHpBar(npcMesh, cur, max) {
+  const hpBarGroup = npcMesh.userData.hpBar;
+  if (!hpBarGroup || !hpBarGroup.userData?.hpBar) return;
+  const data = hpBarGroup.userData.hpBar;
+  if (data.cur === cur && data.max === max) return;
+  data.cur = cur;
+  data.max = max;
+  const ratio = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
+  data.fill.geometry.dispose();
+  data.fill.geometry = new THREE.PlaneGeometry(Math.max(0.001, data.W * ratio), data.H * 0.85);
+  data.fill.position.x = -data.W * (1 - ratio) / 2;
+}
+
+function updateHpBars() {
+  if (!camera) return;
+  // HP bar mira a cámara: usar world quaternion de la cámara, descontar el
+  // world quaternion del padre (NPC group rota con patrol).
+  const tmpParentQ = new THREE.Quaternion();
+  const tmpCamQ = new THREE.Quaternion();
+  const tmpResultQ = new THREE.Quaternion();
+  camera.getWorldQuaternion(tmpCamQ);
+  for (const mesh of npcMeshes.values()) {
+    const bar = mesh.userData.hpBar;
+    if (!bar || !bar.parent) continue;
+    bar.parent.getWorldQuaternion(tmpParentQ);
+    tmpParentQ.invert();
+    tmpResultQ.multiplyQuaternions(tmpParentQ, tmpCamQ);
+    bar.quaternion.copy(tmpResultQ);
+  }
+}
+
+function updatePolling(dt) {
+  npcPollTimer += dt * 1000;
+  if (npcPollTimer < NPC_POLL_INTERVAL_MS) return;
+  npcPollTimer = 0;
+  combat.refresh().catch(() => {});
+}
+
+// ============================================================
+// Tap detection
+// ============================================================
+function findNpcNearTap(clientX, clientY) {
+  // Paso 1: raycast clásico
+  const npcMeshList = [];
+  for (const group of npcMeshes.values()) {
+    group.traverse(obj => { if (obj.userData?.kind === 'npc-body') npcMeshList.push(obj); });
+  }
+  if (npcMeshList.length > 0) {
+    const npcHits = raycaster.intersectObjects(npcMeshList, false);
+    if (npcHits.length > 0) {
+      const npcId = npcHits[0].object.userData.npcId;
+      const npc = npcDataList.find(n => n.id === npcId);
+      if (npc) return npc;
+    }
+  }
+  // Paso 2: proximidad screen-space dentro de NPC_TAP_SCREEN_PX
+  const rect = canvas.getBoundingClientRect();
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const tmpV = new THREE.Vector3();
+  let best = null;
+  let bestDist = NPC_TAP_SCREEN_PX;
+  for (const [npcId, group] of npcMeshes) {
+    const npcData = npcDataList.find(n => n.id === npcId);
+    if (!npcData) continue;
+    const targetH = NPC_TARGET_HEIGHTS[npcData.def_id] || 1.0;
+    tmpV.set(group.position.x, group.position.y + targetH * 0.5, group.position.z);
+    tmpV.project(camera);
+    if (tmpV.z > 1 || tmpV.z < -1) continue;
+    const sx = (tmpV.x * 0.5 + 0.5) * rect.width;
+    const sy = (-tmpV.y * 0.5 + 0.5) * rect.height;
+    const d = Math.hypot(sx - localX, sy - localY);
+    if (d < bestDist) { bestDist = d; best = npcData; }
+  }
+  return best;
+}
+
+/**
+ * Si estás cerca → engage directo, si lejos → auto-walk hasta llegar y
+ * enganchar (vía tickAutoEngage en el animate loop).
+ */
+function triggerNpcTap(npcId) {
+  const npc = npcDataList.find(n => n.id === npcId);
+  if (!npc) return;
+  const player = getPlayer?.();
+  if (!player) return;
+  // Usar posición VISUAL del NPC (orbitando), no npc.x/z (centro del server).
+  const mesh = npcMeshes.get(npcId);
+  const targetX = mesh ? mesh.position.x : npc.x;
+  const targetZ = mesh ? mesh.position.z : npc.z;
+  const dx = targetX - player.position.x;
+  const dz = targetZ - player.position.z;
+  const dist = Math.hypot(dx, dz);
+  pendingEngageNpcId = npcId;
+  if (dist <= NPC_ENGAGE_RANGE) {
+    pendingEngageNpcId = null;
+    combat.engageNpc(npcId);
+  } else {
+    setPlayerTargetCb(targetX, targetZ);
+    feedLog('info', `Vas hacia ${npc.name}...`);
+  }
+}
+
+// ============================================================
+// Action menu (long-press) + Examine
+// ============================================================
+export function closeActionMenu() {
+  if (!actionMenuEl) return;
+  actionMenuEl.remove();
+  actionMenuEl = null;
+}
+
+function examineNpc(npc) {
+  feedLog('info', `${npc.name} — nivel ${npc.attack_lvl}, ${npc.max_hp} HP.`);
+}
+
+function escapeHtmlSafe(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================
+// Hitsplats DOM
+// ============================================================
+function spawnHitsplat(npcId, damage) {
+  const group = npcMeshes.get(npcId);
+  if (!group) return;
+  ensureActionMenuCss();
+  const layer = ensureHitsplatLayer();
+
+  const npc = npcDataList.find(n => n.id === npcId);
+  const targetH = npc ? (NPC_TARGET_HEIGHTS[npc.def_id] || 1.0) : 1.0;
+  const v = new THREE.Vector3(group.position.x, group.position.y + targetH * 0.85, group.position.z);
+  v.project(camera);
+  if (v.z > 1 || v.z < -1) return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = (v.x * 0.5 + 0.5) * rect.width;
+  const sy = (-v.y * 0.5 + 0.5) * rect.height;
+  const jitter = (Math.random() - 0.5) * 22;
+
+  const splat = document.createElement('div');
+  if (damage > 0) {
+    splat.className = 'osrs-hitsplat dmg';
+    splat.innerHTML = `<span>${damage}</span>`;
+  } else {
+    splat.className = 'osrs-hitsplat miss';
+    splat.textContent = '0';
+  }
+  splat.style.left = (sx + jitter) + 'px';
+  splat.style.top  = sy + 'px';
+  layer.appendChild(splat);
+  setTimeout(() => splat.remove(), 950);
+}
+
+function ensureHitsplatLayer() {
+  if (hitsplatLayerEl) return hitsplatLayerEl;
+  const parent = document.getElementById('worldScreen') || document.body;
+  hitsplatLayerEl = document.createElement('div');
+  hitsplatLayerEl.className = 'osrs-hitsplat-layer';
+  parent.appendChild(hitsplatLayerEl);
+  return hitsplatLayerEl;
+}
+
+// ============================================================
+// CSS (action menu + hitsplats)
+// ============================================================
+function ensureActionMenuCss() {
+  if (cssInjectedActionMenu) return;
+  cssInjectedActionMenu = true;
+  const style = document.createElement('style');
+  style.id = 'osrs-action-menu-css';
+  style.textContent = `
+    .osrs-action-menu {
+      position: fixed;
+      z-index: 200;
+      min-width: 160px;
+      background: rgba(20, 14, 8, 0.97);
+      border: 2px solid #c8a043;
+      border-radius: 4px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.75);
+      padding: 4px;
+      font-family: 'IM Fell English', serif;
+      user-select: none;
+      -webkit-user-select: none;
+      animation: osrsMenuFadeIn 0.12s ease-out;
+    }
+    @keyframes osrsMenuFadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .osrs-action-menu-header {
+      padding: 4px 10px 6px 10px;
+      font-family: 'Cinzel', serif;
+      font-weight: 700;
+      font-size: 12px;
+      color: #e8c560;
+      text-shadow: 1px 1px 0 #000;
+      border-bottom: 1px solid rgba(200,160,67,0.3);
+      margin-bottom: 4px;
+    }
+    .osrs-action-row {
+      padding: 8px 12px;
+      font-size: 14px;
+      color: #f0e0b0;
+      cursor: pointer;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-shadow: 1px 1px 0 #000;
+    }
+    .osrs-action-row:active {
+      background: rgba(200,160,67,0.25);
+      color: #fff;
+    }
+    .osrs-action-row.danger { color: #ff9090; }
+    .osrs-action-row.danger:active { background: rgba(180,40,40,0.35); }
+
+    /* Hitsplats */
+    .osrs-hitsplat-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: visible;
+      z-index: 50;
+    }
+    .osrs-hitsplat {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'IM Fell English', serif;
+      font-weight: bold;
+      font-size: 13px;
+      color: #fff;
+      text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+      transform: translate(-50%, -50%);
+      animation: osrsHitsplatFly 0.9s ease-out forwards;
+    }
+    .osrs-hitsplat.dmg {
+      background: radial-gradient(ellipse at 35% 35%, #c83030, #800000 70%);
+      border: 1.5px solid #200000;
+      border-radius: 50% 50% 50% 0;
+      transform-origin: center;
+      transform: translate(-50%, -50%) rotate(-45deg);
+    }
+    .osrs-hitsplat.dmg span { transform: rotate(45deg); display:block; }
+    .osrs-hitsplat.miss {
+      background: radial-gradient(ellipse at 35% 35%, #4080d0, #1a3870 70%);
+      border: 1.5px solid #001030;
+      border-radius: 50% 50% 35% 35% / 50% 50% 65% 65%;
+    }
+    @keyframes osrsHitsplatFly {
+      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+      15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+      25%  { transform: translate(-50%, -50%) scale(1.0); }
+      100% { opacity: 0; transform: translate(-50%, -130%) scale(0.95); }
+    }
+    .osrs-hitsplat.dmg {
+      animation: osrsHitsplatFlyDrop 0.9s ease-out forwards;
+    }
+    @keyframes osrsHitsplatFlyDrop {
+      0%   { opacity: 0; transform: translate(-50%, -50%) rotate(-45deg) scale(0.6); }
+      15%  { opacity: 1; transform: translate(-50%, -50%) rotate(-45deg) scale(1.1); }
+      25%  { transform: translate(-50%, -50%) rotate(-45deg) scale(1.0); }
+      100% { opacity: 0; transform: translate(-50%, -130%) rotate(-45deg) scale(0.95); }
+    }
+  `;
+  document.head.appendChild(style);
+}
