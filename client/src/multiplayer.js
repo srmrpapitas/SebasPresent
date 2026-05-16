@@ -165,12 +165,20 @@ export function update(dt) {
     // Mixer (solo si es Nico clonado)
     if (peer.mixer) peer.mixer.update(dt);
 
-    // Crossfade idle ↔ run según state
+    // Crossfade entre clips según state. Los clips reales (de Character)
+    // se llaman 'idle', 'run_forward', 'walk_forward', 'attack_1', etc.,
+    // NO 'run' o 'attack' a secas. Aquí hacemos el mapeo state → clip.
     if (peer.actions && Object.keys(peer.actions).length > 0) {
       let desiredName = 'idle';
-      if (peer.state === 'run' || peer.state === 'walk') desiredName = 'run';
-      else if (peer.state === 'attack' && peer.actions.attack) desiredName = 'attack';
-      const desiredAction = peer.actions[desiredName] || peer.actions.idle;
+      if (peer.state === 'run')         desiredName = 'run_forward';
+      else if (peer.state === 'walk')   desiredName = 'walk_forward';
+      else if (peer.state === 'attack') desiredName = 'attack_1';
+      // Fallback chain: el clip pedido → run_forward → idle.
+      // (Si el server reporta 'walk' pero solo cargó 'run_forward', usa run.)
+      const desiredAction =
+        peer.actions[desiredName] ||
+        peer.actions.run_forward ||
+        peer.actions.idle;
       if (desiredAction && desiredAction !== peer.currentAction) {
         desiredAction.reset();
         desiredAction.play();
