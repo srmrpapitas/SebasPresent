@@ -1,44 +1,46 @@
 /**
- * SebasPresent — Home Teleport module (Sesión 4 refactor)
+ * SebasPresent — Home Teleport module (Sesión 10)
  *
- * Slice 5c — Teletransporte a casa.
+ * Vive dentro del panel Magic 🔮 del sidebar OSRS como un "spell" estilo
+ * spellbook OSRS. Mantiene toda la lógica de cast/cooldown intacta — solo
+ * cambia DÓNDE se monta el DOM (antes flotante esquina sup izq, ahora
+ * dentro de #magicSpellGrid del sidebar).
  *
- * Botón discreto en esquina superior izquierda (debajo del botón Salir).
- * Click → cast de 10s con barra de progreso. Cancela si:
- *   - El player se mueve durante el cast
- *   - El player recibe daño durante el cast
- * Tras 10s sin interrupción → POST /api/magic/home_teleport/finish y TP.
- * Cooldown de 15 min tras teleport. El botón muestra "M:SS" mientras está
- * en cooldown.
+ * Cambios respecto a versión anterior:
+ *   - El botón ya no es position:fixed en esquina.
+ *   - Se inserta dentro del contenedor #magicSpellGrid (sidebar → tab Magic).
+ *   - El CSS vive 100% en style.css. ensureCss() es no-op (placeholder
+ *     siguiendo el patrón de sesión 9).
+ *   - Si #magicSpellGrid no existe, el módulo lo reporta por consola pero
+ *     no crashea; start() sale temprano y queda inerte.
  *
- * Cómo se usa desde world.js:
+ * Lógica server-side intacta — handlers /api/magic/home_teleport[/cancel,/finish]
+ * sin tocar.
+ *
+ * Cómo se usa desde world.js (sin cambios respecto a antes):
  *
  *   import * as homeTele from './home_teleport.js';
  *
  *   homeTele.start({
- *     getPlayer:    () => player,                    // ref al group del player
+ *     getPlayer:    () => player,
  *     getAuthToken: () => authToken,
  *     apiBase:      API_BASE,
  *     getCombatHp:  () => combat.getStateSnapshot?.()?.hp ?? null,
  *     feedLog:      (type, msg) => combat.feedLog?.(type, msg),
- *     onTeleported: () => primeInitialChunks(),      // refresh chunks tras TP
+ *     onTeleported: () => primeInitialChunks(),
  *   });
  *
  *   // Al salir del mundo:
  *   homeTele.stop();
- *
- * Diferencia importante vs el código original: stop() ahora limpia
- * correctamente botón + interval + estado. Antes el setInterval seguía
- * corriendo tras logout y el botón se quedaba apilado al re-entrar.
  */
 
 // ============================================================
 // Constantes
 // ============================================================
-const CAST_MS = 10_000;            // duración del cast
-const COOLDOWN_MS = 15 * 60 * 1000; // cooldown tras teleport
-const TICK_MS = 100;               // frecuencia del interval visual
-const MOVE_CANCEL_DIST = 0.5;      // si te mueves más de esto, cancela
+const CAST_MS = 10_000;
+const COOLDOWN_MS = 15 * 60 * 1000;
+const TICK_MS = 100;
+const MOVE_CANCEL_DIST = 0.5;
 
 // ============================================================
 // Estado del módulo (privado)
@@ -79,7 +81,11 @@ export function start(opts) {
   onTeleported = opts.onTeleported || (() => {});
 
   ensureCss();
-  createButton();
+  if (!createButton()) {
+    // Contenedor del magic grid no existe — no arrancamos el interval ni nada.
+    started = false;
+    return;
+  }
   intervalHandle = setInterval(updateVisuals, TICK_MS);
   started = true;
 }
@@ -105,107 +111,48 @@ export function stop() {
 }
 
 // ============================================================
-// DOM + CSS
+// DOM
 // ============================================================
 function createButton() {
-  const btn = document.createElement('div');
-  btn.className = 'osrs-home-tele-btn';
+  const grid = document.getElementById('magicSpellGrid');
+  if (!grid) {
+    console.warn(
+      '[home_teleport] #magicSpellGrid no existe en el DOM. ' +
+      'Asegúrate de que index.html tiene el contenedor del spellbook ' +
+      'dentro de <section data-tab="magic">.'
+    );
+    return false;
+  }
+  // Limpia residual de una sesión anterior si el módulo no terminó de stop().
+  const stale = document.getElementById('magicSpellHomeTele');
+  if (stale) stale.remove();
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'magicSpellHomeTele';
+  btn.className = 'magic-spell';
+  btn.title = 'Home Teleport — vuelve al hub (10s cast, 15min cooldown)';
   btn.innerHTML = `
-    <div class="osrs-home-tele-icon">🏠</div>
-    <div class="osrs-home-tele-label">Casa</div>
-    <div class="osrs-home-tele-progress"><div class="osrs-home-tele-bar"></div></div>
-    <div class="osrs-home-tele-cd"></div>
+    <div class="magic-spell-icon">🏠</div>
+    <div class="magic-spell-name">Home</div>
+    <div class="magic-spell-cd"></div>
+    <div class="magic-spell-progress"><div class="magic-spell-bar"></div></div>
   `;
-  document.body.appendChild(btn);
+  grid.appendChild(btn);
   btnEl = btn;
-  barEl = btn.querySelector('.osrs-home-tele-bar');
-  cdLabelEl = btn.querySelector('.osrs-home-tele-cd');
+  barEl = btn.querySelector('.magic-spell-bar');
+  cdLabelEl = btn.querySelector('.magic-spell-cd');
   btn.addEventListener('click', onClick);
+  return true;
 }
 
-function ensureCss() {
-  if (document.getElementById('osrs-home-tele-css')) return;
-  const style = document.createElement('style');
-  style.id = 'osrs-home-tele-css';
-  style.textContent = `
-    .osrs-home-tele-btn {
-      position: fixed;
-      top: 84px;
-      left: 16px;
-      z-index: 80;
-      width: 64px;
-      min-height: 78px;
-      padding: 6px 4px;
-      background: rgba(20, 14, 8, 0.92);
-      border: 2px solid #c8a043;
-      border-radius: 6px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      user-select: none;
-      -webkit-user-select: none;
-      font-family: 'Cinzel', serif;
-    }
-    .osrs-home-tele-btn:active {
-      background: rgba(40, 28, 16, 0.95);
-    }
-    .osrs-home-tele-btn.casting {
-      border-color: #88ddff;
-    }
-    .osrs-home-tele-btn.cooldown {
-      opacity: 0.55;
-      pointer-events: none;
-      border-color: #666;
-    }
-    .osrs-home-tele-icon {
-      font-size: 24px;
-      line-height: 1;
-      margin-bottom: 2px;
-    }
-    .osrs-home-tele-label {
-      font-size: 10px;
-      color: #f0e0b0;
-      font-weight: 700;
-      text-shadow: 1px 1px 0 #000;
-      letter-spacing: 0.4px;
-    }
-    .osrs-home-tele-progress {
-      width: 100%;
-      height: 4px;
-      margin-top: 4px;
-      background: rgba(0,0,0,0.6);
-      border-radius: 2px;
-      overflow: hidden;
-      display: none;
-    }
-    .osrs-home-tele-btn.casting .osrs-home-tele-progress {
-      display: block;
-    }
-    .osrs-home-tele-bar {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #88ddff, #c8a043);
-      transition: width 0.1s linear;
-    }
-    .osrs-home-tele-cd {
-      font-size: 9px;
-      color: #ff9090;
-      margin-top: 2px;
-      font-family: 'IM Fell English', serif;
-      display: none;
-    }
-    .osrs-home-tele-btn.cooldown .osrs-home-tele-cd {
-      display: block;
-    }
-  `;
-  document.head.appendChild(style);
-}
+// Sesión 9 + 10 — CSS vive en style.css. Esta función queda como
+// no-op placeholder para no tocar call sites. Si en el futuro hace
+// falta CSS dinámico (por ejemplo iconos generados runtime), aquí.
+function ensureCss() { /* no-op */ }
 
 // ============================================================
-// Lógica del cast
+// Lógica del cast (sin cambios funcionales)
 // ============================================================
 async function onClick() {
   if (castingUntil > Date.now()) return;     // ya casteando
@@ -305,7 +252,6 @@ function updateVisuals() {
     if (remaining <= 0) {
       finish();
     } else {
-      // Actualizar barra de progreso
       const elapsed = CAST_MS - remaining;
       const pct = Math.max(0, Math.min(100, (elapsed / CAST_MS) * 100));
       if (barEl) barEl.style.width = pct + '%';
