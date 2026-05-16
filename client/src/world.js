@@ -18,6 +18,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Character } from './character.js';
 import * as combat from './combat.js';
+import * as input from './input.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -239,6 +240,7 @@ const interactableMeshes = [];
 
 let listeners = [];
 let resizeRaf = null;
+let inputDispose = null;
 
 const cTmp   = new THREE.Color();
 const cBase  = new THREE.Color();
@@ -422,6 +424,9 @@ export function stopWorld() {
     try { target.removeEventListener(type, fn, opts); } catch {}
   }
   listeners = [];
+
+  // Sesión 2 refactor — desenganchar input.js
+  if (inputDispose) { try { inputDispose(); } catch {} inputDispose = null; }
 
   for (const key of Array.from(chunks.keys())) unloadChunk(key);
   chunkBuildQueue.length = 0;
@@ -2165,107 +2170,67 @@ function addL(target, type, fn, opts) {
 }
 
 function setupInput() {
-  addL(canvas, 'pointerdown', onCanvasPointerDown);
-  // pointermove/up van en window para que el drag continúe aunque el
-  // dedo se salga del canvas durante el arrastre
-  addL(window, 'pointermove', onCanvasPointerMove);
-  addL(window, 'pointerup',   onCanvasPointerUp);
-  addL(window, 'pointercancel', onCanvasPointerUp);
-  addL(canvas, 'contextmenu', e => e.preventDefault());
-  addL(window, 'keydown', onKeyDown);
-  setupJoystick();
-  setupTouchCamera();
+  // Sesión 2 refactor — toda la detección de gestos vive en input.js.
+  // World.js solo proporciona los callbacks (qué hacer con cada gesto).
+  inputDispose = input.setup({
+    canvas,
+    joystickEl: document.getElementById('joystick'),
+    joystickKnobEl: document.getElementById('joystickKnob'),
+
+    // Al tocar la pantalla: cerrar el menú contextual si está abierto.
+    onTouchStart: () => closeActionMenu(),
+
+    // Tap simple → goto / atacar NPC / pickup item / tooltip árbol
+    onTap: (cx, cy) => doCanvasTap(cx, cy),
+
+    // Long-press → menú contextual estilo OSRS
+    onLongPress: (cx, cy) => openActionMenuAt(cx, cy),
+
+    // Drag del dedo en canvas O rotación con dos dedos → rotar cámara
+    onCameraDrag: (dyaw, dpitch) => {
+      cameraYaw   -= dyaw;
+      cameraPitch -= dpitch;
+      cameraPitch = Math.max(0.1, Math.min(1.3, cameraPitch));
+    },
+
+    // Pinch con dos dedos → zoom de cámara
+    onCameraZoom: (deltaDist) => {
+      cameraDist += deltaDist;
+      cameraDist = Math.max(CAMERA_DIST_MIN, Math.min(CAMERA_DIST_MAX, cameraDist));
+    },
+
+    // Joystick virtual → escribe en joyState que usa updatePlayer
+    onJoystickMove: (s) => {
+      joyState.active = s.active;
+      joyState.x = s.x;
+      joyState.y = s.y;
+    },
+
+    // Teclado (debug en PC) → Q/E giran cámara
+    onKey: (key) => {
+      if (key === 'q' || key === 'Q') cameraYaw += 0.15;
+      if (key === 'e' || key === 'E') cameraYaw -= 0.15;
+    },
+  });
+
+  // Resize: lo gestiona world porque toca camera/renderer
   addL(window, 'resize', onResize);
 }
 
-// === Tap vs Drag con 1 dedo ===
-// Si el dedo se mueve más de TAP_DRAG_THRESHOLD pixels antes de soltar,
-// es DRAG → rota la cámara. Si no, es TAP → goto / atacar NPC.
-const TAP_DRAG_THRESHOLD = 8;          // px
-const CAMERA_DRAG_YAW_SENS = 0.005;    // rad/px horizontal
-const CAMERA_DRAG_PITCH_SENS = 0.004;  // rad/px vertical
-let canvasPointer = null;
+// Constante de tolerancia screen-space para tap sobre NPC (la usa findNpcNearTap)
+const NPC_TAP_SCREEN_PX = 56;
 
-// ============================================================
-// Long-press menu (Slice 5b — tap contextual estilo OSRS)
-// ============================================================
-// Tap simple sobre NPC = atacar directo (comportamiento OSRS móvil oficial).
-// Tap-largo (>= LONG_PRESS_MS) = abrir menú con acciones (Atacar / Examinar
-// / Cancelar). Si el dedo se mueve durante el long-press se cancela
-// (es un drag de cámara, no un tap).
-
-const LONG_PRESS_MS = 320;
-const NPC_TAP_SCREEN_PX = 56;   // radio de captura por proximidad en pantalla
-
-function onCanvasPointerDown(e) {
-  if (e.button !== undefined && e.button !== 0) return;
-  if (e.target !== canvas) return;
-  canvasPointer = {
-    x0: e.clientX, y0: e.clientY,
-    lastX: e.clientX, lastY: e.clientY,
-    isDrag: false,
-    pointerId: e.pointerId,
-    longPressFired: false,
-    longPressTimer: null,
-  };
-  // Si ya hay un menú abierto, ciérralo al tocar fuera de él.
-  closeActionMenu();
-  // Long-press: si el dedo se mantiene quieto LONG_PRESS_MS, abre menú.
-  canvasPointer.longPressTimer = setTimeout(() => {
-    if (!canvasPointer || canvasPointer.isDrag) return;
-    canvasPointer.longPressFired = true;
-    openActionMenuAt(canvasPointer.lastX, canvasPointer.lastY);
-  }, LONG_PRESS_MS);
-}
-
-function onCanvasPointerMove(e) {
-  if (!canvasPointer) return;
-  if (canvasPointer.pointerId !== undefined && e.pointerId !== canvasPointer.pointerId) return;
-  const totalDist = Math.hypot(e.clientX - canvasPointer.x0, e.clientY - canvasPointer.y0);
-  if (!canvasPointer.isDrag && totalDist < TAP_DRAG_THRESHOLD) return;
-  canvasPointer.isDrag = true;
-  // Cancela long-press si el dedo se mueve significativamente.
-  if (canvasPointer.longPressTimer) {
-    clearTimeout(canvasPointer.longPressTimer);
-    canvasPointer.longPressTimer = null;
-  }
-  const ddx = e.clientX - canvasPointer.lastX;
-  const ddy = e.clientY - canvasPointer.lastY;
-  cameraYaw   -= ddx * CAMERA_DRAG_YAW_SENS;
-  cameraPitch -= ddy * CAMERA_DRAG_PITCH_SENS;
-  cameraPitch = Math.max(0.1, Math.min(1.3, cameraPitch));
-  canvasPointer.lastX = e.clientX;
-  canvasPointer.lastY = e.clientY;
-}
-
-function onCanvasPointerUp(e) {
-  if (!canvasPointer) return;
-  if (canvasPointer.pointerId !== undefined && e.pointerId !== canvasPointer.pointerId) {
-    canvasPointer = null;
-    return;
-  }
-  if (canvasPointer.longPressTimer) {
-    clearTimeout(canvasPointer.longPressTimer);
-  }
-  const wasDrag = canvasPointer.isDrag;
-  const longPressFired = canvasPointer.longPressFired;
-  canvasPointer = null;
-  if (wasDrag) return;
-  if (longPressFired) return;   // El menú ya está abierto; pointerup no hace tap.
-  doCanvasTap(e);
-}
-
-function doCanvasTap(e) {
+function doCanvasTap(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  const ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
 
   // 1) Tap NPC → auto-walk hacia él y engage cuando lleguemos cerca.
   // Probamos primero el raycast clásico (mesh exacto). Si falla, hacemos
   // proximidad por screen-space (el dedo cubre ~40-50px; aceptamos taps
   // dentro de NPC_TAP_SCREEN_PX del centro proyectado del NPC más cercano).
-  const npc = findNpcNearTap(e.clientX, e.clientY);
+  const npc = findNpcNearTap(clientX, clientY);
   if (npc) {
     triggerNpcTap(npc.id);
     return;
@@ -2287,7 +2252,7 @@ function doCanvasTap(e) {
     const hit = treeHits[0];
     const treeType = hit.object.userData.treeType;
     if (treeType) {
-      showTreeTooltip(treeType, e.clientX, e.clientY);
+      showTreeTooltip(treeType, clientX, clientY);
       return;
     }
   }
@@ -2646,108 +2611,8 @@ function setPlayerTarget(x, z) {
   marker.userData.spawnTime = clock.getElapsedTime();
 }
 
-function onKeyDown(e) {
-  if (e.key === 'q' || e.key === 'Q') cameraYaw += 0.15;
-  if (e.key === 'e' || e.key === 'E') cameraYaw -= 0.15;
-}
-
-/**
- * Joystick izquierdo: movimiento.
- */
-function setupJoystick() {
-  const joyEl = document.getElementById('joystick');
-  const joyKnob = document.getElementById('joystickKnob');
-  if (!joyEl || !joyKnob) return;
-  let centerX = 0, centerY = 0;
-  const MAX_R = 42;
-  function setKnob(dx, dy) { joyKnob.style.transform = `translate(${dx}px, ${dy}px)`; }
-  function onStart(ev) {
-    ev.preventDefault();
-    const t = ev.touches ? ev.touches[0] : ev;
-    const rect = joyEl.getBoundingClientRect();
-    centerX = rect.left + rect.width / 2;
-    centerY = rect.top + rect.height / 2;
-    joyState.active = true;
-    update(t.clientX, t.clientY);
-  }
-  function update(cx, cy) {
-    let dx = cx - centerX, dy = cy - centerY;
-    const len = Math.hypot(dx, dy);
-    if (len > MAX_R) { dx = dx / len * MAX_R; dy = dy / len * MAX_R; }
-    setKnob(dx, dy);
-    joyState.x = dx / MAX_R;
-    joyState.y = dy / MAX_R;
-  }
-  function onMove(ev) {
-    if (!joyState.active) return;
-    ev.preventDefault();
-    const t = ev.touches ? ev.touches[0] : ev;
-    update(t.clientX, t.clientY);
-  }
-  function onEnd() { joyState.active = false; joyState.x = 0; joyState.y = 0; setKnob(0, 0); }
-  addL(joyEl, 'touchstart', onStart, { passive: false });
-  addL(joyEl, 'touchmove', onMove, { passive: false });
-  addL(joyEl, 'touchend', onEnd);
-  addL(joyEl, 'touchcancel', onEnd);
-  addL(joyEl, 'mousedown', onStart);
-  addL(window, 'mousemove', onMove);
-  addL(window, 'mouseup', onEnd);
-}
-
-/**
- * Pinch zoom + rotación con 2 dedos. Activo SOLO si los dedos están
- * fuera del joystick izquierdo (evitamos conflicto).
- */
-function setupTouchCamera() {
-  let active = false;
-  let lastMidX = 0, lastMidY = 0;
-  let lastPinchDist = 0;
-
-  function touchInsideJoystick(touch) {
-    const joyL = document.getElementById('joystick');
-    if (!joyL) return false;
-    const r = joyL.getBoundingClientRect();
-    return touch.clientX >= r.left && touch.clientX <= r.right &&
-           touch.clientY >= r.top  && touch.clientY <= r.bottom;
-  }
-
-  addL(canvas, 'touchstart', e => {
-    if (e.touches.length === 2) {
-      if (touchInsideJoystick(e.touches[0]) || touchInsideJoystick(e.touches[1])) return;
-      active = true;
-      lastMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      lastMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      lastPinchDist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY);
-    }
-  });
-
-  addL(canvas, 'touchmove', e => {
-    if (active && e.touches.length === 2) {
-      e.preventDefault();
-      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      // Rotación con movimiento del midpoint
-      cameraYaw += (mx - lastMidX) * 0.005;
-      cameraPitch -= (my - lastMidY) * 0.005;
-      cameraPitch = Math.max(0.1, Math.min(1.3, cameraPitch));
-      // Pinch zoom
-      const newPinch = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY);
-      const pinchDelta = newPinch - lastPinchDist;
-      cameraDist -= pinchDelta * 0.05;
-      cameraDist = Math.max(CAMERA_DIST_MIN, Math.min(CAMERA_DIST_MAX, cameraDist));
-      lastMidX = mx; lastMidY = my;
-      lastPinchDist = newPinch;
-    }
-  }, { passive: false });
-
-  addL(canvas, 'touchend', e => {
-    if (e.touches.length < 2) active = false;
-  });
-}
+// Sesión 2 refactor — onKeyDown, setupJoystick, setupTouchCamera
+// se han movido a input.js. World.js los conecta vía callbacks en setupInput().
 
 // ============================================================
 //                       Animation loop
