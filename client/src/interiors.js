@@ -24,7 +24,6 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ============================================================
 // Constantes
@@ -45,10 +44,11 @@ const INTERIOR_HEIGHT = 4.0;
 // y no generará chunks (zonas "vacías").
 const INTERIOR_CENTER = { x: 10000, z: 10000 };
 
-// Spawn del player dentro: 5m al sur del centro (Z menor), mirando al
-// norte (rotY=0). Si en 11c-2 el NPC está al norte del centro, el player
-// aparece mirando al NPC.
-const PLAYER_SPAWN_OFFSET = { x: 0, z: -5 };
+// Spawn del player dentro: en el centro de la sala (offset 0,0), mirando
+// al norte (rotY=0). Centrado para que la cámara orbital vea la sala
+// completa alrededor. En 11c-2 ajustaremos si el NPC queda detrás del
+// player.
+const PLAYER_SPAWN_OFFSET = { x: 0, z: 0 };
 
 // Visual del interior — cielo oscuro + fog corto. Da sensación de
 // estar dentro de un edificio cerrado.
@@ -71,6 +71,8 @@ let onLeaveCallback = () => {};
 let interiorRoot = null;   // Group con el modelo cargado (posicionado en INTERIOR_CENTER)
 let interiorFloor = null;  // Plano invisible para tap-to-walk dentro
 let interiorBox = null;    // { minX, maxX, minZ, maxZ } en coords locales (centradas en 0)
+let interiorLight = null;  // Luz ambiental extra (la del exterior puede no llegar bien)
+let debugBox = null;       // DEBUG: cubo rojo para sanity check visual
 
 let savedBg = 0;
 let savedFogColor = null;
@@ -100,44 +102,53 @@ export async function start(opts) {
     return;
   }
 
-  interiorRoot = await loadAndMergeInterior(INTERIOR_URL, INTERIOR_HEIGHT);
+  interiorRoot = await loadInterior(INTERIOR_URL, INTERIOR_HEIGHT);
   if (!interiorRoot) {
     console.warn('[interiors] No se pudo cargar el GLB del interior. enter() será inerte.');
     started = false;
     return;
   }
 
-  // Colocar el interior en sus coords absolutas. Empezamos oculto.
+  // Colocar el interior. IMPORTANTE: el bbox se calcula ANTES de poner
+  // visible=false, porque Box3.setFromObject ignora objetos invisibles
+  // (devolvería bbox vacío ±Infinity y rompería la colisión y el floor mesh).
   interiorRoot.position.set(INTERIOR_CENTER.x, 0, INTERIOR_CENTER.z);
-  interiorRoot.visible = false;
+  interiorRoot.updateMatrixWorld(true);
   scene.add(interiorRoot);
 
-  // Calcular bbox local del template (sin posición absoluta aplicada).
-  // Hacemos un Box3 sobre el template antes de moverlo: ya guardamos
-  // ese bbox en el loader; recalculamos aquí desde el world bbox + offset.
   const worldBox = new THREE.Box3().setFromObject(interiorRoot);
-  interiorBox = {
-    minX: worldBox.min.x - INTERIOR_CENTER.x + COLLISION_MARGIN,
-    maxX: worldBox.max.x - INTERIOR_CENTER.x - COLLISION_MARGIN,
-    minZ: worldBox.min.z - INTERIOR_CENTER.z + COLLISION_MARGIN,
-    maxZ: worldBox.max.z - INTERIOR_CENTER.z - COLLISION_MARGIN,
-  };
-  // Guard: si margen excede el tamaño, fallback a margen 0 (sala muy pequeña)
-  if (interiorBox.maxX <= interiorBox.minX || interiorBox.maxZ <= interiorBox.minZ) {
-    console.warn('[interiors] bbox demasiado pequeño para margen; usando margen 0');
+  console.log(`[interiors] BBox world: X[${worldBox.min.x.toFixed(2)},${worldBox.max.x.toFixed(2)}] Y[${worldBox.min.y.toFixed(2)},${worldBox.max.y.toFixed(2)}] Z[${worldBox.min.z.toFixed(2)},${worldBox.max.z.toFixed(2)}]`);
+
+  if (!Number.isFinite(worldBox.min.x) || !Number.isFinite(worldBox.max.x)) {
+    console.warn('[interiors] BBox infinito/inválido. La colisión y el floor mesh quedarán desactivados.');
+    interiorBox = null;
+  } else {
     interiorBox = {
-      minX: worldBox.min.x - INTERIOR_CENTER.x,
-      maxX: worldBox.max.x - INTERIOR_CENTER.x,
-      minZ: worldBox.min.z - INTERIOR_CENTER.z,
-      maxZ: worldBox.max.z - INTERIOR_CENTER.z,
+      minX: worldBox.min.x - INTERIOR_CENTER.x + COLLISION_MARGIN,
+      maxX: worldBox.max.x - INTERIOR_CENTER.x - COLLISION_MARGIN,
+      minZ: worldBox.min.z - INTERIOR_CENTER.z + COLLISION_MARGIN,
+      maxZ: worldBox.max.z - INTERIOR_CENTER.z - COLLISION_MARGIN,
     };
+    if (interiorBox.maxX <= interiorBox.minX || interiorBox.maxZ <= interiorBox.minZ) {
+      console.warn('[interiors] bbox demasiado pequeño para margen; usando margen 0');
+      interiorBox = {
+        minX: worldBox.min.x - INTERIOR_CENTER.x,
+        maxX: worldBox.max.x - INTERIOR_CENTER.x,
+        minZ: worldBox.min.z - INTERIOR_CENTER.z,
+        maxZ: worldBox.max.z - INTERIOR_CENTER.z,
+      };
+    }
+    console.log(`[interiors] BBox local (con margen ${COLLISION_MARGIN}m): X[${interiorBox.minX.toFixed(2)},${interiorBox.maxX.toFixed(2)}] Z[${interiorBox.minZ.toFixed(2)},${interiorBox.maxZ.toFixed(2)}]`);
   }
+
+  // Ahora sí ocultar (bbox ya calculado)
+  interiorRoot.visible = false;
 
   // Plano floor invisible — el raycaster lo intersecta para tap-to-walk
   // pero opacity:0 lo hace invisible visualmente. depthWrite:false evita
   // que tape los meshes del suelo del modelo en el render.
-  const sizeX = worldBox.max.x - worldBox.min.x;
-  const sizeZ = worldBox.max.z - worldBox.min.z;
+  const sizeX = Number.isFinite(worldBox.max.x - worldBox.min.x) ? (worldBox.max.x - worldBox.min.x) : 20;
+  const sizeZ = Number.isFinite(worldBox.max.z - worldBox.min.z) ? (worldBox.max.z - worldBox.min.z) : 20;
   const floorGeom = new THREE.PlaneGeometry(sizeX, sizeZ);
   floorGeom.rotateX(-Math.PI / 2);
   const floorMat = new THREE.MeshBasicMaterial({
@@ -150,8 +161,25 @@ export async function start(opts) {
   interiorFloor.visible = false;
   scene.add(interiorFloor);
 
+  // Luz ambiental extra — la global del exterior puede no iluminar bien
+  // los meshes del interior tras los cambios de fog (corto) y bg (oscuro).
+  interiorLight = new THREE.AmbientLight(0xffffff, 0.9);
+  interiorLight.visible = false;
+  scene.add(interiorLight);
+
+  // DEBUG sanity check: cubo rojo flotando 3m sobre el centro del interior.
+  // Si el cubo aparece al entrar pero NO el modelo, el problema es del modelo
+  // (carga/escala/material). Si NI el cubo aparece, el problema es del switch
+  // o de las coords. TEMPORAL: quitar cuando lo del interior se vea.
+  const dbgGeom = new THREE.BoxGeometry(2, 2, 2);
+  const dbgMat = new THREE.MeshBasicMaterial({ color: 0xff2020 });
+  debugBox = new THREE.Mesh(dbgGeom, dbgMat);
+  debugBox.position.set(INTERIOR_CENTER.x, 3, INTERIOR_CENTER.z);
+  debugBox.visible = false;
+  scene.add(debugBox);
+
   started = true;
-  console.log(`[interiors] Cargado. BBox local: X[${interiorBox.minX.toFixed(2)},${interiorBox.maxX.toFixed(2)}] Z[${interiorBox.minZ.toFixed(2)},${interiorBox.maxZ.toFixed(2)}]`);
+  console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Floor mesh size: ${sizeX.toFixed(2)} x ${sizeZ.toFixed(2)}`);
 }
 
 export function stop() {
@@ -166,9 +194,17 @@ export function stop() {
     interiorFloor.geometry?.dispose();
     interiorFloor.material?.dispose();
   }
+  if (interiorLight && scene) scene.remove(interiorLight);
+  if (debugBox && scene) {
+    scene.remove(debugBox);
+    debugBox.geometry?.dispose();
+    debugBox.material?.dispose();
+  }
   removeExitButton();
   interiorRoot = null;
   interiorFloor = null;
+  interiorLight = null;
+  debugBox = null;
   interiorBox = null;
   scene = null;
   getPlayer = () => null;
@@ -183,9 +219,15 @@ export function stop() {
  * para distinguir qué NPC mostrar si varían por edificio).
  */
 export function enter(fromBuildingId) {
-  if (!started || active || !interiorRoot) return;
+  if (!started || active || !interiorRoot) {
+    console.warn(`[interiors] enter() ignorado: started=${started} active=${active} hasRoot=${!!interiorRoot}`);
+    return;
+  }
   const player = getPlayer();
-  if (!player) return;
+  if (!player) {
+    console.warn('[interiors] enter(): no player');
+    return;
+  }
 
   // Guardar posición exterior para volver al salir
   lastExteriorPos = { x: player.position.x, z: player.position.z };
@@ -199,6 +241,10 @@ export function enter(fromBuildingId) {
   // Mostrar interior
   interiorRoot.visible = true;
   interiorFloor.visible = true;
+  if (interiorLight) interiorLight.visible = true;
+  if (debugBox) debugBox.visible = true;
+  console.log(`[interiors] enter() player teleportado a (${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)})`);
+  console.log(`[interiors] enter('${fromBuildingId}'). Player en (${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)}). InteriorRoot children=${interiorRoot.children.length} visible=${interiorRoot.visible}`);
 
   // Cambiar visual: cielo oscuro + fog corto
   if (scene) {
@@ -249,6 +295,8 @@ export function forceLeave() {
 function finishLeave() {
   if (interiorRoot) interiorRoot.visible = false;
   if (interiorFloor) interiorFloor.visible = false;
+  if (interiorLight) interiorLight.visible = false;
+  if (debugBox) debugBox.visible = false;
   if (scene) {
     scene.background = new THREE.Color(savedBg);
     if (scene.fog && savedFogColor !== null) {
@@ -291,18 +339,22 @@ export function applyCollision(x0, z0, x1, z1) {
 }
 
 // ============================================================
-// Botón "↩ Salir"
+// Botón "Salir del edificio"
 // ============================================================
+// Texto distintivo para no confundirlo con el "Salir" del HUD permanente
+// (logout). Posicionado centrado horizontalmente en la zona alta para
+// quedar bien visible y aislado del resto de botones.
 
 function showExitButton() {
   if (exitButtonEl) return;
   exitButtonEl = document.createElement('button');
   exitButtonEl.id = 'interiorExitBtn';
-  exitButtonEl.textContent = '↩ Salir';
+  exitButtonEl.textContent = '↩ Salir del edificio';
   exitButtonEl.style.cssText = `
     position: absolute;
-    top: calc(env(safe-area-inset-top, 0px) + 100px);
-    left: 16px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 25;
     background: rgba(20, 14, 8, 0.92);
     border: 2px solid #c8a043;
@@ -310,12 +362,13 @@ function showExitButton() {
     font-family: 'Cinzel', serif;
     font-size: 14px;
     font-weight: 700;
-    padding: 10px 18px;
+    padding: 12px 22px;
     border-radius: 4px;
     text-shadow: 0 1px 2px rgba(0,0,0,0.9);
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     cursor: pointer;
     letter-spacing: 0.05em;
+    white-space: nowrap;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
   `;
@@ -335,19 +388,26 @@ function removeExitButton() {
 }
 
 // ============================================================
-// Carga + merge del GLB del interior
+// Carga del GLB del interior
 // ============================================================
 //
-// El modelo viene en Z-up (Blender convention). Lo rotamos -π/2 en X
-// para convertirlo a Y-up que three.js espera. La detectsZUp() de
-// terrain.js no es fiable para habitaciones (más anchas que altas), así
-// que aquí fuerzo la rotación.
+// IMPORTANTE: el root del GLB (Sketchfab_model) viene con una matrix
+// fija que YA aplica Z-up→Y-up + escala 0.023. GLTFLoader marca este
+// nodo con matrixAutoUpdate=false, así que tocar root.rotation NO
+// surte efecto. Tampoco podemos baquear las matrices a las geoms con
+// applyMatrix4(matrixWorld) directamente porque something en ese flujo
+// rompía silenciosamente el render (probablemente combinación de
+// matrices no-uniformes con merge).
 //
-// Después agrupamos por material y fusionamos geometrías (mismo patrón
-// que buildings.js) para reducir draw calls. Modelo tiene 29 meshes y
-// 20 materiales → resultado ~12-15 draw calls.
+// Approach robusto: dejar el árbol del GLB tal cual y wrappearlo en un
+// Group nuestro que aplica escala adicional + offset Y para apoyar la
+// base en Y=0. Three.js maneja toda la jerarquía de matrices.
+//
+// Coste: perdemos el merge por material (29 meshes = 29 draw calls).
+// Como solo hay UNA instancia visible del interior a la vez, asumible.
+// Optimizable después si performance lo pide.
 
-async function loadAndMergeInterior(url, targetHeight) {
+async function loadInterior(url, targetHeight) {
   const loader = new GLTFLoader();
   let gltf;
   try {
@@ -357,105 +417,50 @@ async function loadAndMergeInterior(url, targetHeight) {
     return null;
   }
   const root = gltf.scene;
-
-  // Forzar Z-up → Y-up rotation
-  root.rotation.x = -Math.PI / 2;
   root.updateMatrixWorld(true);
 
-  // BBox tras la rotación para calcular escala + offset al suelo
+  // BBox en world coords (incluye la matrix del root con Z-up→Y-up + scale 0.023)
   const bbox = new THREE.Box3().setFromObject(root);
   const sizeY = bbox.max.y - bbox.min.y;
   if (sizeY < 0.001) {
-    console.warn('[interiors] BBox degenerado (sizeY ~0). Modelo inválido.');
+    console.warn('[interiors] BBox degenerado del modelo:', bbox);
     return null;
   }
   const scaleFactor = targetHeight / sizeY;
-  const yOffset = -bbox.min.y * scaleFactor;
+  console.log(
+    `[interiors] BBox post-GLB: X[${bbox.min.x.toFixed(2)},${bbox.max.x.toFixed(2)}] ` +
+    `Y[${bbox.min.y.toFixed(2)},${bbox.max.y.toFixed(2)}] ` +
+    `Z[${bbox.min.z.toFixed(2)},${bbox.max.z.toFixed(2)}] sizeY=${sizeY.toFixed(2)} → scale=${scaleFactor.toFixed(3)}`
+  );
 
-  // Agrupar meshes por material
-  const groups = new Map();
-  root.traverse(obj => {
-    if (!obj.isMesh || !obj.geometry) return;
-    let mat = obj.material;
-    if (Array.isArray(mat)) mat = mat[0];
-    if (!mat) return;
-    const matKey = mat.name || mat.uuid;
-
-    const geom = obj.geometry.clone();
-    geom.applyMatrix4(obj.matrixWorld);
-    const scaleMat = new THREE.Matrix4().makeScale(scaleFactor, scaleFactor, scaleFactor);
-    geom.applyMatrix4(scaleMat);
-    const offsetMat = new THREE.Matrix4().makeTranslation(0, yOffset, 0);
-    geom.applyMatrix4(offsetMat);
-
-    if (!groups.has(matKey)) groups.set(matKey, { material: mat, geoms: [] });
-    groups.get(matKey).geoms.push(geom);
-  });
-
-  if (groups.size === 0) {
-    console.warn('[interiors] El GLB no tiene meshes.');
-    return null;
-  }
-
-  const result = new THREE.Group();
-  result.userData = { kind: 'interior-root' };
-
-  let mergedMaterialGroups = 0;
-  let fallbackMeshes = 0;
-  let totalSourceMeshes = 0;
-
-  for (const [matKey, entry] of groups) {
-    const { material, geoms } = entry;
-    totalSourceMeshes += geoms.length;
-    const finalMat = cloneOrFallbackMaterial(material);
-
-    let mergedGeom = null;
-    try {
-      mergedGeom = mergeGeometries(geoms, false);
-    } catch (err) {
-      console.warn(`[interiors] mergeGeometries falló para '${matKey}':`, err.message);
-    }
-
-    if (mergedGeom) {
-      const mesh = new THREE.Mesh(mergedGeom, finalMat);
-      mesh.userData = { kind: 'interior-part', materialName: matKey };
-      result.add(mesh);
-      mergedMaterialGroups++;
-      for (const g of geoms) g.dispose?.();
-    } else {
-      for (const g of geoms) {
-        const mesh = new THREE.Mesh(g, finalMat.clone());
-        mesh.userData = { kind: 'interior-part', materialName: matKey };
-        result.add(mesh);
-        fallbackMeshes++;
+  // Forzar visibility + DoubleSide para no perder caras vistas desde dentro
+  let meshCount = 0;
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    o.visible = true;
+    meshCount++;
+    if (o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        m.side = THREE.DoubleSide;
+        // Normalizar transparency rara que pueda venir del GLB
+        if (m.transparent || m.alphaTest > 0 || m.alphaMap) {
+          m.alphaTest = 0.4;
+          m.transparent = false;
+        }
       }
     }
-  }
+  });
 
-  console.log(
-    `[interiors] GLB cargado: ${totalSourceMeshes} meshes originales → ` +
-    `${mergedMaterialGroups} materiales fusionados + ${fallbackMeshes} meshes sin merge ` +
-    `(total ${result.children.length} draw calls).`
-  );
-  return result;
-}
+  // Wrapper Group: aplica escala uniforme + offset Y para base en Y=0
+  const wrapper = new THREE.Group();
+  wrapper.userData = { kind: 'interior-root' };
+  wrapper.add(root);
+  wrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
+  wrapper.position.y = -bbox.min.y * scaleFactor;
 
-function cloneOrFallbackMaterial(srcMat) {
-  let mat;
-  if (srcMat && (srcMat.isMeshStandardMaterial || srcMat.isMeshLambertMaterial || srcMat.isMeshBasicMaterial)) {
-    mat = srcMat.clone();
-  } else {
-    mat = new THREE.MeshLambertMaterial({
-      color: srcMat?.color ? srcMat.color.clone() : new THREE.Color(0x808080),
-      map: srcMat?.map || null,
-    });
-  }
-  mat.side = THREE.DoubleSide;
-  if (srcMat && (srcMat.transparent || srcMat.alphaTest > 0 || srcMat.alphaMap)) {
-    mat.alphaTest = 0.4;
-    mat.transparent = false;
-  }
-  return mat;
+  console.log(`[interiors] ${meshCount} meshes cargados (sin merge — wrapper group).`);
+  return wrapper;
 }
 
 function disposeGroup(group) {
