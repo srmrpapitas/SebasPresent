@@ -42,7 +42,8 @@ const XP_TABLE = [
 ];
 
 const TICK_MS = 600;
-const RANGE_TOLERANCE = 0.5;
+const RANGE_TOLERANCE = 3.5;   // Margen sobre attack_range. Cubre los ~3m
+                                // del patrol radius visual + holgura.
 const MAX_LEVEL = 99;
 const XP_PER_DMG_PER_SKILL = 4 / 3;
 
@@ -50,11 +51,16 @@ const XP_PER_DMG_PER_SKILL = 4 / 3;
 const VALID_STYLES = ['accurate', 'aggressive', 'defensive', 'controlled'];
 const DEFAULT_STYLE = 'controlled';
 
+// Slice 5c — Loot drops cuando un NPC muere
+const LOOT_OFFSET_RANGE_M    = 0.4;     // dispersion alrededor del NPC
+const LOOT_TOTAL_LIFETIME_MS = 120_000; // 2 min antes de despawn por cron
+
 export {
   getCombatState,
   attackNpc,
   respawnUser,
   reviveExpiredNpcs,
+  rollAndDropLoot,
   levelFromXp,
   xpForLevel,
   calcMaxHit,
@@ -353,6 +359,18 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     ]
   );
 
+  // Slice 5c — Loot: cuando el NPC muere por el hit del user, rolamos su
+  // loot table y soltamos items en el suelo. Privacidad 60s al killer.
+  if (npcKilled) {
+    try {
+      await rollAndDropLoot(db, npc.def_id, npc.x, npc.z, userId, now, rng);
+    } catch (err) {
+      // No romper el ataque si falla el loot (p. ej. tabla vacía).
+      // Solo lo logueamos.
+      console.error('[combat/loot]', npc.def_id, err);
+    }
+  }
+
   stats.last_attack_at = now;
 
   // ---- NPC counter-attack ----
@@ -445,4 +463,64 @@ async function respawnUser(db, userId, opts = {}) {
     [hpMax, now, userId]
   );
   return { ok: true, hp_current: hpMax };
+}
+
+// ============================================================
+// LOOT DROPS (Slice 5c)
+// ============================================================
+async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng) {
+  const rows = await db.all(
+    `SELECT item_id, qty_min, qty_max, weight, is_always
+     FROM npc_loot_table
+     WHERE npc_def_id = ?`,
+    [npcDefId]
+  );
+  if (!rows || rows.length === 0) return;
+
+  const drops = [];
+
+  // 1) Drops garantizados (is_always = 1)
+  for (const r of rows) {
+    if (r.is_always === 1) {
+      const qty = rollQty(rng, r.qty_min, r.qty_max);
+      if (qty > 0) drops.push({ item_id: r.item_id, qty });
+    }
+  }
+
+  // 2) Roll ponderado entre los aleatorios (uno gana)
+  const random = rows.filter(r => r.is_always === 0);
+  if (random.length > 0) {
+    const totalWeight = random.reduce((s, r) => s + (r.weight | 0), 0);
+    if (totalWeight > 0) {
+      let pick = rng() * totalWeight;
+      for (const r of random) {
+        pick -= r.weight;
+        if (pick <= 0) {
+          const qty = rollQty(rng, r.qty_min, r.qty_max);
+          if (qty > 0) drops.push({ item_id: r.item_id, qty });
+          break;
+        }
+      }
+    }
+  }
+
+  if (drops.length === 0) return;
+
+  const despawnAt = now + LOOT_TOTAL_LIFETIME_MS;
+  for (const d of drops) {
+    const ox = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
+    const oz = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
+    await db.run(
+      `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [d.item_id, d.qty, npcX + ox, npcZ + oz, now, userId, despawnAt]
+    );
+  }
+}
+
+function rollQty(rng, qMin, qMax) {
+  const mn = qMin | 0;
+  const mx = qMax | 0;
+  if (mx <= mn) return mn;
+  return mn + Math.floor(rng() * (mx - mn + 1));
 }

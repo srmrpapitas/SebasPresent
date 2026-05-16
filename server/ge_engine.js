@@ -96,7 +96,7 @@ export const CLAIM_TARGET_BANK = 'bank';
 // Floor minimo: 5gp absolutos para items baratos.
 export const PRICE_BAND_BPS = 500;
 export const PRICE_BAND_FLOOR_ABS = 5;
-const BPS_DIVISOR = 10_000;
+export const BPS_DIVISOR = 10_000;
 
 // ============================================================
 // PRECIO GUIA Y BANDAS (sin cambios desde v1)
@@ -391,7 +391,7 @@ export async function matchItem(db, itemId) {
  *   seller (SYSTEM): solo item_escrow -= qty (los coins virtuales se
  *                    evaporan)
  */
-async function applyMatch(db, buy, sell, qty, matchPrice) {
+export async function applyMatch(db, buy, sell, qty, matchPrice) {
   const now = Date.now();
   const stmts = [];
 
@@ -627,7 +627,7 @@ export async function countOpenSlots(db, userId) {
 
 // ----- INVENTORY HELPERS -----
 
-async function loadInventoryState(db, userId) {
+export async function loadInventoryState(db, userId) {
   const rows = await db.all(
     `SELECT inv.slot_index, inv.item_id, inv.quantity, i.stackable
      FROM user_inventory inv
@@ -647,17 +647,17 @@ async function loadInventoryState(db, userId) {
   return { slots };
 }
 
-function snapshotInventoryState(state) {
+export function snapshotInventoryState(state) {
   return { slots: state.slots.map(s => s ? { ...s } : null) };
 }
 
-function restoreInventoryState(state, snapshot) {
+export function restoreInventoryState(state, snapshot) {
   for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
     state.slots[i] = snapshot.slots[i] ? { ...snapshot.slots[i] } : null;
   }
 }
 
-function sumInventory(state, itemId) {
+export function sumInventory(state, itemId) {
   let total = 0;
   for (const s of state.slots) {
     if (s && s.item_id === itemId) total += s.quantity;
@@ -669,7 +669,7 @@ function sumInventory(state, itemId) {
  * Retira qty unidades de itemId del inventario. Toma de los slots
  * con MAYOR qty primero. Asume que sumInventory >= qty (validar antes).
  */
-function removeFromInventory(stmts, state, userId, itemId, qty, now) {
+export function removeFromInventory(stmts, state, userId, itemId, qty, now) {
   const candidates = [];
   for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
     const s = state.slots[i];
@@ -710,7 +710,7 @@ function removeFromInventory(stmts, state, userId, itemId, qty, now) {
  *
  * Devuelve true si encaja entero, false si no.
  */
-function tryDepositToInventory(stmts, state, userId, itemId, qty, stackable, now) {
+export function tryDepositToInventory(stmts, state, userId, itemId, qty, stackable, now) {
   if (stackable) {
     for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
       const s = state.slots[i];
@@ -757,7 +757,7 @@ function tryDepositToInventory(stmts, state, userId, itemId, qty, stackable, now
 
 // ----- BANK HELPERS -----
 
-async function loadBankState(db, userId) {
+export async function loadBankState(db, userId) {
   const rows = await db.all(
     'SELECT slot_index, item_id, quantity FROM user_bank WHERE user_id = ?',
     [userId]
@@ -771,7 +771,7 @@ async function loadBankState(db, userId) {
   return { byItemId, nextSlot: maxSlot + 1 };
 }
 
-function addBankDeposit(stmts, state, userId, itemId, qty, now) {
+export function addBankDeposit(stmts, state, userId, itemId, qty, now) {
   const existing = state.byItemId.get(itemId);
   if (existing) {
     stmts.push({
@@ -792,12 +792,12 @@ function addBankDeposit(stmts, state, userId, itemId, qty, now) {
 
 // ----- OTROS -----
 
-function weightedAvg(prevAvg, prevQty, newPrice, newQty) {
+export function weightedAvg(prevAvg, prevQty, newPrice, newQty) {
   if (prevQty === 0) return newPrice;
   return ((prevAvg * prevQty) + (newPrice * newQty)) / (prevQty + newQty);
 }
 
-function makeErr(code) {
+export function makeErr(code) {
   const e = new Error(code);
   e.code = code;
   return e;
