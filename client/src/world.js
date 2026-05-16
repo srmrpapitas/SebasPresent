@@ -21,6 +21,7 @@ import * as multiplayer from './multiplayer.js';
 import * as homeTele from './home_teleport.js';
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
+import * as buildings from './buildings.js';
 import * as npcRenderer from './npc_renderer.js';
 import {
   PALETTE, PLACES, BIOMES,
@@ -163,6 +164,9 @@ export async function startWorld(loggedInUser, token) {
     setupOcean();
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
+    // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
+    showWorldLoading('Cargando edificios…');
+    await buildings.start({ scene });
     await setupPlayer();
     setupMarker();
     setupInput();
@@ -265,6 +269,9 @@ export function stopWorld() {
 
   // Sesión 2 refactor — desenganchar input.js
   if (inputDispose) { try { inputDispose(); } catch {} inputDispose = null; }
+
+  // Sesión 11a — buildings (GLB instances)
+  buildings.stop();
 
   // Sesión 5 refactor — terrain (chunks, árboles, decoración, places, colliders)
   terrain.stop();
