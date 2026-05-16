@@ -14,7 +14,6 @@
  */
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Character } from './character.js';
 import * as combat from './combat.js';
 import * as input from './input.js';
@@ -26,31 +25,11 @@ import * as npcRenderer from './npc_renderer.js';
 import {
   PALETTE, PLACES, BIOMES,
   WORLD_HALF, WILDERNESS_X, FOG_NEAR, FOG_FAR,
-  biomeAt, getRegionInfo, bakeGlbModel,
+  biomeAt, getRegionInfo,
 } from './terrain.js';
 import { NPC_MINIMAP_RADIUS } from './npc_renderer.js';
 
-const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
-
-const TREE_GLB_URLS = {
-  oak:        `${R2_BASE}/trees/oak.glb`,
-  mahogany:   `${R2_BASE}/trees/mahogany.glb`,
-  maple:      `${R2_BASE}/trees/maple.glb`,
-  willow:     `${R2_BASE}/trees/willow.glb`,
-  teak:       `${R2_BASE}/trees/teak.glb`,
-  magic:      `${R2_BASE}/trees/magic_v2.glb`,
-  bush:       `${R2_BASE}/trees/bush.glb`,
-  bush_small: `${R2_BASE}/trees/bush_small.glb`,
-};
-
-const DECORATION_GLB_URLS = {
-  stones:     `${R2_BASE}/decoration/stones.glb`,
-  cave_rocks: `${R2_BASE}/decoration/cave_rocks.glb`,
-  grass:      `${R2_BASE}/decoration/grass.glb`,
-};
-
-
-// Constantes que se quedan en world (NO en terrain):
+// Constantes que se quedan en world (NO en terrain ni npc_renderer):
 const PLAYER_RUN = 7.0;
 const PLAYER_RUN_BOOST = 1.6;
 const POSITION_SAVE_INTERVAL = 10_000;
@@ -256,7 +235,9 @@ export async function startWorld(loggedInUser, token) {
     animate();
   } catch (err) {
     console.error('World init failed:', err);
-    showWorldLoading('Error cargando el mundo: ' + (err.message || 'desconocido'));
+    console.error('Stack:', err?.stack);
+    const msg = err?.message || err?.name || String(err) || 'desconocido';
+    showWorldLoading('Error cargando el mundo: ' + msg);
   }
 }
 
@@ -327,6 +308,40 @@ export function stopWorld() {
 
   const nameTag = document.getElementById('playerNameTag');
   if (nameTag) { nameTag.classList.add('hidden'); nameTag.style.display = 'none'; }
+}
+
+// ============================================================
+//                       Scene
+// ============================================================
+
+function setupScene() {
+  canvas = document.getElementById('worldCanvas');
+  if (!canvas) throw new Error('No #worldCanvas element in DOM');
+  // Bloquear pinch-zoom nativo del browser sobre el canvas (sin tocar
+  // joystick/minimapa, que tienen sus propios listeners).
+  canvas.style.touchAction = 'none';
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(PALETTE.sky);
+  scene.fog = new THREE.Fog(PALETTE.fog, FOG_NEAR, FOG_FAR);
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, FOG_FAR + 50);
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  raycaster = new THREE.Raycaster();
+  const sun = new THREE.DirectionalLight(0xffeecc, 1.0);
+  sun.position.set(-30, 50, 20);
+  scene.add(sun);
+  const ambient = new THREE.AmbientLight(0x6088a0, 0.55);
+  scene.add(ambient);
+}
+
+function setupOcean() {
+  const oceanGeom = new THREE.PlaneGeometry(WORLD_HALF * 6, WORLD_HALF * 6);
+  oceanGeom.rotateX(-Math.PI / 2);
+  const oceanMat = new THREE.MeshLambertMaterial({ color: PALETTE.ocean, flatShading: true });
+  ocean = new THREE.Mesh(oceanGeom, oceanMat);
+  ocean.position.y = -0.4;
+  scene.add(ocean);
 }
 
 // ============================================================
