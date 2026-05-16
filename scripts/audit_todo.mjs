@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const DIRS = ['client', 'server'];
+const DIRS = ['client/src', 'server'];
 const TODO_REGEX = /(?:\/\/|\*)\s*(TODO|FIXME|XXX|HACK)[:\s]+(.*)$/gm;
 
 let total = 0;

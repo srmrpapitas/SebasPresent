@@ -6,7 +6,7 @@
  * en imports). Si añades uno y olvidas documentarlo en INVARIANTS.md,
  * el próximo dev (o tú dentro de un mes) no sabrá que existe → bugs.
  *
- * Cómo: escanea client/*.js buscando "window.__nombre", lista todos los
+ * Cómo: escanea client/src/*.js buscando "window.__nombre", lista todos los
  * encontrados, y los compara contra los listados en INVARIANTS.md sección 3.
  *
  * Exit codes:
@@ -17,7 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const CLIENT_DIR = 'client';
+const CLIENT_DIR = 'client/src';
 const INVARIANTS_PATH = 'INVARIANTS.md';
 
 // 1. Encontrar todos los hooks usados en el código

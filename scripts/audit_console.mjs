@@ -12,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const CLIENT_DIR = 'client';
+const CLIENT_DIR = 'client/src';
 const items = [];
 
 if (!fs.existsSync(CLIENT_DIR)) {
