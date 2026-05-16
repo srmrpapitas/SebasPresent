@@ -417,7 +417,41 @@ if (typeof window !== 'undefined') {
   };
   window.__playerRevive = () => {
     combatTargetNpcId = null;
-    try { character?.revive?.(); } catch (e) { console.warn('[world] revive:', e); }
+    // Slice 5c mini-fix: hook revive robusto.
+    // - Si character tiene revive(), lo usa (Character clase real).
+    // - Si character es fallback (cápsula sin métodos), no rompe.
+    // - Si revive() falla por lo que sea, forzamos arranque de idle directo
+    //   en el mixer para que el modelo no se quede en pose de muerte.
+    try {
+      if (character?.revive) {
+        character.revive();
+      } else if (character?.mixer && character?.actions?.idle) {
+        // Plan B: no hay método revive() pero sí mixer + idle clip.
+        character.isDead = false;
+        character.isAttacking = false;
+        character.isInTransition = false;
+        character.mixer.stopAllAction();
+        character.mixer.setTime(0);
+        character.actions.idle.reset();
+        character.actions.idle.setEffectiveWeight(1);
+        character.actions.idle.enabled = true;
+        character.actions.idle.play();
+        character.current = character.actions.idle;
+      }
+    } catch (e) {
+      console.warn('[world] revive failed:', e);
+    }
+    // Teleport al hub (0,0) + refresh chunks.
+    // El server (combatRespawnUser) solo restaura HP, no toca posición.
+    try {
+      if (player) {
+        player.position.x = 0;
+        player.position.z = 0;
+        playerTarget = null;
+        if (marker) marker.visible = false;
+        terrain.primeChunks(0, 0);
+      }
+    } catch (e) { console.warn('[world] respawn teleport:', e); }
   };
 }
 
