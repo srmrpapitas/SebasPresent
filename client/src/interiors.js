@@ -31,20 +31,6 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const INTERIOR_URL = `${R2_BASE}/interiors/medieval_room.glb`;
 
-// MODO DEBUG SESIÓN 11c-1: temporalmente coloca el modelo SIEMPRE VISIBLE
-// cerca del spawn (50, 0, 0) y un cubo rojo a su lado, en lugar de ocultarlo
-// en (10000, 10000). Permite verificar visualmente que el GLB carga y se
-// renderiza bien, independiente del switch de enter/leave.
-//
-// Si el usuario camina 50m al este del spawn y ve:
-//   - el cubo rojo Y el modelo → todo bien, el problema era el switch
-//   - solo el cubo rojo → problema del modelo (carga/escala/material)
-//   - nada → problema más profundo (renderer/scene/coords)
-//
-// Cambiar a false cuando esté validado.
-const DEV_PREVIEW = true;
-const DEV_PREVIEW_POS = { x: 50, z: 0 };
-
 const INTERIOR_HEIGHT = 4.0;
 
 // Coords absolutas donde se coloca el interior en el mundo.
@@ -82,7 +68,6 @@ let interiorRoot = null;   // Group con el modelo cargado (posicionado en INTERI
 let interiorFloor = null;  // Plano invisible para tap-to-walk dentro
 let interiorBox = null;    // { minX, maxX, minZ, maxZ } en coords locales (centradas en 0)
 let interiorLight = null;  // Luz ambiental extra (la del exterior puede no llegar bien)
-let debugBox = null;       // DEBUG: cubo rojo para sanity check visual
 
 let savedBg = 0;
 let savedFogColor = null;
@@ -122,10 +107,12 @@ export async function start(opts) {
   // Colocar el interior. IMPORTANTE: el bbox se calcula ANTES de poner
   // visible=false, porque Box3.setFromObject ignora objetos invisibles
   // (devolvería bbox vacío ±Infinity y rompería la colisión y el floor mesh).
-  // Colocar el interior en sus coords absolutas. En modo DEV_PREVIEW
-  // lo ponemos cerca del spawn (50,0,0) y SIEMPRE visible.
-  const centerX = DEV_PREVIEW ? DEV_PREVIEW_POS.x : INTERIOR_CENTER.x;
-  const centerZ = DEV_PREVIEW ? DEV_PREVIEW_POS.z : INTERIOR_CENTER.z;
+  // Colocar el interior en sus coords absolutas. Lo dejamos SIEMPRE visible
+  // (a 10000m del player exterior, queda fuera del frustum y no se ve).
+  // En enter() solo cambiamos bg/fog/teleport. No alternamos visibility
+  // porque eso resultó frágil en testing previo.
+  const centerX = INTERIOR_CENTER.x;
+  const centerZ = INTERIOR_CENTER.z;
   interiorRoot.position.set(centerX, 0, centerZ);
   interiorRoot.updateMatrixWorld(true);
   scene.add(interiorRoot);
@@ -155,9 +142,8 @@ export async function start(opts) {
     console.log(`[interiors] BBox local (con margen ${COLLISION_MARGIN}m): X[${interiorBox.minX.toFixed(2)},${interiorBox.maxX.toFixed(2)}] Z[${interiorBox.minZ.toFixed(2)},${interiorBox.maxZ.toFixed(2)}]`);
   }
 
-  // En DEV_PREVIEW, dejamos el modelo VISIBLE siempre para diagnosticar.
-  // En producción, lo ocultamos hasta que enter() lo muestre.
-  interiorRoot.visible = DEV_PREVIEW;
+  // SIEMPRE visible. A 10000m del exterior está fuera del frustum (far=274).
+  interiorRoot.visible = true;
 
   // Plano floor invisible — el raycaster lo intersecta para tap-to-walk
   // pero opacity:0 lo hace invisible visualmente. depthWrite:false evita
@@ -173,30 +159,18 @@ export async function start(opts) {
   interiorFloor = new THREE.Mesh(floorGeom, floorMat);
   interiorFloor.position.set(centerX, 0.02, centerZ);
   interiorFloor.userData = { kind: 'interior-floor' };
-  interiorFloor.visible = false;
+  interiorFloor.visible = true;  // opacity:0 lo hace invisible visualmente
   scene.add(interiorFloor);
 
-  // Luz ambiental extra — la global del exterior puede no iluminar bien
-  // los meshes del interior tras los cambios de fog (corto) y bg (oscuro).
-  // En DEV_PREVIEW también la dejamos visible para que el modelo no quede
-  // a oscuras estando fuera del switch.
-  interiorLight = new THREE.AmbientLight(0xffffff, 0.9);
-  interiorLight.visible = DEV_PREVIEW;
+  // Luz ambiental SIEMPRE encendida. AmbientLight afecta a toda la scene
+  // pero los meshes del exterior están todavía iluminados por la sun+ambient
+  // global; este extra solo añade brillo al interior. Si interfiere, se baja.
+  interiorLight = new THREE.AmbientLight(0xffffff, 0.5);
+  interiorLight.visible = true;
   scene.add(interiorLight);
 
-  // DEBUG sanity check: cubo rojo GIGANTE al lado del modelo. Si NO ves
-  // ni el cubo ni el modelo caminando hacia (50, 0): problema profundo
-  // (carga/scene/coords). Si SOLO ves el cubo: problema del modelo.
-  // En DEV_PREVIEW, el cubo está visible siempre.
-  const dbgGeom = new THREE.BoxGeometry(4, 4, 4);
-  const dbgMat = new THREE.MeshBasicMaterial({ color: 0xff2020 });
-  debugBox = new THREE.Mesh(dbgGeom, dbgMat);
-  debugBox.position.set(centerX + 10, 2, centerZ);  // 10m al este del modelo
-  debugBox.visible = DEV_PREVIEW;
-  scene.add(debugBox);
-
   started = true;
-  console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Floor mesh size: ${sizeX.toFixed(2)} x ${sizeZ.toFixed(2)}. DEV_PREVIEW=${DEV_PREVIEW} centro=(${centerX},${centerZ}).`);
+  console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Floor mesh size: ${sizeX.toFixed(2)} x ${sizeZ.toFixed(2)}. Interior en (${centerX},${centerZ}).`);
 }
 
 export function stop() {
@@ -212,16 +186,10 @@ export function stop() {
     interiorFloor.material?.dispose();
   }
   if (interiorLight && scene) scene.remove(interiorLight);
-  if (debugBox && scene) {
-    scene.remove(debugBox);
-    debugBox.geometry?.dispose();
-    debugBox.material?.dispose();
-  }
   removeExitButton();
   interiorRoot = null;
   interiorFloor = null;
   interiorLight = null;
-  debugBox = null;
   interiorBox = null;
   scene = null;
   getPlayer = () => null;
@@ -255,11 +223,8 @@ export function enter(fromBuildingId) {
   player.position.z = INTERIOR_CENTER.z + PLAYER_SPAWN_OFFSET.z;
   player.rotation.y = 0;  // mirando al norte (+Z), hacia el mostrador (NPC en 11c-2)
 
-  // Mostrar interior
-  interiorRoot.visible = true;
-  interiorFloor.visible = true;
-  if (interiorLight) interiorLight.visible = true;
-  if (debugBox) debugBox.visible = true;
+  // El modelo está siempre visible (a 10000m del exterior, fuera del frustum).
+  // Aquí solo cambiamos bg/fog y teleportamos. Eso basta para "entrar".
   console.log(`[interiors] enter() player teleportado a (${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)})`);
   console.log(`[interiors] enter('${fromBuildingId}'). Player en (${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)}). InteriorRoot children=${interiorRoot.children.length} visible=${interiorRoot.visible}`);
 
@@ -310,10 +275,8 @@ export function forceLeave() {
 }
 
 function finishLeave() {
-  if (interiorRoot) interiorRoot.visible = false;
-  if (interiorFloor) interiorFloor.visible = false;
-  if (interiorLight) interiorLight.visible = false;
-  if (debugBox) debugBox.visible = false;
+  // El modelo permanece siempre visible en (10000, 10000); al salir, el
+  // player vuelve al exterior y queda fuera del frustum (10000m de distancia).
   if (scene) {
     scene.background = new THREE.Color(savedBg);
     if (scene.fog && savedFogColor !== null) {
