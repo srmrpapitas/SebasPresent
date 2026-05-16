@@ -1,0 +1,19 @@
+{
+  "name": "sebaspresent",
+  "version": "0.1.0",
+  "description": "MMO sandbox estilo RuneScape — SebasPresent",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute sebaspresent-db --local --file=server/schema.sql",
+    "db:init:remote": "wrangler d1 execute sebaspresent-db --remote --file=server/schema.sql",
+    "check": "npm run check:client && npm run check:server",
+    "check:client": "node --check client/src/auth.js && node --check client/src/api.js && node --check client/src/ui.js && node --check client/src/main.js && node --check client/src/world.js && node --check client/src/character.js && node --check client/src/combat.js && node --check client/src/inventory.js && node --check client/src/bank.js && node --check client/src/ge.js",
+    "check:server": "node --check server/worker.js && node --check server/combat_engine.js && node --check server/ge_engine.js",
+    "predeploy": "npm run check"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}
