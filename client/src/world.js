@@ -401,6 +401,10 @@ export async function startWorld(loggedInUser, token) {
       window.shop = shop;
     } catch (e) { console.warn('[world] shop init:', e); }
 
+    // Sesión 25 — exponer inventory en window para que el overlay de
+    // muerte pueda refrescarlo tras drop+respawn.
+    window.inventory = inventory;
+
     // Sesión 15 — Inyectar panel de Skills (tab Stats 📊) con grid 5×3.
     // Se inyecta DESPUÉS de skills.start() para que tenga datos.
     try { injectSkillsPanel(); } catch (e) { console.warn('[world] skills panel:', e); }
@@ -2163,6 +2167,18 @@ function updatePlayer(dt) {
   let moveWx = 0;   // Slice 5d — vector de movimiento (mundo) para calcular
   let moveWz = 0;   //            dirección relativa al facing en combate
   const maxSpeed = runMode ? PLAYER_RUN * PLAYER_RUN_BOOST : PLAYER_RUN;
+
+  // Sesión 25 — Si el player está muerto, NO procesar input. El joystick
+  // y el playerTarget se ignoran hasta que respawnee. Esto soluciona el bug
+  // "te quedas tumbado y te puedes mover" — antes la animación de muerte
+  // se reproducía pero el input seguía activo.
+  if (character?.isDead) {
+    // Forzar animación death para que no se vuelva a idle por algún tick
+    // (character.play se hace abajo y respeta isDead, pero por si acaso).
+    playerTarget = null;
+    if (marker) marker.visible = false;
+    return;
+  }
 
   if (joyState.active && (Math.abs(joyState.x) > 0.15 || Math.abs(joyState.y) > 0.15)) {
     // User mueve con joystick → cancela cualquier auto-engage pendiente

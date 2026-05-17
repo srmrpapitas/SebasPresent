@@ -300,11 +300,14 @@ async function doAttackTick() {
     return;
   }
   if (result.you_died) {
-    feedLog('death', 'Has muerto. Reapareces en el hub.');
+    feedLog('death', 'Has muerto. Toca el botón para volver al spawn.');
     // Slice 5d — animación de muerte del player
     if (typeof window !== 'undefined' && typeof window.__playerDeath === 'function') {
       try { window.__playerDeath(); } catch {}
     }
+    // Sesión 25 — Mostrar overlay grande "Has muerto" + botón respawn.
+    // Bloquea el resto del juego hasta que el user pulse el botón.
+    showDeathOverlay();
     disengage();
     await refresh();
     return;
@@ -911,4 +914,137 @@ function formatDist(d) {
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================
+// Sesión 25 — Death overlay (OSRS-style)
+// ============================================================
+/**
+ * Pinta un overlay grande sobre la pantalla cuando el user muere.
+ * Botón "⚱ Volver al spawn" llama respawnUser, recarga inventario
+ * (por el drop) y dispara __playerRevive para teleportar visual.
+ *
+ * Mientras el overlay está visible, el botón es lo único interactivo
+ * (el resto del juego sigue corriendo pero el user no puede jugar
+ * porque __playerDeath ya bloqueó el input vía character.isDead).
+ */
+function showDeathOverlay() {
+  // No duplicar
+  if (document.getElementById('deathOverlay')) return;
+
+  // Inyectar CSS una vez
+  if (!document.getElementById('death-overlay-styles')) {
+    const style = document.createElement('style');
+    style.id = 'death-overlay-styles';
+    style.textContent = `
+      .death-overlay {
+        position: fixed; inset: 0; z-index: 9000;
+        background: radial-gradient(ellipse at center,
+          rgba(80, 10, 10, 0.55) 0%, rgba(10, 0, 0, 0.92) 70%);
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        animation: deathFadeIn 0.6s ease-out;
+        pointer-events: auto;
+      }
+      @keyframes deathFadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      .death-overlay-title {
+        font-family: 'Cinzel', serif;
+        font-size: 42px;
+        font-weight: 900;
+        color: #ff5040;
+        letter-spacing: 0.12em;
+        text-shadow: 0 0 24px rgba(255, 60, 40, 0.6),
+                     0 4px 8px rgba(0,0,0,0.9);
+        margin-bottom: 20px;
+        text-align: center;
+        animation: deathTitlePulse 2.4s ease-in-out infinite;
+      }
+      @keyframes deathTitlePulse {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.04); }
+      }
+      .death-overlay-subtitle {
+        font-family: 'IM Fell English', serif;
+        font-size: 16px;
+        color: #d8b878;
+        text-align: center;
+        margin-bottom: 36px;
+        max-width: 320px;
+        line-height: 1.5;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+      }
+      .death-overlay-btn {
+        padding: 14px 36px;
+        background: linear-gradient(180deg, #c84830, #802018);
+        border: 3px solid #ffaa44;
+        color: #fff8d0;
+        font-family: 'Cinzel', serif;
+        font-weight: 700;
+        font-size: 18px;
+        letter-spacing: 0.06em;
+        border-radius: 6px;
+        cursor: pointer;
+        box-shadow: 0 0 20px rgba(255, 100, 50, 0.55),
+                    inset 0 1px 0 rgba(255,255,255,0.2);
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 0.1s;
+      }
+      .death-overlay-btn:active {
+        transform: scale(0.96);
+        box-shadow: 0 0 10px rgba(255, 100, 50, 0.4);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'deathOverlay';
+  overlay.className = 'death-overlay';
+  overlay.innerHTML = `
+    <div class="death-overlay-title">HAS MUERTO</div>
+    <div class="death-overlay-subtitle">
+      Conservas tus 3 ítems más valiosos.<br>
+      El resto cayó al suelo donde moriste.
+    </div>
+    <button class="death-overlay-btn" id="deathRespawnBtn">⚱ Volver al spawn</button>
+  `;
+  document.body.appendChild(overlay);
+
+  const btn = overlay.querySelector('#deathRespawnBtn');
+  btn.addEventListener('pointerup', async (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault();
+    btn.disabled = true;
+    btn.textContent = 'Respawneando…';
+    try {
+      await api.respawnUser();
+      // Refrescar combat state (HP a tope, posición server)
+      await refresh();
+      // Revive visual: anim idle + teleport al spawn
+      if (typeof window !== 'undefined' && typeof window.__playerRevive === 'function') {
+        try { window.__playerRevive(); } catch {}
+      }
+      // Refrescar inventory para que reflejen los items que CAYERON
+      // (dropExcessInventoryOnDeath quitó slots; sin refresh, el cliente
+      // seguiría mostrando lo que tenía antes).
+      if (typeof window !== 'undefined' && window.inventory?.refresh) {
+        try { await window.inventory.refresh(); } catch (e) { console.warn('[combat/respawn] inv refresh:', e); }
+      }
+      feedLog('info', '¡Estás de vuelta en el spawn!');
+    } catch (e) {
+      feedLog('warning', 'No se pudo respawnear: ' + (e.message || e));
+      btn.disabled = false;
+      btn.textContent = '⚱ Volver al spawn';
+      return;
+    }
+    hideDeathOverlay();
+  });
+}
+
+function hideDeathOverlay() {
+  const overlay = document.getElementById('deathOverlay');
+  if (overlay) overlay.remove();
 }

@@ -55,6 +55,12 @@ const NPC_GLB_FORCE_NO_ZUP = { cow: true };
 const NPC_GLB_FORCE_ZUP = {};
 const NPC_GLB_FORCE_ZUP_INVERT = {};
 
+// Sesión 25 — Algunos modelos GLB vienen con el "frente" mirando en la
+// dirección -Z en lugar de la +Z que three.js asume por defecto. Para esos,
+// añadimos PI a la rotación Y para que caminen mirando hacia delante.
+// La vaca tenía este bug: caminaba hacia atrás en la patrulla.
+const NPC_FACING_REVERSED = { cow: true };
+
 // ============================================================
 // Constantes de comportamiento
 // ============================================================
@@ -529,7 +535,10 @@ function updatePatrol(dt) {
         baseY  = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
         const tx = -Math.sin(p.angle);
         const tz =  Math.cos(p.angle);
-        group.rotation.y = Math.atan2(tx, tz);
+        // Sesión 25 — corregir vacas hacia atrás. NPC_FACING_REVERSED añade
+        // PI a la rotación para modelos cuyo frente apunta a -Z en lugar de +Z.
+        const facingOffset = NPC_FACING_REVERSED[ud.npc?.def_id] ? Math.PI : 0;
+        group.rotation.y = Math.atan2(tx, tz) + facingOffset;
       }
 
       const r = ud.reaction;
