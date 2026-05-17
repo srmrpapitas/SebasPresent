@@ -96,40 +96,34 @@ const SHEATH_MS = 700;
 // CHARACTER_SCALE = 0.01 (cm→m), pero el bone ya está dentro de ese scale,
 // así que los offsets aquí están en "espacio bone" que es ~cm. Por eso los
 // numeritos son grandes.
+// Valores finales calibrados visualmente por el usuario con el panel
+// `window.__weaponDebug()`. Si quieres recalibrar más adelante: equipa el arma,
+// abre eruda, ejecuta __weaponDebug(), ajusta sliders, pulsa COPIAR, pégalos aquí.
 const WEAPON_TRANSFORMS = {
-  // Iteración 2: feedback usuario sesión 24
-  //   - Espada: OK (sin cambios desde iteración 1)
-  //   - Staff: a mano IZQUIERDA + vertical estilo mago
-  //   - Bow: scale enorme para asegurar visibilidad y diagnosticar
-  //
-  // Campo "hand": 'right' (default) o 'left'. Si no se pone, va a la derecha.
   '1h_sword': {
-    // Iteración 4: bajar Y para que mango esté en la palma (estaba sobre la muñeca)
-    scale: 65.0,
-    position: [0, -5, -3],
-    rotation: [0, 0, -Math.PI / 2],
+    scale: 77.0,
+    position: [-22.5, 12.0, 3.0],
+    rotation: [1.658, 0.058, -1.692],
     hand: 'right',
   },
   '2h_sword': {
-    scale: 80.0,
-    position: [0, -5, -3],
-    rotation: [0, 0, -Math.PI / 2],
+    // Mismo modelo aproximado que 1h_sword pero un pelín más grande.
+    // Si queda mal con espada 2h, recalibrar con __weaponDebug().
+    scale: 90.0,
+    position: [-22.5, 12.0, 3.0],
+    rotation: [1.658, 0.058, -1.692],
     hand: 'right',
   },
   'bow': {
-    // Iteración 4: scale más razonable (estaba enorme en el suelo con 500)
-    // Rotación Z para que esté vertical en lugar de horizontal/plano.
-    scale: 250.0,
-    position: [0, 0, 0],
-    rotation: [0, 0, -Math.PI / 2],
-    hand: 'right',
+    scale: 116.0,
+    position: [7.0, -30.0, 30.0],
+    rotation: [0.458, 0.058, -1.292],
+    hand: 'left',
   },
   'staff': {
-    // Iteración 4: invertir rotación X (de PI/2 a -PI/2) para que el cabezal
-    // apunte hacia arriba estilo Gandalf (estaba con el cristal hacia abajo).
-    scale: 80.0,
-    position: [0, 0, 0],
-    rotation: [-Math.PI / 2, 0, 0],
+    scale: 128.0,
+    position: [-30.0, -23.5, -22.5],
+    rotation: [-1.142, -0.892, 1.258],
     hand: 'left',
   },
   'default': {
@@ -317,22 +311,6 @@ export class Character {
 
       // Exponer globalmente para que window.__weaponDebug() pueda acceder.
       window.__character = this;
-
-      // Diagnóstico: medir el bounding box real del mesh DESPUÉS de escalar.
-      // Si el size es ~0, el mesh está vacío o el modelo tiene origen raro.
-      // Si el size es muy grande, está cargado bien y el problema es de posición.
-      try {
-        const box = new THREE.Box3().setFromObject(mesh);
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        let meshCount = 0;
-        mesh.traverse(o => { if (o.isMesh) meshCount++; });
-        console.log(`[character] arma "${weaponId}" (${weaponType}) attached a ${handName} hand. ` +
-          `bbox size: ${size.x.toFixed(2)}x${size.y.toFixed(2)}x${size.z.toFixed(2)}, ` +
-          `meshes: ${meshCount}, scale aplicado: ${tf.scale}`);
-      } catch (boxErr) {
-        console.log(`[character] arma "${weaponId}" attached, bbox calc fail:`, boxErr.message);
-      }
     } catch (err) {
       console.warn(`[character] attachWeapon failed:`, err.message);
     }
