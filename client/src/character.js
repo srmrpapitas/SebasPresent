@@ -97,34 +97,44 @@ const SHEATH_MS = 700;
 // así que los offsets aquí están en "espacio bone" que es ~cm. Por eso los
 // numeritos son grandes.
 const WEAPON_TRANSFORMS = {
-  // Iteración 1: feedback usuario sesión 24
-  //   - Espada: 30% más grande, orientación invertida (estaba "al revés")
-  //   - Staff: sacado del cuerpo en eje X (estaba dentro)
-  //   - Bow: valores conservadores para asegurar que aparezca visible
+  // Iteración 2: feedback usuario sesión 24
+  //   - Espada: OK (sin cambios desde iteración 1)
+  //   - Staff: a mano IZQUIERDA + vertical estilo mago
+  //   - Bow: scale enorme para asegurar visibilidad y diagnosticar
+  //
+  // Campo "hand": 'right' (default) o 'left'. Si no se pone, va a la derecha.
   '1h_sword': {
+    // Iteración 2: mango en la palma (position [0,0,0] centra en el bone),
+    // antes flotaba arriba/delante
     scale: 65.0,
-    position: [3, 3, 0],
+    position: [0, 0, 0],
     rotation: [0, 0, -Math.PI / 2],
+    hand: 'right',
   },
   '2h_sword': {
     scale: 80.0,
-    position: [4, 4, 0],
+    position: [0, 0, 0],
     rotation: [0, 0, -Math.PI / 2],
+    hand: 'right',
   },
   'bow': {
-    scale: 30.0,
+    scale: 200.0,
     position: [0, 0, 0],
     rotation: [0, 0, 0],
+    hand: 'right',
   },
   'staff': {
+    // Mano izquierda, vertical hacia arriba estilo Gandalf
     scale: 80.0,
-    position: [8, 0, 0],
-    rotation: [0, 0, 0],
+    position: [0, 0, 0],
+    rotation: [Math.PI / 2, 0, 0],
+    hand: 'left',
   },
   'default': {
     scale: 50.0,
     position: [0, 0, 0],
     rotation: [0, 0, 0],
+    hand: 'right',
   },
 };
 
@@ -150,8 +160,10 @@ export class Character {
 
     // Sesión 24 — Weapon attach state
     this._rightHandBone = null;
+    this._leftHandBone = null;
     this._equippedWeaponMesh = null;
     this._equippedWeaponId = null;
+    this._equippedWeaponHand = null;  // 'right' | 'left' para saber de qué bone removerla
   }
 
   // ============================================================
@@ -189,14 +201,18 @@ export class Character {
     const sample = [...this._boneNames].filter(n => /hips|spine|head/i.test(n)).slice(0, 4);
     if (sample.length) console.log('[character] bone scheme sample:', sample);
 
-    // Sesión 24 — Buscar bone de mano derecha y guardar referencia.
-    // Soporta los esquemas comunes: mixamorig:RightHand, mixamorigRightHand, RightHand.
+    // Sesión 24 — Buscar bones de manos y guardar referencias.
+    // Soporta los esquemas comunes: mixamorig:Right/LeftHand, mixamorigRight/LeftHand, Right/LeftHand.
     this._rightHandBone = this._findBone(['mixamorig:RightHand', 'mixamorigRightHand', 'RightHand']);
+    this._leftHandBone  = this._findBone(['mixamorig:LeftHand',  'mixamorigLeftHand',  'LeftHand']);
     if (this._rightHandBone) {
       console.log('[character] right hand bone:', this._rightHandBone.name);
     } else {
-      console.warn('[character] right hand bone NOT FOUND. Weapons will not be visible. Bones disponibles:',
+      console.warn('[character] right hand bone NOT FOUND. Bones disponibles:',
         [...this._boneNames].filter(n => /hand|wrist/i.test(n)));
+    }
+    if (this._leftHandBone) {
+      console.log('[character] left hand bone:', this._leftHandBone.name);
     }
 
     onProgress?.(0.55, 'Cargando animaciones críticas…');
@@ -271,11 +287,15 @@ export class Character {
    */
   async attachWeapon(weaponId, weaponType) {
     if (!this.loaded) return;
-    if (!this._rightHandBone) {
-      console.warn('[character] attachWeapon: no hay right hand bone, no se puede equipar');
+    // Determinar mano según el tipo (default 'right')
+    const tf = WEAPON_TRANSFORMS[weaponType] || WEAPON_TRANSFORMS.default;
+    const handName = tf.hand || 'right';
+    const bone = handName === 'left' ? this._leftHandBone : this._rightHandBone;
+    if (!bone) {
+      console.warn(`[character] attachWeapon: no hay ${handName} hand bone, no se puede equipar`);
       return;
     }
-    // Si ya hay un arma equipada, quitarla primero
+    // Si ya hay un arma equipada, quitarla primero (del bone correcto)
     if (this._equippedWeaponMesh) {
       this.detachWeapon();
     }
@@ -283,30 +303,31 @@ export class Character {
 
     try {
       const mesh = await this._loadWeaponMesh(weaponId);
-      const tf = WEAPON_TRANSFORMS[weaponType] || WEAPON_TRANSFORMS.default;
 
       mesh.scale.setScalar(tf.scale);
       mesh.position.set(tf.position[0], tf.position[1], tf.position[2]);
       mesh.rotation.set(tf.rotation[0], tf.rotation[1], tf.rotation[2]);
 
-      this._rightHandBone.add(mesh);
+      bone.add(mesh);
       this._equippedWeaponMesh = mesh;
       this._equippedWeaponId = weaponId;
-      console.log(`[character] arma "${weaponId}" (${weaponType}) attached`);
+      this._equippedWeaponHand = handName;
+      console.log(`[character] arma "${weaponId}" (${weaponType}) attached a ${handName} hand`);
     } catch (err) {
       console.warn(`[character] attachWeapon failed:`, err.message);
     }
   }
 
   /**
-   * Quita el arma actualmente equipada del bone (la libera para el siguiente
-   * attachWeapon). El GLB queda en cache para reuso.
+   * Quita el arma actualmente equipada del bone donde se attachó.
    */
   detachWeapon() {
-    if (!this._equippedWeaponMesh || !this._rightHandBone) return;
-    this._rightHandBone.remove(this._equippedWeaponMesh);
+    if (!this._equippedWeaponMesh) return;
+    const bone = this._equippedWeaponHand === 'left' ? this._leftHandBone : this._rightHandBone;
+    if (bone) bone.remove(this._equippedWeaponMesh);
     this._equippedWeaponMesh = null;
     this._equippedWeaponId = null;
+    this._equippedWeaponHand = null;
   }
 
   /**
@@ -572,6 +593,7 @@ export class Character {
     // Sesión 24 — limpiar arma equipada
     this.detachWeapon();
     this._rightHandBone = null;
+    this._leftHandBone = null;
 
     if (this.group) {
       this.group.traverse(o => {
