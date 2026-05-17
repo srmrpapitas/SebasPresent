@@ -773,38 +773,27 @@ window.__weaponDebug = function () {
   const weaponId = ch._equippedWeaponId;
   const currentHand = ch._equippedWeaponHand || 'right';
 
-  // Valores iniciales = los actuales del mesh (lo que se ve ahora)
-  const initial = {
-    scale: mesh.scale.x,
-    posX: mesh.position.x,
-    posY: mesh.position.y,
-    posZ: mesh.position.z,
-    rotX: mesh.rotation.x,
-    rotY: mesh.rotation.y,
-    rotZ: mesh.rotation.z,
-    hand: currentHand,
-  };
-
   const panel = document.createElement('div');
   panel.id = 'weaponDebugPanel';
   panel.style.cssText = `
-    position: fixed; right: 10px; top: 80px; z-index: 9999;
-    width: 280px; max-height: 70vh; overflow-y: auto;
-    background: rgba(15,10,5,0.96); color: #f0e0b0;
-    border: 2px solid #c8a043; border-radius: 6px;
-    padding: 10px; font-family: monospace; font-size: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    position: fixed; right: 6px; top: 60px; z-index: 9999;
+    width: 165px; max-height: 65vh; overflow-y: auto;
+    background: rgba(15,10,5,0.78); color: #f0e0b0;
+    border: 1px solid #c8a043; border-radius: 5px;
+    padding: 5px 6px; font-family: monospace; font-size: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+    backdrop-filter: blur(3px);
   `;
 
   function row(label, min, max, step, value, onChange, fmt) {
     fmt = fmt || (v => v.toFixed(2));
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'margin: 6px 0; display: flex; align-items: center; gap: 6px;';
+    wrap.style.cssText = 'margin: 3px 0; display: flex; align-items: center; gap: 4px;';
     wrap.innerHTML = `
-      <span style="width:35px; color:#c8a043;">${label}</span>
+      <span style="width:20px; color:#c8a043; font-size:10px;">${label}</span>
       <input type="range" min="${min}" max="${max}" step="${step}" value="${value}"
-             style="flex:1;">
-      <span class="val" style="width:60px; text-align:right;">${fmt(value)}</span>
+             style="flex:1; min-width:0; height: 14px;">
+      <span class="val" style="width:48px; text-align:right; font-size:9px;">${fmt(value)}</span>
     `;
     const range = wrap.querySelector('input');
     const valEl = wrap.querySelector('.val');
@@ -816,33 +805,45 @@ window.__weaponDebug = function () {
     return wrap;
   }
 
+  // Estado minimizado
+  let minimized = false;
+  const body = document.createElement('div');
+  body.id = 'weaponDebugBody';
+
   const title = document.createElement('div');
-  title.style.cssText = 'font-weight: bold; color: #e8c560; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;';
-  title.innerHTML = `<span>🔧 ${weaponId} (${currentHand})</span><button id="wpDebugClose" style="background: transparent; border: 1px solid #c8a043; color: #f0e0b0; padding: 2px 8px; cursor: pointer; border-radius: 3px;">×</button>`;
+  title.style.cssText = 'font-weight: bold; color: #e8c560; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;';
+  title.innerHTML = `
+    <span id="wpDebugTitle" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100px;">🔧 ${weaponId}</span>
+    <span>
+      <button id="wpDebugMin" style="background: transparent; border: 1px solid #c8a043; color: #f0e0b0; padding: 0 6px; cursor: pointer; border-radius: 3px; font-size: 10px;">−</button>
+      <button id="wpDebugClose" style="background: transparent; border: 1px solid #c8a043; color: #f0e0b0; padding: 0 6px; cursor: pointer; border-radius: 3px; font-size: 10px;">×</button>
+    </span>
+  `;
   panel.appendChild(title);
 
-  panel.appendChild(row('Scale', 1, 600, 1, initial.scale, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
-  const sep1 = document.createElement('div');
-  sep1.style.cssText = 'margin: 8px 0 4px; color: #c8a043; font-weight: bold;';
-  sep1.textContent = 'POSITION';
-  panel.appendChild(sep1);
-  panel.appendChild(row('X', -30, 30, 0.5, initial.posX, v => { mesh.position.x = v; }));
-  panel.appendChild(row('Y', -30, 30, 0.5, initial.posY, v => { mesh.position.y = v; }));
-  panel.appendChild(row('Z', -30, 30, 0.5, initial.posZ, v => { mesh.position.z = v; }));
+  body.appendChild(row('Scl', 1, 600, 1, mesh.scale.x, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
 
-  const sep2 = document.createElement('div');
-  sep2.style.cssText = 'margin: 8px 0 4px; color: #c8a043; font-weight: bold;';
-  sep2.textContent = 'ROTATION (rad)';
-  panel.appendChild(sep2);
+  const sepP = document.createElement('div');
+  sepP.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
+  sepP.textContent = '─ POSITION';
+  body.appendChild(sepP);
+  body.appendChild(row('X', -30, 30, 0.5, mesh.position.x, v => { mesh.position.x = v; }));
+  body.appendChild(row('Y', -30, 30, 0.5, mesh.position.y, v => { mesh.position.y = v; }));
+  body.appendChild(row('Z', -30, 30, 0.5, mesh.position.z, v => { mesh.position.z = v; }));
+
+  const sepR = document.createElement('div');
+  sepR.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
+  sepR.textContent = '─ ROTATION';
+  body.appendChild(sepR);
   const PI = Math.PI;
-  panel.appendChild(row('X', -PI, PI, 0.05, initial.rotX, v => { mesh.rotation.x = v; }, v => `${v.toFixed(2)} (${Math.round(v*180/PI)}°)`));
-  panel.appendChild(row('Y', -PI, PI, 0.05, initial.rotY, v => { mesh.rotation.y = v; }, v => `${v.toFixed(2)} (${Math.round(v*180/PI)}°)`));
-  panel.appendChild(row('Z', -PI, PI, 0.05, initial.rotZ, v => { mesh.rotation.z = v; }, v => `${v.toFixed(2)} (${Math.round(v*180/PI)}°)`));
+  body.appendChild(row('rX', -PI, PI, 0.05, mesh.rotation.x, v => { mesh.rotation.x = v; }, v => `${Math.round(v*180/PI)}°`));
+  body.appendChild(row('rY', -PI, PI, 0.05, mesh.rotation.y, v => { mesh.rotation.y = v; }, v => `${Math.round(v*180/PI)}°`));
+  body.appendChild(row('rZ', -PI, PI, 0.05, mesh.rotation.z, v => { mesh.rotation.z = v; }, v => `${Math.round(v*180/PI)}°`));
 
   // Switch hand button
   const handBtn = document.createElement('button');
-  handBtn.style.cssText = 'margin-top: 10px; width: 100%; padding: 6px; background: #4a3520; color: #e8c560; border: 1px solid #c8a043; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 12px;';
-  handBtn.textContent = `Cambiar a mano ${currentHand === 'right' ? 'IZQUIERDA' : 'DERECHA'}`;
+  handBtn.style.cssText = 'margin-top: 6px; width: 100%; padding: 4px; background: #4a3520; color: #e8c560; border: 1px solid #c8a043; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 10px;';
+  handBtn.textContent = `→ mano ${currentHand === 'right' ? 'IZQ' : 'DCHA'}`;
   handBtn.addEventListener('click', () => {
     const newHand = ch._equippedWeaponHand === 'right' ? 'left' : 'right';
     const newBone = newHand === 'left' ? ch._leftHandBone : ch._rightHandBone;
@@ -850,15 +851,15 @@ window.__weaponDebug = function () {
     mesh.parent?.remove(mesh);
     newBone.add(mesh);
     ch._equippedWeaponHand = newHand;
-    handBtn.textContent = `Cambiar a mano ${newHand === 'right' ? 'IZQUIERDA' : 'DERECHA'}`;
-    title.querySelector('span').textContent = `🔧 ${weaponId} (${newHand})`;
+    handBtn.textContent = `→ mano ${newHand === 'right' ? 'IZQ' : 'DCHA'}`;
+    document.getElementById('wpDebugTitle').textContent = `🔧 ${weaponId} (${newHand[0]})`;
   });
-  panel.appendChild(handBtn);
+  body.appendChild(handBtn);
 
   // Copiar valores button
   const copyBtn = document.createElement('button');
-  copyBtn.style.cssText = 'margin-top: 8px; width: 100%; padding: 8px; background: #8a6230; color: #fff; border: 1px solid #e8c560; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 12px; font-weight: bold;';
-  copyBtn.textContent = '📋 Copiar valores';
+  copyBtn.style.cssText = 'margin-top: 4px; width: 100%; padding: 5px; background: #8a6230; color: #fff; border: 1px solid #e8c560; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 10px; font-weight: bold;';
+  copyBtn.textContent = '📋 COPIAR';
   copyBtn.addEventListener('click', () => {
     const out = `'${guessTypeKey(weaponId)}': {
   scale: ${mesh.scale.x.toFixed(1)},
@@ -867,16 +868,26 @@ window.__weaponDebug = function () {
   hand: '${ch._equippedWeaponHand}',
 },`;
     navigator.clipboard?.writeText(out).then(() => {
-      copyBtn.textContent = '✅ ¡Copiado al portapapeles!';
-      setTimeout(() => copyBtn.textContent = '📋 Copiar valores', 1500);
+      copyBtn.textContent = '✅ COPIADO';
+      setTimeout(() => copyBtn.textContent = '📋 COPIAR', 1500);
     });
-    console.log('[weapon-debug] valores actuales:\n' + out);
+    console.log('[weapon-debug] valores:\n' + out);
   });
-  panel.appendChild(copyBtn);
+  body.appendChild(copyBtn);
 
+  panel.appendChild(body);
+
+  // Listeners para botones de la cabecera
   panel.querySelector('#wpDebugClose').addEventListener('click', () => panel.remove());
+  panel.querySelector('#wpDebugMin').addEventListener('click', () => {
+    minimized = !minimized;
+    body.style.display = minimized ? 'none' : 'block';
+    panel.querySelector('#wpDebugMin').textContent = minimized ? '+' : '−';
+    panel.style.width = minimized ? 'auto' : '165px';
+  });
+
   document.body.appendChild(panel);
-  console.log('[weapon-debug] panel abierto. Mueve los sliders, cuando esté perfecto pulsa "Copiar valores".');
+  console.log('[weapon-debug] panel abierto. − minimiza, × cierra. Mueve sliders y pulsa COPIAR.');
 
   function guessTypeKey(id) {
     if (/sword.*2h|2h.*sword/.test(id)) return '2h_sword';
