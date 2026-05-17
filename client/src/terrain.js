@@ -57,7 +57,10 @@ const BIOME_TEXTURE_URLS = {
   snow:       `${R2_BASE}/terrain/textures/snow_diff_1k.jpg`,
   desert:     `${R2_BASE}/terrain/textures/desert_diff_1k.jpg`,
   beach:      `${R2_BASE}/terrain/textures/beach_diff_1k.jpg`,
-  plains:     `${R2_BASE}/terrain/textures/plains_diff_1k.jpg`,
+  // Sesión 12 — plains usa el archivo beach_diff_1k.jpg que ya está en R2
+  // (es la textura de musgo verde + rocas que el user quiere para la pradera).
+  // No hay archivo plains_diff_1k.jpg en R2 — apuntamos al mismo asset.
+  plains:     `${R2_BASE}/terrain/textures/beach_diff_1k.jpg`,
   // jungle → sin textura, vertex color fallback (verde oscuro de selva)
 };
 
@@ -651,8 +654,36 @@ async function loadGLBDecorations() {
           DECORATION_GEOMS[typeId] = { id: typeId, glbParts: parts };
           console.log(`[terrain] Loaded decoration 'rocks': ${smallMeshes.length} variants, ${parts.length} parts`);
         }
+      } else if (typeId === 'stones') {
+        // Sesión 12 — stones.glb es un PACK MULTI-MESH (12 piedras distintas:
+        // Stone_01_Material #2_0 ... Stone_12_Material #2_0). Bug previo:
+        // se bakeaba todo junto → las 12 piedras se renderizaban APILADAS en
+        // cada punto del chunk. Fix: extraer cada Stone_NN como part separado,
+        // y dejar que buildDecorationForChunk con isMultiVariant elija una al
+        // azar por instancia (igual que ya hace para rocks).
+        const stoneMeshes = [];
+        gltf.scene.traverse(obj => {
+          if (!obj.isMesh) return;
+          const n = obj.name || '';
+          if (n.startsWith('Stone_')) stoneMeshes.push(obj);
+        });
+
+        if (stoneMeshes.length === 0) {
+          console.warn(`[terrain] stones.glb cargado pero no se encontraron meshes 'Stone_NN'`);
+        } else {
+          const parts = [];
+          for (const m of stoneMeshes) {
+            const wrapper = new THREE.Group();
+            wrapper.add(m.clone());
+            // Stones del GLB tienen bbox ~0.2m → bakeamos a 0.4m altura objetivo.
+            const baked = bakeGlbModel(wrapper, 0.4, 0x808078);
+            if (baked) parts.push(...baked.parts);
+          }
+          DECORATION_GEOMS[typeId] = { id: typeId, glbParts: parts };
+          console.log(`[terrain] Loaded decoration 'stones': ${stoneMeshes.length} variants, ${parts.length} parts`);
+        }
       } else {
-        // stones, grass, etc — comportamiento original (bakear todo el GLB)
+        // grass, etc — comportamiento original (bakear todo el GLB junto)
         const baked = bakeGlbModel(gltf.scene, typeId === 'grass' ? 0.4 : 1.0,
           typeId === 'grass' ? 0x6a9a3a : 0x808078);
         if (!baked) return;
@@ -735,13 +766,13 @@ function buildDecorationForChunk(cx, cz) {
     const cfg = DECORATION_CONFIG[typeId];
     if (!dg || !cfg) continue;
 
-    // Sesión 12 — Para 'rocks' (multi-mesh GLB), cada instancia elige UN solo
-    // mesh-variant al azar de los parts disponibles. El resto de la lista
-    // queda hide (matriz cero) en ese InstancedMesh, garantizando que solo
-    // un modelo se renderiza por posición. Esto es menos eficiente que el
-    // path normal (un InstancedMesh dedicado por variante con su sub-lista)
-    // pero más simple y suficiente para densidades bajas (1-4 por chunk).
-    const isMultiVariant = typeId === 'rocks' && dg.glbParts.length > 1;
+    // Sesión 12 — Para GLBs multi-mesh (rocks, stones), cada instancia elige
+    // UN solo mesh-variant al azar de los parts disponibles. El resto de la
+    // lista queda hide (matriz cero) en ese InstancedMesh, garantizando que
+    // solo un modelo se renderiza por posición. Sin esto, los packs como
+    // stones.glb (12 Stone_NN) renderizan las 12 piedras APILADAS en cada
+    // punto, generando el bug visual de "rocas volando una sobre otra".
+    const isMultiVariant = (typeId === 'rocks' || typeId === 'stones') && dg.glbParts.length > 1;
 
     if (isMultiVariant) {
       // Pre-asignar variant aleatoria por item
