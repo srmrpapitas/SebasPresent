@@ -152,27 +152,28 @@ const _gltfLoader = new GLTFLoader();
 // bone: qué hueso del personaje usar de anclaje.
 const ARMOR_TRANSFORMS = {
   body: {
-    // Pechera al spine. scale alto porque la mayoría de GLBs vienen en metros.
-    scale: 100.0,
-    position: [0.0, 0.0, 0.0],
-    rotation: [0.0, 0.0, 0.0],
+    // Sesión 26 — calibrado in-game para chest_bronze (Pechera)
+    scale: 39.0,
+    position: [-2.0, -30.0, 5.5],
+    rotation: [0.058, 0.058, -0.092],
     bone: 'spine',
   },
   shield: {
-    // Escudo en la mano izquierda (player coge espada con derecha).
-    scale: 100.0,
-    position: [0.0, 0.0, 0.0],
-    rotation: [0.0, 0.0, 0.0],
+    // Sesión 26 — calibrado in-game para shield_bronze (Viking shield)
+    scale: 39.0,
+    position: [0.0, 3.0, -4.5],
+    rotation: [0.208, 3.108, -3.142],
     bone: 'leftHand',
   },
   helm: {
+    // Placeholder — sin calibrar (no hay helm bronce todavía)
     scale: 100.0,
     position: [0.0, 0.0, 0.0],
     rotation: [0.0, 0.0, 0.0],
     bone: 'head',
   },
   cape: {
-    // Capa al spine, queda colgando detrás
+    // Placeholder — sin calibrar
     scale: 100.0,
     position: [0.0, 0.0, 0.0],
     rotation: [0.0, 0.0, 0.0],
