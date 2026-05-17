@@ -351,6 +351,8 @@ export async function startWorld(loggedInUser, token) {
       });
       // Exponer para testing en eruda: window.skills.getLevel('attack')
       window.skills = skills;
+      // Sesión 24 — exponer character para tweakWeapon() desde eruda
+      window.character = character;
     } catch (e) { console.warn('[world] skills start:', e); }
 
     // Sesión 22 — Equipment system: 9 slots (weapon/shield/helm/...)
@@ -360,6 +362,30 @@ export async function startWorld(loggedInUser, token) {
         getToken: () => authToken,
       });
       window.equipment = equipment;
+
+      // Sesión 24 — Cuando cambie el equipment, attach/detach el arma 3D
+      // en la mano del personaje. character.attachWeapon es async pero no
+      // bloqueamos: si tarda, el render irá apareciendo en cuanto cargue.
+      equipment.onChange((slots) => {
+        if (!character || !character.loaded) return;
+        const weapon = slots.weapon;
+        if (weapon && weapon.item_id && weapon.weapon_type) {
+          character.attachWeapon(weapon.item_id, weapon.weapon_type).catch(e => {
+            console.warn('[world] attachWeapon:', e);
+          });
+        } else {
+          character.detachWeapon();
+        }
+      });
+
+      // Aplicar arma inicial si ya hay una equipada al cargar el mundo
+      // (equipment.init ya hizo refresh, así que getEquipped tiene datos).
+      const initialWeapon = equipment.getEquipped('weapon');
+      if (character && character.loaded && initialWeapon?.item_id && initialWeapon?.weapon_type) {
+        character.attachWeapon(initialWeapon.item_id, initialWeapon.weapon_type).catch(e => {
+          console.warn('[world] attachWeapon inicial:', e);
+        });
+      }
     } catch (e) { console.warn('[world] equipment init:', e); }
 
     // Sesión 23 — Shop (overlay tienda del banker)

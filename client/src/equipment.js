@@ -106,6 +106,20 @@ export function getWeaponType() {
   return WEAPON_TYPE_TO_COMBAT[w.weapon_type] || 'unarmed';
 }
 
+/**
+ * Sesión 24 — Devuelve item_id + weapon_type del arma equipada para que
+ * world.js / character.js pueda cargar el GLB 3D y attacharlo a la mano.
+ * Devuelve null si no hay arma.
+ */
+export function getEquippedWeaponItem() {
+  const w = equipped.weapon;
+  if (!w) return null;
+  return {
+    item_id: w.item_id,
+    weapon_type: WEAPON_TYPE_TO_COMBAT[w.weapon_type] || 'default',
+  };
+}
+
 export function onChange(cb) {
   listeners.push(cb);
   return () => {

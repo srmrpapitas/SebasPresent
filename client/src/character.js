@@ -1,41 +1,22 @@
 /**
- * SebasPresent — Character module (Slice 5d — Full anim set)
+ * SebasPresent — Character module (Slice 5d — Full anim set + Sesión 24: weapon attach)
  *
- * Carga el Mixamo Remy + un set completo de animaciones desde R2:
+ * Carga el Mixamo Remy + un set completo de animaciones desde R2.
  *
- *   Locomoción no-combate:
- *     idle, walk_forward, walk_back, walk_left, walk_right,
- *     run_forward, run_back, run_left, run_right
- *
- *   Locomoción combate (con espada en mano):
- *     sword_idle, sword_run_forward, sword_run_back, sword_run_left, sword_run_right
- *
- *   One-shots:
- *     attack_1..4 (sword), punching (unarmed), draw, sheath, death, sword_death, drink
- *
- * API pública:
- *   load(onProgress) — carga FBX + todas las animaciones
- *   play(state, direction='forward')    — locomoción/idle. state: 'idle'|'walk'|'run'.
- *   setCombatStance(on)                 — modo armado/desarmado. Re-mapea idle/walk/run.
- *   playDraw() / playSheath()           — one-shot al entrar/salir de combate. setCombatStance se hace solo.
- *   playAttack()                        — random sword_1..4 si stance on, punching si off
- *   playDeath()                         — sword_death si armed, death si no. Clampea al final.
- *   playDrink()                         — one-shot drinking (food/potions futuro)
- *   revive()                            — limpia flag de muerte tras respawn
- *   update(dt), dispose()
- *
- * Compatibilidad hacia atrás: play('idle'), play('walk'), play('run') sin
- * segundo arg siguen funcionando (default 'forward').
- *
- * Los assets viven en R2 fuera del deploy de Pages porque el FBX del
- * character pesa más del límite de 25 MiB de Cloudflare Pages.
+ * Sesión 24 — Equipment Nivel B (weapon 3D en mano):
+ *   - attachWeapon(weaponId, weaponType): carga GLB desde R2/weapons/<id>.glb
+ *     y lo añade al bone "mixamorig:RightHand". Si había arma previa, swap.
+ *   - detachWeapon(): elimina el arma equipada.
+ *   - Tabla WEAPON_TRANSFORMS con scale/rotation/offset por tipo.
  */
 
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const CDN_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const ANIM_BASE = `${CDN_BASE}/animations`;
+const WEAPONS_BASE = `${CDN_BASE}/weapons`;
 
 // ============================================================
 // Mapeo nombre lógico -> filename en R2/animations/
@@ -55,7 +36,7 @@ const ANIM_FILES = {
   // Locomoción combate
   sword_idle:        'Sword_Idle.fbx',
   sword_run_forward: 'Sword_Run.fbx',
-  sword_run_back:    'Run_Back.fbx',     // no hay sword version, fallback
+  sword_run_back:    'Run_Back.fbx',
   sword_run_left:    'Sword_Strafe.fbx',
   sword_run_right:   'Sword_Strafe_2.fbx',
 
@@ -74,61 +55,99 @@ const ANIM_FILES = {
   drink:    'Drinking.fbx',
 };
 
-// Anims que SI fallan, el juego se rompe. El resto, soft-fail con warning.
 const CRITICAL_ANIMS = ['idle', 'walk_forward', 'run_forward'];
 
-// Slice 5d FIX — Clips de los que hay que eliminar la track Hips.position.
-//
-// Mixamo exporta dos tipos de clips:
-//   1. "In place" (Idle, Walking, Running): los Hips NO se desplazan.
-//      Mantenemos position para el bobbing natural.
-//   2. "Con root motion" (todos los direccionales y los one-shots): los Hips
-//      se mueven dentro del clip para simular movimiento real. Como nuestro
-//      player.position lo controla world.js (joystick + collision), aplicar
-//      esa traslación causa drift acumulativo y hace al char hundirse.
-//
-// Estrategia: STRIP en todos los que tienen drift verificado. Solo
-// idle / walk_forward / run_forward / sword_idle conservan Hips.position.
 const CLIPS_TO_STRIP_ROOT = new Set([
-  // One-shots de combate (drift 5-7m por reproducción)
   'attack_1', 'attack_2', 'attack_3', 'attack_4',
   'punching',
   'draw', 'sheath',
-  // Deaths (drift + Y a 1.5m bajo suelo)
   'death', 'sword_death',
   'drink',
-  // Locomoción direccional no-combate (drift 2.7-3.8m por loop)
   'walk_back', 'walk_left', 'walk_right',
   'run_back', 'run_left', 'run_right',
-  // Locomoción de combate (drift 4.5-5.7m por loop)
   'sword_run_forward',
-  'sword_run_back',     // alias de Run_Back.fbx, ya en lista pero sin alias
-  'sword_run_left',     // Sword_Strafe.fbx
-  'sword_run_right',    // Sword_Strafe_2.fbx
+  'sword_run_back',
+  'sword_run_left',
+  'sword_run_right',
 ]);
 
-const CHARACTER_SCALE = 0.01;  // FBX en cm, escena en m
+const CHARACTER_SCALE = 0.01;
 const CROSSFADE = 0.22;
-const ATTACK_TICK_MS = 600;    // duración objetivo del swing — coincide con TICK_MS server
+const ATTACK_TICK_MS = 600;
 const DRAW_MS = 700;
 const SHEATH_MS = 700;
+
+// ============================================================
+// Sesión 24 — Weapon attach config
+// ============================================================
+//
+// Cada arma GLB tiene orientación/escala arbitrarias del autor 3D. Estos
+// son OFFSETS por tipo de arma para que encajen bien en la mano derecha.
+// Empezamos con valores razonables — si quedan torcidos/grandes, ajustamos
+// los números aquí y subes el archivo otra vez.
+//
+// Las transformaciones se aplican AL MESH del arma, dentro del bone de la
+// mano. El bone ya tiene la rotación correcta de la mano según anim.
+//
+// scale:  factor de escala uniforme (sobre el mesh sin escalar)
+// position: offset XYZ desde el origen del bone (en metros)
+// rotation: rotación XYZ en radianes (orden XYZ)
+//
+// CHARACTER_SCALE = 0.01 (cm→m), pero el bone ya está dentro de ese scale,
+// así que los offsets aquí están en "espacio bone" que es ~cm. Por eso los
+// numeritos son grandes.
+const WEAPON_TRANSFORMS = {
+  '1h_sword': {
+    scale: 50.0,
+    position: [3, 3, 0],
+    rotation: [0, 0, Math.PI / 2],
+  },
+  '2h_sword': {
+    scale: 60.0,
+    position: [4, 4, 0],
+    rotation: [0, 0, Math.PI / 2],
+  },
+  'bow': {
+    scale: 100.0,
+    position: [0, 5, 0],
+    rotation: [Math.PI / 2, 0, 0],
+  },
+  'staff': {
+    scale: 80.0,
+    position: [2, 0, 0],
+    rotation: [0, 0, 0],
+  },
+  'default': {
+    scale: 50.0,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+  },
+};
+
+// Cache global de GLBs de armas para no descargar cada vez
+const _weaponMeshCache = new Map();
+const _gltfLoader = new GLTFLoader();
 
 export class Character {
   constructor() {
     this.group = null;
     this.mesh = null;
     this.mixer = null;
-    this.actions = {};   // name -> AnimationAction
-    this.clips = {};     // name -> AnimationClip (para clonar a peers)
+    this.actions = {};
+    this.clips = {};
     this.current = null;
     this.loaded = false;
 
-    // Estado lógico
-    this.combatStance = false;     // ¿espada en mano?
+    this.combatStance = false;
     this.isAttacking = false;
-    this.isInTransition = false;   // draw/sheath/drink en curso
+    this.isInTransition = false;
     this.isDead = false;
-    this.attackCycle = 0;          // qué sword_attack toca (1..4 round-robin)
+    this.attackCycle = 0;
+
+    // Sesión 24 — Weapon attach state
+    this._rightHandBone = null;
+    this._equippedWeaponMesh = null;
+    this._equippedWeaponId = null;
   }
 
   // ============================================================
@@ -159,19 +178,23 @@ export class Character {
     this.mesh = characterFBX;
     this.mixer = new THREE.AnimationMixer(characterFBX);
 
-    // Slice 5d FIX — colectar nombres de bones del character DESPUÉS de
-    // que pase por FBXLoader (que limpia el ':' del naming) y normalizeBones.
-    // Los usaremos para adaptar dinámicamente los track names de cada clip,
-    // que pueden venir con/sin ':' según el FBX origen.
     this._boneNames = new Set();
     characterFBX.traverse(o => {
       if (o.isBone && o.name) this._boneNames.add(o.name);
     });
-    // Log discreto para debug — sirve para confirmar el esquema en consola
     const sample = [...this._boneNames].filter(n => /hips|spine|head/i.test(n)).slice(0, 4);
     if (sample.length) console.log('[character] bone scheme sample:', sample);
 
-    // ---- Animaciones críticas (throw si fallan) ----
+    // Sesión 24 — Buscar bone de mano derecha y guardar referencia.
+    // Soporta los esquemas comunes: mixamorig:RightHand, mixamorigRightHand, RightHand.
+    this._rightHandBone = this._findBone(['mixamorig:RightHand', 'mixamorigRightHand', 'RightHand']);
+    if (this._rightHandBone) {
+      console.log('[character] right hand bone:', this._rightHandBone.name);
+    } else {
+      console.warn('[character] right hand bone NOT FOUND. Weapons will not be visible. Bones disponibles:',
+        [...this._boneNames].filter(n => /hand|wrist/i.test(n)));
+    }
+
     onProgress?.(0.55, 'Cargando animaciones críticas…');
     const criticalEntries = CRITICAL_ANIMS.map(name => [name, ANIM_FILES[name]]);
     const criticalFBXs = await Promise.all(
@@ -184,7 +207,6 @@ export class Character {
       }
     }
 
-    // ---- Resto en paralelo, soft-fail. Dedupe por filename (sword_run_back -> Run_Back.fbx).
     onProgress?.(0.72, 'Cargando animaciones de combate…');
     const optionalEntries = Object.entries(ANIM_FILES)
       .filter(([name]) => !CRITICAL_ANIMS.includes(name));
@@ -206,22 +228,18 @@ export class Character {
         console.warn(`[character] anim file failed: ${file} (${names.join(', ')})`, res.reason?.message);
         continue;
       }
-      // Si varios nombres apuntan al mismo file, clonamos el clip por nombre
-      // para que cada uno tenga su propio AnimationAction independiente.
       for (const name of names) {
-        const ok = this._registerClip(res.value, name, /*cloneClip*/ names.length > 1);
+        const ok = this._registerClip(res.value, name, names.length > 1);
         if (!ok) console.warn(`[character] anim ${name} (${file}) sin clip dentro del FBX`);
       }
     }
 
-    // One-shots: LoopOnce, no clamp (vuelven a current al terminar)
     for (const name of ['attack_1','attack_2','attack_3','attack_4','punching','draw','sheath','drink']) {
       const a = this.actions[name];
       if (!a) continue;
       a.setLoop(THREE.LoopOnce, 1);
       a.clampWhenFinished = false;
     }
-    // Deaths: LoopOnce + clamp (queda tumbado)
     for (const name of ['death','sword_death']) {
       const a = this.actions[name];
       if (!a) continue;
@@ -229,7 +247,6 @@ export class Character {
       a.clampWhenFinished = true;
     }
 
-    // Arranca en idle
     this.actions.idle.play();
     this.current = this.actions.idle;
     this.loaded = true;
@@ -237,27 +254,106 @@ export class Character {
     return this.group;
   }
 
+  // ============================================================
+  // Sesión 24 — Weapon attach/detach API
+  // ============================================================
+  /**
+   * Equipa un arma 3D en la mano derecha del personaje.
+   *
+   * @param {string} weaponId - id del item (ej. 'sword_bronze'). Se usa
+   *   para cargar el GLB desde R2/weapons/{weaponId}.glb.
+   * @param {string} weaponType - tipo (1h_sword|2h_sword|bow|staff) para
+   *   elegir las transformaciones de la tabla WEAPON_TRANSFORMS.
+   */
+  async attachWeapon(weaponId, weaponType) {
+    if (!this.loaded) return;
+    if (!this._rightHandBone) {
+      console.warn('[character] attachWeapon: no hay right hand bone, no se puede equipar');
+      return;
+    }
+    // Si ya hay un arma equipada, quitarla primero
+    if (this._equippedWeaponMesh) {
+      this.detachWeapon();
+    }
+    if (!weaponId) return;
+
+    try {
+      const mesh = await this._loadWeaponMesh(weaponId);
+      const tf = WEAPON_TRANSFORMS[weaponType] || WEAPON_TRANSFORMS.default;
+
+      mesh.scale.setScalar(tf.scale);
+      mesh.position.set(tf.position[0], tf.position[1], tf.position[2]);
+      mesh.rotation.set(tf.rotation[0], tf.rotation[1], tf.rotation[2]);
+
+      this._rightHandBone.add(mesh);
+      this._equippedWeaponMesh = mesh;
+      this._equippedWeaponId = weaponId;
+      console.log(`[character] arma "${weaponId}" (${weaponType}) attached`);
+    } catch (err) {
+      console.warn(`[character] attachWeapon failed:`, err.message);
+    }
+  }
+
+  /**
+   * Quita el arma actualmente equipada del bone (la libera para el siguiente
+   * attachWeapon). El GLB queda en cache para reuso.
+   */
+  detachWeapon() {
+    if (!this._equippedWeaponMesh || !this._rightHandBone) return;
+    this._rightHandBone.remove(this._equippedWeaponMesh);
+    this._equippedWeaponMesh = null;
+    this._equippedWeaponId = null;
+  }
+
+  /**
+   * Carga (con cache) el mesh del arma desde R2. Devuelve un clone para
+   * que cada instancia tenga su propio mesh (necesario para multiplayer
+   * cuando peers equipen las mismas armas).
+   */
+  async _loadWeaponMesh(weaponId) {
+    if (_weaponMeshCache.has(weaponId)) {
+      // Clone para que cada player tenga su instancia
+      return _weaponMeshCache.get(weaponId).clone(true);
+    }
+    const url = `${WEAPONS_BASE}/${weaponId}.glb`;
+    const gltf = await _gltfLoader.loadAsync(url);
+    const base = gltf.scene;
+    base.traverse(o => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        if (o.material) {
+          // Material a FrontSide para no doblar gasto en mesh con interiores
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) {
+            if (m.side !== undefined) m.side = THREE.FrontSide;
+          }
+        }
+      }
+    });
+    _weaponMeshCache.set(weaponId, base);
+    return base.clone(true);
+  }
+
+  /**
+   * Buscar bone por lista de candidatos. Devuelve el primero que matchea.
+   */
+  _findBone(candidates) {
+    if (!this.mesh) return null;
+    let found = null;
+    this.mesh.traverse(o => {
+      if (found || !o.isBone) return;
+      if (candidates.includes(o.name)) found = o;
+    });
+    return found;
+  }
+
   _registerClip(fbx, name, cloneClip = false) {
     if (!fbx.animations || fbx.animations.length === 0) return false;
     let clip = fbx.animations[0];
     if (cloneClip) clip = clip.clone();
     clip.name = name;
-    // Slice 5d FIX: adaptar nombres de tracks al esquema de bones real del
-    // character. FBXLoader devuelve tracks tipo "mixamorigHips.position" (sin
-    // ':'), pero el character puede tener bones "mixamorig:Hips" (con ':'),
-    // "mixamorigHips" (sin ':'), o "Hips" (bare). Sin esta adaptación, los
-    // tracks no encuentran bones y el clip "ejecuta" sin animar nada → T-pose.
     adaptTrackNamesToSkeleton(clip, this._boneNames);
-    // Slice 5d FIX: strip de root motion para clips one-shot.
-    // Sword_Attack_1/2/3 mueven los Hips 5-7m hacia adelante por swing.
-    // Sword_Death/Death_Backward mueven Hips a Y=24 (1.5m bajo el suelo).
-    // Si no eliminamos esa traslación, el player se desplaza/entierra cada
-    // vez que se reproduce. La rotación de hombros/codos/muñecas (que SÍ
-    // hace el swing visible) se mantiene. Para locomoción (idle/walk/run)
-    // NO strippeamos, porque su Hips.position aporta el bob vertical natural.
     if (CLIPS_TO_STRIP_ROOT.has(name)) {
-      // Para deaths, congelar Y al primer frame (sino el clip lleva Hips a
-      // 1.5m bajo el suelo). Para el resto, solo zero X/Z.
       const mode = (name === 'death' || name === 'sword_death') ? 'all' : 'horizontal';
       stripHipsPositionTrack(clip, mode);
     }
@@ -272,12 +368,6 @@ export class Character {
   // ============================================================
   // PUBLIC: locomoción + idle
   // ============================================================
-  /**
-   * state: 'idle' | 'walk' | 'run'
-   * direction: 'forward' | 'back' | 'left' | 'right' (default 'forward')
-   *
-   * Si combatStance=true, se re-mapea a versiones sword_*.
-   */
   play(state, direction = 'forward') {
     if (!this.loaded) return;
     if (this.isAttacking || this.isInTransition || this.isDead) return;
@@ -293,7 +383,6 @@ export class Character {
       return this.combatStance ? 'sword_idle' : 'idle';
     }
     if (this.combatStance) {
-      // walk y run en combate: ambos van a sword_run_*
       const key = `sword_run_${direction}`;
       if (this.actions[key]) return key;
       return 'sword_run_forward';
@@ -308,14 +397,10 @@ export class Character {
     return state === 'run' ? 'run_forward' : 'walk_forward';
   }
 
-  // ============================================================
-  // PUBLIC: stance (entrar/salir de modo combate)
-  // ============================================================
   setCombatStance(on) {
     this.combatStance = !!on;
   }
 
-  /** Saca la espada. One-shot. Al terminar combatStance=true. */
   playDraw() {
     if (!this.loaded || this.isDead) return;
     const action = this.actions.draw;
@@ -337,7 +422,6 @@ export class Character {
     }, dur + 20);
   }
 
-  /** Guarda la espada. One-shot. Al terminar combatStance=false. */
   playSheath() {
     if (!this.loaded || this.isDead) return;
     const action = this.actions.sheath;
@@ -359,14 +443,6 @@ export class Character {
     }, dur + 20);
   }
 
-  // ============================================================
-  // PUBLIC: swing de ataque (one-shot por combat tick)
-  // ============================================================
-  /**
-   * En modo armed: round-robin sword_attack_1..4 (cycle, no random, para
-   * que se vea variedad sin repetir). En unarmed: punching.
-   * Comprime el clip a ATTACK_TICK_MS para que coincida con el tick server.
-   */
   playAttack() {
     if (!this.loaded || this.isDead) return;
     if (this.isAttacking || this.isInTransition) return;
@@ -392,9 +468,6 @@ export class Character {
     }, ATTACK_TICK_MS + 20);
   }
 
-  // ============================================================
-  // PUBLIC: death + revive
-  // ============================================================
   playDeath() {
     if (!this.loaded || this.isDead) return;
     const action = this.combatStance
@@ -417,14 +490,11 @@ export class Character {
     this.isInTransition = false;
   }
 
-  /** Tras respawn: limpia muerte, vuelve a idle no-combat. */
   revive() {
     this.isDead = false;
     this.isAttacking = false;
     this.isInTransition = false;
     this.combatStance = false;
-    // Desactivar clamp en las death actions para que sus valores ya no
-    // mantengan el bone en la última pose. Luego stop explícito + reset.
     for (const name of ['death', 'sword_death']) {
       const a = this.actions[name];
       if (!a) continue;
@@ -432,14 +502,10 @@ export class Character {
       a.stop();
       a.reset();
     }
-    // Detener TODAS las actions (incluido cualquier weight residual del blend)
     if (this.mixer) {
       this.mixer.stopAllAction();
-      // setTime(0) fuerza re-evaluación de propiedades. Sin esto, los bones
-      // pueden quedarse en la pose final de death porque ya fue "escrita".
       this.mixer.setTime(0);
     }
-    // Arrancar idle limpia con weight 1
     const idle = this.actions.idle;
     if (idle) {
       idle.reset();
@@ -451,9 +517,6 @@ export class Character {
     }
   }
 
-  // ============================================================
-  // PUBLIC: drinking (food/potions futuro)
-  // ============================================================
   playDrink() {
     if (!this.loaded || this.isDead) return;
     if (this.isAttacking || this.isInTransition) return;
@@ -470,13 +533,7 @@ export class Character {
     }, dur + 20);
   }
 
-  // ============================================================
-  // PRIVATE helpers
-  // ============================================================
   _scaleOneShot(action, targetMs) {
-    // Configurar parámetros de la action ANTES de _crossFadeTo (que hace
-    // el reset/play). reset() es benigno aquí; los efectos (setLoop, timeScale)
-    // persisten al reset.
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = false;
     const clipMs = action.getClip().duration * 1000;
@@ -486,9 +543,6 @@ export class Character {
   }
 
   _crossFadeTo(next, fadeMs) {
-    // Orden correcto Three.js: reset → play → crossFadeFrom.
-    // Si llamas crossFadeFrom antes de play(), la action destino no está
-    // activa y el blend falla (T-pose durante la transición).
     next.reset();
     next.play();
     if (this.current && this.current !== next) {
@@ -497,9 +551,6 @@ export class Character {
     this.current = next;
   }
 
-  // ============================================================
-  // LIFECYCLE
-  // ============================================================
   update(dt) {
     if (this.mixer) this.mixer.update(dt);
   }
@@ -513,6 +564,11 @@ export class Character {
     this.isInTransition = false;
     this.isDead = false;
     this.combatStance = false;
+
+    // Sesión 24 — limpiar arma equipada
+    this.detachWeapon();
+    this._rightHandBone = null;
+
     if (this.group) {
       this.group.traverse(o => {
         if (o.geometry) o.geometry.dispose?.();
@@ -541,41 +597,16 @@ function normalizeBones(root) {
   });
 }
 
-/**
- * Slice 5d — Adapter universal de track names.
- *
- * Three.js FBXLoader produce tracks tipo "mixamorigHips.position" (limpia
- * los ':' porque rompen el split nombre.propiedad). Pero el character.fbx
- * puede tener bones llamados "mixamorig:Hips", "mixamorigHips" o "Hips"
- * según cómo fue exportado.
- *
- * Sin matchear, el clip se "reproduce" pero ningún PropertyBinding encuentra
- * su bone → la pose no cambia → T-pose.
- *
- * Este adapter detecta automáticamente el esquema del target skeleton
- * (boneNames) y renombra cada track para que matchee.
- *
- * Soporta los esquemas comunes:
- *   - "mixamorig:Hips"   (Mixamo standard, con dos puntos)
- *   - "mixamorigHips"    (FBXLoader-cleaned, sin dos puntos)
- *   - "mixamorig1:Hips"  (Mixamo dup con sufijo 1)
- *   - "Hips"             (bare)
- */
 function adaptTrackNamesToSkeleton(clip, boneNames) {
   if (!boneNames || boneNames.size === 0) return;
-
   let adapted = 0;
   let dropped = 0;
   for (const track of clip.tracks) {
     const dotIdx = track.name.lastIndexOf('.');
     if (dotIdx < 0) continue;
     const original = track.name.slice(0, dotIdx);
-    const property = track.name.slice(dotIdx);   // incluye el "."
-
-    // Si ya matchea exactamente, listo.
+    const property = track.name.slice(dotIdx);
     if (boneNames.has(original)) continue;
-
-    // Intentar todas las variantes posibles del bone name
     const candidates = generateBoneCandidates(original);
     let found = null;
     for (const c of candidates) {
@@ -593,50 +624,23 @@ function adaptTrackNamesToSkeleton(clip, boneNames) {
   }
 }
 
-/**
- * Dado un track-bone-name como "mixamorigHips", devuelve una lista de
- * candidatos a probar contra el skeleton del character.
- */
 function generateBoneCandidates(name) {
   const out = [];
-
-  // Extraer la parte "core" (Hips, Spine, LeftArm...) quitando prefijos
   let core = name;
   const prefixes = ['mixamorig1:', 'mixamorig:', 'mixamorig1', 'mixamorig'];
   for (const p of prefixes) {
     if (core.startsWith(p)) { core = core.slice(p.length); break; }
   }
-  // El : a veces queda como sufijo del prefijo, removerlo defensivamente
   if (core.startsWith(':')) core = core.slice(1);
-
-  // Todas las variantes posibles
-  out.push(name);                       // exacto
-  out.push('mixamorig:' + core);        // con prefijo y :
-  out.push('mixamorig' + core);         // con prefijo sin :
-  out.push('mixamorig1:' + core);       // dup con :
-  out.push('mixamorig1' + core);        // dup sin :
-  out.push(core);                       // bare
+  out.push(name);
+  out.push('mixamorig:' + core);
+  out.push('mixamorig' + core);
+  out.push('mixamorig1:' + core);
+  out.push('mixamorig1' + core);
+  out.push(core);
   return out;
 }
 
-/**
- * Slice 5d FIX — Neutralizar root motion horizontal de los Hips.
- *
- * NO elimina el track de Hips.position (eso causaría que durante el crossFade
- * desde idle, donde Hips.position SÍ existe con Y≈189, Three.js no encuentre
- * valor en la action destino y caiga al origen Y=0 → personaje hundido).
- *
- * En vez de eso, MUTAMOS los valores del VectorKeyframeTrack: para cada
- * keyframe (X, Y, Z), ponemos X y Z a 0 pero conservamos Y. Así:
- *   - El bone Hips mantiene su altura natural (Y) durante la animación.
- *   - No hay drift horizontal en X/Z.
- *   - El crossFade entre clips funciona correctamente porque ambos tienen
- *     valores válidos en la track.
- *
- * Para deaths el Y final original era ~24 (1.5m bajo suelo). Como conservamos
- * Y, eso enterraría al personaje. Para deaths SÍ ponemos Y al valor del
- * primer keyframe (la altura natural antes de "caer"), congelando Y.
- */
 function stripHipsPositionTrack(clip, mode = 'horizontal') {
   let count = 0;
   for (const t of clip.tracks) {
@@ -651,17 +655,14 @@ function stripHipsPositionTrack(clip, mode = 'horizontal') {
     }
     if (core.startsWith(':')) core = core.slice(1);
     if (core !== 'Hips') continue;
-    // Encontrado el track de Hips.position. Mutamos los valores.
-    const v = t.values; // [x0,y0,z0, x1,y1,z1, ...]
+    const v = t.values;
     const nFrames = v.length / 3;
     if (mode === 'horizontal') {
-      // Zero out X y Z, mantener Y
       for (let i = 0; i < nFrames; i++) {
         v[i * 3 + 0] = 0;
         v[i * 3 + 2] = 0;
       }
     } else if (mode === 'all') {
-      // Zero out X y Z, congelar Y al valor del primer frame
       const y0 = v[1];
       for (let i = 0; i < nFrames; i++) {
         v[i * 3 + 0] = 0;
