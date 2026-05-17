@@ -1,5 +1,5 @@
 /**
- * SebasPresent — Equipment handlers (Sesión 22)
+ * SebasPresent — Equipment handlers (Sesión 22 + Sesión 26 auto-desequip)
  *
  * Endpoints:
  *   GET  /api/equipment
@@ -10,7 +10,13 @@
  *     Coge el item del slot_index del inventario y lo equipa en el slot
  *     correspondiente a item.equip_slot. Si ese slot ya tenía algo, lo
  *     deja en el slot del inventario donde estaba el item nuevo (swap).
- *     Si el slot del item no permite equipar (equip_slot = NULL), error.
+ *
+ *     SESIÓN 26 — Auto-desequip 2H ↔ Shield:
+ *       - Equipar 2H (weapon_type='2h_sword') con escudo equipado →
+ *         el escudo se va al inventario automáticamente.
+ *       - Equipar escudo con 2H equipada → la 2H se va al inventario.
+ *       - Si la mochila no tiene slot libre para el item desplazado →
+ *         error 'bag_full', el equip se cancela y NO se cambia nada.
  *
  *   POST /api/equipment/unequip { slot_id }
  *     Devuelve el item al primer slot libre del inventario. Si no hay
@@ -82,9 +88,9 @@ export async function handleEquip(request, env) {
     return json({ error: 'invalid_slot' }, 400);
   }
 
-  // 1. Leer item del inventario en ese slot
+  // 1. Leer item del inventario en ese slot (incluyendo weapon_type para la lógica 2H)
   const invItem = await env.DB.prepare(
-    `SELECT inv.item_id, inv.quantity, i.equip_slot, i.name
+    `SELECT inv.item_id, inv.quantity, i.equip_slot, i.weapon_type, i.name
      FROM user_inventory inv
      JOIN items i ON i.id = inv.item_id
      WHERE inv.user_id = ? AND inv.slot_index = ?`
@@ -106,7 +112,65 @@ export async function handleEquip(request, env) {
     `SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = ?`
   ).bind(session.user_id, targetSlot).first();
 
+  // ============================================================
+  // SESIÓN 26 — Detectar conflicto 2H ↔ Shield
+  // ============================================================
+  // Si lo que estoy equipando es una 2H, y tengo escudo equipado →
+  //   conflictItem = el escudo, va al inventario.
+  // Si lo que estoy equipando es un escudo, y tengo 2H equipada →
+  //   conflictItem = el arma 2H, va al inventario.
+  const isEquipping2H = (targetSlot === 'weapon' && invItem.weapon_type === '2h_sword');
+  const isEquippingShield = (targetSlot === 'shield');
+
+  let conflictItem = null;   // { slot_id, item_id } del item a desequipar por conflicto
+  if (isEquipping2H) {
+    const sh = await env.DB.prepare(
+      `SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = 'shield'`
+    ).bind(session.user_id).first();
+    if (sh) conflictItem = { slot_id: 'shield', item_id: sh.item_id };
+  } else if (isEquippingShield) {
+    const w = await env.DB.prepare(
+      `SELECT eq.item_id
+       FROM user_equipment eq
+       JOIN items i ON i.id = eq.item_id
+       WHERE eq.user_id = ? AND eq.slot_id = 'weapon' AND i.weapon_type = '2h_sword'`
+    ).bind(session.user_id).first();
+    if (w) conflictItem = { slot_id: 'weapon', item_id: w.item_id };
+  }
+
+  // ============================================================
+  // SESIÓN 26 — Si hay conflicto, asegurar que cabe en mochila
+  // ============================================================
+  // Cálculo de slots ocupados después del swap normal:
+  //   - slotIndex se vacía (el item nuevo se va a equipment).
+  //   - Si había equippedItem en targetSlot, se vuelve a llenar con ese
+  //     (swap back). Si no, slotIndex queda libre.
+  // Para el item de conflicto necesito UN slot libre extra.
+  let conflictDestSlot = null;
+  if (conflictItem) {
+    const occRes = await env.DB.prepare(
+      `SELECT slot_index FROM user_inventory WHERE user_id = ?`
+    ).bind(session.user_id).all();
+    const taken = new Set((occRes.results || []).map(r => r.slot_index));
+
+    // Modelamos el estado post-swap:
+    taken.delete(slotIndex);                // se va el item original
+    if (equippedItem) taken.add(slotIndex); // swap back ocupa el slot
+
+    for (let i = 0; i < INVENTORY_SLOTS; i++) {
+      if (!taken.has(i)) { conflictDestSlot = i; break; }
+    }
+    if (conflictDestSlot === null) {
+      return json({
+        error: 'bag_full',
+        message: 'Mochila llena. Vacía un slot para equipar.',
+      }, 400);
+    }
+  }
+
+  // ============================================================
   // 3. Operaciones atómicas (batch)
+  // ============================================================
   const ops = [];
 
   // Quitar item del inventario en slotIndex
@@ -131,12 +195,28 @@ export async function handleEquip(request, env) {
        equipped_at = excluded.equipped_at`
   ).bind(session.user_id, targetSlot, invItem.item_id, now));
 
+  // SESIÓN 26 — Si hay conflict (2H↔shield), desequipar al inventario.
+  if (conflictItem && conflictDestSlot !== null) {
+    ops.push(env.DB.prepare(
+      `DELETE FROM user_equipment WHERE user_id = ? AND slot_id = ?`
+    ).bind(session.user_id, conflictItem.slot_id));
+    ops.push(env.DB.prepare(
+      `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
+       VALUES (?, ?, ?, 1, ?)`
+    ).bind(session.user_id, conflictDestSlot, conflictItem.item_id, now));
+  }
+
   await env.DB.batch(ops);
 
   return json({
     ok: true,
     equipped: { slot_id: targetSlot, item_id: invItem.item_id },
     swapped_back: equippedItem ? { slot_index: slotIndex, item_id: equippedItem.item_id } : null,
+    auto_unequipped: conflictItem ? {
+      slot_id: conflictItem.slot_id,
+      item_id: conflictItem.item_id,
+      to_inventory_slot: conflictDestSlot,
+    } : null,
   });
 }
 
