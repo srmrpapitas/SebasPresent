@@ -177,30 +177,47 @@ export async function startWorld(loggedInUser, token) {
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
       onTapBuilding: (id) => interiors.enter(id),
     });
-    // Sesión 11c-1 — interiors (switch exterior↔interior, sin NPC todavía)
+    // Sesión 11c-1 — interiors (switch exterior↔interior)
+    // Sesión 11c-2 — añadidos camera/canvas + callbacks Banco/GE para NPC menú
     showWorldLoading('Cargando interior…');
     await interiors.start({
-      scene,
+      scene, camera, canvas,
       getPlayer: () => player,
+      onOpenBank: () => {
+        // Intenta varias rutas conocidas para abrir el banco. La primera
+        // que funcione gana. Si ninguna, log warning y no rompe.
+        try { if (typeof window.bank?.onOpen === 'function') return window.bank.onOpen(); } catch {}
+        try { if (typeof window.__openBank === 'function') return window.__openBank(); } catch {}
+        // Fallback: simular click en el tab 🏦 del sidebar (si todavía existe)
+        const bankTab = document.querySelector('[data-tab="bank"], [data-tab="banco"], #tabBank');
+        if (bankTab) { bankTab.click?.(); return; }
+        console.warn('[world] No se encontró API del banco. Expón window.bank.onOpen o window.__openBank, o pásame bank.js para integrarlo correctamente.');
+      },
+      onOpenGE: () => {
+        try { if (typeof window.ge?.openOverlay === 'function') return window.ge.openOverlay(); } catch {}
+        try { if (typeof window.__openGE === 'function') return window.__openGE(); } catch {}
+        const geTab = document.querySelector('[data-tab="ge"], [data-tab="exchange"], #tabGE');
+        if (geTab) { geTab.click?.(); return; }
+        console.warn('[world] No se encontró API del Grand Exchange. Expón window.ge.openOverlay o window.__openGE, o pásame ge.js para integrarlo correctamente.');
+      },
       onEnter: (buildingId) => {
         // Forzar disengage de combat si engaged (el NPC queda lejos)
         try { window.__playerExitCombat?.(); } catch {}
         npcRenderer.cancelAutoEngage?.();
         playerTarget = null;
         if (marker) marker.visible = false;
-        // Sesión 11c-1 — cámara más cercana dentro del interior. La sala
-        // es ~10m, con cameraDist=14 la cámara está fuera de las paredes.
-        savedCameraDist = cameraDist;
-        savedCameraPitch = cameraPitch;
-        cameraDist = 6;
-        cameraPitch = 0.85;
+        // Sesión 11c-2 — interior ampliado x4 (~60m planta, 16m alto). La cámara
+        // orbital exterior cabe bien dentro, no hace falta override. Solo si
+        // resultara incómodo, descomentar y ajustar:
+        //   savedCameraDist = cameraDist; savedCameraPitch = cameraPitch;
+        //   cameraDist = 18; cameraPitch = 0.5;
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
         if (el) { el.textContent = 'Interior'; el.style.opacity = '1'; }
       },
       onLeave: () => {
-        // Sesión 11c-1 — restaurar cámara exterior
+        // Sesión 11c-1 — restaurar cámara exterior (por si se hubiera forzado)
         if (savedCameraDist !== null) { cameraDist = savedCameraDist; savedCameraDist = null; }
         if (savedCameraPitch !== null) { cameraPitch = savedCameraPitch; savedCameraPitch = null; }
         try { terrain.primeChunks(player.position.x, player.position.z); } catch {}
@@ -1156,8 +1173,9 @@ function doCanvasTap(clientX, clientY) {
 
   // Sesión 11c-1 — dentro del interior, solo aceptamos tap-to-walk en el
   // floor interior (el resto de raycasts apuntan a coords del exterior).
-  // En 11c-2 añadiremos aquí el tap contra el NPC del mostrador.
+  // Sesión 11c-2 — tap NPC primero, abre el menú Banco/GE.
   if (interiors.isActive()) {
+    if (interiors.tryHandleNpcTap?.(clientX, clientY)) return;
     const floor = interiors.getFloorMesh();
     if (floor) {
       const hits = raycaster.intersectObject(floor);
@@ -1248,6 +1266,7 @@ function animate() {
   npcRenderer.update(dt);
   multiplayer.update(dt);
   groundItems.update(dt);
+  interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
   drawMinimap();
   updatePositionSave(dt);
   renderer.render(scene, camera);

@@ -24,14 +24,27 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 // ============================================================
 // Constantes
 // ============================================================
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const INTERIOR_URL = `${R2_BASE}/interiors/medieval_room.glb`;
+const NPC_URL = `${R2_BASE}/npcs/the_boss.fbx`;
 
-const INTERIOR_HEIGHT = 4.0;
+// Sesión 11c-2: ampliado x4 — 4m → 16m de alto. La cámara orbital está
+// a ~7m sobre el player; con sala de 4m perforaba el techo. Con 16m la
+// cámara queda dentro y se ve correctamente.
+const INTERIOR_HEIGHT = 16.0;
+
+// Altura del NPC tras escalar el FBX (humano ~1.8m).
+const NPC_HEIGHT = 1.8;
+
+// Offset del NPC respecto al centro del interior: 5m al norte (asumimos
+// mostrador en el centro-norte tras escalado). Si queda atravesando un
+// mueble, ajustar.
+const NPC_OFFSET = { x: 0, z: 5 };
 
 // Coords absolutas donde se coloca el interior en el mundo.
 // Lejos de WORLD_HALF (2048) para no chocar con el sistema de chunks
@@ -40,17 +53,14 @@ const INTERIOR_HEIGHT = 4.0;
 // y no generará chunks (zonas "vacías").
 const INTERIOR_CENTER = { x: 10000, z: 10000 };
 
-// Spawn del player dentro: en el centro de la sala (offset 0,0), mirando
-// al norte (rotY=0). Centrado para que la cámara orbital vea la sala
-// completa alrededor. En 11c-2 ajustaremos si el NPC queda detrás del
-// player.
-const PLAYER_SPAWN_OFFSET = { x: 0, z: 0 };
+// Spawn del player dentro: 20m al sur del centro (sala ahora es ~60m de
+// profundidad tras x4 escalado), mirando al norte hacia el mostrador y NPC.
+const PLAYER_SPAWN_OFFSET = { x: 0, z: -20 };
 
-// Visual del interior — cielo oscuro + fog corto. Da sensación de
-// estar dentro de un edificio cerrado.
+// Visual del interior — cielo oscuro + fog amplio para sala grande.
 const INTERIOR_BG = 0x1a1410;
-const INTERIOR_FOG_NEAR = 8;
-const INTERIOR_FOG_FAR = 30;
+const INTERIOR_FOG_NEAR = 20;
+const INTERIOR_FOG_FAR = 100;
 
 // Margen entre el bbox del interior y la zona donde puede moverse el
 // player. Evita que se pegue a las paredes.
@@ -63,11 +73,17 @@ let scene = null;
 let getPlayer = () => null;
 let onEnterCallback = () => {};
 let onLeaveCallback = () => {};
+let onOpenBank = () => { console.warn('[interiors] onOpenBank no asignado'); };
+let onOpenGE   = () => { console.warn('[interiors] onOpenGE no asignado'); };
 
 let interiorRoot = null;   // Group con el modelo cargado (posicionado en INTERIOR_CENTER)
 let interiorFloor = null;  // Plano invisible para tap-to-walk dentro
 let interiorBox = null;    // { minX, maxX, minZ, maxZ } en coords locales (centradas en 0)
 let interiorLight = null;  // Luz ambiental extra (la del exterior puede no llegar bien)
+let npcModel = null;       // Sesión 11c-2 — FBX cargado, posicionado en NPC_OFFSET
+let npcMixer = null;       // AnimationMixer del NPC (idle loop)
+let npcMenuEl = null;      // Overlay HTML con opciones Banco/GE
+let raycaster = null;      // Reusable para tryHandleNpcTap
 
 let savedBg = 0;
 let savedFogColor = null;
@@ -78,6 +94,8 @@ let lastExteriorRotY = 0;
 let exitButtonEl = null;
 let active = false;
 let started = false;
+let camera = null;
+let canvas = null;
 
 // ============================================================
 // API pública
@@ -89,13 +107,18 @@ export async function start(opts) {
     stop();
   }
   scene = opts.scene;
+  camera = opts.camera || null;
+  canvas = opts.canvas || null;
   getPlayer = opts.getPlayer || (() => null);
   onEnterCallback = opts.onEnter || (() => {});
   onLeaveCallback = opts.onLeave || (() => {});
+  onOpenBank = opts.onOpenBank || (() => { console.warn('[interiors] onOpenBank no asignado'); });
+  onOpenGE   = opts.onOpenGE   || (() => { console.warn('[interiors] onOpenGE no asignado'); });
   if (!scene) {
     console.warn('[interiors] start() sin scene en opts');
     return;
   }
+  raycaster = new THREE.Raycaster();
 
   interiorRoot = await loadInterior(INTERIOR_URL, INTERIOR_HEIGHT);
   if (!interiorRoot) {
@@ -169,6 +192,26 @@ export async function start(opts) {
   interiorLight.visible = true;
   scene.add(interiorLight);
 
+  // Sesión 11c-2: cargar NPC FBX (the_boss) y posicionarlo tras el mostrador.
+  // Lo cargamos en paralelo conceptualmente — si falla, el interior funciona
+  // igual pero sin NPC interactuable.
+  try {
+    const npcPack = await loadNpc(NPC_URL, NPC_HEIGHT);
+    if (npcPack) {
+      npcModel = npcPack.model;
+      npcMixer = npcPack.mixer;
+      npcModel.position.set(centerX + NPC_OFFSET.x, 0, centerZ + NPC_OFFSET.z);
+      npcModel.rotation.y = Math.PI;  // mirando hacia el sur (al player que entra)
+      npcModel.userData = { kind: 'npc-interior', name: 'Banquero' };
+      scene.add(npcModel);
+      console.log(`[interiors] NPC cargado y posicionado en (${npcModel.position.x.toFixed(1)}, ${npcModel.position.z.toFixed(1)}).`);
+    } else {
+      console.warn('[interiors] NPC no cargó. El menú banco/GE no estará disponible.');
+    }
+  } catch (err) {
+    console.warn('[interiors] Error cargando NPC:', err);
+  }
+
   started = true;
   console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Floor mesh size: ${sizeX.toFixed(2)} x ${sizeZ.toFixed(2)}. Interior en (${centerX},${centerZ}).`);
 }
@@ -186,15 +229,30 @@ export function stop() {
     interiorFloor.material?.dispose();
   }
   if (interiorLight && scene) scene.remove(interiorLight);
+  if (npcModel && scene) {
+    scene.remove(npcModel);
+    disposeGroup(npcModel);
+  }
+  if (npcMixer) {
+    try { npcMixer.stopAllAction(); npcMixer.uncacheRoot(npcModel); } catch {}
+  }
+  closeNpcMenu();
   removeExitButton();
   interiorRoot = null;
   interiorFloor = null;
   interiorLight = null;
   interiorBox = null;
+  npcModel = null;
+  npcMixer = null;
+  raycaster = null;
   scene = null;
+  camera = null;
+  canvas = null;
   getPlayer = () => null;
   onEnterCallback = () => {};
   onLeaveCallback = () => {};
+  onOpenBank = () => {};
+  onOpenGE = () => {};
   active = false;
   started = false;
 }
@@ -286,6 +344,7 @@ function finishLeave() {
     }
   }
   removeExitButton();
+  closeNpcMenu();
   lastExteriorPos = null;
   active = false;
 }
@@ -443,7 +502,195 @@ async function loadInterior(url, targetHeight) {
   return wrapper;
 }
 
-function disposeGroup(group) {
+// ============================================================
+// Sesión 11c-2 — NPC del mostrador (FBX + idle anim + tap → menú)
+// ============================================================
+
+/**
+ * Carga el FBX, lo escala a NPC_HEIGHT y arranca el primer AnimationClip
+ * embebido (idle). FBX de Mixamo suele venir en ~100x escala.
+ * Devuelve { model, mixer } o null si falla.
+ */
+async function loadNpc(url, targetHeight) {
+  const loader = new FBXLoader();
+  let fbx;
+  try {
+    fbx = await loader.loadAsync(url);
+  } catch (err) {
+    console.warn(`[interiors] No se pudo cargar FBX del NPC '${url}':`, err.message);
+    return null;
+  }
+
+  // BBox pre-escala para calcular factor
+  fbx.updateMatrixWorld(true);
+  const bbox = new THREE.Box3().setFromObject(fbx);
+  const sizeY = bbox.max.y - bbox.min.y;
+  if (sizeY < 0.001) {
+    console.warn('[interiors] NPC BBox degenerado.');
+    return null;
+  }
+  const scaleFactor = targetHeight / sizeY;
+  fbx.scale.set(scaleFactor, scaleFactor, scaleFactor);
+  fbx.position.y = -bbox.min.y * scaleFactor;  // apoyar pies en Y=0
+
+  // Asegurar DoubleSide en todos los materiales y mantener visibilidad
+  fbx.traverse(o => {
+    if (o.isMesh) {
+      o.frustumCulled = false;  // skinned a veces falla frustum culling con bbox raros
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          m.side = THREE.DoubleSide;
+        }
+      }
+    }
+  });
+
+  // Animation: arrancar el primer clip (típicamente idle)
+  let mixer = null;
+  if (fbx.animations && fbx.animations.length > 0) {
+    mixer = new THREE.AnimationMixer(fbx);
+    const clip = fbx.animations[0];
+    const action = mixer.clipAction(clip);
+    action.play();
+    console.log(`[interiors] NPC clip activado: '${clip.name}' (${fbx.animations.length} clips disponibles).`);
+  } else {
+    console.log('[interiors] NPC sin animaciones embebidas — quedará estático en T-pose.');
+  }
+
+  return { model: fbx, mixer };
+}
+
+/**
+ * Tick por frame del mixer del NPC. world.js lo invoca desde el animate
+ * loop. dt en segundos.
+ */
+export function update(dt) {
+  if (npcMixer) {
+    try { npcMixer.update(dt); } catch {}
+  }
+}
+
+/**
+ * Tap detection sobre el NPC. Si el rayo impacta el modelo, abre el menú
+ * Banco/GE y devuelve true (tap capturado). world.js debe llamar a este
+ * tryHandleNpcTap antes que al floor en doCanvasTap, cuando el interior
+ * está activo.
+ */
+export function tryHandleNpcTap(clientX, clientY) {
+  if (!active || !npcModel || !raycaster || !camera || !canvas) return false;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera({ x: nx, y: ny }, camera);
+  const hits = raycaster.intersectObject(npcModel, true);
+  if (hits.length === 0) {
+    // Fallback: proximidad screen-space al centro del NPC. En móvil con
+    // figuras finas es difícil acertar exacto; pickeamos si el tap está
+    // a < 60px del centro proyectado del NPC.
+    const center = new THREE.Vector3();
+    new THREE.Box3().setFromObject(npcModel).getCenter(center);
+    center.project(camera);
+    const sx = (center.x * 0.5 + 0.5) * rect.width;
+    const sy = (-center.y * 0.5 + 0.5) * rect.height;
+    const dx = (clientX - rect.left) - sx;
+    const dy = (clientY - rect.top) - sy;
+    if (dx * dx + dy * dy > 60 * 60) return false;
+  }
+  showNpcMenu();
+  return true;
+}
+
+/**
+ * Overlay HTML con dos botones: Banco / Grand Exchange. Centrado en pantalla.
+ */
+function showNpcMenu() {
+  if (npcMenuEl) return;
+  npcMenuEl = document.createElement('div');
+  npcMenuEl.id = 'interiorNpcMenu';
+  npcMenuEl.style.cssText = `
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 30;
+    background: rgba(20, 14, 8, 0.95);
+    border: 2px solid #c8a043;
+    border-radius: 6px;
+    padding: 18px 22px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+    min-width: 260px;
+    display: flex; flex-direction: column; gap: 12px;
+    font-family: 'Cinzel', serif;
+  `;
+  const title = document.createElement('div');
+  title.textContent = '¿En qué puedo ayudarte?';
+  title.style.cssText = `
+    color: #e8c560;
+    font-size: 15px;
+    text-align: center;
+    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  `;
+  npcMenuEl.appendChild(title);
+
+  const btnStyle = `
+    background: rgba(40, 28, 16, 0.92);
+    border: 1.5px solid #a88040;
+    color: #fff8d0;
+    font-family: 'Cinzel', serif;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 12px 16px;
+    border-radius: 4px;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  `;
+
+  const btnBank = document.createElement('button');
+  btnBank.innerHTML = '🏦 &nbsp; Abrir banco';
+  btnBank.style.cssText = btnStyle;
+  btnBank.addEventListener('pointerup', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    closeNpcMenu();
+    try { onOpenBank(); } catch (e) { console.warn('[interiors] onOpenBank:', e); }
+  });
+
+  const btnGE = document.createElement('button');
+  btnGE.innerHTML = '🏛️ &nbsp; Abrir Grand Exchange';
+  btnGE.style.cssText = btnStyle;
+  btnGE.addEventListener('pointerup', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    closeNpcMenu();
+    try { onOpenGE(); } catch (e) { console.warn('[interiors] onOpenGE:', e); }
+  });
+
+  const btnCancel = document.createElement('button');
+  btnCancel.textContent = '✖ Cancelar';
+  btnCancel.style.cssText = btnStyle + 'color: #c8a89a; border-color: #6a4a30; margin-top: 4px; text-align: center;';
+  btnCancel.addEventListener('pointerup', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    closeNpcMenu();
+  });
+
+  npcMenuEl.appendChild(btnBank);
+  npcMenuEl.appendChild(btnGE);
+  npcMenuEl.appendChild(btnCancel);
+  (document.getElementById('worldScreen') || document.body).appendChild(npcMenuEl);
+}
+
+function closeNpcMenu() {
+  if (!npcMenuEl) return;
+  npcMenuEl.remove();
+  npcMenuEl = null;
+}
+
+
   group.traverse(o => {
     if (o.geometry) o.geometry.dispose();
     if (o.material) {
