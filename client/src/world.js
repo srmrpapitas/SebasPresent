@@ -1735,13 +1735,13 @@ function updatePlayer(dt) {
 }
 
 function updateCamera(dt) {
-  // Sesión 11c-1 — dentro del interior, la cámara orbital normal (dist=14,
-  // pitch=0.55) queda por encima del techo de la sala (4m). Forzamos
-  // distancia menor y pitch más bajo para que la cámara esté DENTRO de
-  // la sala y mire al player desde un ángulo razonable.
-  const inInterior = interiors.isActive();
-  const r = inInterior ? 5 : cameraDist;
-  const pitch = inInterior ? 0.30 : cameraPitch;
+  // Sesión 11c-2 v4 — antes hardcodeaba pitch=0.3 y r=5 dentro del interior,
+  // lo cual ignoraba cameraPitch del input → drag vertical no movía la cámara
+  // visualmente aunque cameraPitch cambiase matemáticamente. AHORA el onEnter
+  // de interiors ajusta cameraDist=5 y cameraPitch=0.55 una sola vez al entrar,
+  // y respetamos cameraPitch normalmente para que drag vertical funcione.
+  const r = cameraDist;
+  const pitch = cameraPitch;
   const desiredX = player.position.x + Math.sin(cameraYaw) * Math.cos(pitch) * r;
   const desiredY = player.position.y + Math.sin(pitch) * r;
   const desiredZ = player.position.z + Math.cos(cameraYaw) * Math.cos(pitch) * r;
