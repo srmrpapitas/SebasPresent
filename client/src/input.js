@@ -343,21 +343,15 @@ export function setup(opts) {
   function onTouchMoveCanvas(e) {
     if (!pinchActive || e.touches.length !== 2) return;
     e.preventDefault();
-    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    // Rotación con midpoint
-    onCameraDrag(
-      -(mx - lastMidX) * PINCH_ROT_SENS,    // negativo: drag derecha → mira izquierda
-       (my - lastMidY) * PINCH_ROT_SENS
-    );
-    // Pinch zoom
+    // Sesión 13 — Pinch 2 dedos: SOLO zoom. La rotación queda para drag
+    // 1 dedo. Antes el pinch hacía zoom + rotación a la vez, que era muy
+    // sensible (giraba sin querer al intentar hacer zoom).
     const newPinch = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     );
     const pinchDelta = newPinch - lastPinchDist;
     onCameraZoom(-pinchDelta * PINCH_ZOOM_SENS);  // separar dedos → zoom in (dist baja)
-    lastMidX = mx; lastMidY = my;
     lastPinchDist = newPinch;
   }
 
