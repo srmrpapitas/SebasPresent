@@ -25,6 +25,7 @@ import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
 import * as bank from './bank.js';
 import * as ge from './ge.js';
+import * as audio from './audio.js';
 import * as npcRenderer from './npc_renderer.js';
 import {
   PALETTE, PLACES, BIOMES,
@@ -188,11 +189,14 @@ export async function startWorld(loggedInUser, token) {
       onOpenBank: () => {
         // 1. Refrescar data del banco
         try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
-        // 2. Abrir el banco como overlay grande estilo GE — NO dentro del sidebar.
+        // 2. SFX
+        try { audio.sfx('coins'); } catch {}
+        // 3. Abrir el banco como overlay grande estilo GE — NO dentro del sidebar.
         openBankOverlay();
       },
       onOpenGE: () => {
         // ge.openOverlay() es self-contained: abre overlay fullscreen propio.
+        try { audio.sfx('book_open'); } catch {}
         try { ge.openOverlay?.(); } catch (e) { console.warn('[world] ge.openOverlay:', e); }
       },
       onEnter: (buildingId) => {
@@ -215,6 +219,8 @@ export async function startWorld(loggedInUser, token) {
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
         if (el) { el.textContent = 'Interior'; el.style.opacity = '1'; }
+        // Sesión 13 — SFX puerta al entrar; pausar música ambient
+        try { audio.sfx('door_open'); audio.music(null); } catch {}
       },
       onLeave: () => {
         // Sesión 11c-1 — restaurar cámara exterior (por si se hubiera forzado)
@@ -224,6 +230,12 @@ export async function startWorld(loggedInUser, token) {
         lastRegionName = '';
         playerTarget = null;
         if (marker) marker.visible = false;
+        // Sesión 13 — SFX puerta cierre + restaurar música del bioma actual
+        try {
+          audio.sfx('door_close');
+          const biome = terrain.biomeAt(player.position.x, player.position.z);
+          audio.musicForBiome(biome.id);
+        } catch {}
       },
     });
     await setupPlayer();
@@ -303,6 +315,18 @@ export async function startWorld(loggedInUser, token) {
     // Sesión 11c-2 — quitar tabs 🏦 (banco) y 🏛️ (GE) del sidebar. Su acceso
     // queda solo via NPC del interior del edificio.
     hideHubTabsInSidebar();
+
+    // Sesión 13 — Audio: arrancar SFX engine y música ambient del bioma
+    // donde aparece el player. El audio.init es idempotente y empieza
+    // precarga de SFX en background. La música ambient queda encolada
+    // y arranca tras primer touch del usuario (Safari requiere gesto).
+    try {
+      audio.init();
+      if (!interiors.isActive() && player) {
+        const biome = terrain.biomeAt(player.position.x, player.position.z);
+        audio.musicForBiome(biome.id);
+      }
+    } catch (e) { console.warn('[world] audio init:', e); }
 
     hideWorldLoading();
     animate();
@@ -1694,6 +1718,8 @@ function updatePlayer(dt) {
     if (!isMoving) {
       character.play('idle');
     } else {
+      // Sesión 13 — SFX de paso (audio.step() tiene throttle interno 220ms)
+      try { audio.step(); } catch {}
       // Calcular dirección relativa al facing del player.
       // Solo es != 'forward' cuando el facing está lockeado al NPC y el
       // movimiento va en otra dirección. Si no, siempre 'forward'.
@@ -1786,6 +1812,11 @@ function updateRegionTracking() {
     }
     lastRegionName = region.name;
     lastRegionWasWild = region.isWild;
+    // Sesión 13 — Cambiar música ambient si cambia el bioma
+    try {
+      const biome = terrain.biomeAt(player.position.x, player.position.z);
+      audio.musicForBiome(biome.id);
+    } catch {}
   }
 }
 
