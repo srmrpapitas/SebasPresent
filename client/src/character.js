@@ -73,7 +73,9 @@ const CLIPS_TO_STRIP_ROOT = new Set([
 
 const CHARACTER_SCALE = 0.01;
 const CROSSFADE = 0.22;
-const ATTACK_TICK_MS = 600;
+// Sesión 25 — ATTACK_TICK_MS 600 → 900 (sincronizado con TICK_MS de
+// combat_engine y combat.js). Anim de ataque se escala a este tiempo.
+const ATTACK_TICK_MS = 900;
 const DRAW_MS = 700;
 const SHEATH_MS = 700;
 

@@ -41,7 +41,10 @@ const XP_TABLE = [
   5902831,   6517253,   7195629,   7944614,   8771558,   9684577,   10692629,  11805606,  13034431
 ];
 
-const TICK_MS = 600;
+// Sesión 25 — TICK_MS 600 → 900 para ralentizar el ritmo de ataques.
+// Tiene que coincidir con TICK_MS del cliente (combat.js) y ATTACK_TICK_MS
+// de character.js (escala la anim).
+const TICK_MS = 900;
 // Sesión 20 — Antes RANGE_TOLERANCE=3.5 permitía pegar desde 3.5m extra
 // sobre attack_range del NPC. Combinado con la posición del user que se
 // guarda cada 10s, esto provocaba "pegar desde lejos". Bajado a 0.8m y
@@ -56,6 +59,12 @@ const DEFAULT_STYLE = 'controlled';
 
 const LOOT_OFFSET_RANGE_M    = 0.4;
 const LOOT_TOTAL_LIFETIME_MS = 120_000;
+
+// Sesión 25 — Death drop config (OSRS Wilderness PVE)
+const DEATH_KEEP_TOP_N_SLOTS = 3;        // conserva los 3 slots más valiosos
+const DEATH_LOOT_LIFETIME_MS = 120_000;  // 2 minutos visible en el suelo
+const SPAWN_X = 0;                        // respawn point
+const SPAWN_Z = 0;
 
 // Sesión 16 — Mapping de skills internos (combat_engine) → skill_ids en
 // la tabla user_skills (catálogo de 13 skills).
@@ -430,9 +439,22 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
       const userHpAfter = stats.hp_current - dmgToUser;
       if (userHpAfter <= 0) {
         userKilled = true;
-        stats.hp_current = xpAfter.hp;
+        // Sesión 25 — NO auto-respawnear. HP queda en 0 hasta que el user
+        // llame /api/combat/respawn explícitamente. Antes restaurábamos HP
+        // al máximo aquí, lo que dejaba al user "vivo" inmediatamente.
+        stats.hp_current = 0;
         stats.last_died_at = now;
-        respawned = true;
+        respawned = false;
+        // Dropear inventario excedente (conserva top 3 slots). Donde
+        // murió, no donde el NPC. El user X/Z lo tenemos en userPos.
+        try {
+          await dropExcessInventoryOnDeath(
+            db, userId, userPos.x, userPos.z, now,
+            DEATH_KEEP_TOP_N_SLOTS, rng
+          );
+        } catch (err) {
+          console.error('[combat/death-drop]', err);
+        }
       } else {
         stats.hp_current = userHpAfter;
       }
@@ -509,9 +531,17 @@ async function respawnUser(db, userId, opts = {}) {
   if (stats.hp_current > 0) {
     return { ok: false, error: 'not_dead' };
   }
+  // Restaurar HP al máximo
   await db.run(
     'UPDATE combat_stats SET hp_current = ?, last_died_at = ? WHERE user_id = ?',
     [hpMax, now, userId]
+  );
+  // Sesión 25 — Teleportar al spawn point. Antes solo el cliente movía
+  // visualmente; ahora el server fuerza last_x/last_z al respawn para que
+  // la posición sea consistente entre cliente y server.
+  await db.run(
+    'UPDATE users SET last_x = ?, last_z = ? WHERE id = ?',
+    [SPAWN_X, SPAWN_Z, userId]
   );
   // Sesión 16 — respawn no cambia XP pero garantizamos consistencia.
   try {
@@ -519,7 +549,7 @@ async function respawnUser(db, userId, opts = {}) {
   } catch (err) {
     console.error('[combat/respawn] mirror failed:', err);
   }
-  return { ok: true, hp_current: hpMax };
+  return { ok: true, hp_current: hpMax, spawn_x: SPAWN_X, spawn_z: SPAWN_Z };
 }
 
 // ============================================================
@@ -578,4 +608,80 @@ function rollQty(rng, qMin, qMax) {
   const mx = qMax | 0;
   if (mx <= mn) return mn;
   return mn + Math.floor(rng() * (mx - mn + 1));
+}
+
+// ============================================================
+// SESIÓN 25 — Death inventory drop
+// ============================================================
+/**
+ * Cuando user muere (PVE): conserva los top N slots por valor, el resto
+ * se dropea como ground_items.
+ *
+ * VALOR DEL SLOT (heurística simple, iterable):
+ *   - Coins → 1 gp por unidad (valor del slot = quantity)
+ *   - Resto → shop_stock.sell_price del shop 'general_store' × quantity
+ *     - Si el item NO está en shop_stock, valor = 0 (cae primero)
+ *
+ * Strategy:
+ *   1. SELECT slots con su valor calculado, ORDER BY valor DESC
+ *   2. Los primeros `keepTopN` se quedan en user_inventory (intactos)
+ *   3. Para cada slot restante: INSERT ground_item + DELETE de user_inventory
+ *
+ * Equipment slots no se tocan: el sistema de equipment usa otra tabla
+ * (user_equipment), y los items equipados se conservan al morir en PVE.
+ *
+ * dropped_by_user se setea a NULL: cualquier jugador puede recoger el loot
+ * (no es loot privado).
+ */
+async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepTopN, rng) {
+  rng = rng || Math.random;
+
+  // Cargar todos los slots ocupados con valor calculado vía LEFT JOIN.
+  // CASE WHEN item_id = 'coins' THEN 1 ELSE COALESCE(s.sell_price, 0) END
+  const rows = await db.all(
+    `SELECT ui.slot, ui.item_id, ui.quantity,
+            (CASE WHEN ui.item_id = 'coins' THEN 1
+                  ELSE COALESCE(s.sell_price, 0) END) AS unit_value
+     FROM user_inventory ui
+     LEFT JOIN shop_stock s
+       ON s.item_id = ui.item_id AND s.shop_id = 'general_store'
+     WHERE ui.user_id = ?
+     ORDER BY (ui.quantity * (CASE WHEN ui.item_id = 'coins' THEN 1
+                                   ELSE COALESCE(s.sell_price, 0) END)) DESC,
+              ui.slot ASC`,
+    [userId]
+  );
+
+  if (!rows || rows.length === 0) {
+    console.log(`[combat/death-drop] user ${userId} muerto sin items en inventario`);
+    return;
+  }
+
+  const totalSlots = rows.length;
+  const dropRows = rows.slice(keepTopN); // los que se van al suelo
+  const keptCount = Math.min(keepTopN, totalSlots);
+  console.log(`[combat/death-drop] user ${userId}: ${keptCount}/${totalSlots} slots conservados, ${dropRows.length} dropeados`);
+
+  if (dropRows.length === 0) return;
+
+  const despawnAt = now + DEATH_LOOT_LIFETIME_MS;
+
+  for (const r of dropRows) {
+    // Pequeño jitter posicional para que los items no se apilen exactos
+    const ox = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
+    const oz = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
+
+    // INSERT en ground_items (dropped_by_user = NULL para que cualquiera lo recoja)
+    await db.run(
+      `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+      [r.item_id, r.quantity, deathX + ox, deathZ + oz, now, despawnAt]
+    );
+
+    // DELETE del slot del user
+    await db.run(
+      `DELETE FROM user_inventory WHERE user_id = ? AND slot = ?`,
+      [userId, r.slot]
+    );
+  }
 }

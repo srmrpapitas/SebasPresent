@@ -36,7 +36,8 @@ import * as api from './api.js';
 import * as equipment from './equipment.js';
 import * as skills from './skills.js';
 
-const TICK_MS = 600;
+// Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
+const TICK_MS = 900;
 const POLL_INTERVAL_MS = 3000;
 const FEED_MAX_LINES = 50;
 
