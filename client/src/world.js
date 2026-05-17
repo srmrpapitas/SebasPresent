@@ -942,14 +942,25 @@ function hideHubTabsInSidebar() {
     style.id = STYLE_ID;
     style.textContent = `
       /* Sesión 11c-2: ocultar tabs banco y GE del sidebar.
-         Selector preciso del HTML real: .osrs-sidebar-tab[data-tab-btn="..."]. */
+         Usamos visibility:hidden + width:0 + margin:0 (no display:none)
+         para NO romper el grid/flex del sidebar y dejar magic/settings/etc.
+         en su sitio original. */
       .osrs-sidebar-tab[data-tab-btn="bank"],
-      .osrs-sidebar-tab[data-tab-btn="ge"],
-      [data-tab-btn="bank"],
-      [data-tab-btn="ge"] {
-        display: none !important;
+      .osrs-sidebar-tab[data-tab-btn="ge"] {
         visibility: hidden !important;
         pointer-events: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        max-width: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+        position: absolute !important;
+        opacity: 0 !important;
       }
     `;
     document.head.appendChild(style);
@@ -978,36 +989,46 @@ function injectInventoryGridCss() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    /* Sesión 11c-2: forzar grid 4x7 sin scroll en la mochila.
-       Cubre varios selectores posibles que inventory.js puede usar
-       (sin conocer el módulo cliente todavía). */
+    /* Sesión 11c-2 v2: mochila estilo OSRS — slots 42×42px en grid 4×7
+       centrado, sin scroll. Cubre los selectores probables que use
+       inventory.js cliente. Slot tamaño fijo evita estiramiento raro. */
     .osrs-tab-pane[data-tab="inventory"] {
       overflow: hidden !important;
+      padding: 8px !important;
       display: flex !important;
       flex-direction: column !important;
-      padding: 8px !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
     }
-    /* Cualquier hijo grid-like dentro del pane de inventario */
+    /* La grid interna que crea inventory.js */
     .osrs-tab-pane[data-tab="inventory"] .inventory-grid,
     .osrs-tab-pane[data-tab="inventory"] .inv-grid,
     .osrs-tab-pane[data-tab="inventory"] .osrs-inv-grid,
     .osrs-tab-pane[data-tab="inventory"] [class*="inventory-grid"],
     .osrs-tab-pane[data-tab="inventory"] [class*="inv-grid"] {
       display: grid !important;
-      grid-template-columns: repeat(4, 1fr) !important;
-      grid-auto-rows: 1fr !important;
+      grid-template-columns: repeat(4, 42px) !important;
+      grid-auto-rows: 42px !important;
       gap: 4px !important;
       overflow: hidden !important;
-      width: 100% !important;
-      flex: 1 1 auto !important;
+      width: auto !important;
+      flex: 0 0 auto !important;
+      padding: 0 !important;
+      margin: 0 !important;
     }
-    /* Cualquier slot debe tener aspect ratio cuadrado para que 4×7 quepan */
+    /* Slots individuales: 42x42 fijo, OSRS-like */
     .osrs-tab-pane[data-tab="inventory"] .inventory-slot,
     .osrs-tab-pane[data-tab="inventory"] .inv-slot,
-    .osrs-tab-pane[data-tab="inventory"] .osrs-inv-slot {
-      aspect-ratio: 1 / 1 !important;
-      min-width: 0 !important;
-      min-height: 0 !important;
+    .osrs-tab-pane[data-tab="inventory"] .osrs-inv-slot,
+    .osrs-tab-pane[data-tab="inventory"] [class*="inventory-slot"],
+    .osrs-tab-pane[data-tab="inventory"] [class*="inv-slot"] {
+      width: 42px !important;
+      height: 42px !important;
+      min-width: 42px !important;
+      min-height: 42px !important;
+      max-width: 42px !important;
+      max-height: 42px !important;
+      box-sizing: border-box !important;
     }
   `;
   document.head.appendChild(style);

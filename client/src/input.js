@@ -67,23 +67,39 @@ export function setup(opts) {
   }
 
   // Inyectar CSS GLOBAL para evitar que iOS Safari interprete drag vertical
-  // como scroll de página. Sin esto, drag vertical sobre cualquier elemento
-  // que NO sea el canvas (HUD, hint, overlay) genera scroll de iOS y no
-  // recibimos pointermove vertical → la cámara solo se mueve horizontal.
-  //
-  // El canvas ya tiene touch-action:none (world.js lo aplica), pero falta
-  // forzarlo en TODO el #worldScreen y sus descendientes.
+  // como scroll de página sobre el HUD/canvas. CRÍTICO aplicarlo a los
+  // elementos correctos (NO al sidebar — el sidebar necesita poder scrollear
+  // vertical para mostrar todos los tabs en pantallas pequeñas).
   if (!document.getElementById('input-touch-action-fix')) {
     const style = document.createElement('style');
     style.id = 'input-touch-action-fix';
     style.textContent = `
-      /* Sesión 11c-2: forzar touch-action:none en world screen y descendientes
-         para que iOS Safari no robe el drag vertical como scroll de página. */
-      #worldScreen,
-      #worldScreen *:not(input):not(textarea) {
+      /* Sesión 11c-2 v2: touch-action específico para que iOS no robe el
+         drag vertical como scroll. NO incluir #osrsSidebar — necesita
+         scroll vertical (pan-y) para mostrar todos los tabs. */
+      #worldCanvas,
+      .world-hud, .world-hud-top, .world-hud-pill, .world-hint,
+      #joystick, .joystick, .joystick-knob,
+      .osrs-minimap-wrap, #worldMinimap, #minimapOpenMap,
+      .osrs-fullmap-overlay, .osrs-fullmap-frame,
+      #interiorExitBtn, #interiorNpcMenu,
+      .ge-overlay > .ge-overlay-frame > .ge-header,
+      .bank-overlay > .bank-overlay-frame > .bank-overlay-header,
+      #playerNameTag, .player-name-tag,
+      #combatFeed, .combat-feed,
+      .world-loading, #worldLoading {
         touch-action: none !important;
         -ms-touch-action: none !important;
-        overscroll-behavior: none !important;
+      }
+      /* Sidebar: permitir scroll vertical (pan-y) pero bloquear zoom/pan-x */
+      .osrs-sidebar, #osrsSidebar,
+      .osrs-sidebar-tabs, .osrs-sidebar-panel,
+      .osrs-tab-pane {
+        touch-action: pan-y !important;
+      }
+      /* Bodies de overlays scrollables (banco/GE renderizan listas) */
+      .bank-overlay-body, .ge-body {
+        touch-action: pan-y !important;
       }
       html, body { overscroll-behavior: none; }
     `;
