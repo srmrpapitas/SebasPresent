@@ -41,15 +41,84 @@ const XP_TABLE = [
   5902831,   6517253,   7195629,   7944614,   8771558,   9684577,   10692629,  11805606,  13034431
 ];
 
-const TICK_MS = 600;
-// Sesión 20 — Antes RANGE_TOLERANCE=3.5 permitía pegar desde 3.5m extra
-// sobre attack_range del NPC. Combinado con la posición del user que se
-// guarda cada 10s, esto provocaba "pegar desde lejos". Bajado a 0.8m y
-// añadido cap melee 2.5m sobre attack_range bruto del NPC.
+// Sesión 25 — TICK_MS legacy (fallback). El cooldown REAL ahora depende
+// del arma equipada (ATTACK_SPEEDS_BY_WEAPON_TYPE) y el stance
+// (STANCE_MODIFIERS). TICK_MS se usa como fallback si falta info.
+const TICK_MS = 900;
 const RANGE_TOLERANCE = 0.8;
 const MELEE_MAX_RANGE = 2.5;
 const MAX_LEVEL = 99;
 const XP_PER_DMG_PER_SKILL = 4 / 3;
+
+// ============================================================
+// Sesión 26 — Velocidades y daño por arma + modificadores por stance
+// ============================================================
+
+/**
+ * Cooldown BASE entre ataques, en milisegundos, por weapon_type.
+ * Sobre esto se aplica el speed_mult del stance.
+ */
+const ATTACK_SPEEDS_BY_WEAPON_TYPE = {
+  '1h_sword': 1250,
+  '2h_sword': 2500,
+  'staff':    2500,
+  'bow':      1150,
+  'unarmed':  1250,
+};
+
+/**
+ * Multiplicadores BASE de damage del arma sobre el roll del player.
+ * 2H pega 1.5× más fuerte que 1H.
+ */
+const WEAPON_DAMAGE_MULT = {
+  '1h_sword': 1.0,
+  '2h_sword': 1.5,
+  'staff':    1.0,
+  'bow':      1.0,
+  'unarmed':  1.0,
+};
+
+/**
+ * Probabilidad (0-1) de que un golpe sea CRIT automático.
+ * Solo el 2H tiene crit auto (25%). El staff explícitamente NO crit.
+ * Crit multiplica el damage final por CRIT_DAMAGE_MULT.
+ */
+const WEAPON_CRIT_CHANCE = {
+  '1h_sword': 0.0,
+  '2h_sword': 0.25,
+  'staff':    0.0,
+  'bow':      0.0,
+  'unarmed':  0.0,
+};
+const CRIT_DAMAGE_MULT = 1.5;
+
+/**
+ * Modificadores por stance del player.
+ *   speed_mult: multiplica el cooldown (>1 = más lento, <1 = más rápido)
+ *   damage_mult: multiplica el damage final
+ *   defense_bonus: porcentaje extra de defensa (0.05 = +5%)
+ *   crit_taken_mult: cuánto crit recibe el player si el atacante crittea
+ *
+ * Estos modificadores SE SUMAN MULTIPLICATIVAMENTE con los del arma
+ * (e.g. 2H smash damage = 1.5 × 1.05 = 1.575×).
+ *
+ * Mapping a server styles:
+ *   chop → accurate, slash → aggressive, smash → controlled, block → defensive
+ */
+const STANCE_MODIFIERS = {
+  chop:  { speed_mult: 1.00, damage_mult: 1.00, defense_bonus: 0.00, crit_taken_mult: 1.0 },
+  slash: { speed_mult: 0.90, damage_mult: 0.95, defense_bonus: 0.00, crit_taken_mult: 1.0 },
+  smash: { speed_mult: 1.05, damage_mult: 1.05, defense_bonus: 0.00, crit_taken_mult: 1.0 },
+  block: { speed_mult: 1.05, damage_mult: 1.00, defense_bonus: 0.05, crit_taken_mult: 0.5 },
+};
+
+// Mapeo style del server → stance del cliente (para aplicar modifiers)
+const STYLE_TO_STANCE = {
+  accurate:   'chop',
+  aggressive: 'slash',
+  controlled: 'smash',
+  defensive:  'block',
+};
 
 const VALID_STYLES = ['accurate', 'aggressive', 'defensive', 'controlled'];
 const DEFAULT_STYLE = 'controlled';
@@ -225,6 +294,34 @@ async function dbGetUserCombatStyle(db, userId) {
   return VALID_STYLES.includes(style) ? style : DEFAULT_STYLE;
 }
 
+/**
+ * Sesión 26 — Lee el weapon_type del item equipado en el slot 'weapon'.
+ * Hace JOIN user_equipment → items para sacar la columna weapon_type.
+ *
+ * Si no hay arma equipada → 'unarmed'.
+ * Si la query falla (tabla no existe / columna no existe) → 'unarmed'
+ * defensivamente, para no romper el ataque.
+ *
+ * Valores esperados: 'unarmed' | '1h_sword' | '2h_sword' | 'bow' | 'staff'
+ */
+async function getUserWeaponType(db, userId) {
+  try {
+    const row = await db.first(
+      `SELECT i.weapon_type
+       FROM user_equipment ue
+       JOIN items i ON i.id = ue.item_id
+       WHERE ue.user_id = ? AND ue.slot_id = 'weapon'`,
+      [userId]
+    );
+    const wt = row?.weapon_type;
+    if (wt && ATTACK_SPEEDS_BY_WEAPON_TYPE[wt] !== undefined) return wt;
+    return 'unarmed';
+  } catch (err) {
+    console.warn('[combat] getUserWeaponType fallback unarmed:', err.message);
+    return 'unarmed';
+  }
+}
+
 async function dbGetNpcInstance(db, npcInstanceId) {
   const row = await db.first(
     `SELECT i.*, d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
@@ -360,20 +457,32 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   if (!npc) return { error: 'npc_not_found' };
   if (npc.status !== 0) return { error: 'npc_dead' };
 
-  if (stats.last_attack_at && (now - stats.last_attack_at) < TICK_MS) {
+  // Sesión 26 — Cooldown DEPENDE del arma equipada + stance:
+  //   cooldownMs = ATTACK_SPEEDS[weapon] × STANCE_MODIFIERS[stance].speed_mult
+  // El staff y 2H son lentos; bow y 1H son rápidos. Smash es +5% lento,
+  // slash es -10% rápido. Estos compounean multiplicativamente.
+  const weaponType = await getUserWeaponType(db, userId);
+  const stanceKey = STYLE_TO_STANCE[style] || 'smash';
+  const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
+  const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
+  const cooldownMs = Math.round(baseSpeed * stanceMods.speed_mult);
+
+  if (stats.last_attack_at && (now - stats.last_attack_at) < cooldownMs) {
     return {
       error: 'on_cooldown',
-      cooldown_remaining_ms: TICK_MS - (now - stats.last_attack_at),
+      cooldown_remaining_ms: cooldownMs - (now - stats.last_attack_at),
+      cooldown_ms: cooldownMs,
+      weapon_type: weaponType,
     };
   }
 
   if (!userPos) return { error: 'user_no_position' };
   const d = dist(userPos.x, userPos.z, npc.x, npc.z);
-  // Sesión 20 — el max range efectivo es min(attack_range + tolerance, MELEE_MAX_RANGE)
-  // para evitar que NPCs con attack_range alto (configurados o por bug)
-  // permitan pegar desde lejos. Para ranged/magic futuro se quitará este cap
-  // según tipo del NPC.
-  const maxRange = Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE);
+  // Sesión 26 — Para bow el rango es mayor. Para melee se mantiene el cap.
+  const isRanged = (weaponType === 'bow');
+  const maxRange = isRanged
+    ? Math.max(npc.attack_range + 8.0, 10.0)   // ranged: hasta 10m
+    : Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE);
   if (d > maxRange) {
     return {
       error: 'out_of_range',
@@ -387,7 +496,29 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // ---- User hit ----
   const userLvls = levelsOf(stats);
   const userHit = rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength));
-  const dmgToNpc = Math.min(userHit.damage, npc.hp_current);
+
+  // Sesión 26 — Aplicar damage multipliers:
+  //   1. Weapon base mult (1.5× para 2H)
+  //   2. Stance mult (slash 0.95, smash 1.05)
+  //   3. Crit roll (solo si el arma tiene crit_chance > 0)
+  let dmgRaw = userHit.damage;
+  let isCrit = false;
+  if (userHit.hit && dmgRaw > 0) {
+    const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
+    dmgRaw = dmgRaw * weaponMult * stanceMods.damage_mult;
+    // Roll crit automático (solo 2H tiene >0% chance)
+    const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+    if (critChance > 0 && rng() < critChance) {
+      isCrit = true;
+      dmgRaw = dmgRaw * CRIT_DAMAGE_MULT;
+      // Nota: NPCs actuales no tienen stance, así que el crit_taken_mult
+      // no se aplica aquí. Si en futuro PVP el target está en block,
+      // se aplicaría dmgRaw *= targetStance.crit_taken_mult.
+    }
+    dmgRaw = Math.max(1, Math.floor(dmgRaw)); // mínimo 1 si hit
+  }
+  const dmgToNpc = Math.min(dmgRaw, npc.hp_current);
+  userHit.damage = dmgToNpc;
   const npcHpAfter = npc.hp_current - dmgToNpc;
   const npcKilled = npcHpAfter <= 0;
 
@@ -501,6 +632,10 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   return {
     your_hit: userHit.hit,
     your_damage: dmgToNpc,
+    is_crit: isCrit,                  // Sesión 26 — true si fue crítico (2H)
+    cooldown_ms: cooldownMs,          // Sesión 26 — cuánto esperar al siguiente ataque
+    weapon_type: weaponType,          // Sesión 26 — para que el cliente sepa qué anim usar
+    stance: stanceKey,                // Sesión 26 — chop|slash|smash|block
     npc_killed: npcKilled,
     npc_hp: npcKilled ? 0 : npcHpAfter,
     npc_max_hp: npc.max_hp,
