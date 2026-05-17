@@ -1,27 +1,22 @@
 /**
  * SebasPresent — Terrain module (Sesión 5 refactor)
  *
- * Todo lo relacionado con el mundo "estático":
- *   - Generación procedural de biomas (ruido + lookup por posición).
- *   - Chunks de terreno (load/unload por radio alrededor del player).
- *   - Árboles (GLBs + fallback procedural) en placement instanced.
- *   - Decoración (piedras, hierba) en placement instanced.
- *   - Places hardcoded (ciudades, pueblos, ruinas, torres...).
- *   - Colisión con troncos.
- *   - Animación de spinners en places (cristales que rotan).
+ * Sesión 12 — TEXTURIZADO DEL TERRENO:
+ *   - Carga 6 texturas diff_1k.jpg desde R2 (una por bioma): forest, wilderness,
+ *     swamp, plaza, snow, desert. Los biomas plains/jungle/beach NO tienen
+ *     textura todavía → caen al vertex color como fallback (queda OK porque
+ *     ya usaban paletas verdes/arena similares).
+ *   - Cada chunk se pinta con la textura del bioma de SU CENTRO (1 textura
+ *     por chunk, NO per-vertex blending). Trade-off: transiciones entre
+ *     chunks de biomas distintos se ven "cortadas" en lugar de degradado
+ *     suave, pero el ruido de biomeAt() las hace orgánicas, no rectas.
+ *   - El vertex color se MULTIPLICA encima de la textura para preservar la
+ *     variación interna (zonas claras/oscuras dentro del mismo bioma).
+ *   - Tiling: cada chunk de 64m tiene la textura repetida 4 veces → cada
+ *     tile mide 16m. Si quedara muy obvio el patrón, subir/bajar TILE_REPEAT.
  *
- * Cómo se usa desde world.js:
- *
- *   import * as terrain from './terrain.js';
- *   import { PALETTE, PLACES, BIOMES, WORLD_HALF, FOG_NEAR, FOG_FAR, biomeAt, getRegionInfo } from './terrain.js';
- *
- *   await terrain.start({ scene });    // pre-carga GLBs + setup
- *   terrain.primeChunks(x, z);         // carga inicial sincrona alrededor del player
- *   terrain.update(dt, x, z);          // cada frame: chunks + spinners
- *   const adjusted = terrain.applyCollision(x0, z0, x1, z1);
- *   raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
- *   raycaster.intersectObjects(terrain.getTerrainMeshes());
- *   terrain.stop();                    // limpieza
+ * Todo lo demás (chunks, places, árboles, decoración, colisión) idéntico
+ * a antes.
  */
 
 import * as THREE from 'three';
@@ -43,6 +38,31 @@ const TREE_SCALE_MAX = 3.0;
 const TREE_COLLISION_RADIUS = 0.6;
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
+
+// ============================================================
+// Sesión 12 — Texturas de biomas
+// ============================================================
+// Cada chunk se renderiza con la textura del bioma de su centro repetida
+// TILE_REPEAT veces en X y Z. CHUNK_SIZE=64m, TILE_REPEAT=4 → cada tile
+// son 16m, escala razonable para mirar desde la cámara (~5-10m de altura).
+const TILE_REPEAT = 4;
+
+// Paths esperados en R2. Biomas SIN textura (plains, jungle, beach) usan
+// el vertex color (paleta clásica) como fallback automático.
+const BIOME_TEXTURE_URLS = {
+  forest:     `${R2_BASE}/terrain/textures/forest_diff_1k.jpg`,
+  wilderness: `${R2_BASE}/terrain/textures/wilderness_diff_1k.jpg`,
+  swamp:      `${R2_BASE}/terrain/textures/swamp_diff_1k.jpg`,
+  plaza:      `${R2_BASE}/terrain/textures/plaza_diff_1k.jpg`,
+  snow:       `${R2_BASE}/terrain/textures/snow_diff_1k.jpg`,
+  desert:     `${R2_BASE}/terrain/textures/desert_diff_1k.jpg`,
+  // plains, jungle, beach → sin textura, vertex color fallback
+};
+
+// Cache de THREE.Texture cargadas. Vacío hasta que loadBiomeTextures() termine.
+// Si un bioma no está aquí, el chunk usa vertex color en MeshLambertMaterial
+// con vertexColors:true (comportamiento previo a sesión 12).
+const BIOME_TEXTURES = {};
 
 export const PALETTE = {
   sky: 0x9ec0d6, fog: 0xa8c4d8, skyWild: 0x6a4040, fogWild: 0x6a3838,
@@ -186,6 +206,7 @@ export async function start(opts) {
   }
   scene = opts.scene;
   initTreeGeometries();
+  await loadBiomeTextures();           // Sesión 12 — texturas de suelo
   await loadGLBTrees();
   await loadGLBDecorations();
   started = true;
@@ -213,6 +234,10 @@ export function stop() {
     }
     DECORATION_GEOMS = null;
   }
+  // Sesión 12 — limpiar texturas
+  for (const tex of Object.values(BIOME_TEXTURES)) tex?.dispose?.();
+  for (const k of Object.keys(BIOME_TEXTURES)) delete BIOME_TEXTURES[k];
+
   scene = null;
   started = false;
 }
@@ -321,6 +346,33 @@ function collidesWithTree(x, z, cx, cz, r2) {
 }
 
 // ============================================================
+// Sesión 12 — Carga de texturas de biomas
+// ============================================================
+async function loadBiomeTextures() {
+  const loader = new THREE.TextureLoader();
+  // Carga paralela; fallos individuales no rompen el resto.
+  const entries = Object.entries(BIOME_TEXTURE_URLS);
+  await Promise.all(entries.map(async ([biomeId, url]) => {
+    try {
+      const tex = await new Promise((resolve, reject) => {
+        loader.load(url, resolve, undefined, reject);
+      });
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(TILE_REPEAT, TILE_REPEAT);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;  // mejora calidad a la distancia
+      tex.needsUpdate = true;
+      BIOME_TEXTURES[biomeId] = tex;
+      console.log(`[terrain] Textura cargada: '${biomeId}' de ${url.split('/').pop()}`);
+    } catch (err) {
+      console.warn(`[terrain] Textura '${biomeId}' falló (${url}):`, err.message || err);
+      // Sin textura → ese bioma usa vertex color como antes.
+    }
+  }));
+}
+
+// ============================================================
 // Helpers GLB (compartidos con NPCs en world.js — exportados para sesión 6)
 // ============================================================
 /**
@@ -371,10 +423,6 @@ export function measureSkinnedBbox(root) {
 /**
  * Rota Z-up→Y-up si necesario, baquea transforms, escala al target height,
  * preserva materiales originales del GLB.
- *
- * forceZUp: si true, rota aunque detectsZUp() no lo detecte.
- * forceZUpInvert: si true, rota +π/2 en X (en lugar de -π/2).
- * forceNoZUp: si true, NO rota aunque detectsZUp() lo detecte (override).
  */
 export function bakeGlbModel(root, targetHeight, fallbackColor, forceZUp, forceZUpInvert, forceNoZUp) {
   if (!forceNoZUp && (forceZUp || detectsZUp(root))) {
@@ -423,7 +471,6 @@ export function bakeGlbModel(root, targetHeight, fallbackColor, forceZUp, forceZ
     geom.applyMatrix4(scaleMat);
     geom.applyMatrix4(offsetMat);
 
-    // Preservar el material original del GLB (no recrear como Lambert)
     let srcMat = m.material;
     if (Array.isArray(srcMat)) srcMat = srcMat[0];
     let material;
@@ -668,7 +715,27 @@ function loadChunk(cx, cz) {
   geom.translate(origin.x + CHUNK_SIZE / 2, 0, origin.z + CHUNK_SIZE / 2);
   paintChunkVertices(geom);
   geom.computeVertexNormals();
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+
+  // Sesión 12 — Material por chunk:
+  //   - Si hay textura para el bioma del centro del chunk: MeshLambertMaterial
+  //     con map + vertexColors (la textura modula con el color del vertex,
+  //     que ya lleva la variación clara/oscura del paintChunkVertices).
+  //   - Si no hay textura: comportamiento previo (solo vertex colors).
+  const centerX = origin.x + CHUNK_SIZE / 2;
+  const centerZ = origin.z + CHUNK_SIZE / 2;
+  const chunkBiome = biomeAt(centerX, centerZ);
+  const tex = BIOME_TEXTURES[chunkBiome.id] || null;
+
+  const matOpts = { vertexColors: true };
+  if (tex) {
+    matOpts.map = tex;
+    // Cuando hay textura, los vertex colors deben ser cercanos a blanco
+    // para no oscurecer la textura. Como paintChunkVertices genera colores
+    // del bioma (no neutros), el efecto multiplicativo da un resultado
+    // sutilmente tintado del color del bioma. Es lo que queremos: textura
+    // base + leve tinte de iluminación local.
+  }
+  const mat = new THREE.MeshLambertMaterial(matOpts);
   const mesh = new THREE.Mesh(geom, mat);
   mesh.userData.kind = 'terrain';
   scene.add(mesh);
@@ -746,6 +813,12 @@ function paintChunkVertices(geom) {
     const v = rng - 0.5;
     cTmp.copy(cBase);
     if (v > 0) cTmp.lerp(cLight, v * 0.85); else cTmp.lerp(cDark, -v * 0.85);
+    // Sesión 12 — Cuando el chunk lleva textura, este color se multiplica
+    // contra la textura. Lo dejamos tal cual: cBase ya está cercano al tono
+    // promedio de la textura del bioma, así que multiplicar produce el color
+    // textura ligeramente tintado de iluminación local. Si quedara
+    // demasiado oscuro, podríamos clampear hacia arriba (lerp a blanco
+    // 0.5), pero antes prueba real.
     colors[i * 3] = cTmp.r;
     colors[i * 3 + 1] = cTmp.g;
     colors[i * 3 + 2] = cTmp.b;
