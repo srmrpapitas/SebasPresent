@@ -1,5 +1,11 @@
 /**
- * SebasPresent — Interiors module (Sesión 11c-1)
+ * SebasPresent — Interiors module (Sesión 11c-1 + Sesión 23 shop)
+ *
+ * Sesión 23: el menú del banker ahora tiene 3 botones:
+ *   - 🏦 Banco
+ *   - 🏛️ Grand Exchange
+ *   - 🛒 Tienda  (nuevo)
+ * Futuro (cuando haya quests): se añadirá 4º botón Misiones.
  *
  * Gestiona el switch entre el mundo exterior y el interior de los edificios.
  *
@@ -17,9 +23,6 @@
  * están en sus coords originales (cerca de 0,0). El player está ahora en
  * (10000, 10000), muy lejos del frustum de la cámara. El frustum culling
  * de three.js se encarga de no renderizarlos.
- *
- * En 11c-2 cargaremos el NPC del mostrador dentro del interior y un menú
- * Banco/GE al tappearlo.
  */
 
 import * as THREE from 'three';
@@ -43,10 +46,6 @@ const NPC_HEIGHT = 1.8;
 const NPC_OFFSET = { x: 0, z: 3 };
 
 // Coords absolutas donde se coloca el interior en el mundo.
-// Lejos de WORLD_HALF (2048) para no chocar con el sistema de chunks
-// de terrain. Si el player teleporta accidentalmente fuera del interior
-// pero cerca de estas coords, terrain.chunkInsideWorld() devolverá false
-// y no generará chunks (zonas "vacías").
 const INTERIOR_CENTER = { x: 10000, z: 10000 };
 
 // Spawn del player dentro: 10m al sur del centro (sala ahora ~33m profundidad),
@@ -71,21 +70,22 @@ let onEnterCallback = () => {};
 let onLeaveCallback = () => {};
 let onOpenBank = () => { console.warn('[interiors] onOpenBank no asignado'); };
 let onOpenGE   = () => { console.warn('[interiors] onOpenGE no asignado'); };
+let onOpenShop = () => { console.warn('[interiors] onOpenShop no asignado'); };  // sesión 23
 
-let interiorRoot = null;   // Group con el modelo cargado (posicionado en INTERIOR_CENTER)
-let interiorFloor = null;  // Plano invisible para tap-to-walk dentro
-let interiorBox = null;    // { minX, maxX, minZ, maxZ } en coords locales (centradas en 0)
-let interiorLight = null;  // Luz ambiental extra (la del exterior puede no llegar bien)
-let npcModel = null;       // Sesión 11c-2 — FBX cargado, posicionado en NPC_OFFSET
-let npcMixer = null;       // AnimationMixer del NPC (idle loop)
-let npcMenuEl = null;      // Overlay HTML con opciones Banco/GE
-let raycaster = null;      // Reusable para tryHandleNpcTap
+let interiorRoot = null;
+let interiorFloor = null;
+let interiorBox = null;
+let interiorLight = null;
+let npcModel = null;
+let npcMixer = null;
+let npcMenuEl = null;
+let raycaster = null;
 
 let savedBg = 0;
 let savedFogColor = null;
 let savedFogNear = 0;
 let savedFogFar = 0;
-let lastExteriorPos = null;   // { x, z } posición exterior antes de entrar
+let lastExteriorPos = null;
 let lastExteriorRotY = 0;
 let exitButtonEl = null;
 let active = false;
@@ -110,6 +110,7 @@ export async function start(opts) {
   onLeaveCallback = opts.onLeave || (() => {});
   onOpenBank = opts.onOpenBank || (() => { console.warn('[interiors] onOpenBank no asignado'); });
   onOpenGE   = opts.onOpenGE   || (() => { console.warn('[interiors] onOpenGE no asignado'); });
+  onOpenShop = opts.onOpenShop || (() => { console.warn('[interiors] onOpenShop no asignado'); });  // sesión 23
   if (!scene) {
     console.warn('[interiors] start() sin scene en opts');
     return;
@@ -123,13 +124,6 @@ export async function start(opts) {
     return;
   }
 
-  // Colocar el interior. IMPORTANTE: el bbox se calcula ANTES de poner
-  // visible=false, porque Box3.setFromObject ignora objetos invisibles
-  // (devolvería bbox vacío ±Infinity y rompería la colisión y el floor mesh).
-  // Colocar el interior en sus coords absolutas. Lo dejamos SIEMPRE visible
-  // (a 10000m del player exterior, queda fuera del frustum y no se ve).
-  // En enter() solo cambiamos bg/fog/teleport. No alternamos visibility
-  // porque eso resultó frágil en testing previo.
   const centerX = INTERIOR_CENTER.x;
   const centerZ = INTERIOR_CENTER.z;
   interiorRoot.position.set(centerX, 0, centerZ);
@@ -158,15 +152,10 @@ export async function start(opts) {
         maxZ: worldBox.max.z - centerZ,
       };
     }
-    console.log(`[interiors] BBox local (con margen ${COLLISION_MARGIN}m): X[${interiorBox.minX.toFixed(2)},${interiorBox.maxX.toFixed(2)}] Z[${interiorBox.minZ.toFixed(2)},${interiorBox.maxZ.toFixed(2)}]`);
   }
 
-  // SIEMPRE visible. A 10000m del exterior está fuera del frustum (far=274).
   interiorRoot.visible = true;
 
-  // Plano floor invisible — el raycaster lo intersecta para tap-to-walk
-  // pero opacity:0 lo hace invisible visualmente. depthWrite:false evita
-  // que tape los meshes del suelo del modelo en el render.
   const sizeX = Number.isFinite(worldBox.max.x - worldBox.min.x) ? (worldBox.max.x - worldBox.min.x) : 20;
   const sizeZ = Number.isFinite(worldBox.max.z - worldBox.min.z) ? (worldBox.max.z - worldBox.min.z) : 20;
   const floorGeom = new THREE.PlaneGeometry(sizeX, sizeZ);
@@ -178,43 +167,37 @@ export async function start(opts) {
   interiorFloor = new THREE.Mesh(floorGeom, floorMat);
   interiorFloor.position.set(centerX, 0.02, centerZ);
   interiorFloor.userData = { kind: 'interior-floor' };
-  interiorFloor.visible = true;  // opacity:0 lo hace invisible visualmente
+  interiorFloor.visible = true;
   scene.add(interiorFloor);
 
-  // Luz ambiental SIEMPRE encendida. AmbientLight afecta a toda la scene
-  // pero los meshes del exterior están todavía iluminados por la sun+ambient
-  // global; este extra solo añade brillo al interior. Si interfiere, se baja.
   interiorLight = new THREE.AmbientLight(0xffffff, 0.5);
   interiorLight.visible = true;
   scene.add(interiorLight);
 
-  // Sesión 11c-2: cargar NPC FBX (the_boss) y posicionarlo tras el mostrador.
-  // Lo cargamos en paralelo conceptualmente — si falla, el interior funciona
-  // igual pero sin NPC interactuable.
   try {
     const npcPack = await loadNpc(NPC_URL, NPC_HEIGHT);
     if (npcPack) {
       npcModel = npcPack.model;
       npcMixer = npcPack.mixer;
       npcModel.position.set(centerX + NPC_OFFSET.x, 0, centerZ + NPC_OFFSET.z);
-      npcModel.rotation.y = Math.PI;  // mirando hacia el sur (al player que entra)
+      npcModel.rotation.y = Math.PI;
       npcModel.userData = { kind: 'npc-interior', name: 'Banquero' };
       scene.add(npcModel);
       console.log(`[interiors] NPC cargado y posicionado en (${npcModel.position.x.toFixed(1)}, ${npcModel.position.z.toFixed(1)}).`);
     } else {
-      console.warn('[interiors] NPC no cargó. El menú banco/GE no estará disponible.');
+      console.warn('[interiors] NPC no cargó. El menú no estará disponible.');
     }
   } catch (err) {
     console.warn('[interiors] Error cargando NPC:', err);
   }
 
   started = true;
-  console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Floor mesh size: ${sizeX.toFixed(2)} x ${sizeZ.toFixed(2)}. Interior en (${centerX},${centerZ}).`);
+  console.log(`[interiors] Setup completo. Children del root: ${interiorRoot.children.length}. Interior en (${centerX},${centerZ}).`);
 }
 
 export function stop() {
   if (!started) return;
-  if (active) forceLeave();  // limpieza UI sin teleport
+  if (active) forceLeave();
   if (interiorRoot && scene) {
     scene.remove(interiorRoot);
     disposeGroup(interiorRoot);
@@ -249,14 +232,11 @@ export function stop() {
   onLeaveCallback = () => {};
   onOpenBank = () => {};
   onOpenGE = () => {};
+  onOpenShop = () => {};
   active = false;
   started = false;
 }
 
-/**
- * Entra al interior. fromBuildingId es informativo (en 11c-2 lo usaremos
- * para distinguir qué NPC mostrar si varían por edificio).
- */
 export function enter(fromBuildingId) {
   if (!started || active || !interiorRoot) {
     console.warn(`[interiors] enter() ignorado: started=${started} active=${active} hasRoot=${!!interiorRoot}`);
@@ -268,21 +248,13 @@ export function enter(fromBuildingId) {
     return;
   }
 
-  // Guardar posición exterior para volver al salir
   lastExteriorPos = { x: player.position.x, z: player.position.z };
   lastExteriorRotY = player.rotation.y;
 
-  // Teleportar al interior
   player.position.x = INTERIOR_CENTER.x + PLAYER_SPAWN_OFFSET.x;
   player.position.z = INTERIOR_CENTER.z + PLAYER_SPAWN_OFFSET.z;
-  player.rotation.y = 0;  // mirando al norte (+Z), hacia el mostrador (NPC en 11c-2)
+  player.rotation.y = 0;
 
-  // El modelo está siempre visible (a 10000m del exterior, fuera del frustum).
-  // Aquí solo cambiamos bg/fog y teleportamos. Eso basta para "entrar".
-  console.log(`[interiors] enter() player teleportado a (${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)})`);
-  console.log(`[interiors] enter('${fromBuildingId}'). Player en (${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)}). InteriorRoot children=${interiorRoot.children.length} visible=${interiorRoot.visible}`);
-
-  // Cambiar visual: cielo oscuro + fog corto
   if (scene) {
     savedBg = (scene.background && scene.background.getHex) ? scene.background.getHex() : 0x9ec0d6;
     if (scene.fog) {
@@ -303,9 +275,6 @@ export function enter(fromBuildingId) {
   onEnterCallback(fromBuildingId);
 }
 
-/**
- * Sale del interior. Teleporta al player a la posición exterior previa.
- */
 export function leave() {
   if (!active) return;
   const player = getPlayer();
@@ -318,19 +287,12 @@ export function leave() {
   onLeaveCallback();
 }
 
-/**
- * Limpia el estado UI sin teleportar al player. Útil cuando algo externo
- * ya teleportó al player (home_teleport, logout). El caller es responsable
- * de la posición del player.
- */
 export function forceLeave() {
   if (!active) return;
   finishLeave();
 }
 
 function finishLeave() {
-  // El modelo permanece siempre visible en (10000, 10000); al salir, el
-  // player vuelve al exterior y queda fuera del frustum (10000m de distancia).
   if (scene) {
     scene.background = new THREE.Color(savedBg);
     if (scene.fog && savedFogColor !== null) {
@@ -349,18 +311,10 @@ export function isActive() {
   return active;
 }
 
-/**
- * Devuelve el plano floor invisible. world.js lo usa en doCanvasTap para
- * hacer raycast cuando estamos en interior.
- */
 export function getFloorMesh() {
   return interiorFloor;
 }
 
-/**
- * Colisión: clamp del player al bbox de la sala con margen. Solo activo
- * cuando estamos en interior. Fuera, devuelve el target sin cambios.
- */
 export function applyCollision(x0, z0, x1, z1) {
   if (!active || !interiorBox) return { x: x1, z: z1 };
   const localX1 = x1 - INTERIOR_CENTER.x;
@@ -376,9 +330,6 @@ export function applyCollision(x0, z0, x1, z1) {
 // ============================================================
 // Botón "Salir del edificio"
 // ============================================================
-// Texto distintivo para no confundirlo con el "Salir" del HUD permanente
-// (logout). Posicionado centrado horizontalmente en la zona alta para
-// quedar bien visible y aislado del resto de botones.
 
 function showExitButton() {
   if (exitButtonEl) return;
@@ -414,9 +365,6 @@ function showExitButton() {
     ev.stopPropagation();
     leave();
   });
-  // Anclar al body directamente — evita posicionamiento dependiente de
-  // ancestors (worldScreen) con transform/scroll/relative que pueda
-  // desplazar el botón a sitios raros (como abajo-centro encima del joystick).
   document.body.appendChild(exitButtonEl);
 }
 
@@ -429,22 +377,6 @@ function removeExitButton() {
 // ============================================================
 // Carga del GLB del interior
 // ============================================================
-//
-// IMPORTANTE: el root del GLB (Sketchfab_model) viene con una matrix
-// fija que YA aplica Z-up→Y-up + escala 0.023. GLTFLoader marca este
-// nodo con matrixAutoUpdate=false, así que tocar root.rotation NO
-// surte efecto. Tampoco podemos baquear las matrices a las geoms con
-// applyMatrix4(matrixWorld) directamente porque something en ese flujo
-// rompía silenciosamente el render (probablemente combinación de
-// matrices no-uniformes con merge).
-//
-// Approach robusto: dejar el árbol del GLB tal cual y wrappearlo en un
-// Group nuestro que aplica escala adicional + offset Y para apoyar la
-// base en Y=0. Three.js maneja toda la jerarquía de matrices.
-//
-// Coste: perdemos el merge por material (29 meshes = 29 draw calls).
-// Como solo hay UNA instancia visible del interior a la vez, asumible.
-// Optimizable después si performance lo pide.
 
 async function loadInterior(url, targetHeight) {
   const loader = new GLTFLoader();
@@ -458,7 +390,6 @@ async function loadInterior(url, targetHeight) {
   const root = gltf.scene;
   root.updateMatrixWorld(true);
 
-  // BBox en world coords (incluye la matrix del root con Z-up→Y-up + scale 0.023)
   const bbox = new THREE.Box3().setFromObject(root);
   const sizeY = bbox.max.y - bbox.min.y;
   if (sizeY < 0.001) {
@@ -466,13 +397,7 @@ async function loadInterior(url, targetHeight) {
     return null;
   }
   const scaleFactor = targetHeight / sizeY;
-  console.log(
-    `[interiors] BBox post-GLB: X[${bbox.min.x.toFixed(2)},${bbox.max.x.toFixed(2)}] ` +
-    `Y[${bbox.min.y.toFixed(2)},${bbox.max.y.toFixed(2)}] ` +
-    `Z[${bbox.min.z.toFixed(2)},${bbox.max.z.toFixed(2)}] sizeY=${sizeY.toFixed(2)} → scale=${scaleFactor.toFixed(3)}`
-  );
 
-  // Forzar visibility + DoubleSide para no perder caras vistas desde dentro
   let meshCount = 0;
   root.traverse(o => {
     if (!o.isMesh) return;
@@ -482,7 +407,6 @@ async function loadInterior(url, targetHeight) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
         m.side = THREE.DoubleSide;
-        // Normalizar transparency rara que pueda venir del GLB
         if (m.transparent || m.alphaTest > 0 || m.alphaMap) {
           m.alphaTest = 0.4;
           m.transparent = false;
@@ -491,36 +415,26 @@ async function loadInterior(url, targetHeight) {
     }
   });
 
-  // Wrapper Group: aplica escala uniforme + offset Y para base en Y=0
   const wrapper = new THREE.Group();
   wrapper.userData = { kind: 'interior-root' };
   wrapper.add(root);
   wrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
   wrapper.position.y = -bbox.min.y * scaleFactor;
 
-  console.log(`[interiors] ${meshCount} meshes cargados (sin merge — wrapper group).`);
   return wrapper;
 }
 
 // ============================================================
-// Sesión 11c-2 — NPC del mostrador (FBX + idle anim + tap → menú)
+// NPC del mostrador (FBX + idle anim + tap → menú)
 // ============================================================
 
-/**
- * Carga el FBX, lo escala a NPC_HEIGHT y arranca el primer AnimationClip
- * embebido (idle). FBX de Mixamo suele venir en ~100x escala.
- * Devuelve { model, mixer } o null si falla.
- */
 async function loadNpc(url, targetHeight) {
-  // Import dinámico del FBXLoader: si el bundler/importmap no lo tiene
-  // resuelto, no rompemos startWorld. El interior funciona sin NPC.
   let FBXLoader;
   try {
     const mod = await import('three/addons/loaders/FBXLoader.js');
     FBXLoader = mod.FBXLoader;
   } catch (err) {
-    console.warn('[interiors] No se pudo importar FBXLoader:', err.message,
-      '— el NPC no se cargará. Posible causa: importmap sin entrada para FBXLoader.');
+    console.warn('[interiors] No se pudo importar FBXLoader:', err.message);
     return null;
   }
   const loader = new FBXLoader();
@@ -533,7 +447,6 @@ async function loadNpc(url, targetHeight) {
     return null;
   }
 
-  // BBox pre-escala para calcular factor
   fbx.updateMatrixWorld(true);
   const bbox = new THREE.Box3().setFromObject(fbx);
   const sizeY = bbox.max.y - bbox.min.y;
@@ -543,12 +456,11 @@ async function loadNpc(url, targetHeight) {
   }
   const scaleFactor = targetHeight / sizeY;
   fbx.scale.set(scaleFactor, scaleFactor, scaleFactor);
-  fbx.position.y = -bbox.min.y * scaleFactor;  // apoyar pies en Y=0
+  fbx.position.y = -bbox.min.y * scaleFactor;
 
-  // Asegurar DoubleSide en todos los materiales y mantener visibilidad
   fbx.traverse(o => {
     if (o.isMesh) {
-      o.frustumCulled = false;  // skinned a veces falla frustum culling
+      o.frustumCulled = false;
       if (o.material) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const m of mats) m.side = THREE.DoubleSide;
@@ -556,22 +468,15 @@ async function loadNpc(url, targetHeight) {
     }
   });
 
-  // Log clips embebidos para diagnosticar T-pose
   const clips = fbx.animations || [];
-  console.log(`[interiors] NPC tiene ${clips.length} clips embebidos:`,
-    clips.map(c => `'${c.name}' (${c.duration.toFixed(2)}s, ${c.tracks.length} tracks)`).join(', ') || '(ninguno)');
 
-  // Buscar clip "idle" válido entre los embebidos. Heurística:
-  //   - duración > 0.1s
-  //   - tiene tracks de rotación (descarta poses estáticas)
-  //   - nombre incluye "idle" / "stand" si tenemos suerte
   let bestClip = null;
   for (const c of clips) {
     if (c.duration < 0.1) continue;
     if (!c.tracks || c.tracks.length === 0) continue;
     const nameLower = (c.name || '').toLowerCase();
     if (nameLower.includes('idle') || nameLower.includes('stand')) { bestClip = c; break; }
-    if (!bestClip) bestClip = c;  // fallback: primero válido
+    if (!bestClip) bestClip = c;
   }
 
   let mixer = null;
@@ -579,14 +484,9 @@ async function loadNpc(url, targetHeight) {
     mixer = new THREE.AnimationMixer(fbx);
     const action = mixer.clipAction(bestClip);
     action.play();
-    console.log(`[interiors] NPC clip activado (embebido): '${bestClip.name}' (${bestClip.duration.toFixed(2)}s).`);
     return { model: fbx, mixer };
   }
 
-  // Fallback: cargar idle externo y aplicarlo al esqueleto del NPC.
-  // El path principal es `animations/Idle.fbx` (mismo que usa character.js
-  // para el player). Si no existe, pruebo variantes.
-  console.warn('[interiors] No hay clip embebido válido — quedaría en T-pose. Probando idle externo…');
   const idleCandidates = [
     `${R2_BASE}/animations/Idle.fbx`,
     `${R2_BASE}/animations/idle.fbx`,
@@ -599,38 +499,24 @@ async function loadNpc(url, targetHeight) {
       const idleFbx = await loader.loadAsync(idleUrl);
       const idleClips = idleFbx.animations || [];
       if (idleClips.length === 0) continue;
-      // Tomar el primer clip y aplicarlo al esqueleto del NPC
       const clip = idleClips[0];
       mixer = new THREE.AnimationMixer(fbx);
       const action = mixer.clipAction(clip);
       action.play();
-      console.log(`[interiors] NPC idle externo cargado desde '${idleUrl}': '${clip.name}' (${clip.duration.toFixed(2)}s).`);
       return { model: fbx, mixer };
     } catch (err) {
-      // Path no existe en R2, sigo probando
+      // sigo
     }
   }
-  console.warn('[interiors] Ningún idle externo encontrado. El NPC quedará en T-pose. ' +
-    'Sube un FBX de idle a R2 (ej: animations/idle.fbx) y arreglará automáticamente.');
   return { model: fbx, mixer: null };
 }
 
-/**
- * Tick por frame del mixer del NPC. world.js lo invoca desde el animate
- * loop. dt en segundos.
- */
 export function update(dt) {
   if (npcMixer) {
     try { npcMixer.update(dt); } catch {}
   }
 }
 
-/**
- * Tap detection sobre el NPC. Si el rayo impacta el modelo, abre el menú
- * Banco/GE y devuelve true (tap capturado). world.js debe llamar a este
- * tryHandleNpcTap antes que al floor en doCanvasTap, cuando el interior
- * está activo.
- */
 export function tryHandleNpcTap(clientX, clientY) {
   if (!active || !npcModel || !raycaster || !camera || !canvas) return false;
   const rect = canvas.getBoundingClientRect();
@@ -639,9 +525,6 @@ export function tryHandleNpcTap(clientX, clientY) {
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
   const hits = raycaster.intersectObject(npcModel, true);
   if (hits.length === 0) {
-    // Fallback: proximidad screen-space al centro del NPC. En móvil con
-    // figuras finas es difícil acertar exacto; pickeamos si el tap está
-    // a < 60px del centro proyectado del NPC.
     const center = new THREE.Vector3();
     new THREE.Box3().setFromObject(npcModel).getCenter(center);
     center.project(camera);
@@ -656,7 +539,8 @@ export function tryHandleNpcTap(clientX, clientY) {
 }
 
 /**
- * Overlay HTML con dos botones: Banco / Grand Exchange. Centrado en pantalla.
+ * Overlay HTML con botones: Banco / Grand Exchange / Tienda / Cancelar.
+ * Sesión 23: añadido botón Tienda.
  */
 function showNpcMenu() {
   if (npcMenuEl) return;
@@ -673,7 +557,7 @@ function showNpcMenu() {
     padding: 18px 22px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
     min-width: 260px;
-    display: flex; flex-direction: column; gap: 12px;
+    display: flex; flex-direction: column; gap: 10px;
     font-family: 'Cinzel', serif;
   `;
   const title = document.createElement('div');
@@ -693,9 +577,9 @@ function showNpcMenu() {
     border: 1.5px solid #a88040;
     color: #fff8d0;
     font-family: 'Cinzel', serif;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
-    padding: 12px 16px;
+    padding: 11px 16px;
     border-radius: 4px;
     text-align: left;
     cursor: pointer;
@@ -714,13 +598,24 @@ function showNpcMenu() {
   });
 
   const btnGE = document.createElement('button');
-  btnGE.innerHTML = '🏛️ &nbsp; Abrir Grand Exchange';
+  btnGE.innerHTML = '🏛️ &nbsp; Grand Exchange';
   btnGE.style.cssText = btnStyle;
   btnGE.addEventListener('pointerup', (ev) => {
     if (ev.button !== undefined && ev.button !== 0) return;
     ev.preventDefault(); ev.stopPropagation();
     closeNpcMenu();
     try { onOpenGE(); } catch (e) { console.warn('[interiors] onOpenGE:', e); }
+  });
+
+  // Sesión 23 — Botón Tienda
+  const btnShop = document.createElement('button');
+  btnShop.innerHTML = '🛒 &nbsp; Tienda';
+  btnShop.style.cssText = btnStyle;
+  btnShop.addEventListener('pointerup', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    closeNpcMenu();
+    try { onOpenShop(); } catch (e) { console.warn('[interiors] onOpenShop:', e); }
   });
 
   const btnCancel = document.createElement('button');
@@ -734,6 +629,7 @@ function showNpcMenu() {
 
   npcMenuEl.appendChild(btnBank);
   npcMenuEl.appendChild(btnGE);
+  npcMenuEl.appendChild(btnShop);   // sesión 23
   npcMenuEl.appendChild(btnCancel);
   (document.getElementById('worldScreen') || document.body).appendChild(npcMenuEl);
 }

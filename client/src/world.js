@@ -28,6 +28,8 @@ import * as ge from './ge.js';
 import * as audio from './audio.js';
 import * as skills from './skills.js';
 import * as equipment from './equipment.js';
+import * as inventory from './inventory.js';
+import * as shop from './shop.js';
 import * as damageSplat from './damage_splat.js';
 import * as npcRenderer from './npc_renderer.js';
 import {
@@ -202,6 +204,11 @@ export async function startWorld(loggedInUser, token) {
         try { audio.sfx('book_open'); } catch {}
         try { ge.openOverlay?.(); } catch (e) { console.warn('[world] ge.openOverlay:', e); }
       },
+      // Sesión 23 — Shop callback
+      onOpenShop: () => {
+        try { audio.sfx('coins'); } catch {}
+        try { shop.open('general_store'); } catch (e) { console.warn('[world] shop.open:', e); }
+      },
       onEnter: (buildingId) => {
         // Forzar disengage de combat si engaged (el NPC queda lejos)
         try { window.__playerExitCombat?.(); } catch {}
@@ -354,6 +361,19 @@ export async function startWorld(loggedInUser, token) {
       });
       window.equipment = equipment;
     } catch (e) { console.warn('[world] equipment init:', e); }
+
+    // Sesión 23 — Shop (overlay tienda del banker)
+    try {
+      shop.init({
+        apiBase: API_BASE,
+        getToken: () => authToken,
+        onInventoryChange: () => {
+          // Cuando se compra/vende, refrescar inventory para que se actualice la mochila
+          try { inventory.refresh?.(); } catch {}
+        },
+      });
+      window.shop = shop;
+    } catch (e) { console.warn('[world] shop init:', e); }
 
     // Sesión 15 — Inyectar panel de Skills (tab Stats 📊) con grid 5×3.
     // Se inyecta DESPUÉS de skills.start() para que tenga datos.
