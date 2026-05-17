@@ -97,24 +97,28 @@ const SHEATH_MS = 700;
 // así que los offsets aquí están en "espacio bone" que es ~cm. Por eso los
 // numeritos son grandes.
 const WEAPON_TRANSFORMS = {
+  // Iteración 1: feedback usuario sesión 24
+  //   - Espada: 30% más grande, orientación invertida (estaba "al revés")
+  //   - Staff: sacado del cuerpo en eje X (estaba dentro)
+  //   - Bow: valores conservadores para asegurar que aparezca visible
   '1h_sword': {
-    scale: 50.0,
+    scale: 65.0,
     position: [3, 3, 0],
-    rotation: [0, 0, Math.PI / 2],
+    rotation: [0, 0, -Math.PI / 2],
   },
   '2h_sword': {
-    scale: 60.0,
+    scale: 80.0,
     position: [4, 4, 0],
-    rotation: [0, 0, Math.PI / 2],
+    rotation: [0, 0, -Math.PI / 2],
   },
   'bow': {
-    scale: 100.0,
-    position: [0, 5, 0],
-    rotation: [Math.PI / 2, 0, 0],
+    scale: 30.0,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
   },
   'staff': {
     scale: 80.0,
-    position: [2, 0, 0],
+    position: [8, 0, 0],
     rotation: [0, 0, 0],
   },
   'default': {
