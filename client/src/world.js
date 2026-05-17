@@ -1188,7 +1188,7 @@ function injectAudioSettingsPanel() {
 
   // Listeners
   pane.querySelectorAll('input[data-audio-slider]').forEach(input => {
-    input.addEventListener('input', (e) => {
+    const handler = (e) => {
       const which = input.dataset.audioSlider;
       const val = parseInt(input.value, 10) / 100;
       const valEl = pane.querySelector(`[data-audio-val="${which}"]`);
@@ -1197,7 +1197,11 @@ function injectAudioSettingsPanel() {
       else if (which === 'music') audio.setMusicVolume(val);
       else if (which === 'sfx')   audio.setSfxVolume(val);
       else if (which === 'ui')    audio.setUiVolume(val);
-    });
+    };
+    // iOS Safari a veces dispara 'change' al soltar y no 'input' en drag.
+    // Registramos ambos para cubrir todos los casos.
+    input.addEventListener('input', handler);
+    input.addEventListener('change', handler);
   });
 
   const muteBtn = pane.querySelector('[data-audio-mute]');

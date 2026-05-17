@@ -101,6 +101,13 @@ export function setup(opts) {
       .bank-overlay-body, .ge-body {
         touch-action: pan-y !important;
       }
+      /* Sesión 13 — Sliders necesitan touch-action:auto para que el thumb
+         se pueda arrastrar horizontalmente. Sin esto, el pan-y del sidebar
+         bloquea el drag horizontal del slider. */
+      .osrs-sidebar input[type="range"],
+      input[type="range"][data-audio-slider] {
+        touch-action: auto !important;
+      }
       html, body { overscroll-behavior: none; }
     `;
     document.head.appendChild(style);
