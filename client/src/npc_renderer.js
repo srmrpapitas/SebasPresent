@@ -1,6 +1,14 @@
 /**
  * SebasPresent — NPC Renderer module (Sesión 6 refactor)
  *
+ * Sesión 20 fixes:
+ *   - Tap más perdonable: NPC_TAP_SCREEN_PX 56 → 90, busca el NPC más
+ *     cercano al tap dentro del radio aunque el raycast NO acierte.
+ *   - NPC_ENGAGE_RANGE 1.4 → 2.0 (margen melee). Coincide con server.
+ *   - PERSEGUIR durante combate: si el NPC se aleja >MELEE_RANGE, el cliente
+ *     ordena auto-walk hacia él para no atacar de lejos. Esto soluciona
+ *     "pego desde lejos sin moverme".
+ *
  * Todo lo relacionado con NPCs:
  *   - Carga de GLBs por tipo (chicken, cow, goblin...) con placeholder fallback.
  *   - Mesh creation por NPC con HP bar billboard + materiales propios.
@@ -11,43 +19,6 @@
  *   - Auto-engage: caminar hacia un NPC tapeado lejos y enganchar al llegar.
  *   - Hitsplats DOM (gota roja con daño / escudo azul con miss).
  *   - Polling periódico al server para refrescar NPCs vía combat.refresh().
- *
- * Cómo se usa desde world.js:
- *
- *   import * as npcRenderer from './npc_renderer.js';
- *
- *   await npcRenderer.start({
- *     scene, camera, canvas,
- *     getPlayer:         () => player,
- *     setPlayerTarget:   (x, z) => setPlayerTarget(x, z),
- *     clearPlayerTarget: () => { playerTarget = null; marker.visible = false; },
- *     feedLog:           (type, msg) => combat.feedLog?.(type, msg),
- *   });
- *
- *   // En animate():
- *   npcRenderer.update(dt);
- *
- *   // En doCanvasTap (tap simple, antes que otros handlers):
- *   if (npcRenderer.tryHandleTap(clientX, clientY)) return;
- *
- *   // En long-press handler:
- *   npcRenderer.openActionMenuAt(clientX, clientY);
- *
- *   // En updatePlayer, cuando se mueve el joystick (cancela engage pendiente):
- *   npcRenderer.cancelAutoEngage();
- *
- *   // En updatePlayer, proximity check del auto-engage cada frame:
- *   const r = npcRenderer.tickAutoEngage(player.position.x, player.position.z);
- *   if (r?.reached)       { playerTarget = null; marker.visible = false; }
- *   else if (r?.chasing)  {
- *     if (playerTarget) { playerTarget.x = r.targetX; playerTarget.z = r.targetZ; }
- *     marker.position.set(r.targetX, 0.05, r.targetZ);
- *   }
- *
- *   // En drawMinimap, para puntos blancos de NPCs:
- *   for (const npc of npcRenderer.getNpcDataList()) { ... }
- *
- *   npcRenderer.stop();
  */
 
 import * as THREE from 'three';
@@ -98,8 +69,18 @@ const NPC_REACT_KICK_DIST  = 0.35;
 const NPC_POLL_INTERVAL_MS = 5000;
 const NPC_RENDER_RADIUS    = 100;
 export const NPC_MINIMAP_RADIUS = 500;
-const NPC_ENGAGE_RANGE     = 1.4;
-const NPC_TAP_SCREEN_PX    = 56;
+
+// Sesión 20 — engage range subido a 2.0 (era 1.4) para coincidir con melee
+// del server. Tap screen-space radius subido a 90px (era 56) — hit-box más
+// generosa en móvil.
+const NPC_ENGAGE_RANGE     = 2.0;
+const NPC_TAP_SCREEN_PX    = 90;
+
+// Sesión 20 — Si estoy peleando contra un NPC y se aleja más de este rango,
+// el cliente auto-walk hacia él para no pegar de lejos (server rechazará
+// el attack si excede su tolerancia). Antes el cliente solo perseguía
+// ANTES de engage, no DESPUÉS. Resultado: te alejabas y seguías pegando.
+const COMBAT_FOLLOW_RANGE  = 2.5;
 
 // ============================================================
 // Estado del módulo (privado)
@@ -210,6 +191,8 @@ export function update(dt) {
   updatePatrol(dt);
   updateHpBars();
   updatePolling(dt);
+  // Sesión 20 — perseguir NPC si me alejo durante combate
+  updateCombatFollow();
 }
 
 // ============================================================
@@ -324,6 +307,45 @@ export function tickAutoEngage(playerX, playerZ) {
  */
 export function cancelAutoEngage() {
   pendingEngageNpcId = null;
+}
+
+// ============================================================
+// Sesión 20 — Follow target durante combate activo
+// ============================================================
+/**
+ * Si estoy peleando contra un NPC (combat.currentTarget != null) y el NPC
+ * está más lejos de COMBAT_FOLLOW_RANGE metros, ordeno auto-walk hacia él.
+ *
+ * Por qué: antes, una vez engaged, el cliente NO perseguía. Si el NPC
+ * orbitaba o tú te alejabas, seguías pegando "desde lejos" porque el
+ * server validaba contra una posición vieja (guardada cada 10s).
+ *
+ * Ahora: el cliente persigue activamente al NPC. Si te alejas a propósito
+ * (joystick), tu joystick cancela el playerTarget en updatePlayer y el
+ * server eventualmente rechaza por out_of_range. Si NO te alejas, te
+ * mantienes pegado al NPC en su órbita.
+ */
+function updateCombatFollow() {
+  let engagedId = null;
+  try {
+    const snap = combat.getStateSnapshot?.();
+    engagedId = snap ? snap.currentTarget : null;
+  } catch {}
+  if (engagedId === null || engagedId === undefined) return;
+  const player = getPlayer?.();
+  if (!player) return;
+  const mesh = npcMeshes.get(engagedId);
+  if (!mesh) return;
+  const tx = mesh.position.x;
+  const tz = mesh.position.z;
+  const dx = tx - player.position.x;
+  const dz = tz - player.position.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist > COMBAT_FOLLOW_RANGE) {
+    // Ordenar walk hacia el NPC. Esto setea playerTarget en world.js que
+    // mueve al player en el siguiente frame.
+    setPlayerTargetCb(tx, tz);
+  }
 }
 
 // ============================================================
@@ -598,8 +620,16 @@ function updatePolling(dt) {
 }
 
 // ============================================================
-// Tap detection
+// Tap detection (Sesión 20 — más perdonable)
 // ============================================================
+/**
+ * Estrategia de 2 pasos para detectar tap sobre NPC en móvil:
+ *
+ *   Paso 1: raycast clásico (solo cuenta si pegamos en el mesh exacto).
+ *   Paso 2: si el raycast falló, screen-space: buscar el NPC más cercano
+ *           al tap dentro de NPC_TAP_SCREEN_PX. Subido a 90px en sesión 20
+ *           (era 56px) — hit-box generosa para dedos en mobile.
+ */
 function findNpcNearTap(clientX, clientY) {
   // Paso 1: raycast clásico
   const npcMeshList = [];
