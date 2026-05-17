@@ -201,11 +201,16 @@ export async function startWorld(loggedInUser, token) {
         npcRenderer.cancelAutoEngage?.();
         playerTarget = null;
         if (marker) marker.visible = false;
-        // Sesión 11c-2 — interior ampliado x4 (~60m planta, 16m alto). La cámara
-        // orbital exterior cabe bien dentro, no hace falta override. Solo si
-        // resultara incómodo, descomentar y ajustar:
-        //   savedCameraDist = cameraDist; savedCameraPitch = cameraPitch;
-        //   cameraDist = 18; cameraPitch = 0.5;
+        // Sesión 11c-2 v3 — sala reducida a 8m de alto. La cámara orbital
+        // exterior (cameraDist típicamente 7-10m con cameraPitch hasta 1.3)
+        // se sitúa a sin(1.3)*10=9.6m sobre el player — POR ENCIMA del techo
+        // de 8m. La cámara atraviesa el techo y el pitch queda clampeado al
+        // máximo, dando la sensación de que la cámara no se mueve vertical.
+        // Fix: ajustar cámara a valores que quepan dentro de la sala.
+        if (savedCameraDist === null)  savedCameraDist  = cameraDist;
+        if (savedCameraPitch === null) savedCameraPitch = cameraPitch;
+        cameraDist  = 5;     // antes ~7-10m → ahora 5m (cabe en sala 8m alto)
+        cameraPitch = 0.55;  // ~31° — vista intermedia (lejos del clamp max)
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
