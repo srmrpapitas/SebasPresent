@@ -324,20 +324,33 @@ export function setup(opts) {
   function touchInsideJoystick(touch) {
     if (!joystickEl) return false;
     const r = joystickEl.getBoundingClientRect();
-    return touch.clientX >= r.left && touch.clientX <= r.right &&
-           touch.clientY >= r.top  && touch.clientY <= r.bottom;
+    // Sesión 13 — Margen extra de 30px porque el área visual del joystick
+    // suele ser mayor que su bounding rect (el thumb se desplaza fuera del
+    // contenedor). Sin margen, tocar el borde del joystick contaba como
+    // "fuera" y activaba pinch.
+    const M = 30;
+    return touch.clientX >= r.left - M && touch.clientX <= r.right + M &&
+           touch.clientY >= r.top  - M && touch.clientY <= r.bottom + M;
   }
 
   function onTouchStartCanvas(e) {
     if (e.touches.length !== 2) return;
+    // Sesión 13 — Pinch ZOOM real: ambos dedos en el canvas Y cerca entre sí.
+    //   1. NINGUNO de los 2 puede estar en (o cerca de) el joystick.
+    //      Esto previene el bug: dedo izq en joystick + dedo der girando
+    //      cámara → activaba pinch y hacía zoom no deseado.
+    //   2. Los 2 dedos deben empezar relativamente cerca (<280px). Un pinch
+    //      natural es 2 dedos juntos que se separan. Si están muy separados
+    //      al inicio, no es un pinch — es un toque accidental con 2 manos.
     if (touchInsideJoystick(e.touches[0]) || touchInsideJoystick(e.touches[1])) return;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const initialDist = Math.hypot(dx, dy);
+    if (initialDist > 280) return;     // 2 dedos demasiado separados → no es pinch
     pinchActive = true;
     lastMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
     lastMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    lastPinchDist = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
+    lastPinchDist = initialDist;
   }
 
   function onTouchMoveCanvas(e) {
