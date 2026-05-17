@@ -33,6 +33,7 @@
  */
 
 import * as api from './api.js';
+import * as equipment from './equipment.js';
 
 const TICK_MS = 600;
 const POLL_INTERVAL_MS = 3000;
@@ -64,6 +65,17 @@ export function init() {
   if (isInitialized) return;
   ensureFeedEl();
   ensureStyles();  // Slice 5b: inyecta CSS de los botones de estilo de combate
+
+  // Sesión 22: cuando cambia el equipment, refrescar el tab si está abierto.
+  // Esto reescribe los stances según el arma nueva.
+  try {
+    equipment.onChange?.(() => {
+      // Reset UI stance para que se recalcule según nueva arma
+      uiSelectedStance = null;
+      if (isTabOpen) render();
+    });
+  } catch (e) { console.warn('[combat] equipment.onChange:', e); }
+
   isInitialized = true;
 }
 
@@ -414,12 +426,15 @@ function uiStanceFromServer(weaponKey, serverStance) {
 }
 
 /**
- * Detecta el arma equipada del player. Sesión 18: siempre 'unarmed'.
- * Cuando exista equipment, leer el slot weapon y devolver la key correcta.
+ * Sesión 22: detecta el arma equipada vía el módulo equipment.
+ * Devuelve la key de WEAPON_STANCES correspondiente.
+ *   'unarmed' | '1h_sword' | '2h_sword' | 'bow' | 'staff'
  */
 function detectEquippedWeapon() {
-  // TODO sesión equipment: leer del inventario/equipment lo que lleva
-  // equipado en weapon slot y devolver la key de WEAPON_STANCES.
+  try {
+    const wt = equipment.getWeaponType?.();
+    if (wt && wt !== 'unarmed') return wt;
+  } catch {}
   return 'unarmed';
 }
 

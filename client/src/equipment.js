@@ -1,0 +1,464 @@
+/**
+ * SebasPresent — Equipment module (Sesión 22)
+ *
+ * Gestiona los 9 slots de equipamiento del player.
+ *
+ * Slots (mismos que OSRS):
+ *   weapon, shield, helm, body, legs, boots, cape, amulet, ring
+ *
+ * API pública:
+ *   init({ apiBase, getToken })  — fetch inicial + render del tab
+ *   refresh()                     — re-fetch del server
+ *   getEquipped(slotId)           — { item_id, name, icon, weapon_type, ... } | null
+ *   getWeaponType()               — 'unarmed' | '1h_sword' | '2h_sword' | 'bow' | 'staff'
+ *   equipFromInventory(slotIndex) — mueve item del inv slot a su equipment slot
+ *   unequip(slotId)               — devuelve item al inventario
+ *   onChange(cb)                  — suscribirse a cambios
+ *
+ * UI: tab dentro del sidebar OSRS. El index.html ya tiene panes para tabs.
+ * Si no existe el pane "equipment", se busca alternativa: "stats_eq", "equip",
+ * o "worn_equipment". Si no existe ninguno, el módulo no inyecta UI pero
+ * sigue funcionando programáticamente (los hooks de combat.js usan
+ * getWeaponType()).
+ */
+
+let apiBase = null;
+let getToken = null;
+let initialized = false;
+
+// Estado del equipment: { weapon: {...}, shield: {...}, ... } (vacío = slot libre)
+let equipped = {};
+const listeners = [];
+
+// Catálogo de slots con metadata visual
+export const EQUIP_SLOTS = [
+  { id: 'helm',   label: 'Casco',    icon: '⛑',  row: 0, col: 1 },
+  { id: 'cape',   label: 'Capa',     icon: '🧣',  row: 1, col: 0 },
+  { id: 'amulet', label: 'Amuleto',  icon: '📿',  row: 1, col: 1 },
+  { id: 'weapon', label: 'Arma',     icon: '⚔️',  row: 2, col: 0 },
+  { id: 'body',   label: 'Pecho',    icon: '🛡',  row: 2, col: 1 },
+  { id: 'shield', label: 'Escudo',   icon: '🛡',  row: 2, col: 2 },
+  { id: 'legs',   label: 'Piernas',  icon: '👖',  row: 3, col: 1 },
+  { id: 'ring',   label: 'Anillo',   icon: '💍',  row: 4, col: 0 },
+  { id: 'boots',  label: 'Botas',    icon: '🥾',  row: 4, col: 2 },
+];
+
+// Mapeo weapon_type → categoría que combat.js entiende
+const WEAPON_TYPE_TO_COMBAT = {
+  '1h_sword': '1h_sword',
+  '2h_sword': '2h_sword',
+  'bow':      'bow',
+  'staff':    'staff',
+  'dagger':   '1h_sword',  // dagger usa stances de 1h por ahora
+};
+
+// ============================================================
+// API pública
+// ============================================================
+
+export async function init(opts) {
+  if (initialized) return;
+  apiBase = opts.apiBase;
+  getToken = opts.getToken || (() => null);
+
+  injectStyles();
+  injectPanel();
+
+  await refresh();
+  initialized = true;
+}
+
+export async function refresh() {
+  const token = getToken?.();
+  if (!token) return;
+  try {
+    const res = await fetch(`${apiBase}/api/equipment`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      console.warn('[equipment] refresh failed:', res.status);
+      return;
+    }
+    const data = await res.json();
+    equipped = data.slots || {};
+    renderPanel();
+    notifyChange();
+  } catch (err) {
+    console.error('[equipment] refresh err:', err);
+  }
+}
+
+export function getEquipped(slotId) {
+  return equipped[slotId] || null;
+}
+
+export function getAll() {
+  return { ...equipped };
+}
+
+/**
+ * Devuelve el "weapon type" agregado para que combat.js decida stances.
+ * Sin nada equipado → 'unarmed'.
+ */
+export function getWeaponType() {
+  const w = equipped.weapon;
+  if (!w || !w.weapon_type) return 'unarmed';
+  return WEAPON_TYPE_TO_COMBAT[w.weapon_type] || 'unarmed';
+}
+
+export function onChange(cb) {
+  listeners.push(cb);
+  return () => {
+    const idx = listeners.indexOf(cb);
+    if (idx >= 0) listeners.splice(idx, 1);
+  };
+}
+
+export async function equipFromInventory(slotIndex) {
+  const token = getToken?.();
+  if (!token) return { error: 'no_token' };
+  try {
+    const res = await fetch(`${apiBase}/api/equipment/equip`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slot_index: slotIndex }),
+    });
+    const data = await res.json();
+    if (!res.ok) return data;
+    // Refrescar local
+    await refresh();
+    return data;
+  } catch (err) {
+    console.error('[equipment] equip err:', err);
+    return { error: 'network' };
+  }
+}
+
+export async function unequip(slotId) {
+  const token = getToken?.();
+  if (!token) return { error: 'no_token' };
+  try {
+    const res = await fetch(`${apiBase}/api/equipment/unequip`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slot_id: slotId }),
+    });
+    const data = await res.json();
+    if (!res.ok) return data;
+    await refresh();
+    return data;
+  } catch (err) {
+    console.error('[equipment] unequip err:', err);
+    return { error: 'network' };
+  }
+}
+
+function notifyChange() {
+  for (const cb of listeners) {
+    try { cb(equipped); } catch (e) { console.warn(e); }
+  }
+}
+
+// ============================================================
+// UI
+// ============================================================
+
+function injectStyles() {
+  if (document.getElementById('equipment-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'equipment-styles';
+  style.textContent = `
+    .equip-panel {
+      padding: 12px 10px;
+      color: #e8c560;
+      font-family: 'Cinzel', serif;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .equip-panel-title {
+      text-align: center;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #c8a043;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+    }
+    .equip-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(5, auto);
+      gap: 6px;
+      max-width: 280px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .equip-slot {
+      background: linear-gradient(135deg, rgba(60, 45, 30, 0.95), rgba(30, 20, 12, 0.95));
+      border: 2px solid #5a4a30;
+      border-radius: 4px;
+      aspect-ratio: 1;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.08s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .equip-slot:active { transform: scale(0.94); }
+    .equip-slot.empty {
+      opacity: 0.55;
+    }
+    .equip-slot.occupied {
+      border-color: #c8a043;
+      background: linear-gradient(135deg, rgba(80, 60, 30, 0.95), rgba(50, 35, 18, 0.95));
+      box-shadow: 0 0 8px rgba(200, 160, 67, 0.25), inset 0 0 4px rgba(255, 208, 96, 0.15);
+    }
+    .equip-slot-icon {
+      font-size: 24px;
+      line-height: 1;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.8));
+    }
+    .equip-slot.empty .equip-slot-icon {
+      opacity: 0.45;
+      filter: grayscale(0.6);
+    }
+    .equip-slot-label {
+      position: absolute;
+      bottom: -14px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 8px;
+      color: rgba(200, 160, 67, 0.65);
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      text-shadow: 0 1px 1px rgba(0,0,0,0.9);
+      pointer-events: none;
+    }
+    .equip-footer {
+      margin-top: 16px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(200, 160, 67, 0.25);
+      text-align: center;
+      font-family: 'IM Fell English', serif;
+      font-size: 11px;
+      color: #d4b850;
+    }
+    .equip-footer-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 8px;
+      gap: 8px;
+    }
+    .equip-footer-row b { color: #ffd060; }
+
+    /* Tooltip al tap de un slot equipado */
+    .equip-tooltip {
+      position: fixed;
+      z-index: 200;
+      background: rgba(20, 14, 8, 0.97);
+      border: 2px solid #c8a043;
+      border-radius: 6px;
+      padding: 10px 14px;
+      min-width: 200px;
+      max-width: 260px;
+      color: #e8c560;
+      font-family: 'IM Fell English', serif;
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+    }
+    .equip-tooltip-title {
+      font-family: 'Cinzel', serif;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff8d0;
+      margin-bottom: 6px;
+    }
+    .equip-tooltip-desc {
+      font-size: 11px;
+      color: #d4b850;
+      margin: 4px 0;
+      line-height: 1.4;
+    }
+    .equip-tooltip-stat {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin: 2px 0;
+    }
+    .equip-tooltip-stat b { color: #fff8d0; }
+    .equip-tooltip-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+    }
+    .equip-tooltip-btn {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 3px;
+      border: 1.5px solid #c8a043;
+      background: rgba(120, 30, 20, 0.85);
+      color: #fff8d0;
+      font-family: 'Cinzel', serif;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .equip-tooltip-btn.secondary {
+      background: rgba(40, 25, 15, 0.85);
+      color: #c8a043;
+    }
+    .equip-tooltip-btn:active { transform: scale(0.95); }
+  `;
+  document.head.appendChild(style);
+}
+
+/**
+ * Encuentra dónde meter el panel. Probamos varios pane IDs comunes:
+ *   data-tab="equipment", data-tab="equip", data-tab="worn"
+ * Si no existe, intentamos crear un nuevo botón de tab (no necesario si
+ * el index.html ya lo tiene).
+ */
+function injectPanel() {
+  let pane = document.querySelector('.osrs-tab-pane[data-tab="equipment"]')
+          || document.querySelector('.osrs-tab-pane[data-tab="equip"]')
+          || document.querySelector('.osrs-tab-pane[data-tab="worn"]');
+
+  if (!pane) {
+    console.warn('[equipment] No se encontró tab pane de equipment. ¿Necesitas añadir un botón al sidebar?');
+    return;
+  }
+  pane.dataset.equipMounted = '1';
+  renderPanel();
+}
+
+function renderPanel() {
+  const pane = document.querySelector('.osrs-tab-pane[data-equip-mounted="1"]')
+            || document.querySelector('.osrs-tab-pane[data-tab="equipment"]')
+            || document.querySelector('.osrs-tab-pane[data-tab="equip"]')
+            || document.querySelector('.osrs-tab-pane[data-tab="worn"]');
+  if (!pane) return;
+
+  let attackBonus = 0;
+  let defenceBonus = 0;
+  for (const slot of EQUIP_SLOTS) {
+    const item = equipped[slot.id];
+    if (item) {
+      attackBonus += item.attack_bonus | 0;
+      defenceBonus += item.defence_bonus | 0;
+    }
+  }
+
+  let html = '<div class="equip-panel">';
+  html += '<div class="equip-panel-title">⚔ Equipamiento</div>';
+  html += '<div class="equip-grid">';
+  for (const slot of EQUIP_SLOTS) {
+    const item = equipped[slot.id];
+    const filled = !!item;
+    const icon = filled ? item.icon : slot.icon;
+    html += `
+      <div class="equip-slot ${filled ? 'occupied' : 'empty'}"
+           data-slot-id="${slot.id}"
+           style="grid-row: ${slot.row + 1}; grid-column: ${slot.col + 1};">
+        <span class="equip-slot-icon">${icon}</span>
+        <span class="equip-slot-label">${slot.label}</span>
+      </div>
+    `;
+  }
+  html += '</div>';
+
+  html += `
+    <div class="equip-footer">
+      <div class="equip-footer-row"><span>Bonus Ataque:</span><b>+${attackBonus}</b></div>
+      <div class="equip-footer-row"><span>Bonus Defensa:</span><b>+${defenceBonus}</b></div>
+    </div>
+  `;
+  html += '</div>';
+  pane.innerHTML = html;
+
+  // Listeners: tap slot → tooltip
+  pane.querySelectorAll('.equip-slot').forEach(el => {
+    el.addEventListener('pointerup', (ev) => {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const slotId = el.dataset.slotId;
+      showSlotTooltip(slotId, ev.clientX, ev.clientY);
+    });
+  });
+}
+
+function showSlotTooltip(slotId, clientX, clientY) {
+  const old = document.getElementById('equipTooltip');
+  if (old) old.remove();
+
+  const slot = EQUIP_SLOTS.find(s => s.id === slotId);
+  if (!slot) return;
+  const item = equipped[slotId];
+
+  const el = document.createElement('div');
+  el.id = 'equipTooltip';
+  el.className = 'equip-tooltip';
+
+  if (item) {
+    el.innerHTML = `
+      <div class="equip-tooltip-title">${item.icon} ${item.name}</div>
+      ${item.description ? `<div class="equip-tooltip-desc">${escapeHtml(item.description)}</div>` : ''}
+      <div class="equip-tooltip-stat"><span>Ranura:</span><b>${slot.label}</b></div>
+      <div class="equip-tooltip-stat"><span>Bonus Ataque:</span><b>+${item.attack_bonus | 0}</b></div>
+      <div class="equip-tooltip-stat"><span>Bonus Defensa:</span><b>+${item.defence_bonus | 0}</b></div>
+      <div class="equip-tooltip-actions">
+        <button class="equip-tooltip-btn" data-action="unequip">Quitar</button>
+        <button class="equip-tooltip-btn secondary" data-action="close">Cerrar</button>
+      </div>
+    `;
+  } else {
+    el.innerHTML = `
+      <div class="equip-tooltip-title">${slot.icon} ${slot.label}</div>
+      <div class="equip-tooltip-desc">Ranura vacía. Equipa un objeto desde la mochila tocándolo.</div>
+      <div class="equip-tooltip-actions">
+        <button class="equip-tooltip-btn secondary" data-action="close">Cerrar</button>
+      </div>
+    `;
+  }
+  document.body.appendChild(el);
+
+  const maxX = window.innerWidth - el.offsetWidth - 10;
+  const maxY = window.innerHeight - el.offsetHeight - 10;
+  el.style.left = Math.min(Math.max(10, clientX - el.offsetWidth / 2), maxX) + 'px';
+  el.style.top  = Math.min(Math.max(10, clientY - el.offsetHeight - 10), maxY) + 'px';
+
+  el.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('pointerup', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const act = btn.dataset.action;
+      if (act === 'unequip') {
+        const result = await unequip(slotId);
+        if (result.error) {
+          alert(result.message || result.error);
+        }
+        el.remove();
+      } else {
+        el.remove();
+      }
+    });
+  });
+
+  const outsideClose = (e) => {
+    if (!el.contains(e.target)) {
+      el.remove();
+      document.removeEventListener('pointerdown', outsideClose, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('pointerdown', outsideClose, true), 100);
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}

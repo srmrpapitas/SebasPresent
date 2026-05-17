@@ -1,5 +1,10 @@
 /**
- * SebasPresent — Inventory module (Slice 4a)
+ * SebasPresent — Inventory module (Slice 4a + Sesión 22 equipping)
+ *
+ * Sesión 22: long-press en un slot con item devuelve un menú contextual
+ * con la opción "Equipar" SI el item es equipable (item.equip_slot !=
+ * null). Al equipar, el item desaparece del inventario y va a
+ * user_equipment vía /api/equipment/equip.
  *
  * Responsibilities:
  * - Fetch inventory from server on init
@@ -18,20 +23,23 @@
  */
 
 import * as api from './api.js';
+import * as equipment from './equipment.js';
 
 // ---------- Constants ----------
 const SLOTS = 28; // 4 columns × 7 rows, OSRS-style
+const LONG_PRESS_MS = 450;
 
 // ---------- State ----------
 /**
  * `slots` is a sparse array of length 28.
- * Each entry is either null (empty) or { item_id, quantity, name, icon, stackable }.
+ * Each entry is either null (empty) or { item_id, quantity, name, icon, stackable, equip_slot }.
  */
 let slots = new Array(SLOTS).fill(null);
 let gridEl = null;
 let selectedSlot = null; // tap-to-tap source, or null
 let dragState = null;    // active drag, or null
 let isInitialized = false;
+let longPressTimer = null;
 
 // ---------- Public API ----------
 
@@ -97,6 +105,7 @@ function applyServerSlots(serverSlots) {
       name:      s.name,
       icon:      s.icon,
       stackable: !!s.stackable,
+      equip_slot: s.equip_slot || null,   // sesión 22
     };
   }
 }
@@ -120,6 +129,7 @@ function renderSlot(index) {
   slotEl.innerHTML = '';
   slotEl.classList.toggle('selected', selectedSlot === index);
   slotEl.classList.toggle('occupied', data !== null);
+  slotEl.classList.toggle('equipable', !!data?.equip_slot);
 
   if (!data) return;
 
@@ -160,7 +170,7 @@ function clearError() {
 }
 
 // ============================================================
-// INTERACTION: drag & drop + tap-to-tap (unified pointer events)
+// INTERACTION: drag & drop + tap-to-tap + long-press
 // ============================================================
 
 const DRAG_THRESHOLD_PX = 6; // movement below this = treat as tap
@@ -185,9 +195,10 @@ function onSlotPointerDown(ev) {
     return;
   }
 
-  // Tapping an occupied slot: start drag tracking.
-  // If pointer moves > threshold before release → drag mode
-  // If pointer releases before threshold      → tap mode
+  // Tapping an occupied slot: start drag tracking + long-press timer.
+  // - If pointer moves > threshold before release → drag mode
+  // - If pointer releases before LONG_PRESS_MS    → tap mode
+  // - If pointer held > LONG_PRESS_MS sin moverse → long-press: menú
   ev.preventDefault();
   slotEl.setPointerCapture?.(ev.pointerId);
 
@@ -199,7 +210,17 @@ function onSlotPointerDown(ev) {
     moved: false,
     ghostEl: null,
     hoverSlot: null,
+    longPressed: false,
   };
+
+  // Long-press: tras LONG_PRESS_MS sin moverse, abrir menú contextual
+  if (longPressTimer) clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(() => {
+    if (dragState && !dragState.moved && !dragState.longPressed) {
+      dragState.longPressed = true;
+      showItemContextMenu(slotIdx, dragState.startX, dragState.startY);
+    }
+  }, LONG_PRESS_MS);
 
   // Listen on document so we keep tracking even outside the slot
   document.addEventListener('pointermove', onPointerMove);
@@ -216,10 +237,15 @@ function onPointerMove(ev) {
   // Promote to drag once threshold passed
   if (!dragState.moved && (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX)) {
     dragState.moved = true;
-    createGhost(ev.clientX, ev.clientY);
+    // Cancela long-press si se mueve
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    // Si ya estaba el menú abierto, no abrir drag
+    if (!dragState.longPressed) {
+      createGhost(ev.clientX, ev.clientY);
+    }
   }
 
-  if (dragState.moved) {
+  if (dragState.moved && !dragState.longPressed) {
     positionGhost(ev.clientX, ev.clientY);
     updateHoverSlot(ev.clientX, ev.clientY);
   }
@@ -227,14 +253,21 @@ function onPointerMove(ev) {
 
 function onPointerUp(ev) {
   document.removeEventListener('pointermove', onPointerMove);
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
 
   if (!dragState || ev.pointerId !== dragState.pointerId) {
     dragState = null;
     return;
   }
 
-  const { fromSlot, moved, hoverSlot } = dragState;
+  const { fromSlot, moved, hoverSlot, longPressed } = dragState;
   destroyGhost();
+
+  if (longPressed) {
+    // El menú está abierto; no hacer nada más con tap
+    dragState = null;
+    return;
+  }
 
   if (moved) {
     // Drag: drop on the hovered slot (if any and different)
@@ -263,9 +296,143 @@ function onPointerUp(ev) {
 
 function onPointerCancel() {
   document.removeEventListener('pointermove', onPointerMove);
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   destroyGhost();
   dragState = null;
   renderAll();
+}
+
+// ============================================================
+// Sesión 22 — Long-press context menu (Equipar / Cancelar)
+// ============================================================
+
+function showItemContextMenu(slotIdx, clientX, clientY) {
+  const item = slots[slotIdx];
+  if (!item) return;
+
+  // Cerrar menú existente si lo hay
+  const old = document.getElementById('invContextMenu');
+  if (old) old.remove();
+
+  // Asegurar estilos
+  if (!document.getElementById('inv-context-menu-styles')) {
+    const style = document.createElement('style');
+    style.id = 'inv-context-menu-styles';
+    style.textContent = `
+      .inv-context-menu {
+        position: fixed;
+        z-index: 250;
+        min-width: 150px;
+        background: rgba(20, 14, 8, 0.97);
+        border: 2px solid #c8a043;
+        border-radius: 4px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.75);
+        padding: 4px;
+        font-family: 'IM Fell English', serif;
+        animation: invMenuFade 0.12s ease-out;
+      }
+      @keyframes invMenuFade {
+        from { opacity: 0; transform: translateY(-4px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .inv-context-menu-header {
+        padding: 4px 10px 6px;
+        font-family: 'Cinzel', serif;
+        font-weight: 700;
+        font-size: 12px;
+        color: #e8c560;
+        text-shadow: 1px 1px 0 #000;
+        border-bottom: 1px solid rgba(200,160,67,0.3);
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .inv-context-row {
+        padding: 8px 12px;
+        font-size: 13px;
+        color: #f0e0b0;
+        cursor: pointer;
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-shadow: 1px 1px 0 #000;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .inv-context-row:active {
+        background: rgba(200, 160, 67, 0.25);
+        color: #fff8d0;
+      }
+      .inv-context-row.danger { color: #ff9090; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const menu = document.createElement('div');
+  menu.id = 'invContextMenu';
+  menu.className = 'inv-context-menu';
+
+  let html = `<div class="inv-context-menu-header">${item.icon || '?'} ${escapeHtml(item.name)}</div>`;
+  if (item.equip_slot) {
+    html += `<div class="inv-context-row" data-act="equip">⚔ Equipar</div>`;
+  }
+  html += `<div class="inv-context-row" data-act="examine">🔍 Examinar</div>`;
+  html += `<div class="inv-context-row danger" data-act="cancel">✕ Cancelar</div>`;
+  menu.innerHTML = html;
+
+  document.body.appendChild(menu);
+
+  // Posicionar evitando bordes
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  let left = clientX + 8;
+  let top = clientY + 8;
+  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+  if (top + mh > window.innerHeight - 4) top = clientY - mh - 8;
+  if (top < 4) top = 4;
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+
+  menu.querySelectorAll('[data-act]').forEach(row => {
+    row.addEventListener('pointerup', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const act = row.dataset.act;
+      menu.remove();
+      if (act === 'equip') {
+        await doEquip(slotIdx);
+      } else if (act === 'examine') {
+        showError(item.name + (item.equip_slot ? ` · ${item.equip_slot}` : '') + (item.stackable ? ` · stackable (x${item.quantity})` : ''));
+      }
+      // 'cancel' o cualquier otra: nada
+    });
+  });
+
+  // Cerrar al tap fuera
+  const outsideClose = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('pointerdown', outsideClose, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('pointerdown', outsideClose, true), 100);
+}
+
+async function doEquip(slotIdx) {
+  const result = await equipment.equipFromInventory(slotIdx);
+  if (result.error) {
+    const msg = result.message || result.error;
+    showError('No se pudo equipar: ' + msg);
+    return;
+  }
+  // Refrescar inventario (el item se movió)
+  await refresh();
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ---------- Drag ghost (visual indicator under finger) ----------
