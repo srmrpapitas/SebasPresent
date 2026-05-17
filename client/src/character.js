@@ -315,6 +315,9 @@ export class Character {
       this._equippedWeaponId = weaponId;
       this._equippedWeaponHand = handName;
 
+      // Exponer globalmente para que window.__weaponDebug() pueda acceder.
+      window.__character = this;
+
       // Diagnóstico: medir el bounding box real del mesh DESPUÉS de escalar.
       // Si el size es ~0, el mesh está vacío o el modelo tiene origen raro.
       // Si el size es muy grande, está cargado bien y el problema es de posición.
@@ -739,3 +742,148 @@ function loadFBXWithProgress(loader, url, onProgress) {
     );
   });
 }
+
+// ============================================================
+// DEBUG: weapon offset live tuner (sesión 24 / iteración 5)
+// ============================================================
+//
+// El user ejecuta en eruda console:  window.__weaponDebug()
+//
+// Aparece un panel con sliders para scale / position / rotation / hand del
+// arma actualmente equipada. Mueve los sliders y el arma se ajusta EN VIVO.
+// Cuando esté perfecto, pulsa "Copiar valores" y comparte el resultado.
+//
+// Es solo herramienta de desarrollo, no afecta gameplay.
+//
+// Para abrir:  window.__weaponDebug()
+// Para cerrar: tap fuera del panel o botón ×
+//
+window.__weaponDebug = function () {
+  // Cerrar panel si ya existe
+  const existing = document.getElementById('weaponDebugPanel');
+  if (existing) { existing.remove(); return; }
+
+  // Buscar el character con arma equipada
+  const ch = window.character || window.__character;
+  if (!ch || !ch._equippedWeaponMesh) {
+    console.warn('[weapon-debug] no hay arma equipada. Equipa un arma desde el inventario antes de abrir el panel.');
+    return;
+  }
+  const mesh = ch._equippedWeaponMesh;
+  const weaponId = ch._equippedWeaponId;
+  const currentHand = ch._equippedWeaponHand || 'right';
+
+  // Valores iniciales = los actuales del mesh (lo que se ve ahora)
+  const initial = {
+    scale: mesh.scale.x,
+    posX: mesh.position.x,
+    posY: mesh.position.y,
+    posZ: mesh.position.z,
+    rotX: mesh.rotation.x,
+    rotY: mesh.rotation.y,
+    rotZ: mesh.rotation.z,
+    hand: currentHand,
+  };
+
+  const panel = document.createElement('div');
+  panel.id = 'weaponDebugPanel';
+  panel.style.cssText = `
+    position: fixed; right: 10px; top: 80px; z-index: 9999;
+    width: 280px; max-height: 70vh; overflow-y: auto;
+    background: rgba(15,10,5,0.96); color: #f0e0b0;
+    border: 2px solid #c8a043; border-radius: 6px;
+    padding: 10px; font-family: monospace; font-size: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+  `;
+
+  function row(label, min, max, step, value, onChange, fmt) {
+    fmt = fmt || (v => v.toFixed(2));
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin: 6px 0; display: flex; align-items: center; gap: 6px;';
+    wrap.innerHTML = `
+      <span style="width:35px; color:#c8a043;">${label}</span>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${value}"
+             style="flex:1;">
+      <span class="val" style="width:60px; text-align:right;">${fmt(value)}</span>
+    `;
+    const range = wrap.querySelector('input');
+    const valEl = wrap.querySelector('.val');
+    range.addEventListener('input', () => {
+      const v = parseFloat(range.value);
+      valEl.textContent = fmt(v);
+      onChange(v);
+    });
+    return wrap;
+  }
+
+  const title = document.createElement('div');
+  title.style.cssText = 'font-weight: bold; color: #e8c560; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;';
+  title.innerHTML = `<span>🔧 ${weaponId} (${currentHand})</span><button id="wpDebugClose" style="background: transparent; border: 1px solid #c8a043; color: #f0e0b0; padding: 2px 8px; cursor: pointer; border-radius: 3px;">×</button>`;
+  panel.appendChild(title);
+
+  panel.appendChild(row('Scale', 1, 600, 1, initial.scale, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
+  const sep1 = document.createElement('div');
+  sep1.style.cssText = 'margin: 8px 0 4px; color: #c8a043; font-weight: bold;';
+  sep1.textContent = 'POSITION';
+  panel.appendChild(sep1);
+  panel.appendChild(row('X', -30, 30, 0.5, initial.posX, v => { mesh.position.x = v; }));
+  panel.appendChild(row('Y', -30, 30, 0.5, initial.posY, v => { mesh.position.y = v; }));
+  panel.appendChild(row('Z', -30, 30, 0.5, initial.posZ, v => { mesh.position.z = v; }));
+
+  const sep2 = document.createElement('div');
+  sep2.style.cssText = 'margin: 8px 0 4px; color: #c8a043; font-weight: bold;';
+  sep2.textContent = 'ROTATION (rad)';
+  panel.appendChild(sep2);
+  const PI = Math.PI;
+  panel.appendChild(row('X', -PI, PI, 0.05, initial.rotX, v => { mesh.rotation.x = v; }, v => `${v.toFixed(2)} (${Math.round(v*180/PI)}°)`));
+  panel.appendChild(row('Y', -PI, PI, 0.05, initial.rotY, v => { mesh.rotation.y = v; }, v => `${v.toFixed(2)} (${Math.round(v*180/PI)}°)`));
+  panel.appendChild(row('Z', -PI, PI, 0.05, initial.rotZ, v => { mesh.rotation.z = v; }, v => `${v.toFixed(2)} (${Math.round(v*180/PI)}°)`));
+
+  // Switch hand button
+  const handBtn = document.createElement('button');
+  handBtn.style.cssText = 'margin-top: 10px; width: 100%; padding: 6px; background: #4a3520; color: #e8c560; border: 1px solid #c8a043; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 12px;';
+  handBtn.textContent = `Cambiar a mano ${currentHand === 'right' ? 'IZQUIERDA' : 'DERECHA'}`;
+  handBtn.addEventListener('click', () => {
+    const newHand = ch._equippedWeaponHand === 'right' ? 'left' : 'right';
+    const newBone = newHand === 'left' ? ch._leftHandBone : ch._rightHandBone;
+    if (!newBone) { console.warn('[weapon-debug] no se encontró el bone destino'); return; }
+    mesh.parent?.remove(mesh);
+    newBone.add(mesh);
+    ch._equippedWeaponHand = newHand;
+    handBtn.textContent = `Cambiar a mano ${newHand === 'right' ? 'IZQUIERDA' : 'DERECHA'}`;
+    title.querySelector('span').textContent = `🔧 ${weaponId} (${newHand})`;
+  });
+  panel.appendChild(handBtn);
+
+  // Copiar valores button
+  const copyBtn = document.createElement('button');
+  copyBtn.style.cssText = 'margin-top: 8px; width: 100%; padding: 8px; background: #8a6230; color: #fff; border: 1px solid #e8c560; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 12px; font-weight: bold;';
+  copyBtn.textContent = '📋 Copiar valores';
+  copyBtn.addEventListener('click', () => {
+    const out = `'${guessTypeKey(weaponId)}': {
+  scale: ${mesh.scale.x.toFixed(1)},
+  position: [${mesh.position.x.toFixed(1)}, ${mesh.position.y.toFixed(1)}, ${mesh.position.z.toFixed(1)}],
+  rotation: [${mesh.rotation.x.toFixed(3)}, ${mesh.rotation.y.toFixed(3)}, ${mesh.rotation.z.toFixed(3)}],
+  hand: '${ch._equippedWeaponHand}',
+},`;
+    navigator.clipboard?.writeText(out).then(() => {
+      copyBtn.textContent = '✅ ¡Copiado al portapapeles!';
+      setTimeout(() => copyBtn.textContent = '📋 Copiar valores', 1500);
+    });
+    console.log('[weapon-debug] valores actuales:\n' + out);
+  });
+  panel.appendChild(copyBtn);
+
+  panel.querySelector('#wpDebugClose').addEventListener('click', () => panel.remove());
+  document.body.appendChild(panel);
+  console.log('[weapon-debug] panel abierto. Mueve los sliders, cuando esté perfecto pulsa "Copiar valores".');
+
+  function guessTypeKey(id) {
+    if (/sword.*2h|2h.*sword/.test(id)) return '2h_sword';
+    if (/sword|dagger/.test(id)) return '1h_sword';
+    if (/bow/.test(id)) return 'bow';
+    if (/staff/.test(id)) return 'staff';
+    return 'default';
+  }
+};
+

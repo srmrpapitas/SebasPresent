@@ -30,6 +30,43 @@
 //   stone/coal: #2a2a2a / claro  #5a5a5a
 //   mage blue:  #4a90e2 / claro  #7bb3ee
 
+// Inyectar estilos globales al cargar el módulo. Garantiza que CUALQUIER
+// SVG render desde este módulo esté visible inmediatamente, sin necesidad
+// de que el contenedor lo configure.
+(function injectGlobalStyles() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('item-icons-global-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'item-icons-global-styles';
+  style.textContent = `
+    /* Container clases conocidas que renderizan iconos: forzar el SVG
+       a llenar el contenedor sin importar el font-size original. */
+    .inv-icon, .inv-ghost, .shop-cell-icon,
+    .equip-slot-icon-wrap, .equip-tooltip-icon,
+    .inv-context-menu-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .inv-icon svg, .inv-ghost svg, .shop-cell-icon svg,
+    .equip-slot-icon-wrap svg, .equip-tooltip-icon svg,
+    .inv-context-menu-icon svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+    }
+    /* Fallback: si el icono es emoji (.emoji-icon), mantener el font-size
+       del contenedor original (el CSS del juego decide cuánto). */
+    .emoji-icon {
+      display: inline-block;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
 const ICONS = {
   // ============= Armas =============
   sword_bronze: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
