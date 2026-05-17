@@ -17,6 +17,8 @@
  *   isOpen()
  */
 
+import { getItemIconHtml } from './item_icons.js';
+
 let apiBase = null;
 let getToken = null;
 let onInventoryChange = () => {};
@@ -160,7 +162,7 @@ function render() {
       cell.className = 'shop-cell shop-cell-npc';
       if (item.current_qty === 0) cell.classList.add('out-of-stock');
       cell.innerHTML = `
-        <div class="shop-cell-icon">${item.icon || '?'}</div>
+        <div class="shop-cell-icon">${getItemIconHtml(item.item_id, item.icon)}</div>
         <div class="shop-cell-info">
           <div class="shop-cell-name">${escapeHtml(item.name)}</div>
           <div class="shop-cell-stats">
@@ -189,7 +191,7 @@ function render() {
       const cell = document.createElement('div');
       cell.className = 'shop-cell shop-cell-player';
       cell.innerHTML = `
-        <div class="shop-cell-icon">${slot.icon || '?'}</div>
+        <div class="shop-cell-icon">${getItemIconHtml(slot.item_id, slot.icon)}</div>
         <div class="shop-cell-info">
           <div class="shop-cell-name">${escapeHtml(slot.name)}</div>
           <div class="shop-cell-stats">
@@ -539,6 +541,7 @@ function injectStyles() {
       filter: drop-shadow(0 2px 3px rgba(0,0,0,0.8));
       flex-shrink: 0;
     }
+    .shop-cell-icon svg { width: 100%; height: 100%; }
     .shop-cell-info {
       flex: 1;
       min-width: 0;

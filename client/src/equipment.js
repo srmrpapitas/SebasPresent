@@ -22,11 +22,12 @@
  * getWeaponType()).
  */
 
+import { getItemIconHtml } from './item_icons.js';
+
 let apiBase = null;
 let getToken = null;
 let initialized = false;
 
-// Estado del equipment: { weapon: {...}, shield: {...}, ... } (vacío = slot libre)
 let equipped = {};
 const listeners = [];
 
@@ -240,6 +241,20 @@ function injectStyles() {
       opacity: 0.45;
       filter: grayscale(0.6);
     }
+    .equip-slot-icon-wrap {
+      display: inline-flex;
+      width: 32px; height: 32px;
+      align-items: center; justify-content: center;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.8));
+    }
+    .equip-slot-icon-wrap svg { width: 100%; height: 100%; }
+    .equip-tooltip-icon {
+      display: inline-flex;
+      width: 22px; height: 22px;
+      vertical-align: middle;
+      align-items: center; justify-content: center;
+    }
+    .equip-tooltip-icon svg { width: 100%; height: 100%; }
     .equip-slot-label {
       position: absolute;
       bottom: -14px;
@@ -373,12 +388,14 @@ function renderPanel() {
   for (const slot of EQUIP_SLOTS) {
     const item = equipped[slot.id];
     const filled = !!item;
-    const icon = filled ? item.icon : slot.icon;
+    const iconHtml = filled
+      ? `<span class="equip-slot-icon-wrap">${getItemIconHtml(item.item_id, item.icon)}</span>`
+      : `<span class="equip-slot-icon">${slot.icon}</span>`;
     html += `
       <div class="equip-slot ${filled ? 'occupied' : 'empty'}"
            data-slot-id="${slot.id}"
            style="grid-row: ${slot.row + 1}; grid-column: ${slot.col + 1};">
-        <span class="equip-slot-icon">${icon}</span>
+        ${iconHtml}
         <span class="equip-slot-label">${slot.label}</span>
       </div>
     `;
@@ -420,7 +437,7 @@ function showSlotTooltip(slotId, clientX, clientY) {
 
   if (item) {
     el.innerHTML = `
-      <div class="equip-tooltip-title">${item.icon} ${item.name}</div>
+      <div class="equip-tooltip-title"><span class="equip-tooltip-icon">${getItemIconHtml(item.item_id, item.icon)}</span> ${item.name}</div>
       ${item.description ? `<div class="equip-tooltip-desc">${escapeHtml(item.description)}</div>` : ''}
       <div class="equip-tooltip-stat"><span>Ranura:</span><b>${slot.label}</b></div>
       <div class="equip-tooltip-stat"><span>Bonus Ataque:</span><b>+${item.attack_bonus | 0}</b></div>

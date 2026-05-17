@@ -24,6 +24,7 @@
 
 import * as api from './api.js';
 import * as equipment from './equipment.js';
+import { renderItemIcon, getItemIconHtml } from './item_icons.js';
 
 // ---------- Constants ----------
 const SLOTS = 28; // 4 columns × 7 rows, OSRS-style
@@ -133,10 +134,10 @@ function renderSlot(index) {
 
   if (!data) return;
 
-  // Icon (emoji from server)
+  // Icon: SVG custom si lo hay, emoji del server si no
   const iconEl = document.createElement('span');
   iconEl.className = 'inv-icon';
-  iconEl.textContent = data.icon || '?';
+  renderItemIcon(iconEl, data.item_id, data.icon);
   slotEl.appendChild(iconEl);
 
   // Quantity (only if stackable AND > 1)
@@ -365,6 +366,14 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
         color: #fff8d0;
       }
       .inv-context-row.danger { color: #ff9090; }
+      .inv-context-menu-icon {
+        display: inline-flex;
+        width: 22px; height: 22px;
+        align-items: center; justify-content: center;
+      }
+      .inv-context-menu-icon svg { width: 100%; height: 100%; }
+      .inv-icon svg { width: 100%; height: 100%; display: block; }
+      .inv-ghost svg { width: 100%; height: 100%; }
     `;
     document.head.appendChild(style);
   }
@@ -373,7 +382,7 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   menu.id = 'invContextMenu';
   menu.className = 'inv-context-menu';
 
-  let html = `<div class="inv-context-menu-header">${item.icon || '?'} ${escapeHtml(item.name)}</div>`;
+  let html = `<div class="inv-context-menu-header"><span class="inv-context-menu-icon">${getItemIconHtml(item.item_id, item.icon)}</span> ${escapeHtml(item.name)}</div>`;
   if (item.equip_slot) {
     html += `<div class="inv-context-row" data-act="equip">⚔ Equipar</div>`;
   }
@@ -443,7 +452,7 @@ function createGhost(x, y) {
   if (!data) return;
   const ghost = document.createElement('div');
   ghost.className = 'inv-ghost';
-  ghost.textContent = data.icon || '?';
+  renderItemIcon(ghost, data.item_id, data.icon);
   document.body.appendChild(ghost);
   dragState.ghostEl = ghost;
   positionGhost(x, y);
