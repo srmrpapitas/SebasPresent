@@ -1,33 +1,33 @@
 /**
- * SebasPresent — Combat Engine (Slice 5a)
+ * SebasPresent — Combat Engine (Slice 5a + Sesión 16 unification)
+ *
+ * SESIÓN 16: tras cada attackNpc/respawnUser, los 4 XPs (attack, strength,
+ * defence, hp) se replican a la tabla user_skills (skill_id ∈
+ * {attack, strength, defence, hitpoints}). Esto permite que el tab Stats
+ * y cualquier futuro consumer lean SIEMPRE de user_skills como single
+ * source of truth para los 13 skills, sin tocar el resto del engine.
  *
  * Patron consistente con ge_engine.js:
  *   - Habla con un objeto `db` con la interfaz
  *     {first(sql, params), all(sql, params), run(sql, params)}.
  *   - RNG y reloj inyectables para tests deterministicos.
- *   - Se incluye inline en worker.js. Este archivo es referencia.
  *
  * FUNCIONES PUBLICAS:
  *   - getCombatState(db, userId, opts)
- *     Stats del user + NPCs vivos en el mundo. Revive lazy.
  *   - attackNpc(db, userId, npcInstanceId, opts)
- *     User ataca NPC. Cooldown 600ms, hit/miss + dmg, XP,
- *     counter-attack, death/respawn del user si HP cae a 0.
  *   - respawnUser(db, userId, opts)
- *     Resucita manual si user muerto.
  *   - reviveExpiredNpcs(db, opts)
- *     Pasada del cron. Revive NPCs cuyo respawn vencio.
  *
  * INVARIANTES:
  *   - I1: hp_current <= levelFromXp(hp_xp)
  *   - I2: combat_stats.last_attack_at solo aumenta
  *   - I3: si NPC muere por el hit del user, NPC no contraataca
  *   - I4: XP solo si user damage > 0
+ *   - I5 (sesión 16): user_skills.xp >= combat_stats.<skill>_xp para los
+ *        4 skills de combat tras cada update. La condición es ≥ (no =)
+ *        porque user_skills puede haber recibido XP extra vía /api/skills/grant.
  */
 
-// ============================================================
-// XP TABLE OSRS CLASSIC (1..99). Tabla canonica.
-// ============================================================
 const XP_TABLE = [
   0,         83,        174,       276,       388,       512,       650,       801,       969,       1154,
   1358,      1584,      1833,      2107,      2411,      2746,      3115,      3523,      3973,      4470,
@@ -42,18 +42,24 @@ const XP_TABLE = [
 ];
 
 const TICK_MS = 600;
-const RANGE_TOLERANCE = 3.5;   // Margen sobre attack_range. Cubre los ~3m
-                                // del patrol radius visual + holgura.
+const RANGE_TOLERANCE = 3.5;
 const MAX_LEVEL = 99;
 const XP_PER_DMG_PER_SKILL = 4 / 3;
 
-// Slice 5b — Combat styles validos. Default = 'controlled' (OSRS).
 const VALID_STYLES = ['accurate', 'aggressive', 'defensive', 'controlled'];
 const DEFAULT_STYLE = 'controlled';
 
-// Slice 5c — Loot drops cuando un NPC muere
-const LOOT_OFFSET_RANGE_M    = 0.4;     // dispersion alrededor del NPC
-const LOOT_TOTAL_LIFETIME_MS = 120_000; // 2 min antes de despawn por cron
+const LOOT_OFFSET_RANGE_M    = 0.4;
+const LOOT_TOTAL_LIFETIME_MS = 120_000;
+
+// Sesión 16 — Mapping de skills internos (combat_engine) → skill_ids en
+// la tabla user_skills (catálogo de 13 skills).
+const COMBAT_SKILL_MAP = {
+  attack_xp:   'attack',
+  strength_xp: 'strength',
+  defence_xp:  'defence',
+  hp_xp:       'hitpoints',
+};
 
 export {
   getCombatState,
@@ -90,7 +96,7 @@ function xpForLevel(level) {
 }
 
 // ============================================================
-// FORMULAS OSRS (sin equipment)
+// FORMULAS OSRS
 // ============================================================
 
 function effectiveLevel(level) {
@@ -123,21 +129,10 @@ function rollHit(rng, attackerAtkLvl, defenderDefLvl, maxHit) {
 // XP
 // ============================================================
 
-/**
- * Slice 5b — XP por estilo de combate (OSRS-exact).
- *
- *   accurate    → +4 Attack/dmg     + 1.33 HP/dmg
- *   aggressive  → +4 Strength/dmg   + 1.33 HP/dmg
- *   defensive   → +4 Defence/dmg    + 1.33 HP/dmg
- *   controlled  → +1.33 Atk +1.33 Str +1.33 Def + 1.33 HP por dmg
- *
- * Total XP por dmg = 5.33 (focused 4 + HP 1.33, o sea ~4/3 a las 4 skills
- * en controlled). Esto coincide 1:1 con OSRS Wiki.
- */
 function awardXp(stats, damage, style) {
   if (damage <= 0) return { attack: 0, strength: 0, defence: 0, hp: 0 };
-  const shared  = Math.floor(damage * 4 / 3);  // 1.33×
-  const focused = damage * 4;                   // 4× (entero, sin floor)
+  const shared  = Math.floor(damage * 4 / 3);
+  const focused = damage * 4;
   let aXp = 0, sXp = 0, dXp = 0;
   const hXp = shared;
   switch (style) {
@@ -213,7 +208,6 @@ async function dbGetUserPosition(db, userId) {
   };
 }
 
-// Slice 5b — combat_style vive en users (migration 009).
 async function dbGetUserCombatStyle(db, userId) {
   const row = await db.first('SELECT combat_style FROM users WHERE id = ?', [userId]);
   const style = row?.combat_style;
@@ -230,6 +224,37 @@ async function dbGetNpcInstance(db, npcInstanceId) {
     [npcInstanceId]
   );
   return row || null;
+}
+
+// ============================================================
+// Sesión 16 — Mirror combat XPs → user_skills
+// ============================================================
+/**
+ * Replica los 4 XPs de combat (attack, strength, defence, hp) a la tabla
+ * user_skills. Para cada skill, hace UPSERT con MAX(existing, combat_xp)
+ * para no PERDER XP que el sistema viejo (user_skills) tuviera por encima.
+ *
+ * Llamado tras cualquier escritura a combat_stats. Idempotente.
+ *
+ * Nota: usamos `INSERT ... ON CONFLICT(...) DO UPDATE` (sintaxis SQLite
+ * estándar, soportada por D1) en lugar de transacciones manuales.
+ */
+async function mirrorCombatXpToUserSkills(db, userId, stats, now) {
+  for (const [combatCol, skillId] of Object.entries(COMBAT_SKILL_MAP)) {
+    const xp = stats[combatCol];
+    if (typeof xp !== 'number' || xp < 0) continue;
+    // Si user_skills ya tiene XP >= xp, no hacemos nada (preserva XP de
+    // otros sources como /api/skills/grant). Si tiene menos, lo subimos
+    // a este valor.
+    await db.run(
+      `INSERT INTO user_skills (user_id, skill_id, xp, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, skill_id) DO UPDATE SET
+         xp = MAX(user_skills.xp, excluded.xp),
+         updated_at = excluded.updated_at`,
+      [userId, skillId, xp, now]
+    );
+  }
 }
 
 // ============================================================
@@ -264,7 +289,18 @@ async function getCombatState(db, userId, opts = {}) {
   await reviveExpiredNpcs(db, opts);
   const stats = await dbGetUserStats(db, userId);
   const pos = await dbGetUserPosition(db, userId);
-  const combatStyle = await dbGetUserCombatStyle(db, userId);   // Slice 5b
+  const combatStyle = await dbGetUserCombatStyle(db, userId);
+
+  // Sesión 16 — Asegurar que user_skills está al día tras un getCombatState.
+  // Esto cubre el caso de cuentas viejas que tenían XP en combat_stats
+  // antes de que user_skills existiera: al primer getCombatState tras el
+  // deploy, se hace backfill automático.
+  try {
+    await mirrorCombatXpToUserSkills(db, userId, stats, opts.now || Date.now());
+  } catch (err) {
+    console.error('[combat/state] mirror failed:', err);
+  }
+
   const npcs = await db.all(
     `SELECT i.id, i.def_id, i.hp_current, i.x, i.z, i.status,
             d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
@@ -285,7 +321,7 @@ async function getCombatState(db, userId, opts = {}) {
       last_attack_at: stats.last_attack_at,
       last_died_at: stats.last_died_at,
     },
-    combat_style: combatStyle,   // Slice 5b
+    combat_style: combatStyle,
     position: pos,
     npcs: npcs.map(r => ({
       id: r.id, def_id: r.def_id, name: r.name,
@@ -308,7 +344,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const stats = await dbGetUserStats(db, userId);
   const npc = await dbGetNpcInstance(db, npcInstanceId);
   const userPos = await dbGetUserPosition(db, userId);
-  const style = await dbGetUserCombatStyle(db, userId);   // Slice 5b
+  const style = await dbGetUserCombatStyle(db, userId);
 
   if (!npc) return { error: 'npc_not_found' };
   if (npc.status !== 0) return { error: 'npc_dead' };
@@ -339,7 +375,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const npcHpAfter = npc.hp_current - dmgToNpc;
   const npcKilled = npcHpAfter <= 0;
 
-  // ---- XP (Slice 5b: enrutado por estilo) ----
+  // ---- XP ----
   const xpBefore = levelsOf(stats);
   const xpGained = awardXp(stats, dmgToNpc, style);
   const xpAfter = levelsOf(stats);
@@ -359,14 +395,10 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     ]
   );
 
-  // Slice 5c — Loot: cuando el NPC muere por el hit del user, rolamos su
-  // loot table y soltamos items en el suelo. Privacidad 60s al killer.
   if (npcKilled) {
     try {
       await rollAndDropLoot(db, npc.def_id, npc.x, npc.z, userId, now, rng);
     } catch (err) {
-      // No romper el ataque si falla el loot (p. ej. tabla vacía).
-      // Solo lo logueamos.
       console.error('[combat/loot]', npc.def_id, err);
     }
   }
@@ -414,6 +446,15 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     ]
   );
 
+  // Sesión 16 — Mirror al user_skills tras cada attackNpc. Si hubo XP,
+  // se replica; si no hubo (miss total), igual mirroreamos por seguridad
+  // (es idempotente y barato).
+  try {
+    await mirrorCombatXpToUserSkills(db, userId, stats, now);
+  } catch (err) {
+    console.error('[combat/attack] mirror failed:', err);
+  }
+
   // ---- Log ----
   await db.run(
     `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
@@ -436,7 +477,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     npc_max_hp: npc.max_hp,
     xp_gained: xpGained,
     level_ups: levelUps,
-    style,                           // Slice 5b — eco del estilo usado
+    style,
     npc_hit: npcCounterHit ? npcCounterHit.hit : null,
     npc_damage: dmgToUser,
     you_died: userKilled,
@@ -462,11 +503,17 @@ async function respawnUser(db, userId, opts = {}) {
     'UPDATE combat_stats SET hp_current = ?, last_died_at = ? WHERE user_id = ?',
     [hpMax, now, userId]
   );
+  // Sesión 16 — respawn no cambia XP pero garantizamos consistencia.
+  try {
+    await mirrorCombatXpToUserSkills(db, userId, stats, now);
+  } catch (err) {
+    console.error('[combat/respawn] mirror failed:', err);
+  }
   return { ok: true, hp_current: hpMax };
 }
 
 // ============================================================
-// LOOT DROPS (Slice 5c)
+// LOOT DROPS
 // ============================================================
 async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng) {
   const rows = await db.all(
@@ -479,7 +526,6 @@ async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng) {
 
   const drops = [];
 
-  // 1) Drops garantizados (is_always = 1)
   for (const r of rows) {
     if (r.is_always === 1) {
       const qty = rollQty(rng, r.qty_min, r.qty_max);
@@ -487,7 +533,6 @@ async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng) {
     }
   }
 
-  // 2) Roll ponderado entre los aleatorios (uno gana)
   const random = rows.filter(r => r.is_always === 0);
   if (random.length > 0) {
     const totalWeight = random.reduce((s, r) => s + (r.weight | 0), 0);
