@@ -237,27 +237,47 @@ export function step() {
 // API pública: settings
 // ============================================================
 
+// Sesión 13 — Tracking de fades activos para poder cancelarlos.
+// Cuando el user ajusta el slider de música, si hay un fade en curso
+// (cambio de bioma) sobreescribiría el nuevo valor cada 30ms.
+let activeMusicFade = null;
+
 export function setMasterVolume(v) {
   prefs.master = clamp01(v);
   savePrefs();
+  cancelMusicFade();
   applyMusicVolume();
 }
 export function setSfxVolume(v)   { prefs.sfx = clamp01(v); savePrefs(); }
-export function setMusicVolume(v) { prefs.music = clamp01(v); savePrefs(); applyMusicVolume(); }
+export function setMusicVolume(v) {
+  prefs.music = clamp01(v);
+  savePrefs();
+  cancelMusicFade();
+  applyMusicVolume();
+}
 export function setUiVolume(v)    { prefs.ui = clamp01(v); savePrefs(); }
 
 export function toggleMute() {
   prefs.muted = !prefs.muted;
   savePrefs();
+  cancelMusicFade();
   if (prefs.muted) {
     if (musicAudio) musicAudio.pause();
   } else {
     if (musicAudio && musicAudio.src) musicAudio.play().catch(() => {});
   }
+  applyMusicVolume();
   return prefs.muted;
 }
 export function isMuted() { return prefs.muted; }
 export function getPrefs() { return { ...prefs }; }
+
+function cancelMusicFade() {
+  if (activeMusicFade) {
+    clearInterval(activeMusicFade);
+    activeMusicFade = null;
+  }
+}
 
 // ============================================================
 // Internals
@@ -374,10 +394,18 @@ function fadeAudioElement(audioEl, targetVol, durationMs, onDone) {
     audioEl.volume = startVol + (targetVol - startVol) * t;
     if (t >= 1) {
       clearInterval(timer);
+      if (audioEl === musicAudio && activeMusicFade === timer) {
+        activeMusicFade = null;
+      }
       if (onDone) onDone();
     }
   };
   const timer = setInterval(tick, 30);
+  // Registrar el fade activo solo si afecta al musicAudio actual.
+  // Esto permite al user cancelarlo arrastrando el slider de música/master.
+  if (audioEl === musicAudio) {
+    activeMusicFade = timer;
+  }
 }
 
 function applyMusicVolume() {
