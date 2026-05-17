@@ -225,8 +225,13 @@ async function doAttackTick() {
   // Slice 5b: dispara la animación de swing del player en CADA tick (hit
   // o miss — en OSRS el personaje hace el gesto siempre). El hook global
   // lo expone world.js y rebota a character.playAttack().
+  //
+  // Sesión 25: pasamos el stance UI activo (chop/slash/smash/block) para
+  // que character.js elija la animación de espada correspondiente
+  // (attack_1..4). Si el stance no es de espada o no está mapeado, el
+  // character hace cycle automático.
   if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
-    try { window.__playerPlayAttack(); } catch {}
+    try { window.__playerPlayAttack(uiSelectedStance); } catch {}
   }
 
   if (result.your_hit) {

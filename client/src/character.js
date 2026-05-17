@@ -466,16 +466,38 @@ export class Character {
     }, dur + 20);
   }
 
-  playAttack() {
+  /**
+   * Sesión 25 — playAttack(stanceKey)
+   *
+   * stanceKey opcional: 'chop' | 'slash' | 'smash' | 'block' | null
+   *   - Si combatStance=true y stanceKey está en el mapping, usa esa anim.
+   *   - Si combatStance=true y no hay stanceKey, hace cycle automático 1→4.
+   *   - Si combatStance=false, usa punching.fbx (sin arma equipada).
+   *
+   * Mapping stance → anim:
+   *   chop (accurate)     → attack_1
+   *   slash (aggressive)  → attack_2
+   *   smash (controlled)  → attack_3
+   *   block (defensive)   → attack_4
+   */
+  playAttack(stanceKey) {
     if (!this.loaded || this.isDead) return;
     if (this.isAttacking || this.isInTransition) return;
 
     let action;
     if (this.combatStance) {
-      this.attackCycle = (this.attackCycle % 4) + 1;
-      action = this.actions[`attack_${this.attackCycle}`]
-            || this.actions.attack_1
-            || this.actions.punching;
+      const stanceToAnim = { chop: 1, slash: 2, smash: 3, block: 4 };
+      const animNum = stanceToAnim[stanceKey];
+      if (animNum) {
+        action = this.actions[`attack_${animNum}`] || this.actions.attack_1;
+      } else {
+        // Sin stance específica: cycle automático (mantiene comportamiento previo)
+        this.attackCycle = (this.attackCycle % 4) + 1;
+        action = this.actions[`attack_${this.attackCycle}`]
+              || this.actions.attack_1
+              || this.actions.punching;
+      }
+      if (!action) action = this.actions.punching;
     } else {
       action = this.actions.punching;
     }

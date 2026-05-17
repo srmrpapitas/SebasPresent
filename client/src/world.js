@@ -618,31 +618,45 @@ function setupMarker() {
 // el `character` del player y la variable `combatTargetNpcId` que viven
 // aquí en world.js.
 if (typeof window !== 'undefined') {
-  // Slice 5b: trigger del swing del player. combat.js lo llama cada
-  // attack tick (hit O miss — OSRS anima ambos).
-  window.__playerPlayAttack = () => {
-    try { character?.playAttack?.(); } catch (e) { console.warn('[world] playAttack:', e); }
+  // Sesión 25 — combat.js ahora pasa el stance UI (chop/slash/smash/block)
+  // para que character.js seleccione la anim de espada correcta. Si no hay
+  // arma equipada o no se pasa stance, hace cycle automático o usa punch.
+  window.__playerPlayAttack = (stanceKey) => {
+    try { character?.playAttack?.(stanceKey); } catch (e) { console.warn('[world] playAttack:', e); }
   };
   // Slice 5d: animaciones de combate (engage/disengage = draw/sheath
   // espada; death/revive cuando mueres/respawneas).
   //
-  // SESIÓN 19: el playDraw/playSheath estaba activando combatStance=true en
-  // character.js, lo que provocaba que playAttack() usara sword_attack_1..4
-  // en lugar de Punching.fbx. Como AÚN no hay sistema de equipment, todos
-  // los players son disarmed → no deben sacar espada. Comentado hasta que
-  // exista equipment y podamos decidir según el arma equipada.
+  // Sesión 25: con equipment ya integrado, reactivamos playDraw/playSheath
+  // SOLO si el arma equipada es melee (1h_sword / 2h_sword). Para bow/staff
+  // no tiene sentido el sword_draw. Para unarmed tampoco.
   window.__playerEnterCombat = (npcId) => {
     const wasEngaged = combatTargetNpcId !== null;
     combatTargetNpcId = npcId;
-    // [SESIÓN 19] sin equipment, NO sacar espada
-    // if (!wasEngaged) {
-    //   try { character?.playDraw?.(); } catch (e) { console.warn('[world] playDraw:', e); }
-    // }
+    if (!wasEngaged) {
+      let weaponType = 'unarmed';
+      try { weaponType = equipment.getWeaponType?.() || 'unarmed'; } catch {}
+      const isMelee = weaponType === '1h_sword' || weaponType === '2h_sword';
+      if (isMelee) {
+        try { character?.playDraw?.(); } catch (e) { console.warn('[world] playDraw:', e); }
+      } else if (weaponType !== 'unarmed') {
+        // Bow/staff: activar combatStance manualmente (no hay anim de draw
+        // específica, pero queremos que las anims de attack_1..4 se usen
+        // cuando se ataque en lugar de punch).
+        try { character?.setCombatStance?.(true); } catch {}
+      }
+    }
   };
   window.__playerExitCombat = () => {
     combatTargetNpcId = null;
-    // [SESIÓN 19] sin equipment, NO envainar
-    // try { character?.playSheath?.(); } catch (e) { console.warn('[world] playSheath:', e); }
+    let weaponType = 'unarmed';
+    try { weaponType = equipment.getWeaponType?.() || 'unarmed'; } catch {}
+    const isMelee = weaponType === '1h_sword' || weaponType === '2h_sword';
+    if (isMelee) {
+      try { character?.playSheath?.(); } catch (e) { console.warn('[world] playSheath:', e); }
+    } else if (weaponType !== 'unarmed') {
+      try { character?.setCombatStance?.(false); } catch {}
+    }
   };
   window.__playerDeath = () => {
     combatTargetNpcId = null;
