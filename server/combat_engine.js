@@ -770,8 +770,9 @@ async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepT
 
   // Cargar todos los slots ocupados con valor calculado vía LEFT JOIN.
   // CASE WHEN item_id = 'coins' THEN 1 ELSE COALESCE(s.sell_price, 0) END
+  // Sesión 26 — Fix: la columna real se llama slot_index (no slot).
   const rows = await db.all(
-    `SELECT ui.slot, ui.item_id, ui.quantity,
+    `SELECT ui.slot_index, ui.item_id, ui.quantity,
             (CASE WHEN ui.item_id = 'coins' THEN 1
                   ELSE COALESCE(s.sell_price, 0) END) AS unit_value
      FROM user_inventory ui
@@ -780,7 +781,7 @@ async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepT
      WHERE ui.user_id = ?
      ORDER BY (ui.quantity * (CASE WHEN ui.item_id = 'coins' THEN 1
                                    ELSE COALESCE(s.sell_price, 0) END)) DESC,
-              ui.slot ASC`,
+              ui.slot_index ASC`,
     [userId]
   );
 
@@ -812,8 +813,8 @@ async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepT
 
     // DELETE del slot del user
     await db.run(
-      `DELETE FROM user_inventory WHERE user_id = ? AND slot = ?`,
-      [userId, r.slot]
+      `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?`,
+      [userId, r.slot_index]
     );
   }
 }
