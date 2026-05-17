@@ -23,6 +23,8 @@ import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
+import * as bank from './bank.js';
+import * as ge from './ge.js';
 import * as npcRenderer from './npc_renderer.js';
 import {
   PALETTE, PLACES, BIOMES,
@@ -184,21 +186,32 @@ export async function startWorld(loggedInUser, token) {
       scene, camera, canvas,
       getPlayer: () => player,
       onOpenBank: () => {
-        // Intenta varias rutas conocidas para abrir el banco. La primera
-        // que funcione gana. Si ninguna, log warning y no rompe.
-        try { if (typeof window.bank?.onOpen === 'function') return window.bank.onOpen(); } catch {}
-        try { if (typeof window.__openBank === 'function') return window.__openBank(); } catch {}
-        // Fallback: simular click en el tab 🏦 del sidebar (si todavía existe)
-        const bankTab = document.querySelector('[data-tab="bank"], [data-tab="banco"], #tabBank');
-        if (bankTab) { bankTab.click?.(); return; }
-        console.warn('[world] No se encontró API del banco. Expón window.bank.onOpen o window.__openBank, o pásame bank.js para integrarlo correctamente.');
+        // bank.onOpen() refresca data; quien muestra el pane es el sistema
+        // de tabs del sidebar. Activamos visualmente el tab simulando click
+        // en el botón del sidebar (sigue funcionando aunque esté display:none
+        // tras ocultarlo en hideHubTabsInSidebar()).
+        try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
+        const bankTabBtn = document.querySelector(
+          'button[data-tab="bank"], a[data-tab="bank"], [role="tab"][data-tab="bank"], .osrs-tab-icon[data-tab="bank"], .sidebar-tab[data-tab="bank"]'
+        );
+        if (bankTabBtn && typeof bankTabBtn.click === 'function') {
+          bankTabBtn.click();
+        } else {
+          // Plan B: activar el pane manualmente con clases comunes
+          document.querySelectorAll('.osrs-tab-pane.active, .tab-pane.active').forEach(p => p.classList.remove('active'));
+          const pane = document.querySelector('.osrs-tab-pane[data-tab="bank"], [data-tab="bank"].tab-pane');
+          if (pane) pane.classList.add('active');
+        }
+        // Asegurar que el sidebar esté abierto/visible (selectores comunes)
+        const sidebar = document.querySelector('.osrs-sidebar, #sidebar, .sidebar');
+        if (sidebar) {
+          sidebar.classList.add('open', 'visible', 'expanded');
+          sidebar.classList.remove('hidden', 'collapsed');
+        }
       },
       onOpenGE: () => {
-        try { if (typeof window.ge?.openOverlay === 'function') return window.ge.openOverlay(); } catch {}
-        try { if (typeof window.__openGE === 'function') return window.__openGE(); } catch {}
-        const geTab = document.querySelector('[data-tab="ge"], [data-tab="exchange"], #tabGE');
-        if (geTab) { geTab.click?.(); return; }
-        console.warn('[world] No se encontró API del Grand Exchange. Expón window.ge.openOverlay o window.__openGE, o pásame ge.js para integrarlo correctamente.');
+        // ge.openOverlay() es self-contained: abre overlay fullscreen propio.
+        try { ge.openOverlay?.(); } catch (e) { console.warn('[world] ge.openOverlay:', e); }
       },
       onEnter: (buildingId) => {
         // Forzar disengage de combat si engaged (el NPC queda lejos)
@@ -299,6 +312,10 @@ export async function startWorld(loggedInUser, token) {
       clearPlayerTarget: () => { playerTarget = null; if (marker) marker.visible = false; },
       feedLog:           (type, msg) => combat.feedLog?.(type, msg),
     });
+
+    // Sesión 11c-2 — quitar tabs 🏦 (banco) y 🏛️ (GE) del sidebar. Su acceso
+    // queda solo via NPC del interior del edificio.
+    hideHubTabsInSidebar();
 
     hideWorldLoading();
     animate();
@@ -929,6 +946,39 @@ function toggleRunMode() {
   if (hudStatRun) {
     if (runMode) hudStatRun.classList.add('active');
     else hudStatRun.classList.remove('active');
+  }
+}
+
+// Sesión 11c-2 — ocultar los iconos/botones del sidebar para bank y GE.
+// Sus paneles internos (.osrs-tab-pane[data-tab="bank"]) NO se ocultan
+// porque seguimos necesitándolos cuando el NPC del interior los active.
+// Solo ocultamos los CLICKERS visuales del sidebar.
+function hideHubTabsInSidebar() {
+  const targets = ['bank', 'ge'];
+  let hidden = 0;
+  for (const name of targets) {
+    // Probar varios selectores típicos de tabs OSRS-style. Excluye panes
+    // (que son DIVs grandes y no clickables-as-tab).
+    const sels = [
+      `button[data-tab="${name}"]`,
+      `a[data-tab="${name}"]`,
+      `[role="tab"][data-tab="${name}"]`,
+      `.osrs-tab-icon[data-tab="${name}"]`,
+      `.sidebar-tab[data-tab="${name}"]`,
+      `.tab-button[data-tab="${name}"]`,
+      `li[data-tab="${name}"]`,
+    ];
+    for (const sel of sels) {
+      document.querySelectorAll(sel).forEach(el => {
+        el.style.display = 'none';
+        hidden++;
+      });
+    }
+  }
+  if (hidden > 0) {
+    console.log(`[world] Sesión 11c-2: ocultados ${hidden} iconos de banco/GE del sidebar.`);
+  } else {
+    console.warn('[world] Sesión 11c-2: no se encontraron iconos de banco/GE en el sidebar para ocultar. Los selectores no coinciden con tu HTML. Si los ves todavía visibles, pásame el HTML del sidebar.');
   }
 }
 

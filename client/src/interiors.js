@@ -32,18 +32,15 @@ const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const INTERIOR_URL = `${R2_BASE}/interiors/medieval_room.glb`;
 const NPC_URL = `${R2_BASE}/npcs/the_boss.fbx`;
 
-// Sesión 11c-2: ampliado x4 — 4m → 16m de alto. La cámara orbital está
-// a ~7m sobre el player; con sala de 4m perforaba el techo. Con 16m la
-// cámara queda dentro y se ve correctamente.
-const INTERIOR_HEIGHT = 16.0;
+// Sesión 11c-2 → 11c-3: bajado de 16 → 8m de alto (planta ~30×33m, más manejable).
+const INTERIOR_HEIGHT = 8.0;
 
 // Altura del NPC tras escalar el FBX (humano ~1.8m).
 const NPC_HEIGHT = 1.8;
 
-// Offset del NPC respecto al centro del interior: 5m al norte (asumimos
-// mostrador en el centro-norte tras escalado). Si queda atravesando un
-// mueble, ajustar.
-const NPC_OFFSET = { x: 0, z: 5 };
+// Offset del NPC respecto al centro del interior: 3m al norte del centro
+// (sala más pequeña ahora). Si queda atravesando un mueble, ajustar.
+const NPC_OFFSET = { x: 0, z: 3 };
 
 // Coords absolutas donde se coloca el interior en el mundo.
 // Lejos de WORLD_HALF (2048) para no chocar con el sistema de chunks
@@ -52,14 +49,14 @@ const NPC_OFFSET = { x: 0, z: 5 };
 // y no generará chunks (zonas "vacías").
 const INTERIOR_CENTER = { x: 10000, z: 10000 };
 
-// Spawn del player dentro: 20m al sur del centro (sala ahora es ~60m de
-// profundidad tras x4 escalado), mirando al norte hacia el mostrador y NPC.
-const PLAYER_SPAWN_OFFSET = { x: 0, z: -20 };
+// Spawn del player dentro: 10m al sur del centro (sala ahora ~33m profundidad),
+// mirando al norte hacia el mostrador y NPC.
+const PLAYER_SPAWN_OFFSET = { x: 0, z: -10 };
 
-// Visual del interior — cielo oscuro + fog amplio para sala grande.
+// Visual del interior — cielo oscuro + fog para sala mediana.
 const INTERIOR_BG = 0x1a1410;
-const INTERIOR_FOG_NEAR = 20;
-const INTERIOR_FOG_FAR = 100;
+const INTERIOR_FOG_NEAR = 12;
+const INTERIOR_FOG_FAR = 60;
 
 // Margen entre el bbox del interior y la zona donde puede moverse el
 // player. Evita que se pegue a las paredes.
@@ -387,28 +384,29 @@ function showExitButton() {
   if (exitButtonEl) return;
   exitButtonEl = document.createElement('button');
   exitButtonEl.id = 'interiorExitBtn';
-  exitButtonEl.textContent = '↩ Salir del edificio';
+  exitButtonEl.textContent = '↩ Salir';
   exitButtonEl.style.cssText = `
-    position: absolute;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 25;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: 12px;
+    z-index: 60;
     background: rgba(20, 14, 8, 0.92);
     border: 2px solid #c8a043;
     color: #e8c560;
     font-family: 'Cinzel', serif;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
-    padding: 12px 22px;
+    padding: 8px 14px;
     border-radius: 4px;
     text-shadow: 0 1px 2px rgba(0,0,0,0.9);
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     cursor: pointer;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     white-space: nowrap;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
+    pointer-events: auto;
+    margin: 0;
   `;
   exitButtonEl.addEventListener('pointerup', (ev) => {
     if (ev.button !== undefined && ev.button !== 0) return;
@@ -416,7 +414,10 @@ function showExitButton() {
     ev.stopPropagation();
     leave();
   });
-  (document.getElementById('worldScreen') || document.body).appendChild(exitButtonEl);
+  // Anclar al body directamente — evita posicionamiento dependiente de
+  // ancestors (worldScreen) con transform/scroll/relative que pueda
+  // desplazar el botón a sitios raros (como abajo-centro encima del joystick).
+  document.body.appendChild(exitButtonEl);
 }
 
 function removeExitButton() {
@@ -523,6 +524,7 @@ async function loadNpc(url, targetHeight) {
     return null;
   }
   const loader = new FBXLoader();
+
   let fbx;
   try {
     fbx = await loader.loadAsync(url);
@@ -546,29 +548,71 @@ async function loadNpc(url, targetHeight) {
   // Asegurar DoubleSide en todos los materiales y mantener visibilidad
   fbx.traverse(o => {
     if (o.isMesh) {
-      o.frustumCulled = false;  // skinned a veces falla frustum culling con bbox raros
+      o.frustumCulled = false;  // skinned a veces falla frustum culling
       if (o.material) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of mats) {
-          m.side = THREE.DoubleSide;
-        }
+        for (const m of mats) m.side = THREE.DoubleSide;
       }
     }
   });
 
-  // Animation: arrancar el primer clip (típicamente idle)
-  let mixer = null;
-  if (fbx.animations && fbx.animations.length > 0) {
-    mixer = new THREE.AnimationMixer(fbx);
-    const clip = fbx.animations[0];
-    const action = mixer.clipAction(clip);
-    action.play();
-    console.log(`[interiors] NPC clip activado: '${clip.name}' (${fbx.animations.length} clips disponibles).`);
-  } else {
-    console.log('[interiors] NPC sin animaciones embebidas — quedará estático en T-pose.');
+  // Log clips embebidos para diagnosticar T-pose
+  const clips = fbx.animations || [];
+  console.log(`[interiors] NPC tiene ${clips.length} clips embebidos:`,
+    clips.map(c => `'${c.name}' (${c.duration.toFixed(2)}s, ${c.tracks.length} tracks)`).join(', ') || '(ninguno)');
+
+  // Buscar clip "idle" válido entre los embebidos. Heurística:
+  //   - duración > 0.1s
+  //   - tiene tracks de rotación (descarta poses estáticas)
+  //   - nombre incluye "idle" / "stand" si tenemos suerte
+  let bestClip = null;
+  for (const c of clips) {
+    if (c.duration < 0.1) continue;
+    if (!c.tracks || c.tracks.length === 0) continue;
+    const nameLower = (c.name || '').toLowerCase();
+    if (nameLower.includes('idle') || nameLower.includes('stand')) { bestClip = c; break; }
+    if (!bestClip) bestClip = c;  // fallback: primero válido
   }
 
-  return { model: fbx, mixer };
+  let mixer = null;
+  if (bestClip) {
+    mixer = new THREE.AnimationMixer(fbx);
+    const action = mixer.clipAction(bestClip);
+    action.play();
+    console.log(`[interiors] NPC clip activado (embebido): '${bestClip.name}' (${bestClip.duration.toFixed(2)}s).`);
+    return { model: fbx, mixer };
+  }
+
+  // Fallback: cargar idle externo y aplicarlo al esqueleto del NPC.
+  // El path principal es `animations/Idle.fbx` (mismo que usa character.js
+  // para el player). Si no existe, pruebo variantes.
+  console.warn('[interiors] No hay clip embebido válido — quedaría en T-pose. Probando idle externo…');
+  const idleCandidates = [
+    `${R2_BASE}/animations/Idle.fbx`,
+    `${R2_BASE}/animations/idle.fbx`,
+    `${R2_BASE}/animations/standing_idle.fbx`,
+    `${R2_BASE}/Idle.fbx`,
+    `${R2_BASE}/idle.fbx`,
+  ];
+  for (const idleUrl of idleCandidates) {
+    try {
+      const idleFbx = await loader.loadAsync(idleUrl);
+      const idleClips = idleFbx.animations || [];
+      if (idleClips.length === 0) continue;
+      // Tomar el primer clip y aplicarlo al esqueleto del NPC
+      const clip = idleClips[0];
+      mixer = new THREE.AnimationMixer(fbx);
+      const action = mixer.clipAction(clip);
+      action.play();
+      console.log(`[interiors] NPC idle externo cargado desde '${idleUrl}': '${clip.name}' (${clip.duration.toFixed(2)}s).`);
+      return { model: fbx, mixer };
+    } catch (err) {
+      // Path no existe en R2, sigo probando
+    }
+  }
+  console.warn('[interiors] Ningún idle externo encontrado. El NPC quedará en T-pose. ' +
+    'Sube un FBX de idle a R2 (ej: animations/idle.fbx) y arreglará automáticamente.');
+  return { model: fbx, mixer: null };
 }
 
 /**
