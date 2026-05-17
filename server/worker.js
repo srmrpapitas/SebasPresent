@@ -18,6 +18,7 @@
  *   POST /api/magic/home_teleport (+ /cancel /finish)           → handlers/home_teleport.js
  *   GET  /api/ground_items, POST /pickup                        → handlers/ground_items.js
  *   GET  /api/skills, POST /api/skills/grant                    → handlers/skills.js   (Sesión 14)
+ *   GET  /api/equipment, POST /equip /unequip                   → handlers/equipment.js (Sesión 22)
  *   GET  /api/health
  *
  *   Cron (cada 1 min): GE matcher, NPC revive, ground_items cleanup.
@@ -36,6 +37,7 @@ import * as world from './handlers/world.js';
 import * as homeTele from './handlers/home_teleport.js';
 import * as groundItems from './handlers/ground_items.js';
 import * as skills from './handlers/skills.js';
+import * as equipment from './handlers/equipment.js';
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -136,6 +138,14 @@ export default {
         response = await skills.handleGetSkills(request, env);
       } else if (path === '/api/skills/grant' && method === 'POST') {
         response = await skills.handleGrantXp(request, env);
+
+      // ----- Equipment (Sesión 22) -----
+      } else if (path === '/api/equipment' && method === 'GET') {
+        response = await equipment.handleGetEquipment(request, env);
+      } else if (path === '/api/equipment/equip' && method === 'POST') {
+        response = await equipment.handleEquip(request, env);
+      } else if (path === '/api/equipment/unequip' && method === 'POST') {
+        response = await equipment.handleUnequip(request, env);
 
       // ----- Health + 404 -----
       } else if (path === '/api/health') {
