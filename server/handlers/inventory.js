@@ -1,6 +1,9 @@
 /**
- * SebasPresent — Inventory handlers (Slice 4a)
+ * SebasPresent — Inventory handlers (Slice 4a + Sesión 22)
  * Endpoints: GET /api/inventory, POST /api/inventory/swap
+ *
+ * Sesión 22: el GET ahora también devuelve `equip_slot` de cada item para
+ * que el cliente sepa qué items son equipables.
  */
 
 import { json, readJson } from '../lib/db.js';
@@ -14,7 +17,7 @@ export async function handleGetInventory(request, env) {
 
   const result = await env.DB.prepare(
     `SELECT inv.slot_index AS slot, inv.item_id, inv.quantity,
-            i.name, i.icon, i.stackable
+            i.name, i.icon, i.stackable, i.equip_slot
      FROM user_inventory inv
      JOIN items i ON i.id = inv.item_id
      WHERE inv.user_id = ?
@@ -28,6 +31,7 @@ export async function handleGetInventory(request, env) {
     name: r.name,
     icon: r.icon,
     stackable: r.stackable === 1,
+    equip_slot: r.equip_slot || null,   // sesión 22: null si no es equipable
   }));
 
   return json({ slots: rows });
