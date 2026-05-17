@@ -101,7 +101,7 @@ const PREFS_KEY = 'sp_audio_prefs';
 const DEFAULT_PREFS = {
   master: 0.7,
   sfx: 0.6,
-  music: 0.15,
+  music: 0.075,
   ui: 0.5,
   muted: false,
 };
@@ -311,7 +311,7 @@ export function toggleMute() {
   } else {
     // Desmutear
     prefs.muted = false;
-    prefs.music = 0.15;
+    prefs.music = 0.075;
     if (musicAudio) {
       musicAudio.volume = prefs.music * prefs.master;
       if (musicAudio.src && musicAudio.paused) {
