@@ -208,7 +208,9 @@ export function music(name) {
     console.warn(`[audio] music '${name}' no definido`);
     return;
   }
-  if (prefs.muted) return;
+  // Sesión 13 v4 — Sin early-return por muted. Si user mutea, prefs.music
+  // ya está en 0 y applyMusicVolume pone volumen 0. La música igualmente
+  // se carga y reproduce silenciosa, lista para subir volumen luego.
 
   // Crear elemento nuevo (más simple que reusar el existente)
   const newAudio = new Audio(`${R2_BASE}/audio/music/${def.url}`);
@@ -293,14 +295,18 @@ export function setUiVolume(v)    {
 }
 
 export function toggleMute() {
-  // Sesión 13 v3 — Mute SOLO baja el volumen de música a 0. NO llama
-  // a .pause() porque en iOS Safari, pausar el <audio> suspende el
-  // AudioContext compartido y silencia también los SFX (Web Audio API).
-  // Bajar volumen a 0 mantiene el <audio> reproduciendo silenciosamente
-  // y el AudioContext sigue activo para SFX.
-  prefs.muted = !prefs.muted;
-  savePrefs();
+  // Sesión 13 v4 — Sin estado "muted" oculto. El botón simplemente alterna
+  // música entre 0 y un valor audible (0.35). Si está en 0 → subir a 0.35.
+  // Si está por encima de 0 → bajar a 0. Master y SFX nunca se tocan.
   cancelMusicFade();
+  if (prefs.music > 0) {
+    prefs.music = 0;
+    prefs.muted = true;   // flag solo para UI (mostrar 🔇)
+  } else {
+    prefs.music = 0.35;
+    prefs.muted = false;
+  }
+  savePrefs();
   applyMusicVolume();
   return prefs.muted;
 }
@@ -407,14 +413,14 @@ function attachUnlockListener() {
       for (const q of queued) sfx(q.name, q.opts);
     }
 
-    // Sesión 13 — Marcar audio desbloqueado y arrancar música pendiente.
-    // Si llamaste a music('forest') antes del primer touch, se guardó en
-    // pendingMusicName. Ahora SÍ podemos reproducir porque hay gesto humano.
+    // Sesión 13 v4 — Marcar audio desbloqueado y arrancar música pendiente.
+    // Sin chequear muted: si user muteó, prefs.music=0 y la música arranca
+    // silenciosa pero arranca (puede subir volumen luego).
     audioUnlocked = true;
-    if (pendingMusicName && !prefs.muted) {
+    if (pendingMusicName) {
       const toPlay = pendingMusicName;
       pendingMusicName = null;
-      musicCurrentName = null;  // forzar que music() la reproduzca
+      musicCurrentName = null;
       music(toPlay);
     }
 
@@ -455,7 +461,6 @@ function fadeAudioElement(audioEl, targetVol, durationMs, onDone) {
 
 function applyMusicVolume() {
   if (!musicAudio) return;
-  const newVol = prefs.muted ? 0 : prefs.music * prefs.master;
+  const newVol = prefs.music * prefs.master;
   musicAudio.volume = newVol;
-  console.log(`[audio] applyMusicVolume → ${newVol.toFixed(2)} (master=${prefs.master.toFixed(2)} music=${prefs.music.toFixed(2)} muted=${prefs.muted}) paused=${musicAudio.paused} src=${!!musicAudio.src}`);
 }
