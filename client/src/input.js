@@ -139,6 +139,7 @@ export function setup(opts) {
     // Overlays/widgets ESPECÍFICOS del juego. NO `.world-hud` porque cubre
     // toda la pantalla. Sí sus hijos visibles concretos.
     if (t.closest && t.closest(
+      '#eruda, .eruda-container, .eruda-dev-tools, .___eruda___, ' +
       '#joystick, .joystick, ' +
       '.osrs-sidebar, #osrsSidebar, ' +
       '.world-hud-top, .world-hud-pill, .world-hint, ' +
@@ -153,6 +154,16 @@ export function setup(opts) {
       '#combatFeed, .combat-feed, ' +
       '.world-loading, #worldLoading'
     )) return true;
+    // Eruda usa el id="eruda" y a veces emite events desde divs sin clase
+    // específica. Como fallback: si el target tiene attribute o ancestor
+    // con "eruda" en el id o class, lo respeto.
+    let cur = t;
+    for (let i = 0; i < 6 && cur; i++) {
+      const id = cur.id || '';
+      const cls = (cur.className && typeof cur.className === 'string') ? cur.className : '';
+      if (/eruda/i.test(id) || /eruda/i.test(cls)) return true;
+      cur = cur.parentElement;
+    }
     return false;
   }
 
@@ -224,17 +235,15 @@ export function setup(opts) {
     onTap(clientX, clientY);
   }
 
-  // Pointerdown enganchado a WINDOW, no a canvas. Razón: el canvas es
-  // hermano del .world-hud / .osrs-minimap-wrap, etc. Los eventos NO
-  // burbujean a hermanos, solo a ancestros. Si registramos en canvas y
-  // tappeas en una zona cubierta por un overlay hermano, el listener
-  // nunca se dispara — drag de cámara no inicia. Registrar en window
-  // capta TODOS los pointerdown; el filtro `isUiElement` rechaza los
-  // que provienen de UI real (botones, joystick, modales, sidebar).
-  on(window, 'pointerdown',  onPointerDown);
-  on(window, 'pointermove',  onPointerMove);
-  on(window, 'pointerup',    onPointerUp);
-  on(window, 'pointercancel', onPointerUp);
+  // CRÍTICO: capture:true. Si en el proyecto hay overlays absolutos que
+  // interceptan pointer events (eruda debug panel, otros widgets), corren
+  // en bubbling y consumen el evento antes de llegar aquí. Con capture:true
+  // mi listener corre PRIMERO. Mi `isUiElement` ya filtra los target de UI
+  // real, así que correr antes no daña a botones/sidebar/etc.
+  on(window, 'pointerdown',  onPointerDown,   { capture: true });
+  on(window, 'pointermove',  onPointerMove,   { capture: true });
+  on(window, 'pointerup',    onPointerUp,     { capture: true });
+  on(window, 'pointercancel', onPointerUp,    { capture: true });
   on(canvas, 'contextmenu',  e => e.preventDefault());
 
   // ============================================================

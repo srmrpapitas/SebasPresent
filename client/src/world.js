@@ -989,10 +989,10 @@ function injectInventoryGridCss() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    /* Sesión 11c-2 v2: mochila estilo OSRS — slots 42×42px en grid 4×7
-       centrado, sin scroll. Cubre los selectores probables que use
-       inventory.js cliente. Slot tamaño fijo evita estiramiento raro. */
-    .osrs-tab-pane[data-tab="inventory"] {
+    /* Sesión 11c-2 v3: mochila estilo OSRS — slots 42×42px en grid 4×7
+       centrado. CRÍTICO: scope a .active para no romper el toggle de tabs.
+       Si aplico display:flex siempre, la mochila se ve encima de stats/magic. */
+    .osrs-tab-pane[data-tab="inventory"].active {
       overflow: hidden !important;
       padding: 8px !important;
       display: flex !important;
@@ -1000,7 +1000,9 @@ function injectInventoryGridCss() {
       align-items: center !important;
       justify-content: flex-start !important;
     }
-    /* La grid interna que crea inventory.js */
+    /* La grid interna que crea inventory.js (sin :active porque solo
+       afecta a hijos del pane, que solo existen visiblemente cuando
+       el pane está active). */
     .osrs-tab-pane[data-tab="inventory"] .inventory-grid,
     .osrs-tab-pane[data-tab="inventory"] .inv-grid,
     .osrs-tab-pane[data-tab="inventory"] .osrs-inv-grid,
