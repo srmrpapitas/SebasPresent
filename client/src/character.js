@@ -109,12 +109,12 @@ const WEAPON_TRANSFORMS = {
     hand: 'right',
   },
   '2h_sword': {
-    // Mismo modelo aproximado que 1h_sword pero un pelín más grande.
-    // Si queda mal con espada 2h, recalibrar con __weaponDebug().
-    scale: 90.0,
-    position: [-22.5, 12.0, 3.0],
-    rotation: [1.658, 0.058, -1.692],
-    hand: 'right',
+    // Sesión 26 — calibrado in-game con __weaponDebug() para sword_bronze_2h
+    // (modelo Hyperion). Escala alta porque el modelo viene chiquito.
+    scale: 600.0,
+    position: [-9.5, 2.0, 2.0],
+    rotation: [2.858, -2.592, -3.142],
+    hand: 'left',
   },
   'bow': {
     scale: 116.0,
