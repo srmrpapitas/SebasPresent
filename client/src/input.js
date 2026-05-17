@@ -66,6 +66,30 @@ export function setup(opts) {
     throw new Error('[input] setup: canvas es obligatorio');
   }
 
+  // Inyectar CSS GLOBAL para evitar que iOS Safari interprete drag vertical
+  // como scroll de página. Sin esto, drag vertical sobre cualquier elemento
+  // que NO sea el canvas (HUD, hint, overlay) genera scroll de iOS y no
+  // recibimos pointermove vertical → la cámara solo se mueve horizontal.
+  //
+  // El canvas ya tiene touch-action:none (world.js lo aplica), pero falta
+  // forzarlo en TODO el #worldScreen y sus descendientes.
+  if (!document.getElementById('input-touch-action-fix')) {
+    const style = document.createElement('style');
+    style.id = 'input-touch-action-fix';
+    style.textContent = `
+      /* Sesión 11c-2: forzar touch-action:none en world screen y descendientes
+         para que iOS Safari no robe el drag vertical como scroll de página. */
+      #worldScreen,
+      #worldScreen *:not(input):not(textarea) {
+        touch-action: none !important;
+        -ms-touch-action: none !important;
+        overscroll-behavior: none !important;
+      }
+      html, body { overscroll-behavior: none; }
+    `;
+    document.head.appendChild(style);
+  }
+
   // Track de listeners para poder removerlos todos en dispose()
   const listeners = [];
   function on(target, type, fn, options) {
@@ -85,9 +109,10 @@ export function setup(opts) {
   // el evento se respeta y NO se trata como drag de cámara. Si NO lo es
   // (canvas, body, área 3D sin overlay), procesamos drag.
   //
-  // Lista basada en index.html real: world-hud (top + hint), sidebar
-  // OSRS, joystick, minimapa, overlays (GE, full-map), botón de exit
-  // del interior, menú NPC del interior, name tag del player.
+  // OJO: NO incluir `.world-hud` aquí. `.world-hud` envuelve a todos
+  // los elementos del HUD (joystick, hint, pill, botón salir) y puede
+  // cubrir toda la pantalla. Si lo incluyera, TODO drag caería en él y
+  // se rechazaría. Solo añadir los hijos específicos que SÍ son UI.
   function isUiElement(t) {
     if (!t) return false;
     if (t === canvas) return false;
@@ -95,16 +120,18 @@ export function setup(opts) {
     if (t.tagName === 'BUTTON' || t.tagName === 'INPUT' || t.tagName === 'SELECT' ||
         t.tagName === 'TEXTAREA' || t.tagName === 'A' || t.tagName === 'LABEL') return true;
     if (t.closest && t.closest('button, input, select, textarea, a, label, [role="button"]')) return true;
-    // Overlays/widgets del juego (selectores reales del index.html)
+    // Overlays/widgets ESPECÍFICOS del juego. NO `.world-hud` porque cubre
+    // toda la pantalla. Sí sus hijos visibles concretos.
     if (t.closest && t.closest(
       '#joystick, .joystick, ' +
       '.osrs-sidebar, #osrsSidebar, ' +
-      '.world-hud, .world-hud-top, .world-hud-pill, .world-hint, ' +
+      '.world-hud-top, .world-hud-pill, .world-hint, ' +
       '.osrs-minimap-wrap, #worldMinimap, #minimapOpenMap, ' +
       '.osrs-fullmap-overlay, #fullMapOverlay, ' +
       '.ge-overlay, #geOverlay, ' +
+      '.bank-overlay, #bankOverlay, ' +
       '#interiorNpcMenu, #interiorExitBtn, ' +
-      '.modal, [role="dialog"], .osrs-tab-pane, .tab-pane, ' +
+      '.modal, [role="dialog"], ' +
       '.player-name-tag, #playerNameTag, ' +
       '#worldRegion, #worldBanner, #worldTooltip, ' +
       '#combatFeed, .combat-feed, ' +

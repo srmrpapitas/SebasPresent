@@ -186,53 +186,10 @@ export async function startWorld(loggedInUser, token) {
       scene, camera, canvas,
       getPlayer: () => player,
       onOpenBank: () => {
-        // bank.onOpen() refresca data internamente pero NO muestra el pane:
-        // eso es responsabilidad del sistema de tabs (ui.js / sidebar).
-        // Hay que activar el pane manualmente porque .click() programático
-        // no dispara los listeners de 'pointerup' que usa el sidebar.
+        // 1. Refrescar data del banco
         try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
-
-        // 1. Abrir/mostrar el sidebar si está cerrado/minimizado
-        const sidebar = document.getElementById('osrsSidebar');
-        if (sidebar) {
-          sidebar.classList.remove('hidden', 'collapsed', 'minimized');
-          sidebar.classList.add('open', 'visible', 'expanded');
-          if (sidebar.style.display === 'none') sidebar.style.display = '';
-        }
-
-        // 2. Encontrar el pane del banco (data-tab="bank") y activarlo.
-        //    Los OTROS panes pierden .active.
-        const bankPane = document.querySelector('.osrs-tab-pane[data-tab="bank"]');
-        if (!bankPane) {
-          console.warn('[world] No se encontró .osrs-tab-pane[data-tab="bank"]. ¿Cambió el HTML del sidebar?');
-          return;
-        }
-        document.querySelectorAll('.osrs-tab-pane.active').forEach(p => {
-          if (p !== bankPane) p.classList.remove('active');
-        });
-        bankPane.classList.add('active');
-
-        // 3. Marcar el icono del sidebar (data-tab-btn="bank") como active.
-        //    Aunque esté oculto, mantiene el estado consistente para cuando
-        //    cambies otra vez de pestaña.
-        document.querySelectorAll('.osrs-sidebar-tab.active').forEach(b => b.classList.remove('active'));
-        const bankBtn = document.querySelector('.osrs-sidebar-tab[data-tab-btn="bank"]');
-        if (bankBtn) bankBtn.classList.add('active');
-
-        // 4. Disparar pointerup en el icono — por si ui.js tiene un listener
-        //    extra (animación, refresco, etc.)
-        if (bankBtn) {
-          try {
-            const ev = new PointerEvent('pointerup', {
-              bubbles: true, cancelable: true, button: 0,
-              pointerId: 1, pointerType: 'touch', isPrimary: true,
-            });
-            bankBtn.dispatchEvent(ev);
-          } catch {
-            try { bankBtn.click?.(); } catch {}
-          }
-        }
-        console.log('[world] Banco activado: pane=', !!bankPane, 'btn=', !!bankBtn);
+        // 2. Abrir el banco como overlay grande estilo GE — NO dentro del sidebar.
+        openBankOverlay();
       },
       onOpenGE: () => {
         // ge.openOverlay() es self-contained: abre overlay fullscreen propio.
@@ -1055,6 +1012,187 @@ function injectInventoryGridCss() {
   `;
   document.head.appendChild(style);
   console.log('[world] Inyectado CSS para grid 4x7 de mochila.');
+}
+
+// ============================================================
+// Sesión 11c-2 — Bank overlay (fuera del sidebar, estilo GE)
+// ============================================================
+// El user quiere el banco como overlay grande fullscreen, NO incrustado
+// abajo del inventario del sidebar.
+//
+// Estrategia: bank.js cliente renderiza dentro del pane
+// `.osrs-tab-pane[data-tab="bank"]` (busca por querySelector al init).
+// Para mostrarlo fullscreen sin reescribir bank.js:
+//   1. Creo un overlay `#bankOverlay` dinámicamente.
+//   2. Al abrir, MUEVO el pane del sidebar al overlay (preserva listeners).
+//   3. Al cerrar, MUEVO el pane de vuelta al sidebar.
+//
+// Esto no requiere cambios en bank.js cliente ni en el HTML.
+
+let bankOverlayEl = null;
+let bankPaneOriginalParent = null;     // referencia al sidebar para devolver el pane
+let bankPaneOriginalNextSibling = null; // para devolverlo a la misma posición
+
+function ensureBankOverlay() {
+  if (bankOverlayEl) return bankOverlayEl;
+
+  // CSS — replica estilo GE overlay
+  if (!document.getElementById('bank-overlay-styles')) {
+    const style = document.createElement('style');
+    style.id = 'bank-overlay-styles';
+    style.textContent = `
+      .bank-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.78);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 50;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: env(safe-area-inset-top, 0px) 12px env(safe-area-inset-bottom, 0px) 12px;
+      }
+      .bank-overlay.visible { display: flex; }
+      .bank-overlay-frame {
+        position: relative;
+        width: 100%;
+        max-width: 720px;
+        height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+        max-height: 100%;
+        background: rgba(20, 14, 8, 0.97);
+        border: 3px solid #c8a043;
+        border-radius: 6px;
+        box-shadow: 0 0 60px rgba(200, 160, 67, 0.4), 0 12px 40px rgba(0,0,0,0.8);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .bank-overlay-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-bottom: 2px solid rgba(200, 160, 67, 0.3);
+        background: rgba(40, 25, 15, 0.6);
+        flex: 0 0 auto;
+      }
+      .bank-overlay-title {
+        font-family: 'Cinzel', serif;
+        font-weight: 900;
+        font-size: 18px;
+        color: #e8c560;
+        letter-spacing: 0.05em;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+      }
+      .bank-overlay-close {
+        width: 36px; height: 36px;
+        background: rgba(60, 30, 20, 0.95);
+        border: 2px solid #c8a043;
+        color: #e8c560;
+        font-size: 18px;
+        font-weight: bold;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .bank-overlay-close:active { transform: scale(0.92); background: rgba(120,60,40,0.95); }
+
+      /* El pane del banco se mete aquí dentro y necesita rellenar el frame */
+      .bank-overlay-body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 0;
+      }
+      .bank-overlay-body .osrs-tab-pane[data-tab="bank"] {
+        display: block !important;
+        height: auto !important;
+        padding: 12px !important;
+        background: transparent !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  bankOverlayEl = document.createElement('div');
+  bankOverlayEl.id = 'bankOverlay';
+  bankOverlayEl.className = 'bank-overlay';
+  bankOverlayEl.innerHTML = `
+    <div class="bank-overlay-frame">
+      <div class="bank-overlay-header">
+        <div class="bank-overlay-title">Banco</div>
+        <button class="bank-overlay-close" id="bankOverlayClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="bank-overlay-body" id="bankOverlayBody"></div>
+    </div>
+  `;
+  document.body.appendChild(bankOverlayEl);
+
+  // Click en backdrop cierra
+  bankOverlayEl.addEventListener('pointerup', (ev) => {
+    if (ev.target === bankOverlayEl) closeBankOverlay();
+  });
+  // Botón ✕ cierra
+  bankOverlayEl.querySelector('#bankOverlayClose')?.addEventListener('pointerup', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeBankOverlay();
+  });
+
+  return bankOverlayEl;
+}
+
+function openBankOverlay() {
+  const overlay = ensureBankOverlay();
+  const body = overlay.querySelector('#bankOverlayBody');
+  const pane = document.querySelector('.osrs-tab-pane[data-tab="bank"]');
+
+  if (!pane) {
+    console.warn('[world] No se encontró .osrs-tab-pane[data-tab="bank"]. ¿bank.init() todavía no corrió?');
+    return;
+  }
+  if (!body) {
+    console.warn('[world] bankOverlayBody no encontrado.');
+    return;
+  }
+
+  // Guardar referencias del padre original SOLO la primera vez (si el pane
+  // ya está dentro del overlay, no machaqueamos).
+  if (pane.parentElement !== body) {
+    bankPaneOriginalParent = pane.parentElement;
+    bankPaneOriginalNextSibling = pane.nextSibling;
+    body.appendChild(pane);
+  }
+
+  // Asegurar pane visible (.active normalmente lo controla la lógica de tabs;
+  // dentro del overlay forzamos display block)
+  pane.classList.add('active');
+  pane.style.display = 'block';
+
+  overlay.classList.add('visible');
+  console.log('[world] Banco overlay abierto.');
+}
+
+function closeBankOverlay() {
+  if (!bankOverlayEl) return;
+  bankOverlayEl.classList.remove('visible');
+
+  // Mover el pane de vuelta al sidebar (su lugar original)
+  const pane = document.querySelector('.osrs-tab-pane[data-tab="bank"]');
+  if (pane && bankPaneOriginalParent) {
+    pane.classList.remove('active');
+    pane.style.display = '';
+    if (bankPaneOriginalNextSibling && bankPaneOriginalNextSibling.parentElement === bankPaneOriginalParent) {
+      bankPaneOriginalParent.insertBefore(pane, bankPaneOriginalNextSibling);
+    } else {
+      bankPaneOriginalParent.appendChild(pane);
+    }
+  }
+
+  // Notificar al módulo del banco que se cierra (limpia drag a medias, etc.)
+  try { bank.onClose?.(); } catch (e) { console.warn('[world] bank.onClose:', e); }
 }
 
 // ============================================================
