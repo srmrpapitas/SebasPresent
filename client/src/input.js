@@ -159,7 +159,11 @@ export function setup(opts) {
       '.player-name-tag, #playerNameTag, ' +
       '#worldRegion, #worldBanner, #worldTooltip, ' +
       '#combatFeed, .combat-feed, ' +
-      '.world-loading, #worldLoading'
+      '.world-loading, #worldLoading, ' +
+      // Sesión 22 — menús contextuales sueltos
+      '.inv-context-menu, #invContextMenu, ' +
+      '.equip-tooltip, #equipTooltip, ' +
+      '.osrs-action-menu'
     )) return true;
     // Eruda usa el id="eruda" y a veces emite events desde divs sin clase
     // específica. Como fallback: si el target tiene attribute o ancestor
