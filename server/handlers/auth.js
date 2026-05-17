@@ -8,6 +8,7 @@ import {
   createSession, requireSession, bearerToken,
   hashPassword, verifyPassword,
 } from '../lib/auth.js';
+import { initSkillsForNewUser } from './skills.js';
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,16}$/;
 const PASSWORD_MIN_LENGTH = 6;
@@ -62,6 +63,14 @@ export async function handleRegister(request, env) {
     ]);
   } catch (err) {
     console.error('Starter pack failed for user', userId, err);
+  }
+
+  // Sesión 14 — Inicializar los 13 skills del player nuevo.
+  // hitpoints arranca en nivel 10 (1154 xp), resto en nivel 1 (0 xp).
+  try {
+    await initSkillsForNewUser(env, userId);
+  } catch (err) {
+    console.error('Skills init failed for user', userId, err);
   }
 
   const token = await createSession(env, userId);
