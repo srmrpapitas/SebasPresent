@@ -83,23 +83,32 @@ export function setup(opts) {
 
   // Helper: ¿es UI real del juego (botón, joystick, modal)? Si lo es,
   // el evento se respeta y NO se trata como drag de cámara. Si NO lo es
-  // (canvas, body, overlay transparente sin función UI), procesamos drag.
+  // (canvas, body, área 3D sin overlay), procesamos drag.
+  //
+  // Lista basada en index.html real: world-hud (top + hint), sidebar
+  // OSRS, joystick, minimapa, overlays (GE, full-map), botón de exit
+  // del interior, menú NPC del interior, name tag del player.
   function isUiElement(t) {
     if (!t) return false;
     if (t === canvas) return false;
     // Interactivos nativos
     if (t.tagName === 'BUTTON' || t.tagName === 'INPUT' || t.tagName === 'SELECT' ||
         t.tagName === 'TEXTAREA' || t.tagName === 'A' || t.tagName === 'LABEL') return true;
-    // O dentro de uno
     if (t.closest && t.closest('button, input, select, textarea, a, label, [role="button"]')) return true;
-    // Overlays/widgets conocidos del juego
+    // Overlays/widgets del juego (selectores reales del index.html)
     if (t.closest && t.closest(
-      '#joystick, .joystick, .osrs-sidebar, #sidebar, .sidebar, ' +
-      '.ge-overlay, #interiorNpcMenu, #interiorExitBtn, ' +
+      '#joystick, .joystick, ' +
+      '.osrs-sidebar, #osrsSidebar, ' +
+      '.world-hud, .world-hud-top, .world-hud-pill, .world-hint, ' +
+      '.osrs-minimap-wrap, #worldMinimap, #minimapOpenMap, ' +
+      '.osrs-fullmap-overlay, #fullMapOverlay, ' +
+      '.ge-overlay, #geOverlay, ' +
+      '#interiorNpcMenu, #interiorExitBtn, ' +
       '.modal, [role="dialog"], .osrs-tab-pane, .tab-pane, ' +
-      '#fullMapOverlay, #worldMinimap, #minimapOpenMap, ' +
-      '#playerNameTag, .player-name-tag, ' +
-      '.hud, .osrs-hud, #worldRegion, #worldBanner, #worldTooltip'
+      '.player-name-tag, #playerNameTag, ' +
+      '#worldRegion, #worldBanner, #worldTooltip, ' +
+      '#combatFeed, .combat-feed, ' +
+      '.world-loading, #worldLoading'
     )) return true;
     return false;
   }
@@ -172,7 +181,14 @@ export function setup(opts) {
     onTap(clientX, clientY);
   }
 
-  on(canvas, 'pointerdown',  onPointerDown);
+  // Pointerdown enganchado a WINDOW, no a canvas. Razón: el canvas es
+  // hermano del .world-hud / .osrs-minimap-wrap, etc. Los eventos NO
+  // burbujean a hermanos, solo a ancestros. Si registramos en canvas y
+  // tappeas en una zona cubierta por un overlay hermano, el listener
+  // nunca se dispara — drag de cámara no inicia. Registrar en window
+  // capta TODOS los pointerdown; el filtro `isUiElement` rechaza los
+  // que provienen de UI real (botones, joystick, modales, sidebar).
+  on(window, 'pointerdown',  onPointerDown);
   on(window, 'pointermove',  onPointerMove);
   on(window, 'pointerup',    onPointerUp);
   on(window, 'pointercancel', onPointerUp);

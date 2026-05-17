@@ -186,28 +186,53 @@ export async function startWorld(loggedInUser, token) {
       scene, camera, canvas,
       getPlayer: () => player,
       onOpenBank: () => {
-        // bank.onOpen() refresca data; quien muestra el pane es el sistema
-        // de tabs del sidebar. Activamos visualmente el tab simulando click
-        // en el botón del sidebar (sigue funcionando aunque esté display:none
-        // tras ocultarlo en hideHubTabsInSidebar()).
+        // bank.onOpen() refresca data internamente pero NO muestra el pane:
+        // eso es responsabilidad del sistema de tabs (ui.js / sidebar).
+        // Hay que activar el pane manualmente porque .click() programático
+        // no dispara los listeners de 'pointerup' que usa el sidebar.
         try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
-        const bankTabBtn = document.querySelector(
-          'button[data-tab="bank"], a[data-tab="bank"], [role="tab"][data-tab="bank"], .osrs-tab-icon[data-tab="bank"], .sidebar-tab[data-tab="bank"]'
-        );
-        if (bankTabBtn && typeof bankTabBtn.click === 'function') {
-          bankTabBtn.click();
-        } else {
-          // Plan B: activar el pane manualmente con clases comunes
-          document.querySelectorAll('.osrs-tab-pane.active, .tab-pane.active').forEach(p => p.classList.remove('active'));
-          const pane = document.querySelector('.osrs-tab-pane[data-tab="bank"], [data-tab="bank"].tab-pane');
-          if (pane) pane.classList.add('active');
-        }
-        // Asegurar que el sidebar esté abierto/visible (selectores comunes)
-        const sidebar = document.querySelector('.osrs-sidebar, #sidebar, .sidebar');
+
+        // 1. Abrir/mostrar el sidebar si está cerrado/minimizado
+        const sidebar = document.getElementById('osrsSidebar');
         if (sidebar) {
+          sidebar.classList.remove('hidden', 'collapsed', 'minimized');
           sidebar.classList.add('open', 'visible', 'expanded');
-          sidebar.classList.remove('hidden', 'collapsed');
+          if (sidebar.style.display === 'none') sidebar.style.display = '';
         }
+
+        // 2. Encontrar el pane del banco (data-tab="bank") y activarlo.
+        //    Los OTROS panes pierden .active.
+        const bankPane = document.querySelector('.osrs-tab-pane[data-tab="bank"]');
+        if (!bankPane) {
+          console.warn('[world] No se encontró .osrs-tab-pane[data-tab="bank"]. ¿Cambió el HTML del sidebar?');
+          return;
+        }
+        document.querySelectorAll('.osrs-tab-pane.active').forEach(p => {
+          if (p !== bankPane) p.classList.remove('active');
+        });
+        bankPane.classList.add('active');
+
+        // 3. Marcar el icono del sidebar (data-tab-btn="bank") como active.
+        //    Aunque esté oculto, mantiene el estado consistente para cuando
+        //    cambies otra vez de pestaña.
+        document.querySelectorAll('.osrs-sidebar-tab.active').forEach(b => b.classList.remove('active'));
+        const bankBtn = document.querySelector('.osrs-sidebar-tab[data-tab-btn="bank"]');
+        if (bankBtn) bankBtn.classList.add('active');
+
+        // 4. Disparar pointerup en el icono — por si ui.js tiene un listener
+        //    extra (animación, refresco, etc.)
+        if (bankBtn) {
+          try {
+            const ev = new PointerEvent('pointerup', {
+              bubbles: true, cancelable: true, button: 0,
+              pointerId: 1, pointerType: 'touch', isPrimary: true,
+            });
+            bankBtn.dispatchEvent(ev);
+          } catch {
+            try { bankBtn.click?.(); } catch {}
+          }
+        }
+        console.log('[world] Banco activado: pane=', !!bankPane, 'btn=', !!bankBtn);
       },
       onOpenGE: () => {
         // ge.openOverlay() es self-contained: abre overlay fullscreen propio.
@@ -949,37 +974,87 @@ function toggleRunMode() {
   }
 }
 
-// Sesión 11c-2 — ocultar los iconos/botones del sidebar para bank y GE.
-// Sus paneles internos (.osrs-tab-pane[data-tab="bank"]) NO se ocultan
-// porque seguimos necesitándolos cuando el NPC del interior los active.
-// Solo ocultamos los CLICKERS visuales del sidebar.
+// Sesión 11c-2 — ocultar los iconos del sidebar para bank y GE.
+// El HTML del sidebar usa data-tab-btn (no data-tab — confirmado en
+// index.html). Los panes internos siguen usando data-tab="bank" y NO
+// los ocultamos, porque bank.onOpen() necesita activarlos al tappear NPC.
 function hideHubTabsInSidebar() {
-  const targets = ['bank', 'ge'];
-  let hidden = 0;
-  for (const name of targets) {
-    // Probar varios selectores típicos de tabs OSRS-style. Excluye panes
-    // (que son DIVs grandes y no clickables-as-tab).
-    const sels = [
-      `button[data-tab="${name}"]`,
-      `a[data-tab="${name}"]`,
-      `[role="tab"][data-tab="${name}"]`,
-      `.osrs-tab-icon[data-tab="${name}"]`,
-      `.sidebar-tab[data-tab="${name}"]`,
-      `.tab-button[data-tab="${name}"]`,
-      `li[data-tab="${name}"]`,
-    ];
-    for (const sel of sels) {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.display = 'none';
-        hidden++;
-      });
-    }
+  const STYLE_ID = 'interiors-hide-hub-tabs';
+  if (!document.getElementById(STYLE_ID)) {
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      /* Sesión 11c-2: ocultar tabs banco y GE del sidebar.
+         Selector preciso del HTML real: .osrs-sidebar-tab[data-tab-btn="..."]. */
+      .osrs-sidebar-tab[data-tab-btn="bank"],
+      .osrs-sidebar-tab[data-tab-btn="ge"],
+      [data-tab-btn="bank"],
+      [data-tab-btn="ge"] {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+    `;
+    document.head.appendChild(style);
   }
-  if (hidden > 0) {
-    console.log(`[world] Sesión 11c-2: ocultados ${hidden} iconos de banco/GE del sidebar.`);
+
+  // Diagnóstico: contar cuántos se ocultaron
+  const found = document.querySelectorAll('[data-tab-btn="bank"], [data-tab-btn="ge"]').length;
+  if (found > 0) {
+    console.log(`[world] Sesión 11c-2: ocultados ${found} iconos de banco/GE del sidebar.`);
   } else {
-    console.warn('[world] Sesión 11c-2: no se encontraron iconos de banco/GE en el sidebar para ocultar. Los selectores no coinciden con tu HTML. Si los ves todavía visibles, pásame el HTML del sidebar.');
+    console.warn('[world] Sesión 11c-2: no se encontraron iconos con [data-tab-btn="bank"|"ge"]. ' +
+      'Si los iconos siguen visibles, pásame el HTML actual del sidebar.');
   }
+
+  // Sesión 11c-2 — Mochila estilo OSRS: 4 columnas × 7 filas = 28 slots
+  // sin scroll. CSS defensivo: cubre varios selectores posibles que pueda
+  // usar inventory.js (no lo tengo en mano). Si tu inventory.js usa otro
+  // class name, pásamelo y ajusto. Mientras tanto, esto evita el scroll
+  // mostrando todos los 28 slots a la vez.
+  injectInventoryGridCss();
+}
+
+function injectInventoryGridCss() {
+  const STYLE_ID = 'inventory-osrs-grid-4x7';
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+    /* Sesión 11c-2: forzar grid 4x7 sin scroll en la mochila.
+       Cubre varios selectores posibles que inventory.js puede usar
+       (sin conocer el módulo cliente todavía). */
+    .osrs-tab-pane[data-tab="inventory"] {
+      overflow: hidden !important;
+      display: flex !important;
+      flex-direction: column !important;
+      padding: 8px !important;
+    }
+    /* Cualquier hijo grid-like dentro del pane de inventario */
+    .osrs-tab-pane[data-tab="inventory"] .inventory-grid,
+    .osrs-tab-pane[data-tab="inventory"] .inv-grid,
+    .osrs-tab-pane[data-tab="inventory"] .osrs-inv-grid,
+    .osrs-tab-pane[data-tab="inventory"] [class*="inventory-grid"],
+    .osrs-tab-pane[data-tab="inventory"] [class*="inv-grid"] {
+      display: grid !important;
+      grid-template-columns: repeat(4, 1fr) !important;
+      grid-auto-rows: 1fr !important;
+      gap: 4px !important;
+      overflow: hidden !important;
+      width: 100% !important;
+      flex: 1 1 auto !important;
+    }
+    /* Cualquier slot debe tener aspect ratio cuadrado para que 4×7 quepan */
+    .osrs-tab-pane[data-tab="inventory"] .inventory-slot,
+    .osrs-tab-pane[data-tab="inventory"] .inv-slot,
+    .osrs-tab-pane[data-tab="inventory"] .osrs-inv-slot {
+      aspect-ratio: 1 / 1 !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+    }
+  `;
+  document.head.appendChild(style);
+  console.log('[world] Inyectado CSS para grid 4x7 de mochila.');
 }
 
 // ============================================================
