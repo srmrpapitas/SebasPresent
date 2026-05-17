@@ -366,6 +366,10 @@ export async function startWorld(loggedInUser, token) {
       // Sesión 24 — Cuando cambie el equipment, attach/detach el arma 3D
       // en la mano del personaje. character.attachWeapon es async pero no
       // bloqueamos: si tarda, el render irá apareciendo en cuanto cargue.
+      //
+      // Sesión 26 — También attach/detach armor (body, shield, helm, cape)
+      // a los huesos del cuerpo.
+      const ARMOR_SLOTS = ['body', 'shield', 'helm', 'cape'];
       equipment.onChange((slots) => {
         if (!character || !character.loaded) return;
         const weapon = slots.weapon;
@@ -376,6 +380,17 @@ export async function startWorld(loggedInUser, token) {
         } else {
           character.detachWeapon();
         }
+        // Armor slots
+        for (const slotId of ARMOR_SLOTS) {
+          const armor = slots[slotId];
+          if (armor && armor.item_id) {
+            character.attachArmor(armor.item_id, slotId).catch(e => {
+              console.warn(`[world] attachArmor(${slotId}):`, e);
+            });
+          } else {
+            character.detachArmor(slotId);
+          }
+        }
       });
 
       // Aplicar arma inicial si ya hay una equipada al cargar el mundo
@@ -385,6 +400,15 @@ export async function startWorld(loggedInUser, token) {
         character.attachWeapon(initialWeapon.item_id, initialWeapon.weapon_type).catch(e => {
           console.warn('[world] attachWeapon inicial:', e);
         });
+      }
+      // Sesión 26 — Aplicar armor inicial
+      for (const slotId of ARMOR_SLOTS) {
+        const armor = equipment.getEquipped(slotId);
+        if (character && character.loaded && armor?.item_id) {
+          character.attachArmor(armor.item_id, slotId).catch(e => {
+            console.warn(`[world] attachArmor inicial ${slotId}:`, e);
+          });
+        }
       }
     } catch (e) { console.warn('[world] equipment init:', e); }
 
