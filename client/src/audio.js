@@ -101,7 +101,7 @@ const PREFS_KEY = 'sp_audio_prefs';
 const DEFAULT_PREFS = {
   master: 0.7,
   sfx: 0.6,
-  music: 0.35,
+  music: 0.15,
   ui: 0.5,
   muted: false,
 };
@@ -295,19 +295,31 @@ export function setUiVolume(v)    {
 }
 
 export function toggleMute() {
-  // Sesión 13 v4 — Sin estado "muted" oculto. El botón simplemente alterna
-  // música entre 0 y un valor audible (0.35). Si está en 0 → subir a 0.35.
-  // Si está por encima de 0 → bajar a 0. Master y SFX nunca se tocan.
+  // Sesión 13 v5 — Mute hace dos cosas para garantizar silencio en iOS:
+  //   1. prefs.music = 0 (para que applyMusicVolume baje volumen)
+  //   2. musicAudio.pause() (para que iOS no siga reproduciendo)
+  // Al desmutear: prefs.music vuelve a 0.15 y resume().
   cancelMusicFade();
-  if (prefs.music > 0) {
+  if (!prefs.muted) {
+    // Mutear
+    prefs.muted = true;
     prefs.music = 0;
-    prefs.muted = true;   // flag solo para UI (mostrar 🔇)
+    if (musicAudio) {
+      musicAudio.volume = 0;
+      try { musicAudio.pause(); } catch {}
+    }
   } else {
-    prefs.music = 0.35;
+    // Desmutear
     prefs.muted = false;
+    prefs.music = 0.15;
+    if (musicAudio) {
+      musicAudio.volume = prefs.music * prefs.master;
+      if (musicAudio.src && musicAudio.paused) {
+        musicAudio.play().catch(err => console.log('[audio] resume failed:', err.message));
+      }
+    }
   }
   savePrefs();
-  applyMusicVolume();
   return prefs.muted;
 }
 export function isMuted() { return prefs.muted; }
