@@ -24,7 +24,6 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 // ============================================================
 // Constantes
@@ -512,6 +511,17 @@ async function loadInterior(url, targetHeight) {
  * Devuelve { model, mixer } o null si falla.
  */
 async function loadNpc(url, targetHeight) {
+  // Import dinámico del FBXLoader: si el bundler/importmap no lo tiene
+  // resuelto, no rompemos startWorld. El interior funciona sin NPC.
+  let FBXLoader;
+  try {
+    const mod = await import('three/addons/loaders/FBXLoader.js');
+    FBXLoader = mod.FBXLoader;
+  } catch (err) {
+    console.warn('[interiors] No se pudo importar FBXLoader:', err.message,
+      '— el NPC no se cargará. Posible causa: importmap sin entrada para FBXLoader.');
+    return null;
+  }
   const loader = new FBXLoader();
   let fbx;
   try {
@@ -690,7 +700,7 @@ function closeNpcMenu() {
   npcMenuEl = null;
 }
 
-
+function disposeGroup(group) {
   group.traverse(o => {
     if (o.geometry) o.geometry.dispose();
     if (o.material) {
