@@ -1,13 +1,18 @@
 /**
  * SebasPresent — Bank handlers (Slice 4b)
  * Endpoints: GET /api/bank, POST /api/bank/deposit, /withdraw, /swap
+ *
+ * Sesión 11c-2: capacidad subida de 500 → 1200 slots. El banco ya
+ * stackea todos los items por item_id en deposit (regardless del flag
+ * stackable del item), por lo que TODOS los items que tengas del mismo
+ * tipo ocupan un solo slot en el banco — comportamiento OSRS estándar.
  */
 
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { INVENTORY_SLOTS, pickInvSlot } from './inventory.js';
 
-export const BANK_MAX_SLOTS = 500;
+export const BANK_MAX_SLOTS = 1200;
 
 export async function handleGetBank(request, env) {
   const session = await requireSession(request, env);
