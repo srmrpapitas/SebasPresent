@@ -104,30 +104,32 @@ const WEAPON_TRANSFORMS = {
   //
   // Campo "hand": 'right' (default) o 'left'. Si no se pone, va a la derecha.
   '1h_sword': {
-    // Iteración 2: mango en la palma (position [0,0,0] centra en el bone),
-    // antes flotaba arriba/delante
+    // Iteración 4: bajar Y para que mango esté en la palma (estaba sobre la muñeca)
     scale: 65.0,
-    position: [0, 0, 0],
+    position: [0, -5, -3],
     rotation: [0, 0, -Math.PI / 2],
     hand: 'right',
   },
   '2h_sword': {
     scale: 80.0,
-    position: [0, 0, 0],
+    position: [0, -5, -3],
     rotation: [0, 0, -Math.PI / 2],
     hand: 'right',
   },
   'bow': {
-    scale: 200.0,
+    // Iteración 4: scale más razonable (estaba enorme en el suelo con 500)
+    // Rotación Z para que esté vertical en lugar de horizontal/plano.
+    scale: 250.0,
     position: [0, 0, 0],
-    rotation: [0, 0, 0],
+    rotation: [0, 0, -Math.PI / 2],
     hand: 'right',
   },
   'staff': {
-    // Mano izquierda, vertical hacia arriba estilo Gandalf
+    // Iteración 4: invertir rotación X (de PI/2 a -PI/2) para que el cabezal
+    // apunte hacia arriba estilo Gandalf (estaba con el cristal hacia abajo).
     scale: 80.0,
     position: [0, 0, 0],
-    rotation: [Math.PI / 2, 0, 0],
+    rotation: [-Math.PI / 2, 0, 0],
     hand: 'left',
   },
   'default': {
@@ -312,7 +314,22 @@ export class Character {
       this._equippedWeaponMesh = mesh;
       this._equippedWeaponId = weaponId;
       this._equippedWeaponHand = handName;
-      console.log(`[character] arma "${weaponId}" (${weaponType}) attached a ${handName} hand`);
+
+      // Diagnóstico: medir el bounding box real del mesh DESPUÉS de escalar.
+      // Si el size es ~0, el mesh está vacío o el modelo tiene origen raro.
+      // Si el size es muy grande, está cargado bien y el problema es de posición.
+      try {
+        const box = new THREE.Box3().setFromObject(mesh);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        let meshCount = 0;
+        mesh.traverse(o => { if (o.isMesh) meshCount++; });
+        console.log(`[character] arma "${weaponId}" (${weaponType}) attached a ${handName} hand. ` +
+          `bbox size: ${size.x.toFixed(2)}x${size.y.toFixed(2)}x${size.z.toFixed(2)}, ` +
+          `meshes: ${meshCount}, scale aplicado: ${tf.scale}`);
+      } catch (boxErr) {
+        console.log(`[character] arma "${weaponId}" attached, bbox calc fail:`, boxErr.message);
+      }
     } catch (err) {
       console.warn(`[character] attachWeapon failed:`, err.message);
     }
