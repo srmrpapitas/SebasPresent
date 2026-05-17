@@ -227,16 +227,27 @@ async function doAttackTick() {
   // o miss — en OSRS el personaje hace el gesto siempre). El hook global
   // lo expone world.js y rebota a character.playAttack().
   //
-  // Sesión 25: pasamos el stance UI activo (chop/slash/smash/block) para
-  // que character.js elija la animación de espada correspondiente
-  // (attack_1..4). Si el stance no es de espada o no está mapeado, el
-  // character hace cycle automático.
+  // Sesión 26: pasamos stance + weapon_type + cooldown_ms para que
+  // character.js elija la anim correcta (1H usa Punching, 2H usa
+  // sword_attack_N según stance) y la escale al tiempo del cooldown
+  // (anim termina justo cuando puedes pegar otra vez).
   if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
-    try { window.__playerPlayAttack(uiSelectedStance); } catch {}
+    try {
+      window.__playerPlayAttack(
+        uiSelectedStance,
+        result.weapon_type,
+        result.cooldown_ms
+      );
+    } catch {}
   }
 
   if (result.your_hit) {
-    feedLog('hit', `Le pegas a ${npcName} y le quitas ${result.your_damage} HP.`);
+    // Sesión 26 — Si fue crítico (solo 2H actualmente), enfatizar en el log
+    if (result.is_crit) {
+      feedLog('hit', `⚡ ¡CRÍTICO! Golpe demoledor a ${npcName}: ${result.your_damage} HP.`);
+    } else {
+      feedLog('hit', `Le pegas a ${npcName} y le quitas ${result.your_damage} HP.`);
+    }
     // Dispara el efecto visual de "recibí hit" en world.js (flash + jerk).
     // Hook global expuesto por world.js para no acoplar módulos.
     if (typeof window !== 'undefined' && typeof window.__worldFlashNpcHit === 'function') {
@@ -334,7 +345,13 @@ async function doAttackTick() {
     return;
   }
 
-  attackTimer = setTimeout(() => doAttackTick(), TICK_MS);
+  // Sesión 26 — Usar cooldown_ms del server (depende del arma equipada
+  // + stance activo) en lugar de un TICK_MS fijo. Si el server no lo
+  // devuelve (fallback), usamos TICK_MS=900ms global.
+  const nextTickMs = (result && typeof result.cooldown_ms === 'number')
+    ? result.cooldown_ms
+    : TICK_MS;
+  attackTimer = setTimeout(() => doAttackTick(), nextTickMs);
 }
 
 // ============================================================

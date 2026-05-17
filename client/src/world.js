@@ -618,11 +618,13 @@ function setupMarker() {
 // el `character` del player y la variable `combatTargetNpcId` que viven
 // aquí en world.js.
 if (typeof window !== 'undefined') {
-  // Sesión 25 — combat.js ahora pasa el stance UI (chop/slash/smash/block)
-  // para que character.js seleccione la anim de espada correcta. Si no hay
-  // arma equipada o no se pasa stance, hace cycle automático o usa punch.
-  window.__playerPlayAttack = (stanceKey) => {
-    try { character?.playAttack?.(stanceKey); } catch (e) { console.warn('[world] playAttack:', e); }
+  // Sesión 26 — combat.js pasa stance + weaponType + cooldownMs. El
+  // character usa weaponType para decidir qué FBX usar (1H=Punching,
+  // 2H=Sword_Attack_X según stance) y escala la anim a cooldownMs.
+  // Backwards compatible: si combat.js antiguo solo pasa stance, los
+  // otros params son undefined y character.js cae a defaults.
+  window.__playerPlayAttack = (stanceKey, weaponType, cooldownMs) => {
+    try { character?.playAttack?.(stanceKey, weaponType, cooldownMs); } catch (e) { console.warn('[world] playAttack:', e); }
   };
   // Slice 5d: animaciones de combate (engage/disengage = draw/sheath
   // espada; death/revive cuando mueres/respawneas).

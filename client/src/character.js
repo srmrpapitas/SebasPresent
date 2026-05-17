@@ -469,50 +469,61 @@ export class Character {
   }
 
   /**
-   * Sesión 25 — playAttack(stanceKey)
+   * Sesión 26 — playAttack(stanceKey, weaponType, cooldownMs)
    *
-   * stanceKey opcional: 'chop' | 'slash' | 'smash' | 'block' | null
-   *   - Si combatStance=true y stanceKey está en el mapping, usa esa anim.
-   *   - Si combatStance=true y no hay stanceKey, hace cycle automático 1→4.
-   *   - Si combatStance=false, usa punching.fbx (sin arma equipada).
+   * Decide qué anim usar según el ARMA equipada, no solo el stance:
+   *   - 1H sword     → Punching.fbx siempre (con escudo+espada se ve bien)
+   *   - 2H sword     → Sword_Attack_N según stance:
+   *                      chop=1, slash=2, smash=3, block=4
+   *   - Staff / Bow  → cycle automático sword_attack_1..4
+   *   - Unarmed      → Punching.fbx
    *
-   * Mapping stance → anim:
-   *   chop (accurate)     → attack_1
-   *   slash (aggressive)  → attack_2
-   *   smash (controlled)  → attack_3
-   *   block (defensive)   → attack_4
+   * cooldownMs: cuánto tiene que durar la anim (escala a ese tiempo).
+   * Si no se pasa, usa ATTACK_TICK_MS por defecto.
    */
-  playAttack(stanceKey) {
+  playAttack(stanceKey, weaponType, cooldownMs) {
     if (!this.loaded || this.isDead) return;
     if (this.isAttacking || this.isInTransition) return;
 
-    let action;
-    if (this.combatStance) {
+    const animMs = (typeof cooldownMs === 'number' && cooldownMs > 0)
+      ? cooldownMs
+      : ATTACK_TICK_MS;
+
+    let action = null;
+
+    // 1H sword o unarmed → SIEMPRE punching
+    if (weaponType === '1h_sword' || weaponType === 'unarmed' || !weaponType) {
+      action = this.actions.punching;
+    }
+    // 2H sword → mapping específico por stance
+    else if (weaponType === '2h_sword') {
       const stanceToAnim = { chop: 1, slash: 2, smash: 3, block: 4 };
       const animNum = stanceToAnim[stanceKey];
       if (animNum) {
         action = this.actions[`attack_${animNum}`] || this.actions.attack_1;
       } else {
-        // Sin stance específica: cycle automático (mantiene comportamiento previo)
+        // Sin stance: cycle automático
         this.attackCycle = (this.attackCycle % 4) + 1;
-        action = this.actions[`attack_${this.attackCycle}`]
-              || this.actions.attack_1
-              || this.actions.punching;
+        action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
       }
-      if (!action) action = this.actions.punching;
-    } else {
-      action = this.actions.punching;
     }
+    // Staff o bow → cycle automático sword_attack (no hay anim específica)
+    else if (weaponType === 'staff' || weaponType === 'bow') {
+      this.attackCycle = (this.attackCycle % 4) + 1;
+      action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
+    }
+    // Fallback
+    if (!action) action = this.actions.punching || this.actions.attack_1;
     if (!action) return;
 
-    this._scaleOneShot(action, ATTACK_TICK_MS);
+    this._scaleOneShot(action, animMs);
     this._crossFadeTo(action, 0.08);
     this.isAttacking = true;
 
     setTimeout(() => {
       this.isAttacking = false;
       this.current = null;
-    }, ATTACK_TICK_MS + 20);
+    }, animMs + 20);
   }
 
   playDeath() {
