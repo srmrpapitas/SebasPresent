@@ -1,5 +1,23 @@
 /**
- * SebasPresent — Combat module v2 (Slice 5a v2)
+ * SebasPresent — Combat module v2 (Slice 5a v2 + Sesión 17 hooks)
+ *
+ * Sesión 17: tras cada attack tick, dispara 3 efectos visuales via hooks
+ * globales registrados por damage_splat.js (a través de world.js):
+ *
+ *   window.__spawnXpDrops(xpMap)
+ *     Floating "+5 Ataque XP" arriba del minimapa. Una pildora por skill
+ *     con XP > 0 (1-4 simultáneas según stance).
+ *
+ *   window.__spawnPlayerSplat(damage, hit)
+ *     Cuadrado rojo/azul OSRS sobre el sprite del player cuando RECIBE
+ *     daño del NPC en el counter-attack.
+ *
+ *   window.__spawnLevelUpBanner(skillId, newLevel)
+ *     Banner centrado "¡Has subido a Nivel X de Ataque!" cuando hay
+ *     level up. Solo el primer skill que sube si hay varios.
+ *
+ * Si los hooks no están registrados (damage_splat no cargado todavía),
+ * los try/catch los ignoran silenciosamente.
  *
  * Cambios respecto a v1:
  *   - Feed estilo OSRS abajo izquierda (#combatFeed) en vez de toasts
@@ -19,6 +37,14 @@ import * as api from './api.js';
 const TICK_MS = 600;
 const POLL_INTERVAL_MS = 3000;
 const FEED_MAX_LINES = 50;
+
+// Sesión 17 — mapping skill_id interno → skill_id del catálogo nuevo
+const SKILL_ID_MAP = {
+  attack: 'attack',
+  strength: 'strength',
+  defence: 'defence',
+  hp: 'hitpoints',
+};
 
 let isInitialized = false;
 let isTabOpen = false;
@@ -205,14 +231,36 @@ async function doAttackTick() {
   if (typeof window !== 'undefined' && typeof window.__worldSpawnHitsplat === 'function') {
     try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
   }
+
+  // Sesión 17 — XP DROPS: pildoras flotantes arriba del minimapa por cada
+  // skill que ganó XP. Solo se muestran si damage_splat.js está cargado.
+  if (typeof window !== 'undefined' && typeof window.__spawnXpDrops === 'function' && result.xp_gained) {
+    try { window.__spawnXpDrops(result.xp_gained); } catch {}
+  }
+
   if (result.npc_hit !== null && result.npc_hit !== undefined) {
     if (result.npc_hit) feedLog('player-hit', `${npcName} te pega ${result.npc_damage} HP.`);
     else feedLog('player-miss', `${npcName} falla el ataque.`);
+
+    // Sesión 17 — PLAYER SPLAT: cuadrado rojo/azul sobre el player cuando
+    // recibe daño del NPC. damage=0 con miss → splat azul "0" OSRS-style.
+    if (typeof window !== 'undefined' && typeof window.__spawnPlayerSplat === 'function') {
+      try { window.__spawnPlayerSplat(result.npc_damage || 0, result.npc_hit); } catch {}
+    }
   }
+
   if (result.level_ups && result.level_ups.length) {
     for (const skill of result.level_ups) {
       const lvl = result.your_levels[skill];
       feedLog('levelup', `¡Subes a nivel ${lvl} de ${skillLabel(skill)}!`);
+    }
+    // Sesión 17 — LEVEL UP BANNER: solo el primer skill que sube (varios
+    // simultáneos es raro y un solo banner es más limpio que apilarlos).
+    if (typeof window !== 'undefined' && typeof window.__spawnLevelUpBanner === 'function') {
+      const firstSkill = result.level_ups[0];
+      const mappedId = SKILL_ID_MAP[firstSkill] || firstSkill;
+      const lvl = result.your_levels[firstSkill];
+      try { window.__spawnLevelUpBanner(mappedId, lvl); } catch {}
     }
   }
 
@@ -294,6 +342,92 @@ export function feedLog(type, text) {
 }
 
 // ============================================================
+// Sesión 18 — Sistema de armas dinámico estilo OSRS
+// ============================================================
+// El tab Combate muestra stances distintos según el arma equipada.
+// detectEquippedWeapon() hoy devuelve siempre 'unarmed' (no hay equipment
+// todavía). Cuando se añada equipment, solo hay que cambiar esta función.
+
+const WEAPON_STANCES = {
+  unarmed: {
+    name: 'Unarmed',
+    category: 'Unarmed',
+    hasSpecial: false,
+    stances: [
+      { id: 'punch', label: 'Punch', icon: '👊', server: 'accurate'   },
+      { id: 'kick',  label: 'Kick',  icon: '🦵', server: 'aggressive' },
+      { id: 'block', label: 'Block', icon: '🛡', server: 'defensive'  },
+    ],
+  },
+  // Preparado para futuro equipment (sesión 19+). No se renderizan hoy
+  // porque detectEquippedWeapon() devuelve siempre 'unarmed'.
+  '1h_sword': {
+    name: 'Bronze sword',
+    category: '1H Sword',
+    hasSpecial: false,
+    stances: [
+      { id: 'chop',  label: 'Chop',  icon: '⚔', server: 'accurate'   },
+      { id: 'slash', label: 'Slash', icon: '⚔', server: 'aggressive' },
+      { id: 'smash', label: 'Smash', icon: '💢', server: 'controlled' },
+      { id: 'block', label: 'Block', icon: '🛡', server: 'defensive'  },
+    ],
+  },
+  '2h_sword': {
+    name: 'Two-handed sword',
+    category: '2H Sword',
+    hasSpecial: true,
+    stances: [
+      { id: 'chop',  label: 'Chop',  icon: '⚔', server: 'accurate'   },
+      { id: 'slash', label: 'Slash', icon: '⚔', server: 'aggressive' },
+      { id: 'smash', label: 'Smash', icon: '💢', server: 'controlled' },
+      { id: 'block', label: 'Block', icon: '🛡', server: 'defensive'  },
+    ],
+  },
+  bow: {
+    name: 'Shortbow',
+    category: 'Bow',
+    hasSpecial: false,
+    stances: [
+      { id: 'accurate_bow', label: 'Accurate', icon: '🏹', server: 'accurate'   },
+      { id: 'rapid',        label: 'Rapid',    icon: '🏹', server: 'aggressive' },
+      { id: 'longrange',    label: 'Longrange',icon: '🎯', server: 'defensive'  },
+    ],
+  },
+  staff: {
+    name: 'Staff',
+    category: 'Staff',
+    hasSpecial: false,
+    stances: [
+      { id: 'bash',  label: 'Bash',  icon: '🔨', server: 'accurate'   },
+      { id: 'pound', label: 'Pound', icon: '💥', server: 'aggressive' },
+      { id: 'focus', label: 'Focus', icon: '✨', server: 'defensive'  },
+    ],
+  },
+};
+
+// Mapping server-stance → UI-stance-id para la weapon activa
+function uiStanceFromServer(weaponKey, serverStance) {
+  const w = WEAPON_STANCES[weaponKey];
+  if (!w) return null;
+  const match = w.stances.find(s => s.server === serverStance);
+  return match ? match.id : w.stances[0].id;
+}
+
+/**
+ * Detecta el arma equipada del player. Sesión 18: siempre 'unarmed'.
+ * Cuando exista equipment, leer el slot weapon y devolver la key correcta.
+ */
+function detectEquippedWeapon() {
+  // TODO sesión equipment: leer del inventario/equipment lo que lleva
+  // equipado en weapon slot y devolver la key de WEAPON_STANCES.
+  return 'unarmed';
+}
+
+// Estado local de UI: stance seleccionada y auto-retaliate.
+let uiSelectedStance = null;
+let autoRetaliate = false;  // TODO: persistir cuando server lo soporte
+
+// ============================================================
 // RENDER TAB
 // ============================================================
 
@@ -302,64 +436,71 @@ function render() {
   if (!state) { panelEl.innerHTML = '<div class="combat-loading">Cargando…</div>'; return; }
   const s = state.stats;
   const dead = s.hp_current <= 0;
-  const curStyle = state.combat_style || 'controlled';
+
+  const weaponKey = detectEquippedWeapon();
+  const weapon = WEAPON_STANCES[weaponKey];
+  const serverStance = state.combat_style || 'accurate';
+  // Sincronizar uiSelectedStance con server stance si no hay selección local
+  if (!uiSelectedStance || !weapon.stances.find(s => s.id === uiSelectedStance)) {
+    uiSelectedStance = uiStanceFromServer(weaponKey, serverStance);
+  }
+  const combatLvl = computeCombatLvl(s);
+
   panelEl.innerHTML = `
-    <div class="combat-root">
-      <div class="combat-header">
-        <div class="combat-title">Combate</div>
-        ${dead ? '<button class="combat-respawn" data-action="respawn">⚱ Respawn</button>' : ''}
+    <div class="combat-osrs">
+      <div class="combat-osrs-header">
+        <div class="combat-osrs-weapon">${escapeHtml(weapon.name)}</div>
+        <div class="combat-osrs-cb-level">Combat Lvl: <b>${combatLvl}</b></div>
       </div>
-      <div class="combat-hp-row">
-        <div class="combat-hp-label">HP</div>
-        <div class="combat-hp-bar">
-          <div class="combat-hp-fill" style="width:${pctFill(s.hp_current, s.hp_max)}%"></div>
-          <div class="combat-hp-text">${s.hp_current} / ${s.hp_max}</div>
+
+      <div class="combat-osrs-hp-row">
+        <div class="combat-osrs-hp-bar">
+          <div class="combat-osrs-hp-fill" style="width:${pctFill(s.hp_current, s.hp_max)}%"></div>
+          <div class="combat-osrs-hp-text">${s.hp_current} / ${s.hp_max}</div>
         </div>
       </div>
-      <div class="combat-styles-row">
-        ${renderStyleBtn('accurate',   '🎯', 'Preciso',     'Atk', curStyle)}
-        ${renderStyleBtn('aggressive', '💢', 'Agresivo',    'Str', curStyle)}
-        ${renderStyleBtn('defensive',  '🛡', 'Defensivo',   'Def', curStyle)}
-        ${renderStyleBtn('controlled', '⚖', 'Equilibrado', 'Mix', curStyle)}
+
+      ${dead ? '<button class="combat-respawn" data-action="respawn">⚱ Respawn</button>' : ''}
+
+      <div class="combat-osrs-stances ${weapon.stances.length === 3 ? 'stances-3' : 'stances-4'}">
+        ${weapon.stances.map(st => `
+          <button class="combat-osrs-stance ${st.id === uiSelectedStance ? 'selected' : ''}"
+                  data-action="ui-stance" data-stance-id="${st.id}" data-server-style="${st.server}">
+            <div class="combat-osrs-stance-icon">${st.icon}</div>
+            <div class="combat-osrs-stance-label">${st.label}</div>
+          </button>
+        `).join('')}
       </div>
-      <div class="combat-skills">
-        ${renderSkill('attack', '⚔', s.attack)}
-        ${renderSkill('strength', '💪', s.strength)}
-        ${renderSkill('defence', '🛡', s.defence)}
-        ${renderSkill('hp', '❤', s.hp)}
-      </div>
-      <div class="combat-npcs-label">Cerca de ti</div>
-      <div class="combat-npcs">${renderNpcs(state.npcs)}</div>
+
+      <button class="combat-osrs-retaliate ${autoRetaliate ? 'on' : 'off'}" data-action="toggle-retaliate">
+        <span class="combat-osrs-retaliate-icon">🛡</span>
+        Auto Retaliate (${autoRetaliate ? 'On' : 'Off'})
+      </button>
+
+      ${weapon.hasSpecial ? `
+        <div class="combat-osrs-special">
+          <div class="combat-osrs-special-label">Special Attack: 100%</div>
+          <div class="combat-osrs-special-bar"><div class="combat-osrs-special-fill" style="width:100%"></div></div>
+        </div>` : ''}
+
+      <div class="combat-osrs-category">Category: ${weapon.category}</div>
+
+      <div class="combat-osrs-npcs-label">Cerca de ti</div>
+      <div class="combat-osrs-npcs">${renderNpcs(state.npcs)}</div>
     </div>`;
   attachHandlers();
 }
 
-// Slice 5b — un botón de estilo de combate estilo OSRS.
-function renderStyleBtn(key, icon, label, sub, current) {
-  const selected = current === key ? 'selected' : '';
-  return `
-    <button class="combat-style-btn ${selected}" data-action="style" data-style="${key}">
-      <div class="combat-style-icon">${icon}</div>
-      <div class="combat-style-label">${label}</div>
-      <div class="combat-style-sub">${sub}</div>
-    </button>`;
-}
-
-function renderSkill(key, icon, sk) {
-  const range = Math.max(1, sk.xp_next || 1);
-  const pct = Math.min(100, Math.round((sk.xp / range) * 100));
-  return `
-    <div class="combat-skill">
-      <div class="combat-skill-icon">${icon}</div>
-      <div class="combat-skill-body">
-        <div class="combat-skill-top">
-          <span class="combat-skill-name">${skillLabel(key)}</span>
-          <span class="combat-skill-level">${sk.level}</span>
-        </div>
-        <div class="combat-skill-bar"><div class="combat-skill-fill" style="width:${pct}%"></div></div>
-        <div class="combat-skill-xp">${formatXp(sk.xp)} XP</div>
-      </div>
-    </div>`;
+// Combat level OSRS-style. Replica skills_engine.combatLevel pero local
+// porque no queremos acoplar combat.js a skills.js todavía.
+function computeCombatLvl(stats) {
+  const att = stats.attack?.level || 1;
+  const str = stats.strength?.level || 1;
+  const def = stats.defence?.level || 1;
+  const hp  = stats.hp?.level || 10;
+  const base = (def + hp) / 4;
+  const melee = (att + str) * 13 / 40;
+  return Math.floor(base + melee);
 }
 
 function renderNpcs(npcs) {
@@ -406,19 +547,43 @@ function attachHandlers() {
           }
           feedLog('info', '¡Estas de vuelta!');
         } catch (e) { feedLog('warning', e.message || 'Error'); }
+      } else if (action === 'ui-stance') {
+        // Sesión 18 — Click en stance OSRS (Punch/Kick/Block/etc).
+        // El data-server-style mapea a accurate/aggressive/defensive/controlled.
+        const stanceId = el.dataset.stanceId;
+        const serverStyle = el.dataset.serverStyle;
+        if (!stanceId || !serverStyle) return;
+        const prev = state?.combat_style;
+        const prevUi = uiSelectedStance;
+        try {
+          uiSelectedStance = stanceId;
+          if (state) state.combat_style = serverStyle;
+          render();
+          await api.setCombatStyle(serverStyle);
+        } catch (e) {
+          uiSelectedStance = prevUi;
+          if (state) state.combat_style = prev;
+          render();
+          feedLog('warning', e.message || 'No se pudo cambiar la postura.');
+        }
+      } else if (action === 'toggle-retaliate') {
+        // Sesión 18 — Auto Retaliate (local-only por ahora; cuando el server
+        // soporte el flag, mandar POST /api/combat/retaliate).
+        autoRetaliate = !autoRetaliate;
+        render();
       } else if (action === 'style') {
-        // Slice 5b — cambia el estilo de combate del user
+        // Legacy: botones viejos de "style" (accurate/aggressive/defensive/
+        // controlled). Mantenido por compatibilidad si algún otro código
+        // los renderiza, aunque el nuevo UI usa ui-stance.
         const style = el.dataset.style;
         if (!style) return;
         const prev = state?.combat_style;
         try {
-          // Optimistic update: actualiza UI antes de la respuesta del server
           if (state) state.combat_style = style;
           render();
           await api.setCombatStyle(style);
           feedLog('info', `Estilo: ${combatStyleLabel(style)}.`);
         } catch (e) {
-          // Revert on error
           if (state) state.combat_style = prev;
           render();
           feedLog('warning', e.message || 'No se pudo cambiar el estilo.');
@@ -446,54 +611,267 @@ function ensureStyles() {
   const style = document.createElement('style');
   style.id = 'combat-styles-css';
   style.textContent = `
-    .combat-styles-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4px;
-      padding: 8px 4px;
-      margin: 4px 0;
-      border-top: 1px solid rgba(200, 160, 67, 0.25);
-      border-bottom: 1px solid rgba(200, 160, 67, 0.25);
+    /* Sesión 18 — Tab Combate estilo OSRS clásico */
+    .combat-osrs {
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-family: 'Cinzel', serif;
+      color: #e8c560;
     }
-    .combat-style-btn {
-      background: rgba(30, 22, 14, 0.85);
+    .combat-osrs-header {
+      text-align: center;
+      padding: 4px 0 6px 0;
+      border-bottom: 1px solid rgba(200, 160, 67, 0.3);
+    }
+    .combat-osrs-weapon {
+      font-family: 'Cinzel', serif;
+      font-size: 15px;
+      font-weight: 900;
+      color: #fff8d0;
+      letter-spacing: 0.04em;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+      line-height: 1.2;
+    }
+    .combat-osrs-cb-level {
+      font-family: 'IM Fell English', serif;
+      font-size: 12px;
+      color: #c8a043;
+      margin-top: 2px;
+    }
+    .combat-osrs-cb-level b { color: #ffd060; }
+
+    /* HP bar dentro del tab */
+    .combat-osrs-hp-row {
+      padding: 0 4px;
+    }
+    .combat-osrs-hp-bar {
+      position: relative;
+      height: 14px;
+      background: rgba(40, 25, 15, 0.95);
       border: 1.5px solid #5a4a30;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .combat-osrs-hp-fill {
+      height: 100%;
+      background: linear-gradient(180deg, #4abc4a, #2e7a2e);
+      transition: width 0.3s;
+    }
+    .combat-osrs-hp-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'IM Fell English', serif;
+      font-size: 11px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+      line-height: 1;
+    }
+
+    /* Grid de stances: 3 columnas si hay 3 (Unarmed/Staff/Bow),
+       2 columnas × 2 filas si hay 4 (1H/2H Sword) */
+    .combat-osrs-stances {
+      display: grid;
+      gap: 6px;
+    }
+    .combat-osrs-stances.stances-3 { grid-template-columns: repeat(3, 1fr); }
+    .combat-osrs-stances.stances-4 { grid-template-columns: repeat(2, 1fr); }
+
+    .combat-osrs-stance {
+      background: linear-gradient(180deg, rgba(80, 55, 30, 0.95), rgba(50, 30, 18, 0.95));
+      border: 2px solid #5a4a30;
       border-radius: 4px;
-      padding: 6px 2px;
-      color: rgba(232, 197, 96, 0.7);
+      padding: 10px 4px;
       cursor: pointer;
-      transition: transform 0.1s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      transition: transform 0.08s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 3px;
-      font-family: 'IM Fell English', serif;
+      justify-content: center;
+      gap: 4px;
+      min-height: 64px;
+      color: rgba(232, 197, 96, 0.75);
+      font-family: 'Cinzel', serif;
+    }
+    .combat-osrs-stance:active { transform: scale(0.94); }
+    .combat-osrs-stance.selected {
+      background: linear-gradient(180deg, rgba(180, 60, 40, 0.95), rgba(120, 30, 20, 0.95));
+      border-color: #ff6040;
+      box-shadow: 0 0 14px rgba(255, 96, 64, 0.45), inset 0 0 6px rgba(255, 96, 64, 0.25);
+      color: #fff8d0;
+    }
+    .combat-osrs-stance-icon {
+      font-size: 24px;
+      line-height: 1;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+    }
+    .combat-osrs-stance-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    }
+
+    /* Auto Retaliate */
+    .combat-osrs-retaliate {
+      background: linear-gradient(180deg, rgba(60, 45, 30, 0.95), rgba(35, 22, 12, 0.95));
+      border: 2px solid #5a4a30;
+      border-radius: 4px;
+      padding: 10px 12px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
       user-select: none;
+      color: #e8c560;
+      font-family: 'Cinzel', serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.08s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .combat-osrs-retaliate:active { transform: scale(0.97); }
+    .combat-osrs-retaliate.on {
+      border-color: #4abc4a;
+      box-shadow: 0 0 12px rgba(74, 188, 74, 0.35);
+      color: #b4f4b4;
+    }
+    .combat-osrs-retaliate-icon {
+      font-size: 16px;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));
+    }
+
+    /* Special Attack bar (solo arms 2H) */
+    .combat-osrs-special {
+      margin: 4px 0;
+    }
+    .combat-osrs-special-label {
+      font-family: 'IM Fell English', serif;
+      font-size: 11px;
+      color: #4abc4a;
+      text-align: center;
+      margin-bottom: 3px;
+    }
+    .combat-osrs-special-bar {
+      height: 10px;
+      background: rgba(40, 25, 15, 0.95);
+      border: 1.5px solid #5a4a30;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .combat-osrs-special-fill {
+      height: 100%;
+      background: linear-gradient(180deg, #4abc4a, #2e7a2e);
+      transition: width 0.4s;
+    }
+
+    /* Category footer */
+    .combat-osrs-category {
+      text-align: center;
+      font-family: 'IM Fell English', serif;
+      font-size: 11px;
+      color: rgba(200, 160, 67, 0.7);
+      padding: 4px 0;
+      border-top: 1px solid rgba(200, 160, 67, 0.2);
+    }
+
+    /* NPCs cerca (mantenemos esta sección, útil) */
+    .combat-osrs-npcs-label {
+      font-family: 'Cinzel', serif;
+      font-size: 11px;
+      color: #c8a043;
+      text-align: center;
+      letter-spacing: 0.04em;
+      margin-top: 4px;
+    }
+    .combat-osrs-npcs {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    /* Reutilizamos clases combat-npc del CSS viejo, pero por si no están
+       en style.css los definimos básicos aquí. */
+    .combat-npc {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 6px;
+      background: rgba(30, 22, 14, 0.85);
+      border: 1px solid #5a4a30;
+      border-radius: 3px;
+    }
+    .combat-npc.engaged { border-color: #ff6040; }
+    .combat-npc.far { opacity: 0.55; }
+    .combat-npc-info { flex: 1 1 auto; min-width: 0; }
+    .combat-npc-name {
+      font-size: 11px;
+      color: #fff8d0;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .combat-npc-hp-bar {
+      height: 4px;
+      background: rgba(80, 30, 30, 0.9);
+      border-radius: 2px;
+      margin: 2px 0;
+      overflow: hidden;
+    }
+    .combat-npc-hp-fill {
+      height: 100%;
+      background: #4abc4a;
+    }
+    .combat-npc-meta {
+      font-size: 9px;
+      color: rgba(200, 160, 67, 0.7);
+      font-family: 'IM Fell English', serif;
+    }
+    .combat-npc-attack {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      background: rgba(120, 30, 20, 0.95);
+      border: 1.5px solid #c8a043;
+      border-radius: 3px;
+      color: #ffd060;
+      font-size: 13px;
+      cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
-    .combat-style-btn:active {
-      transform: scale(0.94);
+    .combat-npc-attack:active { transform: scale(0.9); }
+
+    .combat-respawn {
+      align-self: center;
+      padding: 8px 18px;
+      background: linear-gradient(180deg, #c84830, #802018);
+      border: 2px solid #ffaa44;
+      color: #fff8d0;
+      font-family: 'Cinzel', serif;
+      font-weight: 700;
+      font-size: 13px;
+      border-radius: 4px;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(255,100,50,0.5);
     }
-    .combat-style-btn.selected {
-      background: linear-gradient(180deg, rgba(120, 80, 30, 0.95) 0%, rgba(80, 50, 20, 0.95) 100%);
-      border-color: #e8c560;
-      box-shadow: 0 0 10px rgba(232, 197, 96, 0.45), inset 0 0 6px rgba(232, 197, 96, 0.25);
-      color: #ffe590;
-    }
-    .combat-style-icon {
-      font-size: 16px;
-      line-height: 1;
-    }
-    .combat-style-label {
-      font-size: 10px;
-      font-weight: bold;
-      line-height: 1;
-      letter-spacing: 0.02em;
-    }
-    .combat-style-sub {
-      font-size: 9px;
-      opacity: 0.75;
-      line-height: 1;
+    .combat-loading, .combat-error, .combat-empty {
+      text-align: center;
+      padding: 12px;
+      color: rgba(200, 160, 67, 0.7);
+      font-family: 'IM Fell English', serif;
+      font-size: 12px;
     }
   `;
   document.head.appendChild(style);

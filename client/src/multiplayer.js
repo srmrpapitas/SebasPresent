@@ -1,13 +1,19 @@
 /**
- * SebasPresent — Multiplayer module (Sesión 3 refactor)
+ * SebasPresent — Multiplayer module (Sesión 3 refactor + Sesión 18 HP bar)
  *
  * Slice 5c.5 — peers locales (otros jugadores cercanos).
+ *
+ * Sesión 18: añadida HP bar doble cara (verde/rojo) sobre cada peer,
+ * mismo estilo que sobre el player local en world.js. Lee hp_current /
+ * hp_max del payload del server. Si el server no los manda todavía
+ * (TODO: extender /api/world/peers), se muestra 100% lleno por defecto.
  *
  * Responsabilidades:
  *   - Heartbeat: cada 500ms envía tu posición/yaw/estado al server.
  *   - Poll: cada 500ms pide al server los peers en tu radio.
  *   - Render: por cada peer, crea un grupo 3D (clon de Nico si está
- *     disponible, fallback cápsula si no) + un nameTag DOM flotante.
+ *     disponible, fallback cápsula si no) + un nameTag DOM flotante
+ *     + una HP bar DOM flotante.
  *   - Interpolación: cada frame, mueve cada peer suavemente entre el
  *     último snapshot recibido y el actual (los snapshots vienen cada
  *     ~500ms; interpolamos en MP_PEER_INTERP_MS para que no haya teleports).
@@ -50,6 +56,7 @@ const MP_PEER_TIMEOUT_MS = 10_000;     // sin update tras esto → peer offline
 
 const NICO_Y_OFFSET = -1.03;           // mismo offset que el player principal
 const NAME_TAG_HEIGHT = 2.0;           // m sobre el grupo del peer
+const HP_BAR_OFFSET_PX = 16;           // px arriba del name tag
 
 // ============================================================
 // Estado del módulo (privado)
@@ -74,6 +81,9 @@ let _lastPlayerX = 0, _lastPlayerZ = 0, _lastSpeedTime = 0;
 
 let started = false;
 
+// Sesión 18 — estilos CSS para HP bar de peers (inyectados una sola vez)
+let hpBarStylesInjected = false;
+
 // ============================================================
 // API pública
 // ============================================================
@@ -97,6 +107,9 @@ export function start(opts) {
   mpInFlightPeers = false;
   mpPlayerState = 'idle';
   _lastSpeedTime = 0;
+
+  // Sesión 18 — estilos HP bar
+  ensurePeerHpBarStyles();
 
   // Hook de debug accesible desde Eruda
   if (typeof window !== 'undefined') {
@@ -189,7 +202,7 @@ export function update(dt) {
       }
     }
 
-    // Name tag DOM sobre la cabeza
+    // Name tag + HP bar DOM sobre la cabeza
     if (peer.nameTagDiv) updatePeerNameTag(peer);
   }
 }
@@ -315,6 +328,13 @@ function upsertPeer(p) {
   peer.state = p.state || 'idle';
   peer.interpStart = performance.now();
   peer.lastUpdate = Date.now();
+
+  // Sesión 18 — actualizar HP del peer si el server lo manda.
+  // TODO server: extender /api/world/peers para que devuelva hp_current y
+  // hp_max por cada peer. Mientras no lo haga, dejamos los valores como
+  // están (peer.hp/peer.hpMax se inician a defaults en createPeer).
+  if (typeof p.hp_current === 'number') peer.hp = p.hp_current;
+  if (typeof p.hp_max === 'number') peer.hpMax = p.hp_max;
 }
 
 function createPeer(p) {
@@ -417,8 +437,17 @@ function createPeer(p) {
   });
   document.body.appendChild(nameTagDiv);
 
+  // Sesión 18 — HP bar doble cara DOM sobre la cabeza del peer.
+  // Mismo estilo que la del player local (definido en world.js como
+  // .player-hpbar). Aquí usamos .peer-hpbar para que tengan su propio
+  // namespace y estilos en este módulo.
+  const hpBarDiv = document.createElement('div');
+  hpBarDiv.className = 'peer-hpbar';
+  hpBarDiv.innerHTML = '<div class="peer-hpbar-fill" style="width:100%"></div>';
+  document.body.appendChild(hpBarDiv);
+
   return {
-    group, nameTagDiv,
+    group, nameTagDiv, hpBarDiv,
     mixer: peerMixer,
     actions: peerActions,
     currentAction: peerActions.idle || null,
@@ -429,6 +458,9 @@ function createPeer(p) {
     interpStart: performance.now(),
     lastUpdate: Date.now(),
     username: p.username,
+    // HP por defecto al 100% hasta que el server lo mande.
+    hp:    typeof p.hp_current === 'number' ? p.hp_current : 10,
+    hpMax: typeof p.hp_max     === 'number' ? p.hp_max     : 10,
   };
 }
 
@@ -447,6 +479,8 @@ function removePeer(userId) {
     });
   }
   if (peer.nameTagDiv) peer.nameTagDiv.remove();
+  // Sesión 18 — limpiar HP bar del peer
+  if (peer.hpBarDiv) peer.hpBarDiv.remove();
   mpLastPeerMap.delete(userId);
 }
 
@@ -459,6 +493,8 @@ function updatePeerNameTag(peer) {
   v.project(camera);
   if (v.z > 1 || v.z < -1) {
     peer.nameTagDiv.style.display = 'none';
+    // Sesión 18 — esconder HP bar también si el peer está fuera de cámara
+    if (peer.hpBarDiv) peer.hpBarDiv.style.display = 'none';
     return;
   }
   const rect = canvas.getBoundingClientRect();
@@ -467,6 +503,54 @@ function updatePeerNameTag(peer) {
   peer.nameTagDiv.style.left = sx + 'px';
   peer.nameTagDiv.style.top  = sy + 'px';
   peer.nameTagDiv.style.display = 'block';
+
+  // Sesión 18 — HP bar doble cara justo arriba del nametag
+  if (peer.hpBarDiv) {
+    peer.hpBarDiv.style.left = sx + 'px';
+    peer.hpBarDiv.style.top  = (sy - HP_BAR_OFFSET_PX) + 'px';
+    peer.hpBarDiv.style.display = 'flex';
+    const pct = peer.hpMax > 0
+      ? Math.max(0, Math.min(100, (peer.hp / peer.hpMax) * 100))
+      : 100;
+    const fill = peer.hpBarDiv.querySelector('.peer-hpbar-fill');
+    if (fill) fill.style.width = pct + '%';
+  }
+}
+
+// ============================================================
+// Sesión 18 — Estilos HP bar de peers
+// ============================================================
+function ensurePeerHpBarStyles() {
+  if (hpBarStylesInjected) return;
+  if (document.getElementById('peer-hpbar-styles')) {
+    hpBarStylesInjected = true;
+    return;
+  }
+  const style = document.createElement('style');
+  style.id = 'peer-hpbar-styles';
+  style.textContent = `
+    .peer-hpbar {
+      position: fixed;
+      z-index: 41;
+      pointer-events: none;
+      transform: translate(-50%, -100%);
+      width: 60px;
+      height: 7px;
+      border: 1.5px solid #000;
+      border-radius: 2px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.7);
+      background: #5a0e0e;
+      overflow: hidden;
+      display: none;
+    }
+    .peer-hpbar-fill {
+      height: 100%;
+      background: linear-gradient(180deg, #4abc4a, #2e7a2e);
+      transition: width 0.25s;
+    }
+  `;
+  document.head.appendChild(style);
+  hpBarStylesInjected = true;
 }
 
 // ============================================================
@@ -491,6 +575,7 @@ function debugListPlayers() {
       x: p.group.position.x.toFixed(1),
       z: p.group.position.z.toFixed(1),
       state: p.state,
+      hp: p.hp + '/' + p.hpMax,
       lastUpdate_ms_ago: Date.now() - p.lastUpdate,
     });
   }
