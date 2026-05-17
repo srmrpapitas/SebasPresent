@@ -81,9 +81,35 @@ export function setup(opts) {
   // Si no, al soltar → TAP.
   let pointer = null;
 
+  // Helper: ¿es UI real del juego (botón, joystick, modal)? Si lo es,
+  // el evento se respeta y NO se trata como drag de cámara. Si NO lo es
+  // (canvas, body, overlay transparente sin función UI), procesamos drag.
+  function isUiElement(t) {
+    if (!t) return false;
+    if (t === canvas) return false;
+    // Interactivos nativos
+    if (t.tagName === 'BUTTON' || t.tagName === 'INPUT' || t.tagName === 'SELECT' ||
+        t.tagName === 'TEXTAREA' || t.tagName === 'A' || t.tagName === 'LABEL') return true;
+    // O dentro de uno
+    if (t.closest && t.closest('button, input, select, textarea, a, label, [role="button"]')) return true;
+    // Overlays/widgets conocidos del juego
+    if (t.closest && t.closest(
+      '#joystick, .joystick, .osrs-sidebar, #sidebar, .sidebar, ' +
+      '.ge-overlay, #interiorNpcMenu, #interiorExitBtn, ' +
+      '.modal, [role="dialog"], .osrs-tab-pane, .tab-pane, ' +
+      '#fullMapOverlay, #worldMinimap, #minimapOpenMap, ' +
+      '#playerNameTag, .player-name-tag, ' +
+      '.hud, .osrs-hud, #worldRegion, #worldBanner, #worldTooltip'
+    )) return true;
+    return false;
+  }
+
   function onPointerDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
-    if (e.target !== canvas) return;
+    // Filtro mejorado: aceptar pointerdown sobre el canvas O sobre cualquier
+    // elemento que NO sea UI conocida. Antes filtraba con `e.target !== canvas`,
+    // lo cual rompía el drag si algún overlay transparente cubría el canvas.
+    if (e.target !== canvas && isUiElement(e.target)) return;
 
     pointer = {
       x0: e.clientX, y0: e.clientY,
