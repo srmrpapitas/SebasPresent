@@ -56,7 +56,9 @@ const BIOME_TEXTURE_URLS = {
   plaza:      `${R2_BASE}/terrain/textures/plaza_diff_1k.jpg`,
   snow:       `${R2_BASE}/terrain/textures/snow_diff_1k.jpg`,
   desert:     `${R2_BASE}/terrain/textures/desert_diff_1k.jpg`,
-  // plains, jungle, beach → sin textura, vertex color fallback
+  beach:      `${R2_BASE}/terrain/textures/beach_diff_1k.jpg`,
+  plains:     `${R2_BASE}/terrain/textures/plains_diff_1k.jpg`,
+  // jungle → sin textura, vertex color fallback (verde oscuro de selva)
 };
 
 // Cache de THREE.Texture cargadas. Vacío hasta que loadBiomeTextures() termine.
@@ -122,26 +124,38 @@ const TREE_GLB_URLS = {
 
 const DECORATION_GLB_URLS = {
   stones:     `${R2_BASE}/decoration/stones.glb`,
-  cave_rocks: `${R2_BASE}/decoration/cave_rocks.glb`,
+  rocks:      `${R2_BASE}/decoration/rocks.glb`,   // Sesión 12: reemplaza cave_rocks (que tenía floor/ceiling/pilars de cueva volando)
   grass:      `${R2_BASE}/decoration/grass.glb`,
 };
+
+// Sesión 12 — Landmark único usando los cliffs gigantes del rocks.glb.
+// Cada landmark usa UN mesh específico del GLB (filtrado por nombre).
+// Tamaño "targetHeight" final visible en m: el GLB original tiene cliffs
+// de 1300-2100m que escalamos a estos valores.
+const LANDMARK_GLB_URL = `${R2_BASE}/decoration/rocks.glb`;
+const LANDMARK_DEFS = [
+  // name → mesh hijo en rocks.glb que se usa como geometry.
+  { name: 'Black Rock',                 meshName: 'cliff1_cliffs_0', height: 80,  color: 0x2a2018 },
+  { name: "Zuckerberg's Dungeon",       meshName: 'cliff2_cliffs_0', height: 60,  color: 0x3a2828 },
+  { name: 'Mbappé Dictator Mountain',   meshName: 'cliff3_cliffs_0', height: 120, color: 0xc8d8e8 },
+];
 
 const BIOME_DECORATION = {
   plaza:      { density: 0,  pool: [] },
   plains:     { density: 4,  pool: [['stones', 2], ['grass', 5]] },
   forest:     { density: 6,  pool: [['stones', 2], ['grass', 4]] },
-  beach:      { density: 3,  pool: [['stones', 3]] },
-  desert:     { density: 3,  pool: [['stones', 4], ['cave_rocks', 1]] },
-  snow:       { density: 4,  pool: [['stones', 3], ['cave_rocks', 2]] },
+  beach:      { density: 3,  pool: [['stones', 3], ['rocks', 1]] },
+  desert:     { density: 3,  pool: [['stones', 4], ['rocks', 1]] },
+  snow:       { density: 4,  pool: [['stones', 3], ['rocks', 2]] },
   jungle:     { density: 5,  pool: [['stones', 1], ['grass', 4]] },
   swamp:      { density: 5,  pool: [['stones', 1], ['grass', 6]] },
-  wilderness: { density: 5,  pool: [['stones', 2], ['cave_rocks', 4]] },
+  wilderness: { density: 5,  pool: [['stones', 2], ['rocks', 4]] },
 };
 
 const DECORATION_CONFIG = {
-  stones:     { scaleMin: 0.8, scaleMax: 1.6 },
-  cave_rocks: { scaleMin: 0.6, scaleMax: 1.2 },
-  grass:      { scaleMin: 1.0, scaleMax: 2.0 },
+  stones: { scaleMin: 0.8, scaleMax: 1.6 },
+  rocks:  { scaleMin: 0.4, scaleMax: 0.9 },  // las rocks del GLB son grandes (50-350m bbox), reducir mucho
+  grass:  { scaleMin: 1.0, scaleMax: 2.0 },
 };
 
 export const PLACES = [
@@ -165,6 +179,14 @@ export const PLACES = [
   { name: 'Ruinas de Antaño', type: 'ruins', x: -1500, z:  -500, color: 0x6a4030, biome: 'wilderness' },
   { name: 'Altar del Vacío',  type: 'altar', x: -1700, z:   500, color: 0x4a1a3a, biome: 'wilderness' },
   { name: 'Corazón Roto',     type: 'boss',  x: -1850, z:     0, color: 0x8a1a1a, biome: 'wilderness' },
+
+  // Sesión 12 — Landmarks únicos (cliffs del rocks.glb). type='landmark' los
+  // diferencia de places normales: se renderizan con un mesh GLB específico
+  // en lugar de geometría procedural. La propiedad 'modelMesh' indica qué
+  // mesh hijo del GLB usar.
+  { name: 'Black Rock',                 type: 'landmark', x: -1700, z: -1700, color: 0x2a2018, biome: 'wilderness', modelMesh: 'cliff1_cliffs_0', height: 80  },
+  { name: "Zuckerberg's Dungeon",       type: 'landmark', x: -1800, z:  1500, color: 0x3a2828, biome: 'wilderness', modelMesh: 'cliff2_cliffs_0', height: 60  },
+  { name: 'Mbappé Dictator Mountain',   type: 'landmark', x:   800, z: -1850, color: 0xc8d8e8, biome: 'snow',       modelMesh: 'cliff3_cliffs_0', height: 120 },
 ];
 
 const PLACES_BY_CHUNK = new Map();
@@ -234,6 +256,13 @@ export function stop() {
     }
     DECORATION_GEOMS = null;
   }
+  // Sesión 12 — landmark meshes
+  if (LANDMARK_GEOMS) {
+    for (const parts of Object.values(LANDMARK_GEOMS)) {
+      for (const p of parts) { p.geometry?.dispose(); p.material?.dispose(); }
+    }
+    LANDMARK_GEOMS = null;
+  }
   // Sesión 12 — limpiar texturas
   for (const tex of Object.values(BIOME_TEXTURES)) tex?.dispose?.();
   for (const k of Object.keys(BIOME_TEXTURES)) delete BIOME_TEXTURES[k];
@@ -293,7 +322,11 @@ export function biomeAt(x, z) {
 
 export function getRegionInfo(x, z) {
   for (const p of PLACES) {
-    const r = p.type === 'city' ? 130 : p.type === 'village' ? 80 : 60;
+    // Sesión 12 — landmarks tienen radio proporcional a su altura
+    const r = p.type === 'city' ? 130
+            : p.type === 'village' ? 80
+            : p.type === 'landmark' ? Math.max(150, (p.height || 60) * 1.5)
+            : 60;
     if (Math.hypot(p.x - x, p.z - z) < r) {
       return { name: p.name, type: p.type, isWild: p.biome === 'wilderness', isPlace: true };
     }
@@ -569,23 +602,91 @@ async function loadGLBTrees() {
 // ============================================================
 // Decoration GLBs
 // ============================================================
+// Sesión 12 — Cache de geometrías de mesh individuales del rocks.glb
+// indexadas por nombre. Usado para landmarks únicos (cada uno usa UN mesh
+// específico del GLB).
+let LANDMARK_GEOMS = null;
+
 async function loadGLBDecorations() {
   const entries = Object.entries(DECORATION_GLB_URLS);
   if (entries.length === 0) return;
   DECORATION_GEOMS = {};
+  LANDMARK_GEOMS = {};
   const loader = new GLTFLoader();
   await Promise.all(entries.map(async ([typeId, url]) => {
     try {
       const gltf = await loader.loadAsync(url);
-      const baked = bakeGlbModel(gltf.scene, typeId === 'grass' ? 0.4 : 1.0,
-        typeId === 'grass' ? 0x6a9a3a : 0x808078);
-      if (!baked) return;
-      DECORATION_GEOMS[typeId] = { id: typeId, glbParts: baked.parts };
-      console.log(`Loaded decoration '${typeId}'`);
+
+      if (typeId === 'rocks') {
+        // Sesión 12 — rocks.glb tiene 9 meshes: 6 smallrocks + 1 cluster + 3 cliffs.
+        // Para DECORACIÓN solo usamos smallrocks + cluster (cliffs son demasiado
+        // grandes incluso escalados). Los cliffs se cachean en LANDMARK_GEOMS
+        // para usarse en buildPlaceStructure(type='landmark').
+        const smallMeshes = [];
+        gltf.scene.traverse(obj => {
+          if (!obj.isMesh) return;
+          const n = obj.name || '';
+          if (n.startsWith('smallrock') || n.startsWith('cluster')) {
+            smallMeshes.push(obj);
+          } else if (n.startsWith('cliff')) {
+            // Cliff individual → cache en LANDMARK_GEOMS por su nombre
+            cacheLandmarkMesh(obj, n);
+          }
+          // floor/ceiling/pilars ya están filtrados en el GLB limpio,
+          // pero por si acaso, los ignoramos.
+        });
+
+        if (smallMeshes.length === 0) {
+          console.warn(`[terrain] rocks.glb cargado pero no se encontraron meshes 'smallrock*' útiles`);
+        } else {
+          // Bakear cada smallrock como su propia "parte" del DECORATION_GEOMS.
+          // Cada part es una rock distinta — el placer instancied elige una al azar.
+          const parts = [];
+          for (const m of smallMeshes) {
+            const wrapper = new THREE.Group();
+            wrapper.add(m.clone());
+            const baked = bakeGlbModel(wrapper, 1.2, 0x808078);
+            if (baked) parts.push(...baked.parts);
+          }
+          DECORATION_GEOMS[typeId] = { id: typeId, glbParts: parts };
+          console.log(`[terrain] Loaded decoration 'rocks': ${smallMeshes.length} variants, ${parts.length} parts`);
+        }
+      } else {
+        // stones, grass, etc — comportamiento original (bakear todo el GLB)
+        const baked = bakeGlbModel(gltf.scene, typeId === 'grass' ? 0.4 : 1.0,
+          typeId === 'grass' ? 0x6a9a3a : 0x808078);
+        if (!baked) return;
+        DECORATION_GEOMS[typeId] = { id: typeId, glbParts: baked.parts };
+        console.log(`Loaded decoration '${typeId}'`);
+      }
     } catch (err) {
       console.warn(`Decoration '${typeId}' load failed:`, err.message);
     }
   }));
+
+  // Diagnóstico
+  if (LANDMARK_GEOMS && Object.keys(LANDMARK_GEOMS).length > 0) {
+    console.log(`[terrain] Landmark meshes en cache:`, Object.keys(LANDMARK_GEOMS).join(', '));
+  }
+}
+
+/**
+ * Sesión 12 — Cachea un mesh individual del rocks.glb por nombre, normalizando
+ * escala y posición para que pueda usarse como landmark en buildPlaceStructure.
+ * El mesh original es enorme (1000m+ bbox), se bakea con altura objetivo de 1m
+ * y luego buildLandmarkStructure lo re-escala al height específico del landmark.
+ */
+function cacheLandmarkMesh(meshObj, meshName) {
+  // Bakear este mesh aislado con altura objetivo 1m → escala unitaria.
+  // Luego al construir el landmark, se escala por place.height en metros.
+  const wrapper = new THREE.Group();
+  wrapper.add(meshObj.clone());
+  const baked = bakeGlbModel(wrapper, 1.0, 0x606060);
+  if (!baked || baked.parts.length === 0) {
+    console.warn(`[terrain] No se pudo bakear landmark mesh '${meshName}'`);
+    return;
+  }
+  LANDMARK_GEOMS[meshName] = baked.parts;
 }
 
 function buildDecorationForChunk(cx, cz) {
@@ -628,10 +729,54 @@ function buildDecorationForChunk(cx, cz) {
 
   const outMeshes = [];
   const mat4 = new THREE.Matrix4();
+  const ZERO_MAT = new THREE.Matrix4().makeScale(0, 0, 0);  // matriz "vacía" para hide
   for (const [typeId, list] of byType) {
     const dg = DECORATION_GEOMS[typeId];
     const cfg = DECORATION_CONFIG[typeId];
     if (!dg || !cfg) continue;
+
+    // Sesión 12 — Para 'rocks' (multi-mesh GLB), cada instancia elige UN solo
+    // mesh-variant al azar de los parts disponibles. El resto de la lista
+    // queda hide (matriz cero) en ese InstancedMesh, garantizando que solo
+    // un modelo se renderiza por posición. Esto es menos eficiente que el
+    // path normal (un InstancedMesh dedicado por variante con su sub-lista)
+    // pero más simple y suficiente para densidades bajas (1-4 por chunk).
+    const isMultiVariant = typeId === 'rocks' && dg.glbParts.length > 1;
+
+    if (isMultiVariant) {
+      // Pre-asignar variant aleatoria por item
+      const variantByItem = list.map((it, idx) => {
+        const r = hash2((it.x * 37) | 0, (it.z * 41) | 0);
+        return Math.floor(r * dg.glbParts.length);
+      });
+
+      for (let pIdx = 0; pIdx < dg.glbParts.length; pIdx++) {
+        const part = dg.glbParts[pIdx];
+        const inst = new THREE.InstancedMesh(part.geometry, part.material, list.length);
+        inst.userData = { kind: 'decoration', decorationType: typeId };
+        for (let i = 0; i < list.length; i++) {
+          if (variantByItem[i] !== pIdx) {
+            // No es esta variant: hide
+            inst.setMatrixAt(i, ZERO_MAT);
+            continue;
+          }
+          const it = list[i];
+          const rng1 = hash2((it.x * 19) | 0, (it.z * 23) | 0);
+          const rng2 = hash2((it.x * 29) | 0, (it.z * 31) | 0);
+          const rotY = rng1 * Math.PI * 2;
+          const scl = cfg.scaleMin + rng2 * (cfg.scaleMax - cfg.scaleMin);
+          mat4.makeRotationY(rotY);
+          mat4.scale(new THREE.Vector3(scl, scl, scl));
+          mat4.setPosition(it.x, 0, it.z);
+          inst.setMatrixAt(i, mat4);
+        }
+        inst.instanceMatrix.needsUpdate = true;
+        outMeshes.push(inst);
+      }
+      continue;  // saltarse el path original
+    }
+
+    // Path original (stones, grass, single-part): cada part en cada posición
     for (const part of dg.glbParts) {
       const inst = new THREE.InstancedMesh(part.geometry, part.material, list.length);
       inst.userData = { kind: 'decoration', decorationType: typeId };
@@ -915,6 +1060,33 @@ function buildPlaceStructure(place) {
       group.add(makeColumn(12, 0.9, bossMat, 0.7));
       const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 0), bossMat);
       skull.position.y = 0.7 + 12 + 0.6; skull.userData.spin = true; group.add(skull);
+      break;
+    }
+    case 'landmark': {
+      // Sesión 12 — Landmark único: mesh GLB específico del rocks.glb
+      // cacheado en LANDMARK_GEOMS. Si no se cargó (404 de R2 o nombre
+      // mal), fallback a placeholder visible para que sepamos algo falló.
+      const meshName = place.modelMesh;
+      const heightM = place.height || 60;
+      const parts = LANDMARK_GEOMS?.[meshName];
+      if (parts && parts.length > 0) {
+        for (const part of parts) {
+          const m = new THREE.Mesh(part.geometry, part.material);
+          // bakeGlbModel ya bakó al height 1m, así que escala = heightM da
+          // el tamaño final deseado en world space.
+          m.scale.set(heightM, heightM, heightM);
+          group.add(m);
+        }
+      } else {
+        // Fallback: cono naranja grande para detectar que el landmark no se cargó
+        console.warn(`[terrain] Landmark '${place.name}' sin mesh '${meshName}' en LANDMARK_GEOMS — usando fallback`);
+        const fallback = new THREE.Mesh(
+          new THREE.ConeGeometry(heightM * 0.4, heightM, 8),
+          new THREE.MeshLambertMaterial({ color: 0xff8800, flatShading: true })
+        );
+        fallback.position.y = heightM / 2;
+        group.add(fallback);
+      }
       break;
     }
   }
