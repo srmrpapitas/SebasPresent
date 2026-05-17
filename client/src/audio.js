@@ -137,7 +137,8 @@ export function init() {
 /** Reproduce un SFX por nombre. opts.pitch (0.8-1.2), opts.volume (0-1) */
 export function sfx(name, opts = {}) {
   if (!initialized) init();
-  if (prefs.muted) return;
+  // Sesión 13 v2 — Mute NO afecta a SFX (solo a música). Los pasos,
+  // puertas, monedas, etc. siempre suenan.
   const def = SFX_DEFS[name];
   if (!def) {
     console.warn(`[audio] sfx '${name}' no definido`);
@@ -170,12 +171,30 @@ export function sfx(name, opts = {}) {
   }
 }
 
+// Sesión 13 — Tracking de fades activos para poder cancelarlos.
+// Cuando el user ajusta el slider de música, si hay un fade en curso
+// (cambio de bioma) sobreescribiría el nuevo valor cada 30ms.
+let activeMusicFade = null;
+
+// Sesión 13 — iOS Safari rechaza permanentemente el audio si intentas
+// reproducir ANTES del primer touch del usuario. Diferimos la primera
+// música hasta que `unlock` se haya ejecutado.
+let audioUnlocked = false;
+let pendingMusicName = null;
+
 /** Cambia la música ambient. Pasar null para parar. Hace fade entre temas. */
 export function music(name) {
   if (!initialized) init();
   if (musicCurrentName === name) return;       // ya está sonando
   musicCurrentName = name;
   if (musicFadeTimer) { clearInterval(musicFadeTimer); musicFadeTimer = null; }
+
+  // Si el audio context no está desbloqueado aún (no hubo touch humano),
+  // guardar la música pendiente y arrancarla en cuanto haga unlock.
+  if (!audioUnlocked) {
+    pendingMusicName = name;
+    return;
+  }
 
   if (!name) {
     // Fade out + stop
@@ -201,8 +220,10 @@ export function music(name) {
   const oldAudio = musicAudio;
   musicAudio = newAudio;
   newAudio.play().catch(err => {
-    // Safari bloqueo: esperar gesto humano (lo gestiona attachUnlockListener)
+    // Safari bloqueo improbable aquí porque ya tenemos unlock, pero por si acaso
     console.log('[audio] music play deferred:', err.message);
+    pendingMusicName = name;
+    musicCurrentName = null;
   });
   fadeAudioElement(newAudio, prefs.music * prefs.master, 1200);
   if (oldAudio) {
@@ -237,27 +258,43 @@ export function step() {
 // API pública: settings
 // ============================================================
 
-// Sesión 13 — Tracking de fades activos para poder cancelarlos.
-// Cuando el user ajusta el slider de música, si hay un fade en curso
-// (cambio de bioma) sobreescribiría el nuevo valor cada 30ms.
-let activeMusicFade = null;
-
 export function setMasterVolume(v) {
   prefs.master = clamp01(v);
+  // Si está muteado, mover el slider lo desmutea automáticamente.
+  // Si no fuera así, el slider parecería que "no hace nada".
+  if (prefs.muted && v > 0) prefs.muted = false;
   savePrefs();
   cancelMusicFade();
   applyMusicVolume();
+  // Si la música estaba pausada por mute, reanudarla
+  if (musicAudio && musicAudio.paused && musicAudio.src && !prefs.muted) {
+    musicAudio.play().catch(() => {});
+  }
 }
-export function setSfxVolume(v)   { prefs.sfx = clamp01(v); savePrefs(); }
+export function setSfxVolume(v)   {
+  prefs.sfx = clamp01(v);
+  if (prefs.muted && v > 0) prefs.muted = false;
+  savePrefs();
+}
 export function setMusicVolume(v) {
   prefs.music = clamp01(v);
+  if (prefs.muted && v > 0) prefs.muted = false;
   savePrefs();
   cancelMusicFade();
   applyMusicVolume();
+  if (musicAudio && musicAudio.paused && musicAudio.src && !prefs.muted) {
+    musicAudio.play().catch(() => {});
+  }
 }
-export function setUiVolume(v)    { prefs.ui = clamp01(v); savePrefs(); }
+export function setUiVolume(v)    {
+  prefs.ui = clamp01(v);
+  if (prefs.muted && v > 0) prefs.muted = false;
+  savePrefs();
+}
 
 export function toggleMute() {
+  // Sesión 13 v2 — Mute SOLO afecta a la música. Los SFX (pasos, puertas,
+  // monedas, etc.) siguen sonando. Antes mute pausaba todo el audio.
   prefs.muted = !prefs.muted;
   savePrefs();
   cancelMusicFade();
@@ -352,32 +389,42 @@ function attachUnlockListener() {
   // los SFX que llegaron como raw.
   const unlock = async () => {
     const ctx = ensureAudioContext();
-    if (!ctx) return;
-    if (ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch {}
-    }
-    // Decodificar pendientes
-    for (const [file, val] of sfxBuffers.entries()) {
-      if (val && val._raw) {
-        try {
-          const buf = await ctx.decodeAudioData(val._raw);
-          sfxBuffers.set(file, buf);
-        } catch (err) {
-          console.warn(`[audio] decode '${file}' falló:`, err.message);
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch {}
+      }
+      // Decodificar pendientes
+      for (const [file, val] of sfxBuffers.entries()) {
+        if (val && val._raw) {
+          try {
+            const buf = await ctx.decodeAudioData(val._raw);
+            sfxBuffers.set(file, buf);
+          } catch (err) {
+            console.warn(`[audio] decode '${file}' falló:`, err.message);
+          }
         }
       }
+      // Re-disparar SFX que se intentaron antes del unlock
+      const queued = pendingFirstPlay.splice(0);
+      for (const q of queued) sfx(q.name, q.opts);
     }
-    // Re-disparar SFX que se intentaron antes del unlock
-    const queued = pendingFirstPlay.splice(0);
-    for (const q of queued) sfx(q.name, q.opts);
-    // Si había música pendiente de play, intentar de nuevo
-    if (musicAudio && musicAudio.paused && !prefs.muted) {
-      musicAudio.play().catch(() => {});
+
+    // Sesión 13 — Marcar audio desbloqueado y arrancar música pendiente.
+    // Si llamaste a music('forest') antes del primer touch, se guardó en
+    // pendingMusicName. Ahora SÍ podemos reproducir porque hay gesto humano.
+    audioUnlocked = true;
+    if (pendingMusicName && !prefs.muted) {
+      const toPlay = pendingMusicName;
+      pendingMusicName = null;
+      musicCurrentName = null;  // forzar que music() la reproduzca
+      music(toPlay);
     }
+
     // Una sola vez es suficiente
     window.removeEventListener('pointerdown', unlock);
     window.removeEventListener('touchstart', unlock);
     window.removeEventListener('keydown', unlock);
+    console.log('[audio] unlock done — audioUnlocked=true');
   };
   window.addEventListener('pointerdown', unlock, { once: true });
   window.addEventListener('touchstart', unlock, { once: true });
@@ -410,5 +457,7 @@ function fadeAudioElement(audioEl, targetVol, durationMs, onDone) {
 
 function applyMusicVolume() {
   if (!musicAudio) return;
-  musicAudio.volume = prefs.muted ? 0 : prefs.music * prefs.master;
+  const newVol = prefs.muted ? 0 : prefs.music * prefs.master;
+  musicAudio.volume = newVol;
+  console.log(`[audio] applyMusicVolume → ${newVol.toFixed(2)} (master=${prefs.master.toFixed(2)} music=${prefs.music.toFixed(2)} muted=${prefs.muted}) paused=${musicAudio.paused} src=${!!musicAudio.src}`);
 }
