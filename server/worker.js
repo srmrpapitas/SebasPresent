@@ -4,11 +4,7 @@
  * Solo router. La lógica vive en:
  *   - server/handlers/<dominio>.js — handlers HTTP por dominio
  *   - server/lib/<utility>.js      — db adapter, auth, cors
- *   - combat_engine.js, ge_engine.js — engines puros (canónicos)
- *
- * Tras sesión 8 del refactor: worker.js bajó de 2557 → ~150 líneas. Las
- * 1500 líneas de handlers viven cada una en su archivo de dominio. Cada
- * archivo importa solo lo que necesita.
+ *   - combat_engine.js, ge_engine.js, skills_engine.js — engines puros
  *
  * Endpoints:
  *   POST /api/register, /login, /me, /logout                   → handlers/auth.js
@@ -21,6 +17,7 @@
  *   POST /api/world/heartbeat, GET /api/world/peers             → handlers/world.js
  *   POST /api/magic/home_teleport (+ /cancel /finish)           → handlers/home_teleport.js
  *   GET  /api/ground_items, POST /pickup                        → handlers/ground_items.js
+ *   GET  /api/skills, POST /api/skills/grant                    → handlers/skills.js   (Sesión 14)
  *   GET  /api/health
  *
  *   Cron (cada 1 min): GE matcher, NPC revive, ground_items cleanup.
@@ -38,6 +35,7 @@ import * as combat from './handlers/combat.js';
 import * as world from './handlers/world.js';
 import * as homeTele from './handlers/home_teleport.js';
 import * as groundItems from './handlers/ground_items.js';
+import * as skills from './handlers/skills.js';
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -132,6 +130,12 @@ export default {
         response = await groundItems.handleGroundItemsList(request, env);
       } else if (path === '/api/ground_items/pickup' && method === 'POST') {
         response = await groundItems.handleGroundItemsPickup(request, env);
+
+      // ----- Skills (Sesión 14) -----
+      } else if (path === '/api/skills' && method === 'GET') {
+        response = await skills.handleGetSkills(request, env);
+      } else if (path === '/api/skills/grant' && method === 'POST') {
+        response = await skills.handleGrantXp(request, env);
 
       // ----- Health + 404 -----
       } else if (path === '/api/health') {
