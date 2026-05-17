@@ -316,6 +316,9 @@ export async function startWorld(loggedInUser, token) {
     // queda solo via NPC del interior del edificio.
     hideHubTabsInSidebar();
 
+    // Sesión 13 — Inyectar panel de audio dentro del tab Settings ⚙ del sidebar.
+    injectAudioSettingsPanel();
+
     // Sesión 13 — Audio: arrancar SFX engine y música ambient del bioma
     // donde aparece el player. El audio.init es idempotente y empieza
     // precarga de SFX en background. La música ambient queda encolada
@@ -1064,6 +1067,152 @@ function injectInventoryGridCss() {
   `;
   document.head.appendChild(style);
   console.log('[world] Inyectado CSS para grid 4x7 de mochila.');
+}
+
+// ============================================================
+// Sesión 13 — Panel de audio (sliders volumen + mute) dentro del tab ⚙
+// ============================================================
+// Inyecta UI dentro del pane `.osrs-tab-pane[data-tab="settings"]` para
+// controlar master/sfx/music/mute. No requiere tocar index.html ni ui.js.
+
+function injectAudioSettingsPanel() {
+  const pane = document.querySelector('.osrs-tab-pane[data-tab="settings"]');
+  if (!pane) {
+    console.warn('[world] Sesión 13: pane settings no encontrado, no se inyecta panel audio.');
+    return;
+  }
+
+  // Estilos del panel
+  if (!document.getElementById('audio-settings-styles')) {
+    const style = document.createElement('style');
+    style.id = 'audio-settings-styles';
+    style.textContent = `
+      .audio-settings {
+        padding: 14px 12px;
+        color: #e8c560;
+        font-family: 'Cinzel', serif;
+      }
+      .audio-settings-title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        margin: 0 0 10px 0;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+      }
+      .audio-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 10px 0;
+      }
+      .audio-row label {
+        flex: 0 0 auto;
+        font-size: 12px;
+        min-width: 64px;
+        color: #d4b850;
+      }
+      .audio-row input[type="range"] {
+        flex: 1 1 auto;
+        min-width: 0;
+        accent-color: #c8a043;
+      }
+      .audio-row .audio-val {
+        flex: 0 0 36px;
+        text-align: right;
+        font-size: 11px;
+        font-family: 'IM Fell English', serif;
+        color: #ffd060;
+      }
+      .audio-mute-btn {
+        display: block;
+        width: 100%;
+        margin-top: 12px;
+        padding: 10px 14px;
+        background: rgba(20, 14, 8, 0.92);
+        border: 2px solid #c8a043;
+        color: #e8c560;
+        font-family: 'Cinzel', serif;
+        font-size: 13px;
+        font-weight: 700;
+        border-radius: 4px;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .audio-mute-btn.muted {
+        background: rgba(120, 30, 30, 0.85);
+        border-color: #a05a3a;
+      }
+      .audio-mute-btn:active { transform: scale(0.97); }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Reemplazar contenido del placeholder de settings
+  const prefs = audio.getPrefs();
+  pane.innerHTML = `
+    <div class="audio-settings">
+      <h3 class="audio-settings-title">⚙ Ajustes</h3>
+
+      <div class="audio-row">
+        <label>Master</label>
+        <input type="range" min="0" max="100" value="${Math.round(prefs.master * 100)}" data-audio-slider="master">
+        <span class="audio-val" data-audio-val="master">${Math.round(prefs.master * 100)}</span>
+      </div>
+
+      <div class="audio-row">
+        <label>Música</label>
+        <input type="range" min="0" max="100" value="${Math.round(prefs.music * 100)}" data-audio-slider="music">
+        <span class="audio-val" data-audio-val="music">${Math.round(prefs.music * 100)}</span>
+      </div>
+
+      <div class="audio-row">
+        <label>Efectos</label>
+        <input type="range" min="0" max="100" value="${Math.round(prefs.sfx * 100)}" data-audio-slider="sfx">
+        <span class="audio-val" data-audio-val="sfx">${Math.round(prefs.sfx * 100)}</span>
+      </div>
+
+      <div class="audio-row">
+        <label>UI</label>
+        <input type="range" min="0" max="100" value="${Math.round(prefs.ui * 100)}" data-audio-slider="ui">
+        <span class="audio-val" data-audio-val="ui">${Math.round(prefs.ui * 100)}</span>
+      </div>
+
+      <button class="audio-mute-btn ${prefs.muted ? 'muted' : ''}" data-audio-mute>
+        ${prefs.muted ? '🔇 Silenciado · Tap para activar' : '🔊 Silenciar todo'}
+      </button>
+    </div>
+  `;
+
+  // Listeners
+  pane.querySelectorAll('input[data-audio-slider]').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const which = input.dataset.audioSlider;
+      const val = parseInt(input.value, 10) / 100;
+      const valEl = pane.querySelector(`[data-audio-val="${which}"]`);
+      if (valEl) valEl.textContent = String(parseInt(input.value, 10));
+      if (which === 'master') audio.setMasterVolume(val);
+      else if (which === 'music') audio.setMusicVolume(val);
+      else if (which === 'sfx')   audio.setSfxVolume(val);
+      else if (which === 'ui')    audio.setUiVolume(val);
+    });
+  });
+
+  const muteBtn = pane.querySelector('[data-audio-mute]');
+  if (muteBtn) {
+    muteBtn.addEventListener('pointerup', (ev) => {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      ev.preventDefault();
+      const nowMuted = audio.toggleMute();
+      muteBtn.classList.toggle('muted', nowMuted);
+      muteBtn.textContent = nowMuted ? '🔇 Silenciado · Tap para activar' : '🔊 Silenciar todo';
+      try { audio.sfx('ui_click'); } catch {}
+    });
+  }
+
+  console.log('[world] Sesión 13: panel de audio inyectado en tab ⚙.');
 }
 
 // ============================================================
