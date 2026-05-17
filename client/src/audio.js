@@ -293,16 +293,14 @@ export function setUiVolume(v)    {
 }
 
 export function toggleMute() {
-  // Sesión 13 v2 — Mute SOLO afecta a la música. Los SFX (pasos, puertas,
-  // monedas, etc.) siguen sonando. Antes mute pausaba todo el audio.
+  // Sesión 13 v3 — Mute SOLO baja el volumen de música a 0. NO llama
+  // a .pause() porque en iOS Safari, pausar el <audio> suspende el
+  // AudioContext compartido y silencia también los SFX (Web Audio API).
+  // Bajar volumen a 0 mantiene el <audio> reproduciendo silenciosamente
+  // y el AudioContext sigue activo para SFX.
   prefs.muted = !prefs.muted;
   savePrefs();
   cancelMusicFade();
-  if (prefs.muted) {
-    if (musicAudio) musicAudio.pause();
-  } else {
-    if (musicAudio && musicAudio.src) musicAudio.play().catch(() => {});
-  }
   applyMusicVolume();
   return prefs.muted;
 }
