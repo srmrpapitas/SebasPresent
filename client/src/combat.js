@@ -34,6 +34,7 @@
 
 import * as api from './api.js';
 import * as equipment from './equipment.js';
+import * as skills from './skills.js';
 
 const TICK_MS = 600;
 const POLL_INTERVAL_MS = 3000;
@@ -274,6 +275,20 @@ async function doAttackTick() {
       const lvl = result.your_levels[firstSkill];
       try { window.__spawnLevelUpBanner(mappedId, lvl); } catch {}
     }
+  }
+
+  // Sesión 25 — Tras CUALQUIER ataque que dé XP, refrescar skills.js cliente
+  // para que el tab Stats muestre el nivel/XP actualizados. El server ya
+  // hizo mirrorCombatXpToUserSkills, pero el cliente no se entera hasta
+  // que pide /api/skills. Antes solo se sincronizaba al cargar el mundo.
+  const gotXp = result.xp_gained && (
+    result.xp_gained.attack > 0 ||
+    result.xp_gained.strength > 0 ||
+    result.xp_gained.defence > 0 ||
+    result.xp_gained.hp > 0
+  );
+  if (gotXp) {
+    skills.reload().catch(e => console.warn('[combat] skills reload:', e));
   }
 
   if (state) {
