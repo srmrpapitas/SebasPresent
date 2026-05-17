@@ -17,6 +17,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const CDN_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const ANIM_BASE = `${CDN_BASE}/animations`;
 const WEAPONS_BASE = `${CDN_BASE}/weapons`;
+const ARMOR_BASE = `${CDN_BASE}/armor`;   // Sesión 26 — body, shield, helm, cape
 
 // ============================================================
 // Mapeo nombre lógico -> filename en R2/animations/
@@ -140,6 +141,47 @@ const WEAPON_TRANSFORMS = {
 const _weaponMeshCache = new Map();
 const _gltfLoader = new GLTFLoader();
 
+// ============================================================
+// Sesión 26 — Armor transforms y cache
+// ============================================================
+// Cada slot (body/shield/helm/cape) tiene un transform default para que el
+// armor aparezca CERCA del bone correcto. Después se calibra con
+// __armorDebug('body'|'shield'|'helm'|'cape') y se mete el resultado aquí.
+//
+// scale: número, position: [x,y,z], rotation: [x,y,z] (radianes).
+// bone: qué hueso del personaje usar de anclaje.
+const ARMOR_TRANSFORMS = {
+  body: {
+    // Pechera al spine. scale alto porque la mayoría de GLBs vienen en metros.
+    scale: 100.0,
+    position: [0.0, 0.0, 0.0],
+    rotation: [0.0, 0.0, 0.0],
+    bone: 'spine',
+  },
+  shield: {
+    // Escudo en la mano izquierda (player coge espada con derecha).
+    scale: 100.0,
+    position: [0.0, 0.0, 0.0],
+    rotation: [0.0, 0.0, 0.0],
+    bone: 'leftHand',
+  },
+  helm: {
+    scale: 100.0,
+    position: [0.0, 0.0, 0.0],
+    rotation: [0.0, 0.0, 0.0],
+    bone: 'head',
+  },
+  cape: {
+    // Capa al spine, queda colgando detrás
+    scale: 100.0,
+    position: [0.0, 0.0, 0.0],
+    rotation: [0.0, 0.0, 0.0],
+    bone: 'spine',
+  },
+};
+
+const _armorMeshCache = new Map();
+
 export class Character {
   constructor() {
     this.group = null;
@@ -162,6 +204,12 @@ export class Character {
     this._equippedWeaponMesh = null;
     this._equippedWeaponId = null;
     this._equippedWeaponHand = null;  // 'right' | 'left' para saber de qué bone removerla
+
+    // Sesión 26 — Armor attach state (body, shield, helm, cape)
+    this._spineBone = null;
+    this._headBone = null;
+    this._neckBone = null;
+    this._equippedArmor = {};  // slotId → { mesh, bone, itemId }
   }
 
   // ============================================================
@@ -212,6 +260,20 @@ export class Character {
     if (this._leftHandBone) {
       console.log('[character] left hand bone:', this._leftHandBone.name);
     }
+
+    // Sesión 26 — Bones del cuerpo para attach de armor (pechera, casco, capa).
+    // Spine2 es el torso alto, ideal para pechera. Spine es el medio (cape).
+    // Head/Neck para casco. Si no encuentra el específico, usa fallback más cercano.
+    this._spineBone = this._findBone([
+      'mixamorig:Spine2', 'mixamorigSpine2', 'Spine2',
+      'mixamorig:Spine1', 'mixamorigSpine1', 'Spine1',
+      'mixamorig:Spine',  'mixamorigSpine',  'Spine',
+    ]);
+    this._headBone = this._findBone(['mixamorig:Head', 'mixamorigHead', 'Head']);
+    this._neckBone = this._findBone(['mixamorig:Neck', 'mixamorigNeck', 'Neck']);
+    if (this._spineBone) console.log('[character] spine bone:', this._spineBone.name);
+    if (this._headBone) console.log('[character] head bone:', this._headBone.name);
+    if (this._neckBone) console.log('[character] neck bone:', this._neckBone.name);
 
     onProgress?.(0.55, 'Cargando animaciones críticas…');
     const criticalEntries = CRITICAL_ANIMS.map(name => [name, ANIM_FILES[name]]);
@@ -356,6 +418,99 @@ export class Character {
       }
     });
     _weaponMeshCache.set(weaponId, base);
+    return base.clone(true);
+  }
+
+  // ============================================================
+  // Sesión 26 — Armor attach/detach
+  // ============================================================
+  /**
+   * Equipa una armadura (body, shield, helm, cape) anclándola al hueso
+   * correspondiente. NO usa skinning, así que el armor sigue al bone
+   * pero no se deforma con la animación. Suficiente para pechera/casco
+   * porque el torso/cabeza se mueven poco.
+   *
+   * @param {string} itemId - id del item (ej. 'chest_bronze'). Carga
+   *   GLB desde R2/armor/<id>.glb.
+   * @param {string} slotId - 'body' | 'shield' | 'helm' | 'cape'.
+   */
+  async attachArmor(itemId, slotId) {
+    if (!this.loaded) return;
+    const tf = ARMOR_TRANSFORMS[slotId];
+    if (!tf) {
+      console.warn(`[character] attachArmor: slot desconocido '${slotId}'`);
+      return;
+    }
+    const bone = this._getBoneForArmorSlot(slotId);
+    if (!bone) {
+      console.warn(`[character] attachArmor: no hay bone para slot '${slotId}'`);
+      return;
+    }
+    // Si ya hay armor en ese slot, quitarlo primero
+    if (this._equippedArmor[slotId]) {
+      this.detachArmor(slotId);
+    }
+    if (!itemId) return;
+
+    try {
+      const mesh = await this._loadArmorMesh(itemId);
+      mesh.scale.setScalar(tf.scale);
+      mesh.position.set(tf.position[0], tf.position[1], tf.position[2]);
+      mesh.rotation.set(tf.rotation[0], tf.rotation[1], tf.rotation[2]);
+      bone.add(mesh);
+      this._equippedArmor[slotId] = { mesh, bone, itemId };
+      window.__character = this;
+    } catch (err) {
+      console.warn(`[character] attachArmor failed for ${slotId}:`, err.message);
+    }
+  }
+
+  /**
+   * Quita la armadura de un slot del personaje.
+   */
+  detachArmor(slotId) {
+    const cur = this._equippedArmor[slotId];
+    if (!cur) return;
+    if (cur.bone && cur.mesh) cur.bone.remove(cur.mesh);
+    delete this._equippedArmor[slotId];
+  }
+
+  /**
+   * Resuelve el hueso del personaje al que se ancla cada slot de armor.
+   */
+  _getBoneForArmorSlot(slotId) {
+    switch (slotId) {
+      case 'body':   return this._spineBone;
+      case 'helm':   return this._headBone;
+      case 'shield': return this._leftHandBone;
+      case 'cape':   return this._neckBone || this._spineBone;
+      default: return null;
+    }
+  }
+
+  /**
+   * Carga (con cache) el mesh de armor desde R2/armor/<id>.glb. Devuelve
+   * un clone para que cada player tenga su instancia.
+   */
+  async _loadArmorMesh(itemId) {
+    if (_armorMeshCache.has(itemId)) {
+      return _armorMeshCache.get(itemId).clone(true);
+    }
+    const url = `${ARMOR_BASE}/${itemId}.glb`;
+    const gltf = await _gltfLoader.loadAsync(url);
+    const base = gltf.scene;
+    base.traverse(o => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) {
+            if (m.side !== undefined) m.side = THREE.FrontSide;
+          }
+        }
+      }
+    });
+    _armorMeshCache.set(itemId, base);
     return base.clone(true);
   }
 
@@ -627,6 +782,14 @@ export class Character {
     this.detachWeapon();
     this._rightHandBone = null;
     this._leftHandBone = null;
+
+    // Sesión 26 — limpiar armaduras equipadas
+    for (const slotId of Object.keys(this._equippedArmor || {})) {
+      this.detachArmor(slotId);
+    }
+    this._spineBone = null;
+    this._headBone = null;
+    this._neckBone = null;
 
     if (this.group) {
       this.group.traverse(o => {
@@ -911,3 +1074,135 @@ window.__weaponDebug = function () {
   }
 };
 
+
+// ============================================================
+// Sesión 26 — __armorDebug(slotId) panel para calibrar armor
+// ============================================================
+//
+// Uso:  window.__armorDebug('body')  → panel para la pechera
+//       window.__armorDebug('shield') → panel para el escudo
+//       window.__armorDebug('helm')   → casco
+//       window.__armorDebug('cape')   → capa
+//
+// Equipa el armor primero. Después ejecuta __armorDebug('<slot>').
+// Mueve los sliders hasta que quede bien. Pulsa COPIAR y pégame el
+// resultado para que lo deje fijo en ARMOR_TRANSFORMS.
+//
+window.__armorDebug = function (slotId) {
+  if (!slotId) {
+    console.warn('[armor-debug] uso: __armorDebug("body" | "shield" | "helm" | "cape")');
+    return;
+  }
+  const existing = document.getElementById('armorDebugPanel');
+  if (existing) existing.remove();
+
+  const ch = window.character || window.__character;
+  if (!ch) {
+    console.warn('[armor-debug] no hay character cargado.');
+    return;
+  }
+  const armorState = ch._equippedArmor?.[slotId];
+  if (!armorState || !armorState.mesh) {
+    console.warn(`[armor-debug] no hay armor equipado en slot '${slotId}'. Equipa primero.`);
+    return;
+  }
+  const mesh = armorState.mesh;
+  const itemId = armorState.itemId;
+
+  const panel = document.createElement('div');
+  panel.id = 'armorDebugPanel';
+  panel.style.cssText = `
+    position: fixed; right: 6px; top: 60px; z-index: 9999;
+    width: 165px; max-height: 65vh; overflow-y: auto;
+    background: rgba(15,10,5,0.78); color: #f0e0b0;
+    border: 1px solid #c8a043; border-radius: 5px;
+    padding: 5px 6px; font-family: monospace; font-size: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+    backdrop-filter: blur(3px);
+  `;
+
+  function row(label, min, max, step, value, onChange, fmt) {
+    fmt = fmt || (v => v.toFixed(2));
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin: 3px 0; display: flex; align-items: center; gap: 4px;';
+    wrap.innerHTML = `
+      <span style="width:20px; color:#c8a043; font-size:10px;">${label}</span>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${value}"
+             style="flex:1; min-width:0; height: 14px;">
+      <span class="val" style="width:48px; text-align:right; font-size:9px;">${fmt(value)}</span>
+    `;
+    const inp = wrap.querySelector('input');
+    const val = wrap.querySelector('.val');
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value);
+      val.textContent = fmt(v);
+      onChange(v);
+    });
+    return wrap;
+  }
+
+  const body = document.createElement('div');
+
+  let minimized = false;
+  const title = document.createElement('div');
+  title.style.cssText = 'font-weight: bold; color: #e8c560; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;';
+  title.innerHTML = `
+    <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100px;">🛡 ${slotId}: ${itemId}</span>
+    <span>
+      <button id="arDebugMin" style="background: transparent; border: 1px solid #c8a043; color: #f0e0b0; padding: 0 6px; cursor: pointer; border-radius: 3px; font-size: 10px;">−</button>
+      <button id="arDebugClose" style="background: transparent; border: 1px solid #c8a043; color: #f0e0b0; padding: 0 6px; cursor: pointer; border-radius: 3px; font-size: 10px;">×</button>
+    </span>
+  `;
+  panel.appendChild(title);
+
+  body.appendChild(row('Scl', 1, 600, 1, mesh.scale.x, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
+
+  const sepP = document.createElement('div');
+  sepP.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
+  sepP.textContent = '─ POSITION';
+  body.appendChild(sepP);
+  body.appendChild(row('X', -30, 30, 0.5, mesh.position.x, v => { mesh.position.x = v; }));
+  body.appendChild(row('Y', -30, 30, 0.5, mesh.position.y, v => { mesh.position.y = v; }));
+  body.appendChild(row('Z', -30, 30, 0.5, mesh.position.z, v => { mesh.position.z = v; }));
+
+  const sepR = document.createElement('div');
+  sepR.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
+  sepR.textContent = '─ ROTATION';
+  body.appendChild(sepR);
+  const PI = Math.PI;
+  body.appendChild(row('rX', -PI, PI, 0.05, mesh.rotation.x, v => { mesh.rotation.x = v; }, v => `${Math.round(v*180/PI)}°`));
+  body.appendChild(row('rY', -PI, PI, 0.05, mesh.rotation.y, v => { mesh.rotation.y = v; }, v => `${Math.round(v*180/PI)}°`));
+  body.appendChild(row('rZ', -PI, PI, 0.05, mesh.rotation.z, v => { mesh.rotation.z = v; }, v => `${Math.round(v*180/PI)}°`));
+
+  // Copy button
+  const copyBtn = document.createElement('button');
+  copyBtn.style.cssText = 'margin-top: 6px; width: 100%; padding: 5px; background: #8a6230; color: #fff; border: 1px solid #e8c560; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 10px; font-weight: bold;';
+  copyBtn.textContent = '📋 COPIAR';
+  copyBtn.addEventListener('click', () => {
+    const out = `${slotId}: {
+  scale: ${mesh.scale.x.toFixed(1)},
+  position: [${mesh.position.x.toFixed(1)}, ${mesh.position.y.toFixed(1)}, ${mesh.position.z.toFixed(1)}],
+  rotation: [${mesh.rotation.x.toFixed(3)}, ${mesh.rotation.y.toFixed(3)}, ${mesh.rotation.z.toFixed(3)}],
+  bone: '${{body:'spine',helm:'head',shield:'leftHand',cape:'spine'}[slotId]}',
+},`;
+    navigator.clipboard?.writeText(out).then(() => {
+      copyBtn.textContent = '✅ COPIADO';
+      setTimeout(() => copyBtn.textContent = '📋 COPIAR', 1500);
+    });
+    console.log('[armor-debug] valores:\n' + out);
+  });
+  body.appendChild(copyBtn);
+
+  panel.appendChild(body);
+
+  panel.querySelector('#arDebugClose').addEventListener('click', () => panel.remove());
+  panel.querySelector('#arDebugMin').addEventListener('click', () => {
+    minimized = !minimized;
+    body.style.display = minimized ? 'none' : 'block';
+    panel.querySelector('#arDebugMin').textContent = minimized ? '+' : '−';
+    panel.style.width = minimized ? 'auto' : '165px';
+  });
+
+  document.body.appendChild(panel);
+  console.log(`[armor-debug] panel para ${slotId} abierto. Ajusta sliders y COPIA.`);
+};
