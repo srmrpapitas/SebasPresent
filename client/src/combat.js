@@ -36,6 +36,7 @@ import * as api from './api.js';
 import * as equipment from './equipment.js';
 import * as skills from './skills.js';
 import * as multiplayer from './multiplayer.js';   // Sesión 27 Bloque 3 — PVP
+import * as worldSnapshot from './world_snapshot.js'; // Sesión 27 Bloque 3 — auto-retaliate
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -172,10 +173,14 @@ function startPolling() {
       refresh().catch(() => {});
     }
   }, POLL_INTERVAL_MS);
+  // Sesión 27 Bloque 3 — arrancar también el loop de auto-retaliate.
+  // Es independiente del tab y se activa solo si autoRetaliate=ON.
+  startAutoRetaliateLoop();
 }
 
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  stopAutoRetaliateLoop();
 }
 
 // ============================================================
@@ -186,6 +191,8 @@ export async function engageNpc(npcId) {
   if (currentTargetNpcId === npcId && attackTimer) return;
   // Si veníamos atacando otro target, lo limpiamos
   currentTargetPlayerId = null;
+  // Reset anti-loop de auto-retaliate (engage manual recalibra)
+  lastAutoEngagedAttackerKey = null;
   const npc = state?.npcs?.find(n => n.id === npcId);
   if (npc) feedLog('info', `Atacas: ${npc.name}.`);
   currentTargetNpcId = npcId;
@@ -208,6 +215,8 @@ export async function engagePlayer(targetUserId) {
   currentTargetNpcId = null;
   currentTarget = null;
   currentTargetPlayerId = targetUserId;
+  // Reset anti-loop de auto-retaliate
+  lastAutoEngagedAttackerKey = null;
   const peer = multiplayer.getPeerById?.(targetUserId);
   const name = peer?.username || 'jugador';
   feedLog('info', `Atacas a ${name}.`);
@@ -693,6 +702,66 @@ function detectEquippedWeapon() {
 // Estado local de UI: stance seleccionada y auto-retaliate.
 let uiSelectedStance = null;
 let autoRetaliate = false;  // TODO: persistir cuando server lo soporte
+
+// ============================================================
+// Sesión 27 Bloque 3 — AUTO RETALIATE real
+// ============================================================
+//
+// Loop que cada 300ms comprueba el snapshot global y, si:
+//   - autoRetaliate=ON
+//   - currentTargetNpcId === null && currentTargetPlayerId === null
+//   - me.last_attacker existe y es reciente (<5s desde el último ataque)
+// entonces engagea automáticamente al atacante (NPC o player según
+// type del log).
+//
+// Esto reproduce el Auto Retaliate de OSRS: si te pegan y está ON,
+// devuelves el golpe sin necesidad de tocar nada. Para parar:
+//   - mover joystick (combat se cancela en world.js)
+//   - tocar otro target (combat cambia el currentTarget)
+//   - apagar Auto Retaliate desde el tab.
+//
+const AUTO_RETALIATE_CHECK_MS = 300;
+const AUTO_RETALIATE_FRESHNESS_MS = 5000;
+let autoRetaliateTimer = null;
+let lastAutoEngagedAttackerKey = null;   // anti-loop: no re-engagear al mismo
+
+function startAutoRetaliateLoop() {
+  if (autoRetaliateTimer) return;
+  autoRetaliateTimer = setInterval(tryAutoRetaliate, AUTO_RETALIATE_CHECK_MS);
+}
+
+function stopAutoRetaliateLoop() {
+  if (autoRetaliateTimer) { clearInterval(autoRetaliateTimer); autoRetaliateTimer = null; }
+}
+
+function tryAutoRetaliate() {
+  if (!autoRetaliate) return;
+  // Ya tengo target → no engagear nada nuevo.
+  if (currentTargetNpcId !== null || currentTargetPlayerId !== null) return;
+  // Estoy muerto → no atacar
+  if (state?.stats?.hp_current === 0) return;
+
+  const me = worldSnapshot.getMe?.();
+  const atk = me?.last_attacker;
+  if (!atk) return;
+  // Fresco?
+  const serverNow = worldSnapshot.getServerNow?.();
+  if (!serverNow || (serverNow - atk.at) > AUTO_RETALIATE_FRESHNESS_MS) return;
+
+  // Anti-loop: si ya engagee a este atacante en este "incidente", no repetir
+  // hasta que el snapshot diga "nuevo ataque" (at diferente).
+  const key = `${atk.type}:${atk.id}:${atk.at}`;
+  if (key === lastAutoEngagedAttackerKey) return;
+  lastAutoEngagedAttackerKey = key;
+
+  if (atk.type === 1) {
+    // NPC me atacó → engagear NPC (atk.id es npc_instance_id)
+    engageNpc(atk.id).catch(e => console.warn('[auto-retaliate npc]', e));
+  } else if (atk.type === 0) {
+    // Player me atacó → engagear player
+    engagePlayer(atk.id).catch(e => console.warn('[auto-retaliate player]', e));
+  }
+}
 
 // ============================================================
 // RENDER TAB

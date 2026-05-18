@@ -140,6 +140,24 @@ export function getNpcs() {
 }
 
 /**
+ * Sesión 27 Bloque 3 — Devuelve info del propio user que viene en el
+ * snapshot. Actualmente solo contiene last_attacker (para auto-retaliate).
+ *
+ * Estructura: { last_attacker: { type: 0|1, id, at } | null }
+ *   - type 0 = el atacante fue otro PLAYER
+ *   - type 1 = el atacante fue un NPC
+ *   - id      = user_id o npc_instance_id según type
+ *   - at      = ms epoch del último ataque
+ *
+ * Devuelve {} si no hay snapshot (no null, para que el cliente pueda
+ * leer .last_attacker?.type sin chequear).
+ */
+export function getMe() {
+  const s = getSnapshot();
+  return s?.me || {};
+}
+
+/**
  * Devuelve el timestamp del server del último snapshot (ms epoch),
  * o null si no hay snapshot fresco. Útil para lag compensation.
  */
