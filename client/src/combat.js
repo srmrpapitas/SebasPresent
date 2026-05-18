@@ -142,7 +142,11 @@ function updateHpHud() {
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
-    if (isTabOpen && !currentTarget) refresh().catch(() => {});
+    // Sesión 26 — Polling siempre activo (no solo cuando tab Combate
+    // está abierto) para que el HUD vea la HP regen pasiva calculada
+    // por el server cada vez que pedimos state. Mientras hay un target
+    // de combate activo, el auto-attack ya está refrescando por su lado.
+    if (!currentTarget) refresh().catch(() => {});
   }, POLL_INTERVAL_MS);
 }
 

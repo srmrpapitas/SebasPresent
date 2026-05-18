@@ -14,15 +14,9 @@
  *   equipFromInventory(slotIndex) — mueve item del inv slot a su equipment slot
  *   unequip(slotId)               — devuelve item al inventario
  *   onChange(cb)                  — suscribirse a cambios
- *
- * UI: tab dentro del sidebar OSRS. El index.html ya tiene panes para tabs.
- * Si no existe el pane "equipment", se busca alternativa: "stats_eq", "equip",
- * o "worn_equipment". Si no existe ninguno, el módulo no inyecta UI pero
- * sigue funcionando programáticamente (los hooks de combat.js usan
- * getWeaponType()).
  */
 
-import { getItemIconHtml } from './item_icons.js';
+import { getItemIconHtml, getEquipSlotIconHtml } from './item_icons.js';
 
 let apiBase = null;
 let getToken = null;
@@ -31,7 +25,9 @@ let initialized = false;
 let equipped = {};
 const listeners = [];
 
-// Catálogo de slots con metadata visual
+// Catálogo de slots con metadata visual.
+// `icon` se mantiene como emoji para fallback / título; el render usa
+// SVGs custom desde item_icons.js cuando están disponibles.
 export const EQUIP_SLOTS = [
   { id: 'helm',   label: 'Casco',    icon: '⛑',  row: 0, col: 1 },
   { id: 'cape',   label: 'Capa',     icon: '🧣',  row: 1, col: 0 },
@@ -44,13 +40,12 @@ export const EQUIP_SLOTS = [
   { id: 'boots',  label: 'Botas',    icon: '🥾',  row: 4, col: 2 },
 ];
 
-// Mapeo weapon_type → categoría que combat.js entiende
 const WEAPON_TYPE_TO_COMBAT = {
   '1h_sword': '1h_sword',
   '2h_sword': '2h_sword',
   'bow':      'bow',
   'staff':    'staff',
-  'dagger':   '1h_sword',  // dagger usa stances de 1h por ahora
+  'dagger':   '1h_sword',
 };
 
 // ============================================================
@@ -97,21 +92,12 @@ export function getAll() {
   return { ...equipped };
 }
 
-/**
- * Devuelve el "weapon type" agregado para que combat.js decida stances.
- * Sin nada equipado → 'unarmed'.
- */
 export function getWeaponType() {
   const w = equipped.weapon;
   if (!w || !w.weapon_type) return 'unarmed';
   return WEAPON_TYPE_TO_COMBAT[w.weapon_type] || 'unarmed';
 }
 
-/**
- * Sesión 24 — Devuelve item_id + weapon_type del arma equipada para que
- * world.js / character.js pueda cargar el GLB 3D y attacharlo a la mano.
- * Devuelve null si no hay arma.
- */
 export function getEquippedWeaponItem() {
   const w = equipped.weapon;
   if (!w) return null;
@@ -140,7 +126,6 @@ export async function equipFromInventory(slotIndex) {
     });
     const data = await res.json();
     if (!res.ok) return data;
-    // Refrescar local
     await refresh();
     return data;
   } catch (err) {
@@ -224,9 +209,7 @@ function injectStyles() {
       transition: transform 0.08s, border-color 0.15s, box-shadow 0.15s;
     }
     .equip-slot:active { transform: scale(0.94); }
-    .equip-slot.empty {
-      opacity: 0.55;
-    }
+    .equip-slot.empty { opacity: 0.55; }
     .equip-slot.occupied {
       border-color: #c8a043;
       background: linear-gradient(135deg, rgba(80, 60, 30, 0.95), rgba(50, 35, 18, 0.95));
@@ -248,6 +231,14 @@ function injectStyles() {
       filter: drop-shadow(0 2px 3px rgba(0,0,0,0.8));
     }
     .equip-slot-icon-wrap svg { width: 100%; height: 100%; }
+    .equip-slot-empty-svg {
+      display: inline-flex;
+      width: 28px; height: 28px;
+      align-items: center; justify-content: center;
+      opacity: 0.55;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+    }
+    .equip-slot-empty-svg svg { width: 100%; height: 100%; }
     .equip-tooltip-icon {
       display: inline-flex;
       width: 22px; height: 22px;
@@ -284,7 +275,6 @@ function injectStyles() {
     }
     .equip-footer-row b { color: #ffd060; }
 
-    /* Tooltip al tap de un slot equipado */
     .equip-tooltip {
       position: fixed;
       z-index: 200;
@@ -305,6 +295,9 @@ function injectStyles() {
       font-size: 14px;
       color: #fff8d0;
       margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     .equip-tooltip-desc {
       font-size: 11px;
@@ -346,19 +339,13 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-/**
- * Encuentra dónde meter el panel. Probamos varios pane IDs comunes:
- *   data-tab="equipment", data-tab="equip", data-tab="worn"
- * Si no existe, intentamos crear un nuevo botón de tab (no necesario si
- * el index.html ya lo tiene).
- */
 function injectPanel() {
   let pane = document.querySelector('.osrs-tab-pane[data-tab="equipment"]')
           || document.querySelector('.osrs-tab-pane[data-tab="equip"]')
           || document.querySelector('.osrs-tab-pane[data-tab="worn"]');
 
   if (!pane) {
-    console.warn('[equipment] No se encontró tab pane de equipment. ¿Necesitas añadir un botón al sidebar?');
+    console.warn('[equipment] No se encontró tab pane de equipment.');
     return;
   }
   pane.dataset.equipMounted = '1';
@@ -388,9 +375,10 @@ function renderPanel() {
   for (const slot of EQUIP_SLOTS) {
     const item = equipped[slot.id];
     const filled = !!item;
+    // Sesión 26 — Slots vacíos también usan SVG custom (silueta gris).
     const iconHtml = filled
       ? `<span class="equip-slot-icon-wrap">${getItemIconHtml(item.item_id, item.icon)}</span>`
-      : `<span class="equip-slot-icon">${slot.icon}</span>`;
+      : `<span class="equip-slot-empty-svg">${getEquipSlotIconHtml(slot.id, slot.icon)}</span>`;
     html += `
       <div class="equip-slot ${filled ? 'occupied' : 'empty'}"
            data-slot-id="${slot.id}"
@@ -411,7 +399,6 @@ function renderPanel() {
   html += '</div>';
   pane.innerHTML = html;
 
-  // Listeners: tap slot → tooltip
   pane.querySelectorAll('.equip-slot').forEach(el => {
     el.addEventListener('pointerup', (ev) => {
       if (ev.button !== undefined && ev.button !== 0) return;
@@ -449,7 +436,7 @@ function showSlotTooltip(slotId, clientX, clientY) {
     `;
   } else {
     el.innerHTML = `
-      <div class="equip-tooltip-title">${slot.icon} ${slot.label}</div>
+      <div class="equip-tooltip-title"><span class="equip-tooltip-icon">${getEquipSlotIconHtml(slot.id, slot.icon)}</span> ${slot.label}</div>
       <div class="equip-tooltip-desc">Ranura vacía. Equipa un objeto desde la mochila tocándolo.</div>
       <div class="equip-tooltip-actions">
         <button class="equip-tooltip-btn secondary" data-action="close">Cerrar</button>

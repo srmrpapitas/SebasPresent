@@ -102,6 +102,15 @@ let fullMapVisible = false;
 
 let runMode = false;
 
+// Sesión 26 — Run energy. Cliente-side (no se persiste entre sesiones).
+//   - Drenaje:   RUN_DRAIN_PER_SEC mientras el joystick está activo y runMode=true
+//   - Regeneración: RUN_RECOVERY_PER_SEC mientras no se corre (parado o andando)
+//   - Si llega a 0, se fuerza runMode=false hasta que vuelva a haber energía.
+const RUN_DRAIN_PER_SEC = 6;      // 100 → 0 en ~17s corriendo (similar OSRS)
+const RUN_RECOVERY_PER_SEC = 3;   // 0 → 100 en ~33s parado
+let runEnergy = 100;              // 0..100
+let lastHudRunRendered = 100;     // para no escribir DOM cada frame
+
 let hudHpValue = null;
 let hudPrayerValue = null;
 let hudRunValue = null;
@@ -551,6 +560,8 @@ export function stopWorld() {
   authToken = null;
   positionSaveTimer = 0;
   runMode = false;
+  runEnergy = 100;
+  lastHudRunRendered = 100;
 
   player = marker = camera = clock = ocean = null;
   user = null;
@@ -1114,6 +1125,8 @@ function setupHud() {
 }
 
 function toggleRunMode() {
+  // Sesión 26 — Si intenta activar run sin energía, no hacer nada.
+  if (!runMode && runEnergy <= 0) return;
   runMode = !runMode;
   if (hudStatRun) {
     if (runMode) hudStatRun.classList.add('active');
@@ -2215,7 +2228,11 @@ function updatePlayer(dt) {
   let moveSpeed = 0;
   let moveWx = 0;   // Slice 5d — vector de movimiento (mundo) para calcular
   let moveWz = 0;   //            dirección relativa al facing en combate
-  const maxSpeed = runMode ? PLAYER_RUN * PLAYER_RUN_BOOST : PLAYER_RUN;
+
+  // Sesión 26 — Run energy: si la energía se acaba, forzar walking aunque
+  // el toggle esté activo. La velocidad efectiva se calcula AQUÍ.
+  const effectiveRun = runMode && runEnergy > 0;
+  const maxSpeed = effectiveRun ? PLAYER_RUN * PLAYER_RUN_BOOST : PLAYER_RUN;
 
   // Sesión 25 — Si el player está muerto, NO procesar input. El joystick
   // y el playerTarget se ignoran hasta que respawnee. Esto soluciona el bug
@@ -2371,6 +2388,27 @@ function updatePlayer(dt) {
       }
       if (marker) marker.position.set(ae.targetX, 0.05, ae.targetZ);
     }
+  }
+
+  // Sesión 26 — Tick de Run energy.
+  //   - Drena si efectivamente corriendo y el player se mueve.
+  //   - Regenera siempre que no esté corriendo (incluso parado).
+  //   - Si runEnergy llega a 0 mientras runMode=true, se desactiva el toggle.
+  if (effectiveRun && isMoving) {
+    runEnergy = Math.max(0, runEnergy - RUN_DRAIN_PER_SEC * dt);
+    if (runEnergy <= 0 && runMode) {
+      // Se acabó la energía: apagar toggle. El próximo frame ya irá a walk.
+      runMode = false;
+      if (hudStatRun) hudStatRun.classList.remove('active');
+    }
+  } else if (!runMode) {
+    runEnergy = Math.min(100, runEnergy + RUN_RECOVERY_PER_SEC * dt);
+  }
+  // Update DOM solo si cambió el entero mostrado
+  const newRunShown = Math.round(runEnergy);
+  if (hudRunValue && newRunShown !== lastHudRunRendered) {
+    hudRunValue.textContent = String(newRunShown);
+    lastHudRunRendered = newRunShown;
   }
 }
 
