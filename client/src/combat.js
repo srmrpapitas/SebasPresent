@@ -188,7 +188,16 @@ async function doAttackTick() {
   const npcId = currentTarget;
   let result;
   try {
-    result = await api.attackNpc(npcId);
+    // Sesión 27 — Pasar la posición ACTUAL del player (no la persistida)
+    // para que el server valide rango contra ella. Elimina "fuera de
+    // alcance" cuando el cliente ya llegó visualmente pero los datos
+    // server-side están desfasados respecto al render.
+    let pos = null;
+    try {
+      const p = window.__getPlayerPosition?.();
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = p;
+    } catch {}
+    result = await api.attackNpc(npcId, pos);
   } catch (err) {
     if (err.code) {
       result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}) };
@@ -589,8 +598,14 @@ function renderNpcs(npcs) {
 function attachHandlers() {
   if (!panelEl) return;
   panelEl.querySelectorAll('[data-action]').forEach(el => {
-    el.addEventListener('click', async (ev) => {
+    // Sesión 26 — Antes era 'click'. En mobile el 'click' tarda 300ms y si
+    // el joystick está activo (player corriendo) la mayoría de pointerdowns
+    // se cancelan y el click nunca llega. pointerup dispara antes y de
+    // forma fiable, así puedes cambiar de stance/atacar en movimiento.
+    el.addEventListener('pointerup', async (ev) => {
+      if (ev.button !== undefined && ev.button !== 0) return;
       ev.preventDefault();
+      ev.stopPropagation();
       const action = el.dataset.action;
       if (action === 'attack') {
         const npcId = parseInt(el.dataset.npcId, 10);

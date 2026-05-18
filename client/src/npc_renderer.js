@@ -169,6 +169,13 @@ export async function start(opts) {
   if (typeof window !== 'undefined') {
     window.__worldFlashNpcHit = flashHit;
     window.__worldSpawnHitsplat = spawnHitsplat;
+    // Sesión 27 — hook para que combat.js mande la pos actual del player
+    // en el body del attack. Devuelve {x, z} o null si no hay player aún.
+    window.__getPlayerPosition = () => {
+      const p = getPlayer?.();
+      if (!p || !p.position) return null;
+      return { x: p.position.x, z: p.position.z };
+    };
   }
 
   started = true;
@@ -204,6 +211,8 @@ export function stop() {
   if (typeof window !== 'undefined') {
     if (window.__worldFlashNpcHit === flashHit) delete window.__worldFlashNpcHit;
     if (window.__worldSpawnHitsplat === spawnHitsplat) delete window.__worldSpawnHitsplat;
+    // Sesión 27 — cleanup del hook de posición
+    if (window.__getPlayerPosition) delete window.__getPlayerPosition;
   }
 
   scene = camera = canvas = raycaster = null;

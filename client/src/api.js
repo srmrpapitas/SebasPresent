@@ -3,6 +3,10 @@
  *
  * One place that knows how to call the backend. All fetches go through here
  * so we can switch URLs, add headers, or log errors in a single spot.
+ *
+ * Sesión 27 — attackNpc(npcId, pos?) ahora acepta una posición opcional
+ * {x, z} que se incluye en el body. Server-side, combat_engine la usa para
+ * validar rango y elimina el bug "fuera de alcance".
  */
 // In dev (running `wrangler dev`), the Worker listens on http://localhost:8787.
 // In production, replace with your deployed Worker URL.
@@ -182,11 +186,24 @@ export async function getCombatState() {
   return apiFetch('/api/combat/state', { auth: true });
 }
 
-export async function attackNpc(npcId) {
+/**
+ * Sesión 27 — attackNpc(npcId, pos?)
+ *
+ * Acepta una posición opcional { x, z } del player en el momento del
+ * attack. Si viene, el server la usa para validar rango (evita el
+ * "fuera de alcance" causado por desfase entre heartbeat y posición real).
+ * Si no viene, el server hace fallback a online_users / users.last_x.
+ */
+export async function attackNpc(npcId, pos) {
+  const body = { npc_id: npcId };
+  if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.z)) {
+    body.x = pos.x;
+    body.z = pos.z;
+  }
   return apiFetch('/api/combat/attack', {
     method: 'POST',
     auth: true,
-    body: { npc_id: npcId },
+    body,
   });
 }
 
