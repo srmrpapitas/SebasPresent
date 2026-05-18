@@ -110,12 +110,15 @@ const WEAPON_TRANSFORMS = {
     hand: 'right',
   },
   '2h_sword': {
-    // Sesión 26 — calibrado in-game con __weaponDebug() para sword_bronze_2h
-    // (modelo Hyperion). Escala alta porque el modelo viene chiquito.
+    // Sesión 27 — recalibrado por Nico con __weaponDebug() para sword_bronze_2h.
+    // Ahora en mano derecha (antes left). Posición frente al pecho, ligeramente
+    // alta para que la animación de Sword_Attack_N se vea bien sin chocar con
+    // el cuerpo. Si quieres recalibrar: equipa la 2H, __weaponDebug(), ajusta,
+    // pulsa COPIAR y pégalos aquí otra vez.
     scale: 600.0,
-    position: [-9.5, 2.0, 2.0],
-    rotation: [2.858, -2.592, -3.142],
-    hand: 'left',
+    position: [2.0, 12.0, 8.5],
+    rotation: [1.158, 0.458, -3.142],
+    hand: 'right',
   },
   'bow': {
     scale: 116.0,
@@ -690,25 +693,17 @@ export class Character {
     this._crossFadeTo(action, 0.08);
     this.isAttacking = true;
 
-    // Sesión 26 — al terminar la animación, hacer crossfade explícito a
-    // la anim de retorno (sword_idle si está en combat stance, idle si no).
-    // Antes solo se ponía current=null y el world.js play loop tardaba
-    // 1+ frame en llamar a play('idle') → se veía T-pose breve.
+    // Sesión 26 — al terminar, solo desbloqueamos isAttacking. La anim
+    // de ataque queda en su ÚLTIMO frame (clampWhenFinished=true puesto
+    // por _scaleOneShot), así NO hay T-pose. world.js detectará
+    // isAttacking=false y llamará play("idle") o play("sword_idle") en
+    // el siguiente update, lo que hace un _crossFadeTo natural desde
+    // el último frame del ataque hacia idle (la transición la maneja
+    // crossFadeFrom). Antes hacíamos un crossfade explícito aquí mismo
+    // pero eso CORTABA el giro de las anims attack_2/attack_3 que
+    // necesitan ejecutarse hasta el final para verse completas.
     setTimeout(() => {
       this.isAttacking = false;
-      if (this.isDead) { this.current = null; return; }
-      const next = this.combatStance
-        ? (this.actions.sword_idle || this.actions.idle)
-        : (this.actions.idle || this.actions.sword_idle);
-      if (next) {
-        next.setLoop(THREE.LoopRepeat, Infinity);
-        next.clampWhenFinished = false;
-        next.setEffectiveTimeScale(1);
-        next.setEffectiveWeight(1);
-        this._crossFadeTo(next, 0.12);
-      } else {
-        this.current = null;
-      }
     }, animMs + 20);
   }
 
