@@ -83,13 +83,20 @@ export async function handleWorldSnapshot(request, env) {
     const radiusSq = margin * margin;
 
     // -------------------- Players --------------------
-    // online_users tiene pos/yaw/state fresca. combat_stats tiene hp.
-    // LEFT JOIN porque puede que un user esté online pero todavía no tenga
-    // fila en combat_stats (cuenta recién creada antes del primer combate).
-    // Excluimos al propio user (el cliente ya se conoce a sí mismo).
+    // online_users tiene pos/yaw/state fresca. combat_stats tiene hp + xp.
+    // user_skills tiene los XPs de todos los skills (necesarios para
+    // calcular combat_lvl). LEFT JOIN porque puede que un user esté online
+    // pero todavía no tenga fila en combat_stats/user_skills (cuenta recién
+    // creada antes del primer combate). Excluimos al propio user.
+    //
+    // Sesión 27 Bloque 3 — añadidos campos para PVP:
+    //   - attack_xp / strength_xp / defence_xp → niveles para mostrar y
+    //     calcular combat_lvl client-side.
+    //   - combat_lvl pre-calculado server-side (más eficiente).
     const playerRows = await env.DB.prepare(
       `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
-              c.hp_current, c.hp_xp, c.last_attack_at
+              c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
+              c.last_attack_at
        FROM online_users o
        LEFT JOIN combat_stats c ON c.user_id = o.user_id
        WHERE o.last_seen > ?
@@ -108,7 +115,18 @@ export async function handleWorldSnapshot(request, env) {
         return (dx * dx + dz * dz) <= radiusSq;
       })
       .map(r => {
-        const hpMax = r.hp_xp != null ? levelFromXp(r.hp_xp) : 10;
+        const hpMax  = r.hp_xp       != null ? levelFromXp(r.hp_xp)       : 10;
+        const attLvl = r.attack_xp   != null ? levelFromXp(r.attack_xp)   : 1;
+        const strLvl = r.strength_xp != null ? levelFromXp(r.strength_xp) : 1;
+        const defLvl = r.defence_xp  != null ? levelFromXp(r.defence_xp)  : 1;
+        // Combat level OSRS (sin ranged/magic/prayer todavía — los añadimos
+        // cuando esos skills estén implementados). Fórmula reducida:
+        //   base  = (def + hp) / 4
+        //   melee = (att + str) * 13 / 40
+        //   cb    = floor(base + melee)
+        const base  = (defLvl + hpMax) / 4;
+        const melee = (attLvl + strLvl) * 13 / 40;
+        const combatLvl = Math.floor(base + melee);
         const hpCur = typeof r.hp_current === 'number' ? r.hp_current : hpMax;
         const inCombat = r.last_attack_at != null &&
           (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS;
@@ -121,6 +139,10 @@ export async function handleWorldSnapshot(request, env) {
           state:      r.state,
           hp_current: hpCur,
           hp_max:     hpMax,
+          attack_lvl: attLvl,
+          strength_lvl: strLvl,
+          defence_lvl:  defLvl,
+          combat_lvl:   combatLvl,
           in_combat:  inCombat,
           last_seen:  r.last_seen,
         };
