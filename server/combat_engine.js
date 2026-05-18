@@ -138,6 +138,17 @@ const DEATH_LOOT_LIFETIME_MS = 120_000;  // 2 minutos visible en el suelo
 const SPAWN_X = 0;                        // respawn point
 const SPAWN_Z = 0;
 
+// Sesión 27 Bloque 3 — Death drop PVP (más duro que PVE):
+//   - Conserva las TOP_N "unidades" más valiosas por unit_value (no slots).
+//   - Stacks se descomponen: 3000 coins = 3000 unidades de valor 1 c/u.
+//     Si conservas top-3, te quedas con 3 coins; las 2997 restantes
+//     caen al suelo.
+//   - Equipment SÍ se cuenta (puedes perder tu espada si llevas algo
+//     más valioso encima). En OSRS clásico también es así (skull).
+// Valor: 3 unidades. PVE usa "slots" (DEATH_KEEP_TOP_N_SLOTS); aquí
+// usamos "unidades virtuales".
+const PVP_DEATH_KEEP_TOP_N = 3;
+
 // Sesión 27 Bloque 3 — PVP solo permitido en la zona wilderness, igual
 // que en OSRS clásico. La zona wilderness es todo lo que está a la
 // izquierda de la frontera X (espejo del WILDERNESS_X del cliente).
@@ -970,9 +981,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         attackerStats.hp_current = 0;
         attackerStats.last_died_at = now;
         try {
-          await dropExcessInventoryOnDeath(
+          // Sesión 27 Bloque 3 — usar PVP drop (descompone stacks por
+          // unidades, incluye equipment, conserva top-N más valiosos).
+          await dropAllExceptTopUnitsOnDeathPVP(
             db, attackerId, attackerPos.x, attackerPos.z, now,
-            DEATH_KEEP_TOP_N_SLOTS, rng
+            PVP_DEATH_KEEP_TOP_N, rng
           );
         } catch (err) {
           console.error('[combat/pvp/attacker-death-drop]', err);
@@ -986,14 +999,13 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       targetStats.last_attack_at = now;
     }
   } else {
-    // Target murió por el golpe → drop su inventario excedente en la
-    // pos PERSISTIDA del server (no la visual del cliente atacante,
-    // porque el target podría haber sido visto por el atacante en una
-    // posición distinta a donde realmente "estaba" en el server tick).
+    // Target murió por el golpe → drop sus items en la pos PERSISTIDA
+    // del server. Sesión 27 Bloque 3 — usar PVP drop (descompone stacks,
+    // incluye equipment, conserva top-N más valiosos por valor unitario).
     try {
-      await dropExcessInventoryOnDeath(
+      await dropAllExceptTopUnitsOnDeathPVP(
         db, targetId, targetPosServer.x, targetPosServer.z, now,
-        DEATH_KEEP_TOP_N_SLOTS, rng
+        PVP_DEATH_KEEP_TOP_N, rng
       );
     } catch (err) {
       console.error('[combat/pvp/target-death-drop]', err);
@@ -1243,4 +1255,191 @@ async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepT
       [userId, r.slot_index]
     );
   }
+}
+
+// ============================================================
+// Sesión 27 Bloque 3 — DEATH DROP PVP (más duro que PVE)
+// ============================================================
+//
+// A diferencia de dropExcessInventoryOnDeath (PVE):
+//
+//   1. Descompone los stacks en UNIDADES virtuales. Un slot de 3000
+//      coins = 3000 unidades de valor 1 cada una. Un slot de 100 plumas
+//      = 100 unidades de valor X. Una espada = 1 unidad de valor Y.
+//
+//   2. Ordena TODAS las unidades por unit_value DESC y conserva las
+//      keepTopN más valiosas. El resto cae al suelo.
+//
+//   3. Incluye EQUIPMENT. Las piezas equipadas son qty=1 cada una y
+//      cuentan en el ranking. Si tu yelmo vale 80 pero llevas un anillo
+//      de 200, el yelmo se va al suelo y conservas el anillo.
+//
+//   4. Reconstruye inventario + equipment con lo conservado:
+//      - Items equipados conservados → vuelven a equipment.
+//      - Items conservados de mochila → vuelven a mochila.
+//      - Stacks parciales (ej: conservas 3 plumas de 100) → 1 slot qty=3.
+//
+//   5. Agrupa el drop por item_id en el suelo (no crea 100 piles para
+//      100 plumas, crea 1 pile con qty=100).
+//
+async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, keepTopN, rng) {
+  rng = rng || Math.random;
+
+  // ---- 1) Inventario actual del muerto
+  const invRows = await db.all(
+    `SELECT ui.slot_index, ui.item_id, ui.quantity,
+            (CASE WHEN ui.item_id = 'coins' THEN 1
+                  ELSE COALESCE(s.sell_price, 0) END) AS unit_value
+     FROM user_inventory ui
+     LEFT JOIN shop_stock s
+       ON s.item_id = ui.item_id AND s.shop_id = 'general_store'
+     WHERE ui.user_id = ?`,
+    [userId]
+  );
+
+  // ---- 2) Equipment actual del muerto
+  let eqRows = [];
+  try {
+    eqRows = await db.all(
+      `SELECT eq.slot_id, eq.item_id,
+              COALESCE(s.sell_price, 0) AS unit_value
+       FROM user_equipment eq
+       LEFT JOIN shop_stock s
+         ON s.item_id = eq.item_id AND s.shop_id = 'general_store'
+       WHERE eq.user_id = ?`,
+      [userId]
+    );
+  } catch (err) {
+    console.warn('[combat/pvp-death] equipment read failed:', err.message);
+    eqRows = [];
+  }
+
+  if ((!invRows || invRows.length === 0) && (!eqRows || eqRows.length === 0)) {
+    console.log(`[combat/pvp-death] user ${userId}: nada que dropear`);
+    return;
+  }
+
+  // ---- 3) Entradas planas (no descomponer stacks aquí — sería ineficiente)
+  const entries = [];
+  for (const r of invRows || []) {
+    entries.push({
+      item_id:    r.item_id,
+      unit_value: r.unit_value || 0,
+      qty:        r.quantity,
+      source: { kind: 'inv', slot_index: r.slot_index },
+    });
+  }
+  for (const r of eqRows || []) {
+    entries.push({
+      item_id:    r.item_id,
+      unit_value: r.unit_value || 0,
+      qty:        1,
+      source: { kind: 'eq', slot_id: r.slot_id },
+    });
+  }
+
+  // ---- 4) Ordenar por unit_value DESC. Tie-break: equipment > inventory
+  entries.sort((a, b) => {
+    if (b.unit_value !== a.unit_value) return b.unit_value - a.unit_value;
+    if (a.source.kind !== b.source.kind) return a.source.kind === 'eq' ? -1 : 1;
+    return 0;
+  });
+
+  // ---- 5) Reparto top N unidades vs drop
+  let remaining = keepTopN;
+  const kept = [];
+  const drop = [];
+
+  for (const e of entries) {
+    if (remaining <= 0) {
+      drop.push({ ...e });
+      continue;
+    }
+    const keepQty = Math.min(remaining, e.qty);
+    remaining -= keepQty;
+    if (keepQty > 0) {
+      kept.push({ ...e, kept_qty: keepQty });
+    }
+    if (keepQty < e.qty) {
+      drop.push({ ...e, drop_qty: e.qty - keepQty });
+    }
+  }
+
+  // ---- 6) Borrar inv + equipment del muerto, reconstruir con `kept`
+  await db.run(`DELETE FROM user_inventory WHERE user_id = ?`, [userId]);
+  try {
+    await db.run(`DELETE FROM user_equipment WHERE user_id = ?`, [userId]);
+  } catch (err) {
+    console.warn('[combat/pvp-death] equipment delete failed:', err.message);
+  }
+
+  for (const e of kept) {
+    if (e.source.kind === 'eq') {
+      try {
+        await db.run(
+          `INSERT INTO user_equipment (user_id, slot_id, item_id, equipped_at)
+           VALUES (?, ?, ?, ?)`,
+          [userId, e.source.slot_id, e.item_id, now]
+        );
+      } catch (err) {
+        console.warn('[combat/pvp-death] re-equip failed, sending to inv:', err.message);
+        await safeInsertInvSlot(db, userId, e.item_id, e.kept_qty);
+      }
+    } else {
+      await safeInsertInvSlot(db, userId, e.item_id, e.kept_qty, e.source.slot_index);
+    }
+  }
+
+  // ---- 7) Dropear todo lo demás, agrupado por item_id
+  if (drop.length === 0) return;
+
+  const dropAgg = {};
+  for (const d of drop) {
+    const q = d.drop_qty != null ? d.drop_qty : d.qty;
+    dropAgg[d.item_id] = (dropAgg[d.item_id] || 0) + q;
+  }
+
+  const despawnAt = now + DEATH_LOOT_LIFETIME_MS;
+  for (const item_id of Object.keys(dropAgg)) {
+    const qty = dropAgg[item_id];
+    if (qty <= 0) continue;
+    const ox = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
+    const oz = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
+    await db.run(
+      `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+      [item_id, qty, deathX + ox, deathZ + oz, now, despawnAt]
+    );
+  }
+
+  console.log(
+    `[combat/pvp-death] user ${userId}: kept=${kept.length} entries, dropped=${Object.keys(dropAgg).length} types`
+  );
+}
+
+// Helper PVP: inserta en el primer slot libre o preferido del inventario.
+async function safeInsertInvSlot(db, userId, itemId, qty, preferredSlot) {
+  const MAX_SLOTS = 28;
+  const used = await db.all(
+    `SELECT slot_index FROM user_inventory WHERE user_id = ?`,
+    [userId]
+  );
+  const occupied = new Set((used || []).map(r => r.slot_index));
+
+  let slot = -1;
+  if (preferredSlot != null && !occupied.has(preferredSlot) && preferredSlot >= 0 && preferredSlot < MAX_SLOTS) {
+    slot = preferredSlot;
+  } else {
+    for (let i = 0; i < MAX_SLOTS; i++) {
+      if (!occupied.has(i)) { slot = i; break; }
+    }
+  }
+  if (slot === -1) {
+    console.warn('[combat/pvp-death] inventory full, item lost:', itemId);
+    return;
+  }
+  await db.run(
+    `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity) VALUES (?, ?, ?, ?)`,
+    [userId, slot, itemId, qty]
+  );
 }
