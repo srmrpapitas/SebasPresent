@@ -690,9 +690,25 @@ export class Character {
     this._crossFadeTo(action, 0.08);
     this.isAttacking = true;
 
+    // Sesión 26 — al terminar la animación, hacer crossfade explícito a
+    // la anim de retorno (sword_idle si está en combat stance, idle si no).
+    // Antes solo se ponía current=null y el world.js play loop tardaba
+    // 1+ frame en llamar a play('idle') → se veía T-pose breve.
     setTimeout(() => {
       this.isAttacking = false;
-      this.current = null;
+      if (this.isDead) { this.current = null; return; }
+      const next = this.combatStance
+        ? (this.actions.sword_idle || this.actions.idle)
+        : (this.actions.idle || this.actions.sword_idle);
+      if (next) {
+        next.setLoop(THREE.LoopRepeat, Infinity);
+        next.clampWhenFinished = false;
+        next.setEffectiveTimeScale(1);
+        next.setEffectiveWeight(1);
+        this._crossFadeTo(next, 0.12);
+      } else {
+        this.current = null;
+      }
     }, animMs + 20);
   }
 
@@ -763,7 +779,13 @@ export class Character {
 
   _scaleOneShot(action, targetMs) {
     action.setLoop(THREE.LoopOnce, 1);
-    action.clampWhenFinished = false;
+    // Sesión 26 — bug fix: antes era false, lo cual hacía que al terminar
+    // la animación de ataque, el mixer dejara de aplicar transformaciones
+    // a los huesos y la mesh se viera durante 1-2 frames en BIND POSE
+    // (T-pose con cintura hundida). Con true, el último frame del clip
+    // se mantiene hasta que la siguiente animación tome el relevo, sin
+    // saltos.
+    action.clampWhenFinished = true;
     const clipMs = action.getClip().duration * 1000;
     const timeScale = clipMs > targetMs ? clipMs / targetMs : 1;
     action.setEffectiveTimeScale(timeScale);
