@@ -15,6 +15,7 @@
  *   POST /api/ge/place /cancel /claim_all                       → handlers/ge.js
  *   GET  /api/combat/state, POST /attack /respawn /style        → handlers/combat.js
  *   POST /api/world/heartbeat, GET /api/world/peers             → handlers/world.js
+ *   GET  /api/world/snapshot                                    → handlers/snapshot.js (Sesión 27)
  *   POST /api/magic/home_teleport (+ /cancel /finish)           → handlers/home_teleport.js
  *   GET  /api/ground_items, POST /pickup                        → handlers/ground_items.js
  *   GET  /api/skills, POST /api/skills/grant                    → handlers/skills.js   (Sesión 14)
@@ -34,6 +35,7 @@ import * as bank from './handlers/bank.js';
 import * as ge from './handlers/ge.js';
 import * as combat from './handlers/combat.js';
 import * as world from './handlers/world.js';
+import * as snapshot from './handlers/snapshot.js';   // Sesión 27 Bloque 1
 import * as homeTele from './handlers/home_teleport.js';
 import * as groundItems from './handlers/ground_items.js';
 import * as skills from './handlers/skills.js';
@@ -119,6 +121,11 @@ export default {
         response = await world.handleWorldHeartbeat(request, env);
       } else if (path === '/api/world/peers' && method === 'GET') {
         response = await world.handleWorldPeers(request, env);
+      // ----- World Snapshot (Sesión 27 Bloque 1) -----
+      // Endpoint server-authoritative que devuelve players+NPCs+timestamp.
+      // Vive en paralelo con peers y combat/state durante Bloque 1.
+      } else if (path === '/api/world/snapshot' && method === 'GET') {
+        response = await snapshot.handleWorldSnapshot(request, env);
 
       // ----- Home Teleport -----
       } else if (path === '/api/magic/home_teleport' && method === 'POST') {
