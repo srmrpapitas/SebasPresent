@@ -564,7 +564,15 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   const stats = await dbGetUserStats(db, userId);
   const npc = await dbGetNpcInstance(db, npcInstanceId);
-  const userPos = await dbGetUserPosition(db, userId);
+  // Sesión 27 — Si el cliente envía su posición actual en el request
+  // (opts.userPos), la usamos directamente. Esto elimina el bug "fuera
+  // de alcance" causado por el desfase entre heartbeat (500ms) y el
+  // movimiento real del player (hasta 5.6m en ese intervalo a velocidad
+  // de run boost). Fallback a la pos persistida si el cliente no la
+  // manda (compatibilidad con clientes antiguos).
+  const userPos = (opts.userPos && Number.isFinite(opts.userPos.x) && Number.isFinite(opts.userPos.z))
+    ? { x: opts.userPos.x, z: opts.userPos.z }
+    : await dbGetUserPosition(db, userId);
   const style = await dbGetUserCombatStyle(db, userId);
 
   if (!npc) return { error: 'npc_not_found' };
