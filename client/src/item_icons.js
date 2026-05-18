@@ -44,7 +44,8 @@
     .inv-icon, .inv-ghost, .shop-cell-icon,
     .equip-slot-icon-wrap, .equip-tooltip-icon,
     .inv-context-menu-icon,
-    .skill-slot-icon, .skill-tooltip-title-icon {
+    .skill-slot-icon, .skill-tooltip-title-icon,
+    .bank-icon, .bank-ghost {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -53,7 +54,8 @@
     .inv-icon svg, .inv-ghost svg, .shop-cell-icon svg,
     .equip-slot-icon-wrap svg, .equip-tooltip-icon svg,
     .inv-context-menu-icon svg,
-    .skill-slot-icon svg, .skill-tooltip-title-icon svg {
+    .skill-slot-icon svg, .skill-tooltip-title-icon svg,
+    .bank-icon svg, .bank-ghost svg {
       width: 100%;
       height: 100%;
       display: block;

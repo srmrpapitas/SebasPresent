@@ -1,5 +1,8 @@
 /**
- * SebasPresent — Bank module (Slice 4b)
+ * SebasPresent — Bank module (Slice 4b + Sesión 26 SVG)
+ *
+ * Sesión 26 — Iconos renderizados como SVG custom cuando existe en
+ * item_icons.js, fallback al emoji del server si no.
  *
  * Responsabilidades:
  * - Renderizar el banco DENTRO del pane data-tab="bank" del sidebar.
@@ -23,6 +26,7 @@
 
 import * as api from './api.js';
 import * as inventory from './inventory.js';
+import { renderItemIcon } from './item_icons.js';
 
 const INV_SLOTS = 28;
 const DRAG_THRESHOLD_PX = 6;
@@ -212,7 +216,8 @@ function renderBank() {
 
     const iconEl = document.createElement('span');
     iconEl.className = 'bank-icon';
-    iconEl.textContent = data.icon || '?';
+    // Sesión 26 — SVG custom si lo hay, fallback emoji del server
+    renderItemIcon(iconEl, data.item_id, data.icon);
     slotEl.appendChild(iconEl);
 
     if (data.quantity > 1) {
@@ -255,7 +260,8 @@ function renderInvMirror() {
 
     const iconEl = document.createElement('span');
     iconEl.className = 'bank-icon';
-    iconEl.textContent = data.icon || '?';
+    // Sesión 26 — SVG custom si lo hay, fallback emoji del server
+    renderItemIcon(iconEl, data.item_id, data.icon);
     slotEl.appendChild(iconEl);
 
     if (data.stackable && data.quantity > 1) {
@@ -406,7 +412,8 @@ function createGhost(x, y) {
   if (!data) return;
   const ghost = document.createElement('div');
   ghost.className = 'bank-ghost';
-  ghost.textContent = data.icon || '?';
+  // Sesión 26 — SVG custom si lo hay, fallback emoji
+  renderItemIcon(ghost, data.item_id, data.icon);
   document.body.appendChild(ghost);
   dragState.ghostEl = ghost;
   positionGhost(x, y);
