@@ -535,7 +535,21 @@ export class Character {
     clip.name = name;
     adaptTrackNamesToSkeleton(clip, this._boneNames);
     if (CLIPS_TO_STRIP_ROOT.has(name)) {
-      const mode = (name === 'death' || name === 'sword_death') ? 'all' : 'horizontal';
+      // Sesión 26 — bug fix:
+      // Para ataques/punching/draw/sheath/drink/death usamos modo 'all'
+      // (fija Y al valor inicial del frame 0). Antes usaban 'horizontal'
+      // que dejaba Y libre → el root bone bajaba durante la animación
+      // y el personaje se hundía/T-poseaba parcialmente bajo el suelo.
+      // Solo locomoción (walk/run) sigue con 'horizontal' para preservar
+      // micro-rebotes de paso si la anim los tuviera.
+      let mode;
+      if (name === 'death' || name === 'sword_death') mode = 'all';
+      else if (name.startsWith('attack_') || name === 'punching'
+            || name === 'draw' || name === 'sheath' || name === 'drink') {
+        mode = 'all';
+      } else {
+        mode = 'horizontal';
+      }
       stripHipsPositionTrack(clip, mode);
     }
     this.clips[name] = clip;
@@ -763,6 +777,11 @@ export class Character {
       next.crossFadeFrom(this.current, fadeMs, true);
     }
     this.current = next;
+    // Sesión 26 — Fuerza el cálculo del primer sample del clip antes de
+    // que se renderice el siguiente frame. Sin esto, durante 1-2 frames
+    // se ve la bind pose (T-pose) porque el mixer aún no ha aplicado
+    // ninguna transformación a los huesos.
+    if (this.mixer) this.mixer.update(0);
   }
 
   update(dt) {

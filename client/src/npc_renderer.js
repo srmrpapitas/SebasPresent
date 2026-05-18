@@ -406,8 +406,14 @@ function syncMeshes() {
     }
     // Server pos = patrol CENTER. Solo re-anclamos si reportó cambio grande
     // (>2m): respawn o reposicionamiento real.
+    // Sesión 26 — pero NO re-anclar si el NPC está engaged o pending engage:
+    // un cambio del server (p.ej. respawn con jitter) no debe hacer saltar
+    // la mesh visualmente cuando el player ya la ha seleccionado.
+    let engagedSnap = null;
+    try { engagedSnap = combat.getStateSnapshot?.()?.currentTarget; } catch {}
+    const isLockedToPlayer = (npc.id === engagedSnap) || (npc.id === pendingEngageNpcId);
     const pp = mesh.userData.patrol;
-    if (pp) {
+    if (pp && !isLockedToPlayer) {
       const ddx = npc.x - pp.centerX;
       const ddz = npc.z - pp.centerZ;
       if (ddx*ddx + ddz*ddz > 4.0) {
@@ -525,7 +531,19 @@ function updatePatrol(dt) {
       let baseZ = p.centerZ;
       let baseY = 0;
 
-      if (npcId !== engagedId) {
+      // Sesión 26 — Bug fix: ANTES la órbita seguía aunque el player
+      // hubiera tappeado el NPC (pendingEngageNpcId). El target visual
+      // se movía mientras el player corría, y el player veía que se
+      // desplazaba "un poco a donde tendría que estar". Ahora pausamos
+      // la órbita tanto si está engaged como si está pendiente de engage.
+      const isPaused = (npcId === engagedId) || (npcId === pendingEngageNpcId);
+      if (!isPaused) {
+        // Sesión 26 — al volver a estado normal (ya no paused), limpiar
+        // la posición congelada por si fue establecida en un tap anterior.
+        if (p.frozenX !== undefined) {
+          p.frozenX = undefined;
+          p.frozenZ = undefined;
+        }
         p.angle += NPC_PATROL_SPEED_RPS * dt;
         p.bobT  += NPC_PATROL_BOB_HZ * Math.PI * 2 * dt;
         const dx = Math.cos(p.angle) * NPC_PATROL_RADIUS;
@@ -539,6 +557,20 @@ function updatePatrol(dt) {
         // PI a la rotación para modelos cuyo frente apunta a -Z en lugar de +Z.
         const facingOffset = NPC_FACING_REVERSED[ud.npc?.def_id] ? Math.PI : 0;
         group.rotation.y = Math.atan2(tx, tz) + facingOffset;
+      } else if (p.frozenX !== undefined) {
+        // Sesión 26 — Usar la posición FROZEN capturada al hacer tap.
+        // Esto sobreescribe cualquier recálculo orbital y previene saltos
+        // si syncMeshes re-ancla el centro mientras está pendiente engage.
+        baseX = p.frozenX;
+        baseZ = p.frozenZ;
+        baseY = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
+      } else {
+        // Fallback (no frozenX): mantener última posición orbital.
+        const dx = Math.cos(p.angle) * NPC_PATROL_RADIUS;
+        const dz = Math.sin(p.angle) * NPC_PATROL_RADIUS;
+        baseX += dx;
+        baseZ += dz;
+        baseY = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
       }
 
       const r = ud.reaction;
@@ -688,6 +720,19 @@ function triggerNpcTap(npcId) {
   const mesh = npcMeshes.get(npcId);
   const targetX = mesh ? mesh.position.x : npc.x;
   const targetZ = mesh ? mesh.position.z : npc.z;
+
+  // Sesión 26 — Bug fix: congelar la posición visual del NPC en el
+  // instante exacto del tap. Antes, si entre el tap y el engage final
+  // entraba un syncMeshes que detectara un cambio >2m en npc.x/z del
+  // server (p.ej. respawn con jitter), el patrol se re-anclaba y la
+  // mesh saltaba unos metros — el player veía que el NPC "se movía a
+  // donde tendría que estar". Con frozenX/Z, updatePatrol y syncMeshes
+  // respetan esta posición mientras el NPC esté seleccionado/pending.
+  if (mesh && mesh.userData.patrol) {
+    mesh.userData.patrol.frozenX = targetX;
+    mesh.userData.patrol.frozenZ = targetZ;
+  }
+
   const dx = targetX - player.position.x;
   const dz = targetZ - player.position.z;
   const dist = Math.hypot(dx, dz);
