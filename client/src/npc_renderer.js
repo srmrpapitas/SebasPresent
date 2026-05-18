@@ -1,6 +1,26 @@
 /**
  * SebasPresent — NPC Renderer module (Sesión 6 refactor)
  *
+ * Sesión 27 Bloque 2: La FUENTE DE NPCs cambia. Antes:
+ *   - combat.onUpdate(({npcs}) => syncMeshes())  cada vez que combat polea
+ *     /api/combat/state (cada 5s).
+ *   - combat.refresh() inicial para arrancar.
+ *
+ * Ahora:
+ *   - Leemos npcs desde world_snapshot.getNpcs() en cada frame. El polling
+ *     del snapshot va a 250ms (4Hz), así que los NPCs se mueven/pierden HP
+ *     20× más rápido en pantalla.
+ *   - Usamos un guard "lastProcessedSnapshotNow" para llamar syncMeshes()
+ *     SOLO cuando hay un snapshot nuevo, no en cada frame. Eso evita CPU
+ *     innecesaria cuando no hay datos nuevos.
+ *
+ * combat.js sigue intacto: continúa poleando /api/combat/state para tener
+ * stats del player, currentTarget, level-ups, etc. No le tocamos nada.
+ * Los hooks window.__worldFlashNpcHit y window.__worldSpawnHitsplat siguen
+ * vivos para que combat.js dispare los efectos visuales al recibir hits.
+ *
+ * --- resto del comentario original ---
+ *
  * Sesión 20 fixes:
  *   - Tap más perdonable: NPC_TAP_SCREEN_PX 56 → 90, busca el NPC más
  *     cercano al tap dentro del radio aunque el raycast NO acierte.
@@ -18,12 +38,12 @@
  *   - Tap (raycast + screen-space proximity) y long-press (menú acciones).
  *   - Auto-engage: caminar hacia un NPC tapeado lejos y enganchar al llegar.
  *   - Hitsplats DOM (gota roja con daño / escudo azul con miss).
- *   - Polling periódico al server para refrescar NPCs vía combat.refresh().
  */
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as combat from './combat.js';
+import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 2
 import { bakeGlbModel } from './terrain.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
@@ -72,7 +92,9 @@ const NPC_PATROL_BOB_HZ    = 1.8;
 const NPC_REACT_DURATION_S = 0.18;
 const NPC_REACT_KICK_DIST  = 0.35;
 
-const NPC_POLL_INTERVAL_MS = 5000;
+// Sesión 27 Bloque 2 — NPC_POLL_INTERVAL_MS eliminado. Ya no poleamos.
+// El snapshot global llega cada 250ms via world_snapshot.js.
+
 const NPC_RENDER_RADIUS    = 100;
 export const NPC_MINIMAP_RADIUS = 500;
 
@@ -104,8 +126,9 @@ let feedLog = null;
 let NPC_GEOMS = null;
 const npcMeshes = new Map();
 let npcDataList = [];
-let npcPollTimer = 0;
-let combatUnsubscribe = null;
+// Sesión 27 Bloque 2 — guard para procesar el snapshot solo cuando es nuevo.
+// Se compara contra worldSnapshot.getSnapshot().now (timestamp server).
+let lastProcessedSnapshotNow = 0;
 let pendingEngageNpcId = null;
 
 let actionMenuEl = null;
@@ -131,18 +154,15 @@ export async function start(opts) {
   feedLog            = opts.feedLog            || (() => {});
 
   raycaster = new THREE.Raycaster();
-  npcPollTimer = 0;
   pendingEngageNpcId = null;
   npcDataList = [];
+  lastProcessedSnapshotNow = 0;
 
   await loadGLBs();
 
-  combatUnsubscribe = combat.onUpdate(({ npcs }) => {
-    if (!Array.isArray(npcs)) return;
-    npcDataList = npcs;
-    syncMeshes();
-  });
-  combat.refresh().catch(e => console.warn('[npc_renderer] combat refresh:', e));
+  // Sesión 27 Bloque 2 — Ya no nos suscribimos a combat.onUpdate ni hacemos
+  // combat.refresh() inicial. La lista de NPCs llega vía world_snapshot
+  // poleando /api/world/snapshot cada 250ms. Se procesa en update(dt).
 
   // Hooks globales para que combat.js dispare efectos visuales sin tener que
   // importarnos directamente (evita circular imports).
@@ -156,7 +176,6 @@ export async function start(opts) {
 
 export function stop() {
   if (!started) return;
-  if (combatUnsubscribe) { combatUnsubscribe(); combatUnsubscribe = null; }
   for (const m of npcMeshes.values()) {
     if (m.parent) m.parent.remove(m);
     m.traverse?.(obj => {
@@ -169,7 +188,7 @@ export function stop() {
   }
   npcMeshes.clear();
   npcDataList = [];
-  npcPollTimer = 0;
+  lastProcessedSnapshotNow = 0;
   pendingEngageNpcId = null;
 
   if (NPC_GEOMS) {
@@ -194,11 +213,26 @@ export function stop() {
 
 export function update(dt) {
   if (!started) return;
+  // Sesión 27 Bloque 2 — Leer NPCs del snapshot global. Solo procesa si hay
+  // snapshot nuevo (timestamp distinto del último visto), evitando ejecutar
+  // syncMeshes() en cada frame cuando no hay datos nuevos.
+  pollSnapshotForNpcs();
   updatePatrol(dt);
   updateHpBars();
-  updatePolling(dt);
   // Sesión 20 — perseguir NPC si me alejo durante combate
   updateCombatFollow();
+}
+
+// ============================================================
+// Sesión 27 Bloque 2 — Lectura de NPCs del snapshot global
+// ============================================================
+function pollSnapshotForNpcs() {
+  const snap = worldSnapshot.getSnapshot();
+  if (!snap) return;
+  if (snap.now === lastProcessedSnapshotNow) return; // nada nuevo
+  lastProcessedSnapshotNow = snap.now;
+  npcDataList = snap.npcs || [];
+  syncMeshes();
 }
 
 // ============================================================
@@ -653,12 +687,8 @@ function updateHpBars() {
   }
 }
 
-function updatePolling(dt) {
-  npcPollTimer += dt * 1000;
-  if (npcPollTimer < NPC_POLL_INTERVAL_MS) return;
-  npcPollTimer = 0;
-  combat.refresh().catch(() => {});
-}
+// Sesión 27 Bloque 2 — updatePolling() eliminado. Ya no poleamos directamente
+// /api/combat/state desde aquí. Los datos vienen del world_snapshot (250ms).
 
 // ============================================================
 // Tap detection (Sesión 20 — más perdonable)
