@@ -885,11 +885,25 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // -------- Range --------
   const d = dist(attackerPos.x, attackerPos.z, targetPos.x, targetPos.z);
   const isRanged = (weaponType === 'bow');
-  // Para PVP, el "attack_range" base de un player es 1m (melee típico).
-  const PLAYER_BASE_ATTACK_RANGE = 1.0;
+  // Sesión 27 Bloque 3 fix — Rango PVP MÁS GENEROSO que el de NPC.
+  //
+  // Razón: en PVP dos personajes 3D tienen ~0.5-0.7m de ancho cada uno,
+  // así que cuando se ven "pegados" en pantalla los CENTROS están a
+  // 1.5-2m de distancia. Con la fórmula vieja (1.0 + 0.8 = 1.8m max
+  // melee) caías "fuera de rango" al moverte aunque visualmente
+  // estuvierais al lado.
+  //
+  // Ahora:
+  //   - PVP_PLAYER_BASE_RANGE = 2.5m (compensa el ancho del personaje)
+  //   - PVP_MELEE_MAX_RANGE   = 4.0m (cap más amplio que NPC)
+  // Resultado: melee PVP llega hasta min(2.5+0.8, 4.0) = 3.3m. Suficiente
+  // para que estar visualmente al lado siempre cuente como "en rango",
+  // sin permitir golpes desde lejos.
+  const PVP_PLAYER_BASE_RANGE = 2.5;
+  const PVP_MELEE_MAX_RANGE   = 4.0;
   const maxRange = isRanged
-    ? Math.max(PLAYER_BASE_ATTACK_RANGE + 8.0, 10.0)
-    : Math.min(PLAYER_BASE_ATTACK_RANGE + RANGE_TOLERANCE, MELEE_MAX_RANGE);
+    ? Math.max(PVP_PLAYER_BASE_RANGE + 8.0, 10.0)
+    : Math.min(PVP_PLAYER_BASE_RANGE + RANGE_TOLERANCE, PVP_MELEE_MAX_RANGE);
   if (d > maxRange) {
     return {
       error: 'out_of_range',
