@@ -867,7 +867,10 @@ function drawMinimap() {
     }
   }
 
-  // NUEVO: NPCs como puntos blancos
+  // NPCs como puntos en el minimapa.
+  // Sesión 27 Bloque 3 — NPCs en wilderness (x < WILDERNESS_X) salen
+  // en AMARILLO (zona hostil / PVE-PVP mixto). Fuera de wilderness,
+  // siguen blancos como antes.
   const NPC_RAD_SQ = NPC_MINIMAP_RADIUS * NPC_MINIMAP_RADIUS;
   for (const npc of npcRenderer.getNpcDataList()) {
     const dx = npc.x - px, dz = npc.z - pz;
@@ -875,7 +878,7 @@ function drawMinimap() {
     const sx = cx + dx * scale, sy = cy + dz * scale;
     ctx.beginPath();
     ctx.arc(sx, sy, 2, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = (npc.x < WILDERNESS_X) ? '#ffd040' : '#fff';
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.7)';
     ctx.lineWidth = 0.8;

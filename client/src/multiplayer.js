@@ -454,19 +454,15 @@ export function spawnHitsplatOnPeer(userId, damage) {
 export function flashPeerHit(userId) {
   const peer = mpLastPeerMap.get(userId);
   if (!peer || !peer.group) return;
-  // Kick: empuja al peer ligeramente fuera del atacante (player local).
-  // El interp loop sobrescribirá esto en el próximo frame, así que solo
-  // visible 1 frame, pero suficiente para sensación de impacto.
-  // Para hacerlo más visible, parpadeamos el name tag a rojo brevemente.
-  if (peer.nameTagDiv) {
-    const orig = peer.nameTagDiv.style.color;
-    peer.nameTagDiv.style.color = '#ff5050';
-    peer.nameTagDiv.style.textShadow = '0 0 8px rgba(255,80,80,0.9), 1px 1px 0 #000';
+  // Parpadeo rojo del nombre dentro del nameplate
+  const nameEl = peer.nameplate?.name;
+  if (nameEl) {
+    const orig = nameEl.style.color;
+    nameEl.style.color = '#ff5050';
+    nameEl.style.textShadow = '0 0 8px rgba(255,80,80,0.9), 1px 1px 0 #000';
     setTimeout(() => {
-      if (peer.nameTagDiv) {
-        peer.nameTagDiv.style.color = orig || '';
-        peer.nameTagDiv.style.textShadow = '';
-      }
+      nameEl.style.color = orig || '';
+      nameEl.style.textShadow = '';
     }, 180);
   }
 }
@@ -807,39 +803,53 @@ function createPeer(p) {
 
   scene.add(group);
 
-  // Etiqueta DOM con username flotante sobre la cabeza
-  const nameTagDiv = document.createElement('div');
-  nameTagDiv.className = 'osrs-peer-nametag';
-  nameTagDiv.textContent = p.username || ('user' + p.user_id);
-  Object.assign(nameTagDiv.style, {
-    position: 'fixed',
-    pointerEvents: 'none',
-    background: 'rgba(20, 14, 8, 0.85)',
-    border: '1.5px solid #c8a043',
-    borderRadius: '3px',
-    padding: '2px 8px',
-    color: '#f0e0b0',
-    fontFamily: "'Cinzel', serif",
-    fontWeight: '600',
-    fontSize: '12px',
-    textShadow: '1px 1px 0 #000',
-    transform: 'translate(-50%, -50%)',
-    zIndex: '40',
-    display: 'none',
-  });
-  document.body.appendChild(nameTagDiv);
+  // ============================================================
+  // Sesión 27 Bloque 3 — NAMEPLATE OSRS-style sobre cada peer
+  // ============================================================
+  //
+  // Estructura unificada: HP bar arriba + nombre con combat lvl debajo.
+  // Antes eran 2 divs separados (nameTagDiv + hpBarDiv); ahora es uno
+  // solo más compacto y se posiciona como bloque.
+  //
+  // HTML:
+  //   <div class="osrs-nameplate">
+  //     <div class="osrs-nameplate-hpbar">
+  //       <div class="osrs-nameplate-hpfill"></div>
+  //     </div>
+  //     <div class="osrs-nameplate-label">
+  //       Sebas <span class="osrs-nameplate-lvl">(lvl 25)</span>
+  //     </div>
+  //   </div>
+  //
+  const nameplateDiv = document.createElement('div');
+  nameplateDiv.className = 'osrs-nameplate';
+  const lvlInit = typeof p.combat_lvl === 'number' ? p.combat_lvl : 1;
+  nameplateDiv.innerHTML = `
+    <div class="osrs-nameplate-hpbar">
+      <div class="osrs-nameplate-hpfill" style="width:100%"></div>
+    </div>
+    <div class="osrs-nameplate-label">
+      <span class="osrs-nameplate-name">${escapeHtmlNp(p.username || ('user' + p.user_id))}</span>
+      <span class="osrs-nameplate-lvl">(lvl <span class="osrs-nameplate-lvl-num">${lvlInit}</span>)</span>
+    </div>
+  `;
+  document.body.appendChild(nameplateDiv);
 
-  // Sesión 18 — HP bar doble cara DOM sobre la cabeza del peer.
-  // Mismo estilo que la del player local (definido en world.js como
-  // .player-hpbar). Aquí usamos .peer-hpbar para que tengan su propio
-  // namespace y estilos en este módulo.
-  const hpBarDiv = document.createElement('div');
-  hpBarDiv.className = 'peer-hpbar';
-  hpBarDiv.innerHTML = '<div class="peer-hpbar-fill" style="width:100%"></div>';
-  document.body.appendChild(hpBarDiv);
+  // Refs internos para updates rápidos sin queries
+  const nameplateRefs = {
+    root:   nameplateDiv,
+    hpFill: nameplateDiv.querySelector('.osrs-nameplate-hpfill'),
+    name:   nameplateDiv.querySelector('.osrs-nameplate-name'),
+    lvlNum: nameplateDiv.querySelector('.osrs-nameplate-lvl-num'),
+  };
 
   return {
-    group, nameTagDiv, hpBarDiv,
+    group,
+    // Compatibilidad legacy: nameTagDiv y hpBarDiv apuntan al mismo
+    // nameplate (otros sitios del código los leen para hide/show).
+    nameTagDiv: nameplateDiv,
+    hpBarDiv:   nameplateDiv,
+    nameplate:  nameplateRefs,
     mixer: peerMixer,
     actions: peerActions,
     currentAction: peerActions.idle || null,
@@ -877,40 +887,47 @@ function removePeer(userId) {
 }
 
 function updatePeerNameTag(peer) {
+  if (!peer.nameplate) return;
   const v = new THREE.Vector3(
     peer.group.position.x,
     peer.group.position.y + NAME_TAG_HEIGHT,
     peer.group.position.z
   );
   v.project(camera);
+  const root = peer.nameplate.root;
   if (v.z > 1 || v.z < -1) {
-    peer.nameTagDiv.style.display = 'none';
-    // Sesión 18 — esconder HP bar también si el peer está fuera de cámara
-    if (peer.hpBarDiv) peer.hpBarDiv.style.display = 'none';
+    root.style.display = 'none';
     return;
   }
   const rect = canvas.getBoundingClientRect();
   const sx = (v.x * 0.5 + 0.5) * rect.width + rect.left;
   const sy = (-v.y * 0.5 + 0.5) * rect.height + rect.top;
-  peer.nameTagDiv.style.left = sx + 'px';
-  peer.nameTagDiv.style.top  = sy + 'px';
-  peer.nameTagDiv.style.display = 'block';
+  root.style.left = sx + 'px';
+  root.style.top  = sy + 'px';
+  root.style.display = 'block';
 
-  // Sesión 18 — HP bar doble cara justo arriba del nametag
-  if (peer.hpBarDiv) {
-    peer.hpBarDiv.style.left = sx + 'px';
-    peer.hpBarDiv.style.top  = (sy - HP_BAR_OFFSET_PX) + 'px';
-    peer.hpBarDiv.style.display = 'flex';
-    const pct = peer.hpMax > 0
-      ? Math.max(0, Math.min(100, (peer.hp / peer.hpMax) * 100))
-      : 100;
-    const fill = peer.hpBarDiv.querySelector('.peer-hpbar-fill');
-    if (fill) fill.style.width = pct + '%';
+  // HP bar: width + color según porcentaje
+  const pct = peer.hpMax > 0
+    ? Math.max(0, Math.min(100, (peer.hp / peer.hpMax) * 100))
+    : 100;
+  if (peer.nameplate.hpFill) {
+    peer.nameplate.hpFill.style.width = pct + '%';
+    // Solo 2 estados: verde (>50%) → rojo (<=50%). Sin amarillo.
+    const color = pct > 50
+      ? 'linear-gradient(180deg, #4abc4a, #2e7a2e)'
+      : 'linear-gradient(180deg, #d04030, #801a14)';
+    peer.nameplate.hpFill.style.background = color;
+  }
+  // Actualizar lvl si cambió (raro pero posible al subir nivel)
+  if (peer.nameplate.lvlNum && peer.combatLvl != null) {
+    const current = peer.nameplate.lvlNum.textContent;
+    const next = String(peer.combatLvl);
+    if (current !== next) peer.nameplate.lvlNum.textContent = next;
   }
 }
 
 // ============================================================
-// Sesión 18 — Estilos HP bar de peers
+// Sesión 27 Bloque 3 — Estilos NAMEPLATE OSRS (HP bar + nombre + lvl)
 // ============================================================
 function ensurePeerHpBarStyles() {
   if (hpBarStylesInjected) return;
@@ -921,28 +938,66 @@ function ensurePeerHpBarStyles() {
   const style = document.createElement('style');
   style.id = 'peer-hpbar-styles';
   style.textContent = `
-    .peer-hpbar {
+    .osrs-nameplate {
       position: fixed;
       z-index: 41;
       pointer-events: none;
-      transform: translate(-50%, -100%);
-      width: 60px;
+      transform: translate(-50%, calc(-100% - 4px));
+      display: none;
+      width: max-content;
+      min-width: 64px;
+      text-align: center;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.7));
+    }
+    .osrs-nameplate-hpbar {
+      width: 64px;
       height: 7px;
+      margin: 0 auto 2px auto;
       border: 1.5px solid #000;
       border-radius: 2px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.7);
       background: #5a0e0e;
       overflow: hidden;
-      display: none;
     }
-    .peer-hpbar-fill {
+    .osrs-nameplate-hpfill {
       height: 100%;
       background: linear-gradient(180deg, #4abc4a, #2e7a2e);
-      transition: width 0.25s;
+      transition: width 0.25s ease-out, background 0.3s ease;
+    }
+    .osrs-nameplate-label {
+      display: inline-block;
+      background: rgba(20, 14, 8, 0.88);
+      border: 1.5px solid #c8a043;
+      border-radius: 3px;
+      padding: 1px 7px;
+      font-family: 'Cinzel', 'IM Fell English', serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+      text-shadow: 1px 1px 0 #000;
+      white-space: nowrap;
+    }
+    .osrs-nameplate-name {
+      color: #ffe080;
+    }
+    .osrs-nameplate-lvl {
+      color: rgba(232, 197, 96, 0.75);
+      font-weight: 500;
+      font-size: 10px;
+      margin-left: 4px;
+    }
+    .osrs-nameplate-lvl-num {
+      color: #f0e0b0;
     }
   `;
   document.head.appendChild(style);
   hpBarStylesInjected = true;
+}
+
+// Escapa html para meter username de forma segura en innerHTML.
+function escapeHtmlNp(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ============================================================
