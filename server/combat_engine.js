@@ -46,7 +46,13 @@ const XP_TABLE = [
 // (STANCE_MODIFIERS). TICK_MS se usa como fallback si falta info.
 const TICK_MS = 900;
 const RANGE_TOLERANCE = 0.8;
-const MELEE_MAX_RANGE = 2.5;
+// Sesión 26 — 3.0 funciona estilo OSRS: el cliente reduce el patrol
+// visual a 0.8 unidades, así la posición visible del NPC nunca está más
+// de 0.8 del center. Margen 3.0 = orbit (0.8) + tolerance (0.8) + buffer
+// para el player walking (1.4). Si alguna vez vuelve a salir
+// "fuera de alcance" en condiciones normales, subir esto antes que el
+// orbit del cliente.
+const MELEE_MAX_RANGE = 3.0;
 const MAX_LEVEL = 99;
 const XP_PER_DMG_PER_SKILL = 4 / 3;
 
@@ -289,6 +295,26 @@ async function dbGetUserStats(db, userId) {
 }
 
 async function dbGetUserPosition(db, userId) {
+  // Sesión 27 — Fix "fuera de alcance":
+  // Preferimos online_users.x/z (heartbeat cada 500ms desde multiplayer.js)
+  // sobre users.last_x/last_z (save explícito, hasta 10s de delay fuera de
+  // combate). online_users es la fuente más fresca y elimina el desfase
+  // entre "el cliente llega visualmente al NPC" y "el server cree que aún
+  // estoy lejos".
+  //
+  // Fallback a users.last_x/last_z para casos donde no haya heartbeat:
+  //   - Primer segundo post-login (antes del primer heartbeat).
+  //   - Player con sesión sin multiplayer activo.
+  //   - Heartbeat caducado (>10s sin actividad).
+  const ONLINE_FRESH_MS = 10_000;
+  const cutoff = Date.now() - ONLINE_FRESH_MS;
+  const online = await db.first(
+    'SELECT x, z FROM online_users WHERE user_id = ? AND last_seen > ?',
+    [userId, cutoff]
+  );
+  if (online) {
+    return { x: online.x, z: online.z };
+  }
   const row = await db.first('SELECT last_x, last_z FROM users WHERE id = ?', [userId]);
   if (!row) return null;
   return {
