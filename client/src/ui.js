@@ -7,10 +7,17 @@
  * En su lugar abre el overlay fullscreen del Grand Exchange.
  * En slice 6, este trigger temporal se reemplazara por la
  * interaccion con el NPC del edificio fisico del GE.
+ *
+ * Sesión 27: el botón "↩ Salir" arriba-izquierda solo se muestra cuando
+ * estás dentro de un edificio (interiors.isActive()). El logout normal
+ * vive solo en el sidebar abajo-derecha. Para evitar dependencia circular
+ * con interiors.js, ui.js polea cada 400ms el estado y muestra/oculta el
+ * botón en consecuencia. Es barato (un puntero a función) y robusto.
  */
 import * as bank from './bank.js';
 import * as ge from './ge.js';
 import * as combat from './combat.js';
+import * as interiors from './interiors.js';
 
 const $ = (id) => {
   const el = document.getElementById(id);
@@ -123,6 +130,7 @@ export function fadeOutLoginMusic(durationMs = 800) {
 // ============================================================
 
 let currentTab = 'inventory'; // tab activo al arrancar (data-tab-pane "active")
+let exitBtnPoller = null;     // Sesión 27 — interval que controla visibilidad
 
 export function initSidebar({ onLogout } = {}) {
   const sidebar = els.osrsSidebar;
@@ -197,6 +205,21 @@ export function initSidebar({ onLogout } = {}) {
       ev.preventDefault();
       onLogout();
     });
+  }
+
+  // Sesión 27 — Mostrar el botón "↩ Salir" arriba-izquierda SOLO cuando
+  // estás dentro de un edificio. Poleamos cada 400ms (barato y no
+  // requiere acoplar a interiors.js con callbacks). Si interiors.js
+  // todavía no está cargado al arrancar, isActive() devuelve undefined
+  // y el botón queda oculto por defecto.
+  if (els.worldLogoutBtn && !exitBtnPoller) {
+    // Estado inicial: oculto. Se mostrará si entras a un edificio.
+    els.worldLogoutBtn.style.display = 'none';
+    exitBtnPoller = setInterval(() => {
+      let inInterior = false;
+      try { inInterior = !!interiors.isActive?.(); } catch {}
+      els.worldLogoutBtn.style.display = inInterior ? '' : 'none';
+    }, 400);
   }
 }
 
