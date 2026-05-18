@@ -192,7 +192,41 @@ export async function handleWorldSnapshot(request, env) {
           (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS,
       }));
 
-    return json({ now, players, npcs });
+    // -------------------- Me (info del propio user) --------------------
+    // Sesión 27 Bloque 3 — AUTO RETALIATE
+    // Para que el cliente pueda hacer auto-retaliate sin endpoints extra,
+    // incluimos en cada snapshot el "último ataque que recibí". Eso lo
+    // sacamos de combat_log con una query simple (target_id = mi user,
+    // target_type = 0 (player), últimos 8 segundos).
+    //
+    // El cliente, cuando autoRetaliate=ON y no tiene target, mira este
+    // campo y engagea al atacante automáticamente (NPC o player según
+    // attacker_type: 0=player, 1=npc).
+    const RETALIATE_WINDOW_MS = 8_000;
+    const retaliateCutoff = now - RETALIATE_WINDOW_MS;
+    let me = { last_attacker: null };
+    try {
+      const lastAtk = await env.DB.prepare(
+        `SELECT attacker_type, attacker_id, ts
+         FROM combat_log
+         WHERE target_type = 0 AND target_id = ? AND ts > ?
+         ORDER BY ts DESC LIMIT 1`
+      ).bind(session.user_id, retaliateCutoff).first();
+      if (lastAtk) {
+        me.last_attacker = {
+          type: lastAtk.attacker_type,   // 0=player, 1=npc
+          id:   lastAtk.attacker_id,
+          at:   lastAtk.ts,
+        };
+      }
+    } catch (err) {
+      // Si la query falla (índice ausente, tabla vacía, etc), no es crítico
+      // — solo significa que el auto-retaliate de este snapshot no
+      // disparará. Próximo snapshot intentamos de nuevo.
+      console.warn('[snapshot] last_attacker query failed:', err.message);
+    }
+
+    return json({ now, players, npcs, me });
   } catch (err) {
     console.error('[world/snapshot]', err);
     return json({ error: 'internal_error', message: err.message }, 500);
