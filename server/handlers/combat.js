@@ -103,6 +103,15 @@ export async function handleCombatAttackPlayer(request, env) {
   if (Number.isFinite(cx) && Number.isFinite(cz)) {
     opts.userPos = { x: cx, z: cz };
   }
+  // Sesión 27 Bloque 3 fix — Pos visual del TARGET (lo que el atacante
+  // ve en pantalla). Server compara con la pos persistida y si la
+  // discrepancia es plausible (<6m), confía en ella. Esto elimina el
+  // "fuera de rango" cuando el target se mueve entre heartbeats.
+  const tx = Number(body.target_x);
+  const tz = Number(body.target_z);
+  if (Number.isFinite(tx) && Number.isFinite(tz)) {
+    opts.targetPos = { x: tx, z: tz };
+  }
 
   const db = makeDbAdapter(env);
   try {
