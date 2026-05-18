@@ -1,49 +1,83 @@
 /**
- * SebasPresent — NPC Renderer module (Sesión 6 refactor)
+ * SebasPresent — NPC Renderer module
  *
- * Sesión 27 Bloque 2: La FUENTE DE NPCs cambia. Antes:
- *   - combat.onUpdate(({npcs}) => syncMeshes())  cada vez que combat polea
- *     /api/combat/state (cada 5s).
- *   - combat.refresh() inicial para arrancar.
+ * ============================================================
+ * Sesión 27 Bloque 2.5 — REFACTOR SERVER-AUTHORITATIVE (OSRS-style)
+ * ============================================================
+ *
+ * CAMBIO CLAVE: el cliente YA NO simula el movimiento de los NPCs. Antes
+ * cada NPC orbitaba su spawn point con un patrol procedural (radio 3m).
+ * Eso causaba que la mesh visual estuviera HASTA 3m de la posición que
+ * el server creía que tenía → "Fuera de alcance" al atacar de cerca.
  *
  * Ahora:
- *   - Leemos npcs desde world_snapshot.getNpcs() en cada frame. El polling
- *     del snapshot va a 250ms (4Hz), así que los NPCs se mueven/pierden HP
- *     20× más rápido en pantalla.
- *   - Usamos un guard "lastProcessedSnapshotNow" para llamar syncMeshes()
- *     SOLO cuando hay un snapshot nuevo, no en cada frame. Eso evita CPU
- *     innecesaria cuando no hay datos nuevos.
+ *   - Server tiene la posición autoritativa (npc.x, npc.z en snapshot).
+ *   - Cliente dibuja la mesh EXACTAMENTE donde el server dice.
+ *   - Para que el movimiento sea fluido cuando el server mueva NPCs
+ *     (Bloque 3+), entre snapshot y snapshot interpolamos suavemente
+ *     (entity interpolation, técnica estándar en MMOs: Albion, New World,
+ *     CS:GO usan la misma idea).
  *
- * combat.js sigue intacto: continúa poleando /api/combat/state para tener
- * stats del player, currentTarget, level-ups, etc. No le tocamos nada.
- * Los hooks window.__worldFlashNpcHit y window.__worldSpawnHitsplat siguen
- * vivos para que combat.js dispare los efectos visuales al recibir hits.
+ * Resultado:
+ *   - Hit-box VISUAL = hit-box REAL del server. Cero desfase.
+ *   - "Fuera de alcance" desaparece (combinado con que combat.js manda
+ *     la pos del player en el body del attack).
+ *   - PVP futuro: peers usarán EL MISMO patrón. multiplayer.js leerá el
+ *     mismo snapshot y aplicará interpolación idéntica. Cero discrepancia
+ *     entre lo que ves de un peer y lo que el server cree de él.
+ *   - Cuando el server tickee y mueva NPCs server-side (Bloque 3), los
+ *     verás moverse fluido SIN tocar nada del cliente — el lerp ya está.
  *
- * --- resto del comentario original ---
+ * Trade-off temporal: hasta Bloque 3, los NPCs están QUIETOS en su
+ * spawn server. Sin patrol orbital cliente. Eso es la base OSRS-correcta
+ * — en OSRS clásico el server controla TODO movimiento de NPCs, el
+ * cliente no inventa nada.
  *
- * Sesión 20 fixes:
- *   - Tap más perdonable: NPC_TAP_SCREEN_PX 56 → 90, busca el NPC más
- *     cercano al tap dentro del radio aunque el raycast NO acierte.
- *   - NPC_ENGAGE_RANGE 1.4 → 2.0 (margen melee). Coincide con server.
- *   - PERSEGUIR durante combate: si el NPC se aleja >MELEE_RANGE, el cliente
- *     ordena auto-walk hacia él para no atacar de lejos. Esto soluciona
- *     "pego desde lejos sin moverme".
+ * ============================================================
+ * Cosas que cambiaron respecto a la versión anterior:
+ * ============================================================
  *
- * Todo lo relacionado con NPCs:
- *   - Carga de GLBs por tipo (chicken, cow, goblin...) con placeholder fallback.
- *   - Mesh creation por NPC con HP bar billboard + materiales propios.
- *   - Patrol procedural (cada NPC orbita su spawn point).
- *   - Hit reaction (kick + flash rojo emissive) al recibir golpe del player.
- *   - HP bars 2D que miran a cámara.
- *   - Tap (raycast + screen-space proximity) y long-press (menú acciones).
- *   - Auto-engage: caminar hacia un NPC tapeado lejos y enganchar al llegar.
- *   - Hitsplats DOM (gota roja con daño / escudo azul con miss).
+ * ELIMINADO:
+ *   - NPC_PATROL_RADIUS, NPC_PATROL_SPEED_RPS, NPC_PATROL_BOB_*
+ *   - `patrol` object dentro de mesh.userData
+ *   - `frozenX/Z` hack (era compensación del patrol)
+ *   - COMBAT_FOLLOW_RANGE y updateCombatFollow() (NPC ya no se mueve
+ *     client-side, no hay nada que perseguir)
+ *   - Lógica de "re-anclar patrol center si npc.x/z saltó"
+ *
+ * AÑADIDO:
+ *   - `interp` object dentro de mesh.userData:
+ *       prevX, prevZ          - pos al inicio del lerp actual
+ *       targetX, targetZ      - pos del último snapshot
+ *       startMs               - performance.now() del inicio del lerp
+ *       durationMs            - cuánto dura el lerp (≈ período snapshot)
+ *       lastFacingY           - rotación cuando no hay delta de movimiento
+ *   - updateInterpolation() en lugar de updatePatrol()
+ *
+ * IDÉNTICO (no se ha tocado):
+ *   - Carga GLB de NPCs
+ *   - HP bars (geometría, billboard, update)
+ *   - Hit reaction (kick + flash emissive)
+ *   - Tap detection (raycast + screen-space proximity)
+ *   - Action menu / long-press / examine
+ *   - Hitsplats DOM
+ *   - Hooks globales (__worldFlashNpcHit, __worldSpawnHitsplat,
+ *     __getPlayerPosition)
+ *
+ * ============================================================
+ * Sesión 27 Bloque 2 (mantenido):
+ * ============================================================
+ *
+ * La FUENTE de NPCs es world_snapshot.getNpcs() (poll 250ms al server).
+ * Procesamos solo cuando snap.now cambia. combat.onUpdate ya no se usa
+ * para refrescar NPCs — solo para sus stats internas (currentTarget,
+ * level-ups, etc).
  */
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as combat from './combat.js';
-import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 2
+import * as worldSnapshot from './world_snapshot.js';
 import { bakeGlbModel } from './terrain.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
@@ -75,40 +109,47 @@ const NPC_GLB_FORCE_NO_ZUP = { cow: true };
 const NPC_GLB_FORCE_ZUP = {};
 const NPC_GLB_FORCE_ZUP_INVERT = {};
 
-// Sesión 25 — Algunos modelos GLB vienen con el "frente" mirando en la
-// dirección -Z en lugar de la +Z que three.js asume por defecto. Para esos,
-// añadimos PI a la rotación Y para que caminen mirando hacia delante.
-// La vaca tenía este bug: caminaba hacia atrás en la patrulla.
+// Algunos modelos GLB vienen con el "frente" mirando a -Z en vez de +Z.
+// Para esos, añadimos PI a la rotación Y para que caminen mirando bien.
 const NPC_FACING_REVERSED = { cow: true };
 
 // ============================================================
 // Constantes de comportamiento
 // ============================================================
-const NPC_PATROL_RADIUS    = 3.0;
-const NPC_PATROL_SPEED_RPS = 0.18;
-const NPC_PATROL_BOB_AMP   = 0.04;
-const NPC_PATROL_BOB_HZ    = 1.8;
-
+//
+// Hit reaction (kick + flash) — sin cambios respecto a versiones previas.
 const NPC_REACT_DURATION_S = 0.18;
 const NPC_REACT_KICK_DIST  = 0.35;
 
-// Sesión 27 Bloque 2 — NPC_POLL_INTERVAL_MS eliminado. Ya no poleamos.
-// El snapshot global llega cada 250ms via world_snapshot.js.
+// Distancia para engage automático: si tapeas un NPC y ya estás a esta
+// distancia, engage directo sin caminar. Coincide con el rango melee
+// efectivo del server (npc.attack_range + RANGE_TOLERANCE).
+const NPC_ENGAGE_RANGE     = 2.0;
 
+// Hit-box generosa en screen-space para dedos en móvil.
+const NPC_TAP_SCREEN_PX    = 90;
+
+// Culling: solo dibujamos NPCs dentro de este radio del player.
 const NPC_RENDER_RADIUS    = 100;
 export const NPC_MINIMAP_RADIUS = 500;
 
-// Sesión 20 — engage range subido a 2.0 (era 1.4) para coincidir con melee
-// del server. Tap screen-space radius subido a 90px (era 56) — hit-box más
-// generosa en móvil.
-const NPC_ENGAGE_RANGE     = 2.0;
-const NPC_TAP_SCREEN_PX    = 90;
+// ------------------------------------------------------------
+// Interpolación entre snapshots (Sesión 27 Bloque 2.5)
+// ------------------------------------------------------------
+// Los snapshots llegan cada ~250ms (world_snapshot.js, POLL_INTERVAL_MS).
+// Cuando llega uno nuevo, lerpeamos la mesh desde la pos actual hacia la
+// nueva pos durante INTERP_DURATION_MS. Si llega otro antes de terminar,
+// reanudamos desde la pos actual (sin saltos).
+//
+// Usamos un buffer ligeramente mayor que el periodo de snapshot para
+// absorber jitter de red (un snapshot que llega 50ms tarde no causa que
+// el NPC se quede congelado). Estándar industria: 1.1×–1.2× el periodo.
+const INTERP_DURATION_MS = 280;
 
-// Sesión 20 — Si estoy peleando contra un NPC y se aleja más de este rango,
-// el cliente auto-walk hacia él para no pegar de lejos (server rechazará
-// el attack si excede su tolerancia). Antes el cliente solo perseguía
-// ANTES de engage, no DESPUÉS. Resultado: te alejabas y seguías pegando.
-const COMBAT_FOLLOW_RANGE  = 2.5;
+// Si la nueva pos se aleja más de este umbral de la anterior, asumimos
+// teleport/respawn y NO interpolamos — snapeamos a la nueva pos al instante.
+// Evita ver un NPC "esquiar" 50m suavemente si el server reposiciona.
+const INTERP_TELEPORT_THRESHOLD_M = 6.0;
 
 // ============================================================
 // Estado del módulo (privado)
@@ -126,9 +167,11 @@ let feedLog = null;
 let NPC_GEOMS = null;
 const npcMeshes = new Map();
 let npcDataList = [];
-// Sesión 27 Bloque 2 — guard para procesar el snapshot solo cuando es nuevo.
-// Se compara contra worldSnapshot.getSnapshot().now (timestamp server).
+
+// Guard: solo procesamos syncMeshes cuando llega un snapshot con timestamp
+// distinto al último visto.
 let lastProcessedSnapshotNow = 0;
+
 let pendingEngageNpcId = null;
 
 let actionMenuEl = null;
@@ -160,17 +203,16 @@ export async function start(opts) {
 
   await loadGLBs();
 
-  // Sesión 27 Bloque 2 — Ya no nos suscribimos a combat.onUpdate ni hacemos
-  // combat.refresh() inicial. La lista de NPCs llega vía world_snapshot
-  // poleando /api/world/snapshot cada 250ms. Se procesa en update(dt).
+  // Lista de NPCs viene del world_snapshot (poll 250ms server-side).
+  // Procesamos en update(dt) si el timestamp del snap cambió.
 
-  // Hooks globales para que combat.js dispare efectos visuales sin tener que
-  // importarnos directamente (evita circular imports).
+  // Hooks globales para que combat.js dispare efectos visuales sin tener
+  // que importarnos directamente (evita circular imports).
   if (typeof window !== 'undefined') {
     window.__worldFlashNpcHit = flashHit;
     window.__worldSpawnHitsplat = spawnHitsplat;
-    // Sesión 27 — hook para que combat.js mande la pos actual del player
-    // en el body del attack. Devuelve {x, z} o null si no hay player aún.
+    // Hook para que combat.js mande la pos actual del player en el body
+    // del attack. Devuelve {x, z} o null si no hay player aún.
     window.__getPlayerPosition = () => {
       const p = getPlayer?.();
       if (!p || !p.position) return null;
@@ -211,7 +253,6 @@ export function stop() {
   if (typeof window !== 'undefined') {
     if (window.__worldFlashNpcHit === flashHit) delete window.__worldFlashNpcHit;
     if (window.__worldSpawnHitsplat === spawnHitsplat) delete window.__worldSpawnHitsplat;
-    // Sesión 27 — cleanup del hook de posición
     if (window.__getPlayerPosition) delete window.__getPlayerPosition;
   }
 
@@ -222,18 +263,17 @@ export function stop() {
 
 export function update(dt) {
   if (!started) return;
-  // Sesión 27 Bloque 2 — Leer NPCs del snapshot global. Solo procesa si hay
-  // snapshot nuevo (timestamp distinto del último visto), evitando ejecutar
-  // syncMeshes() en cada frame cuando no hay datos nuevos.
   pollSnapshotForNpcs();
-  updatePatrol(dt);
+  updateInterpolation();   // sustituye al antiguo updatePatrol
   updateHpBars();
-  // Sesión 20 — perseguir NPC si me alejo durante combate
-  updateCombatFollow();
+  // updateCombatFollow ELIMINADO: ya no hace falta perseguir un NPC que
+  // orbita, porque ahora la mesh está donde el server dice. Si en el
+  // futuro el server mueve NPCs, el cliente los seguirá visualmente por
+  // sí mismo a través de la interpolación.
 }
 
 // ============================================================
-// Sesión 27 Bloque 2 — Lectura de NPCs del snapshot global
+// Lectura del snapshot global
 // ============================================================
 function pollSnapshotForNpcs() {
   const snap = worldSnapshot.getSnapshot();
@@ -254,8 +294,8 @@ export function getNpcMeshes() { return npcMeshes; }
 // API pública — tap handling
 // ============================================================
 /**
- * Tap simple. Devuelve true si era un NPC y se gestionó (auto-walk + engage
- * o engage directo), false si no había NPC bajo el tap.
+ * Tap simple. Devuelve true si era un NPC y se gestionó (auto-walk +
+ * engage o engage directo), false si no había NPC bajo el tap.
  */
 export function tryHandleTap(clientX, clientY) {
   if (!started) return false;
@@ -337,6 +377,8 @@ export function tickAutoEngage(playerX, playerZ) {
     pendingEngageNpcId = null;
     return null;
   }
+  // Bloque 2.5: usamos mesh.position (pos interpolada actual) que YA
+  // coincide con la pos server (o muy cerca, en mitad del lerp).
   const mesh = npcMeshes.get(pendingEngageNpcId);
   const tx = mesh ? mesh.position.x : npc.x;
   const tz = mesh ? mesh.position.z : npc.z;
@@ -356,45 +398,6 @@ export function tickAutoEngage(playerX, playerZ) {
  */
 export function cancelAutoEngage() {
   pendingEngageNpcId = null;
-}
-
-// ============================================================
-// Sesión 20 — Follow target durante combate activo
-// ============================================================
-/**
- * Si estoy peleando contra un NPC (combat.currentTarget != null) y el NPC
- * está más lejos de COMBAT_FOLLOW_RANGE metros, ordeno auto-walk hacia él.
- *
- * Por qué: antes, una vez engaged, el cliente NO perseguía. Si el NPC
- * orbitaba o tú te alejabas, seguías pegando "desde lejos" porque el
- * server validaba contra una posición vieja (guardada cada 10s).
- *
- * Ahora: el cliente persigue activamente al NPC. Si te alejas a propósito
- * (joystick), tu joystick cancela el playerTarget en updatePlayer y el
- * server eventualmente rechaza por out_of_range. Si NO te alejas, te
- * mantienes pegado al NPC en su órbita.
- */
-function updateCombatFollow() {
-  let engagedId = null;
-  try {
-    const snap = combat.getStateSnapshot?.();
-    engagedId = snap ? snap.currentTarget : null;
-  } catch {}
-  if (engagedId === null || engagedId === undefined) return;
-  const player = getPlayer?.();
-  if (!player) return;
-  const mesh = npcMeshes.get(engagedId);
-  if (!mesh) return;
-  const tx = mesh.position.x;
-  const tz = mesh.position.z;
-  const dx = tx - player.position.x;
-  const dz = tz - player.position.z;
-  const dist = Math.hypot(dx, dz);
-  if (dist > COMBAT_FOLLOW_RANGE) {
-    // Ordenar walk hacia el NPC. Esto setea playerTarget en world.js que
-    // mueve al player en el siguiente frame.
-    setPlayerTargetCb(tx, tz);
-  }
 }
 
 // ============================================================
@@ -425,7 +428,7 @@ async function loadGLBs() {
 }
 
 // ============================================================
-// Sync mesh ↔ data list
+// Sync mesh ↔ snapshot data
 // ============================================================
 function syncMeshes() {
   const player = getPlayer?.();
@@ -433,6 +436,7 @@ function syncMeshes() {
   const px = player.position.x;
   const pz = player.position.z;
   const aliveIds = new Set();
+  const nowMs = performance.now();
 
   for (const npc of npcDataList) {
     const dx = npc.x - px;
@@ -446,22 +450,32 @@ function syncMeshes() {
       if (!mesh) continue;
       scene.add(mesh);
       npcMeshes.set(npc.id, mesh);
-    }
-    // Server pos = patrol CENTER. Solo re-anclamos si reportó cambio grande
-    // (>2m): respawn o reposicionamiento real.
-    // Sesión 26 — pero NO re-anclar si el NPC está engaged o pending engage:
-    // un cambio del server (p.ej. respawn con jitter) no debe hacer saltar
-    // la mesh visualmente cuando el player ya la ha seleccionado.
-    let engagedSnap = null;
-    try { engagedSnap = combat.getStateSnapshot?.()?.currentTarget; } catch {}
-    const isLockedToPlayer = (npc.id === engagedSnap) || (npc.id === pendingEngageNpcId);
-    const pp = mesh.userData.patrol;
-    if (pp && !isLockedToPlayer) {
-      const ddx = npc.x - pp.centerX;
-      const ddz = npc.z - pp.centerZ;
-      if (ddx*ddx + ddz*ddz > 4.0) {
-        pp.centerX = npc.x;
-        pp.centerZ = npc.z;
+    } else {
+      // Mesh ya existía: arrancar un nuevo lerp desde la pos VISUAL actual
+      // hacia la pos del nuevo snapshot. Si el delta es muy grande, snap
+      // directo (probable respawn/teleport del server).
+      const interp = mesh.userData.interp;
+      const curX = mesh.position.x;
+      const curZ = mesh.position.z;
+      const newX = npc.x;
+      const newZ = npc.z;
+      const moveDist = Math.hypot(newX - curX, newZ - curZ);
+      if (moveDist > INTERP_TELEPORT_THRESHOLD_M) {
+        // Snap: no interpolar
+        interp.prevX = newX;
+        interp.prevZ = newZ;
+        interp.targetX = newX;
+        interp.targetZ = newZ;
+        interp.startMs = nowMs;
+        interp.durationMs = 1; // termina inmediato
+      } else {
+        // Lerp normal
+        interp.prevX = curX;
+        interp.prevZ = curZ;
+        interp.targetX = newX;
+        interp.targetZ = newZ;
+        interp.startMs = nowMs;
+        interp.durationMs = INTERP_DURATION_MS;
       }
     }
     updateHpBar(mesh, npc.hp_current, npc.max_hp);
@@ -487,24 +501,34 @@ function createMesh(npc) {
   const typeId = npc.def_id;
   const group = new THREE.Group();
   group.position.set(npc.x, 0, npc.z);
+
+  // Facing inicial: si el GLB tiene reverse, aplicar el offset PI desde
+  // ya para que no se vea "mirando al revés" al spawnear.
+  const facingOffset = NPC_FACING_REVERSED[typeId] ? Math.PI : 0;
+  group.rotation.y = facingOffset;
+
   group.userData = {
     kind: 'npc',
     npc,
-    patrol: {
-      centerX: npc.x,
-      centerZ: npc.z,
-      angle:   Math.random() * Math.PI * 2,
-      bobT:    Math.random() * Math.PI * 2,
+    // Bloque 2.5 — estado de interpolación entre snapshots.
+    // Al crear: prev = target = pos snapshot → el lerp termina al instante
+    // y la mesh aparece exactamente donde el server dice (sin saltos).
+    interp: {
+      prevX: npc.x,
+      prevZ: npc.z,
+      targetX: npc.x,
+      targetZ: npc.z,
+      startMs: performance.now(),
+      durationMs: 1, // termina inmediato en el primer frame
+      lastFacingY: facingOffset,
     },
-    reaction: { until: 0, kickX: 0, kickZ: 0 },
+    reaction: { until: 0, kickX: 0, kickZ: 0, wasFlashing: false },
     bodyMaterials: [],
   };
 
   const glb = NPC_GEOMS && NPC_GEOMS[typeId];
   if (glb && glb.glbParts) {
     for (const part of glb.glbParts) {
-      // Material propio por NPC para flashear independientemente.
-      // Geometría sí compartida.
       const ownMat = part.material.clone();
       ownMat.userData = { baseColor: ownMat.color.clone() };
       const mesh = new THREE.Mesh(part.geometry, ownMat);
@@ -552,94 +576,84 @@ function createHpBar(cur, max, npcHeight) {
 }
 
 // ============================================================
-// Patrol + hit reaction
+// Interpolación + hit reaction (Sesión 27 Bloque 2.5)
 // ============================================================
-function updatePatrol(dt) {
+//
+// Reemplaza al antiguo updatePatrol(). Cada frame:
+//   1. Calcular t = (now - startMs) / durationMs, clampeado a [0, 1].
+//   2. Lerpear pos entre prev y target.
+//   3. Facing: dirección del vector (target - prev) si la distancia es
+//      perceptible. Si no, mantener la última rotación (lastFacingY).
+//   4. Aplicar kick de hit reaction encima de la pos lerpeada.
+//   5. Actualizar emissive del flash.
+//
+function updateInterpolation() {
   if (!scene) return;
-  let engagedId = null;
-  try {
-    const snap = combat.getStateSnapshot?.();
-    engagedId = snap ? snap.currentTarget : null;
-  } catch {}
+  const nowMs = performance.now();
+  const nowS = nowMs / 1000;
 
-  const now = performance.now() / 1000;
-
-  for (const [npcId, group] of npcMeshes) {
+  for (const group of npcMeshes.values()) {
     const ud = group.userData;
-    if (!ud) continue;
+    if (!ud || !ud.interp) continue;
 
-    const p = ud.patrol;
-    if (p) {
-      let baseX = p.centerX;
-      let baseZ = p.centerZ;
-      let baseY = 0;
+    const I = ud.interp;
 
-      // Sesión 26 — Bug fix: ANTES la órbita seguía aunque el player
-      // hubiera tappeado el NPC (pendingEngageNpcId). El target visual
-      // se movía mientras el player corría, y el player veía que se
-      // desplazaba "un poco a donde tendría que estar". Ahora pausamos
-      // la órbita tanto si está engaged como si está pendiente de engage.
-      const isPaused = (npcId === engagedId) || (npcId === pendingEngageNpcId);
-      if (!isPaused) {
-        // Sesión 26 — al volver a estado normal (ya no paused), limpiar
-        // la posición congelada por si fue establecida en un tap anterior.
-        if (p.frozenX !== undefined) {
-          p.frozenX = undefined;
-          p.frozenZ = undefined;
-        }
-        p.angle += NPC_PATROL_SPEED_RPS * dt;
-        p.bobT  += NPC_PATROL_BOB_HZ * Math.PI * 2 * dt;
-        const dx = Math.cos(p.angle) * NPC_PATROL_RADIUS;
-        const dz = Math.sin(p.angle) * NPC_PATROL_RADIUS;
-        baseX += dx;
-        baseZ += dz;
-        baseY  = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
-        const tx = -Math.sin(p.angle);
-        const tz =  Math.cos(p.angle);
-        // Sesión 25 — corregir vacas hacia atrás. NPC_FACING_REVERSED añade
-        // PI a la rotación para modelos cuyo frente apunta a -Z en lugar de +Z.
-        const facingOffset = NPC_FACING_REVERSED[ud.npc?.def_id] ? Math.PI : 0;
-        group.rotation.y = Math.atan2(tx, tz) + facingOffset;
-      } else if (p.frozenX !== undefined) {
-        // Sesión 26 — Usar la posición FROZEN capturada al hacer tap.
-        // Esto sobreescribe cualquier recálculo orbital y previene saltos
-        // si syncMeshes re-ancla el centro mientras está pendiente engage.
-        baseX = p.frozenX;
-        baseZ = p.frozenZ;
-        baseY = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
-      } else {
-        // Fallback (no frozenX): mantener última posición orbital.
-        const dx = Math.cos(p.angle) * NPC_PATROL_RADIUS;
-        const dz = Math.sin(p.angle) * NPC_PATROL_RADIUS;
-        baseX += dx;
-        baseZ += dz;
-        baseY = Math.abs(Math.sin(p.bobT)) * NPC_PATROL_BOB_AMP;
-      }
+    // ---- Lerp posicional ----
+    const elapsed = nowMs - I.startMs;
+    let t = I.durationMs > 0 ? elapsed / I.durationMs : 1;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const lerpX = I.prevX + (I.targetX - I.prevX) * t;
+    const lerpZ = I.prevZ + (I.targetZ - I.prevZ) * t;
 
-      const r = ud.reaction;
-      let kickX = 0, kickZ = 0;
-      if (r && r.until > now) {
-        const remaining = (r.until - now) / NPC_REACT_DURATION_S;
-        kickX = r.kickX * remaining;
-        kickZ = r.kickZ * remaining;
-      }
-
-      group.position.set(baseX + kickX, baseY, baseZ + kickZ);
+    // ---- Facing ----
+    // Si el NPC se está moviendo perceptiblemente en este lerp, mirar en
+    // la dirección de movimiento. Si está prácticamente quieto, mantener
+    // la última rotación (lastFacingY) para evitar girar erráticamente
+    // por ruido sub-pixel.
+    const moveDx = I.targetX - I.prevX;
+    const moveDz = I.targetZ - I.prevZ;
+    const moveLen2 = moveDx * moveDx + moveDz * moveDz;
+    if (moveLen2 > 0.01) { // umbral 10cm
+      const facingOffset = NPC_FACING_REVERSED[ud.npc?.def_id] ? Math.PI : 0;
+      const targetYaw = Math.atan2(moveDx, moveDz) + facingOffset;
+      // Suavizar la rotación con un lerp angular sencillo (evita snap).
+      let dyaw = targetYaw - group.rotation.y;
+      // Normalizar a [-PI, PI] para que no gire la vuelta entera
+      while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+      while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+      // 30% por frame hacia el target → giro suave en ~5 frames.
+      group.rotation.y += dyaw * 0.3;
+      I.lastFacingY = group.rotation.y;
+    } else {
+      // NPC quieto: mantener última rotación
+      group.rotation.y = I.lastFacingY;
     }
 
-    // Flash rojo via emissive (no .color, para no machacar texturas/base)
+    // ---- Hit reaction kick ----
+    const r = ud.reaction;
+    let kickX = 0, kickZ = 0;
+    if (r && r.until > nowS) {
+      const remaining = (r.until - nowS) / NPC_REACT_DURATION_S;
+      kickX = r.kickX * remaining;
+      kickZ = r.kickZ * remaining;
+    }
+
+    // ---- Aplicar posición final ----
+    group.position.set(lerpX + kickX, 0, lerpZ + kickZ);
+
+    // ---- Flash emissive (rojo) durante la reacción ----
     if (ud.bodyMaterials && ud.bodyMaterials.length) {
-      const r = ud.reaction;
-      if (r && r.until > now) {
-        const intensity = (r.until - now) / NPC_REACT_DURATION_S;
+      if (r && r.until > nowS) {
+        const intensity = (r.until - nowS) / NPC_REACT_DURATION_S;
         for (const m of ud.bodyMaterials) {
           if (m && m.emissive) m.emissive.setRGB(intensity * 0.8, 0, 0);
         }
-      } else if (ud.reaction && ud.reaction.wasFlashing) {
+      } else if (r && r.wasFlashing) {
         for (const m of ud.bodyMaterials) {
           if (m && m.emissive) m.emissive.setRGB(0, 0, 0);
         }
-        ud.reaction.wasFlashing = false;
+        r.wasFlashing = false;
       }
     }
   }
@@ -650,9 +664,10 @@ function flashHit(npcId) {
   if (!group || !group.userData) return;
   const player = getPlayer?.();
   if (!player) return;
-  const pp = group.userData.patrol;
-  const cx = pp ? pp.centerX : group.position.x;
-  const cz = pp ? pp.centerZ : group.position.z;
+  // Bloque 2.5: kick desde la pos visual actual (lerpeada) hacia donde el
+  // player NO está — empuja al NPC en dirección opuesta al player.
+  const cx = group.position.x;
+  const cz = group.position.z;
   let dx = cx - player.position.x;
   let dz = cz - player.position.z;
   const len = Math.hypot(dx, dz);
@@ -681,7 +696,7 @@ function updateHpBar(npcMesh, cur, max) {
 function updateHpBars() {
   if (!camera) return;
   // HP bar mira a cámara: usar world quaternion de la cámara, descontar el
-  // world quaternion del padre (NPC group rota con patrol).
+  // world quaternion del padre (el NPC group puede rotar).
   const tmpParentQ = new THREE.Quaternion();
   const tmpCamQ = new THREE.Quaternion();
   const tmpResultQ = new THREE.Quaternion();
@@ -696,19 +711,15 @@ function updateHpBars() {
   }
 }
 
-// Sesión 27 Bloque 2 — updatePolling() eliminado. Ya no poleamos directamente
-// /api/combat/state desde aquí. Los datos vienen del world_snapshot (250ms).
-
 // ============================================================
-// Tap detection (Sesión 20 — más perdonable)
+// Tap detection (sin cambios respecto a versiones previas)
 // ============================================================
 /**
  * Estrategia de 2 pasos para detectar tap sobre NPC en móvil:
  *
  *   Paso 1: raycast clásico (solo cuenta si pegamos en el mesh exacto).
  *   Paso 2: si el raycast falló, screen-space: buscar el NPC más cercano
- *           al tap dentro de NPC_TAP_SCREEN_PX. Subido a 90px en sesión 20
- *           (era 56px) — hit-box generosa para dedos en mobile.
+ *           al tap dentro de NPC_TAP_SCREEN_PX (90px).
  */
 function findNpcNearTap(clientX, clientY) {
   // Paso 1: raycast clásico
@@ -747,30 +758,24 @@ function findNpcNearTap(clientX, clientY) {
 }
 
 /**
- * Si estás cerca → engage directo, si lejos → auto-walk hasta llegar y
+ * Si estás cerca → engage directo. Si lejos → auto-walk hasta llegar y
  * enganchar (vía tickAutoEngage en el animate loop).
+ *
+ * Bloque 2.5: ya no congelamos posición visual del NPC (`frozenX/Z`).
+ * Eso era un hack para compensar el patrol orbital. Sin patrol, la pos
+ * visual ES la pos server (con leve lerp) → al hacer tap el target está
+ * donde ves.
  */
 function triggerNpcTap(npcId) {
   const npc = npcDataList.find(n => n.id === npcId);
   if (!npc) return;
   const player = getPlayer?.();
   if (!player) return;
-  // Usar posición VISUAL del NPC (orbitando), no npc.x/z (centro del server).
+  // Usar la pos VISUAL (lerpeada) del NPC, que ahora coincide con la pos
+  // server.
   const mesh = npcMeshes.get(npcId);
   const targetX = mesh ? mesh.position.x : npc.x;
   const targetZ = mesh ? mesh.position.z : npc.z;
-
-  // Sesión 26 — Bug fix: congelar la posición visual del NPC en el
-  // instante exacto del tap. Antes, si entre el tap y el engage final
-  // entraba un syncMeshes que detectara un cambio >2m en npc.x/z del
-  // server (p.ej. respawn con jitter), el patrol se re-anclaba y la
-  // mesh saltaba unos metros — el player veía que el NPC "se movía a
-  // donde tendría que estar". Con frozenX/Z, updatePatrol y syncMeshes
-  // respetan esta posición mientras el NPC esté seleccionado/pending.
-  if (mesh && mesh.userData.patrol) {
-    mesh.userData.patrol.frozenX = targetX;
-    mesh.userData.patrol.frozenZ = targetZ;
-  }
 
   const dx = targetX - player.position.x;
   const dz = targetZ - player.position.z;
