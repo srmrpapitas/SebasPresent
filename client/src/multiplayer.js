@@ -1,43 +1,40 @@
 /**
- * SebasPresent — Multiplayer module (Sesión 3 refactor + Sesión 18 HP bar)
+ * SebasPresent — Multiplayer module
+ *
+ * Sesión 27 Bloque 3 — REFACTOR SERVER-AUTHORITATIVE (PVP-ready)
+ * ============================================================
+ *
+ * ANTES: este módulo tenía su propio poll a /api/world/peers cada 500ms.
+ *
+ * AHORA: leemos los peers del world_snapshot global (poll 250ms unificado
+ * con NPCs). Esto da:
+ *   - 50% menos requests al server (1 endpoint en vez de 2).
+ *   - Peers se mueven 2× más fluido (snap cada 250ms vs 500ms).
+ *   - Misma fuente de verdad que NPCs → consistencia total para PVP:
+ *     si vas a atacar a un peer y ves su mesh visualmente al lado, el
+ *     server cree que está exactamente ahí también (con leve lerp).
+ *
+ * El HEARTBEAT (cliente → server) sigue corriendo cada 500ms. Es 1-way
+ * y necesario para que el server sepa nuestra pos.
+ *
+ * Interpolación reducida de 500ms a 280ms (mismo valor que NPCs) para
+ * que los peers se sientan responsivos.
+ *
+ * --- resto del comentario original ---
  *
  * Slice 5c.5 — peers locales (otros jugadores cercanos).
  *
- * Sesión 18: añadida HP bar doble cara (verde/rojo) sobre cada peer,
- * mismo estilo que sobre el player local en world.js. Lee hp_current /
- * hp_max del payload del server. Si el server no los manda todavía
- * (TODO: extender /api/world/peers), se muestra 100% lleno por defecto.
+ * Sesión 18: añadida HP bar doble cara (verde/rojo) sobre cada peer.
  *
  * Responsabilidades:
  *   - Heartbeat: cada 500ms envía tu posición/yaw/estado al server.
- *   - Poll: cada 500ms pide al server los peers en tu radio.
+ *   - Lectura snapshot: cada update(), comprueba si el world_snapshot
+ *     tiene un timestamp nuevo y procesa los peers actualizados.
  *   - Render: por cada peer, crea un grupo 3D (clon de Nico si está
  *     disponible, fallback cápsula si no) + un nameTag DOM flotante
  *     + una HP bar DOM flotante.
  *   - Interpolación: cada frame, mueve cada peer suavemente entre el
- *     último snapshot recibido y el actual (los snapshots vienen cada
- *     ~500ms; interpolamos en MP_PEER_INTERP_MS para que no haya teleports).
- *
- * Cómo se usa desde world.js:
- *
- *   import * as multiplayer from './multiplayer.js';
- *
- *   multiplayer.start({
- *     scene, camera, canvas,
- *     player,         // THREE.Object3D del player local (para leer pos/yaw)
- *     character,      // Character instance (puede ser null si carga fallback)
- *     authToken,
- *     apiBase: API_BASE,
- *   });
- *
- *   // En animate():
- *   multiplayer.update(dt);
- *
- *   // En drawMinimap (para pintar puntos azules de otros players):
- *   for (const { x, z } of multiplayer.getPeerPositions()) { ... }
- *
- *   // Al salir del mundo:
- *   multiplayer.stop();
+ *     último snapshot recibido y el actual.
  *
  * Debug:
  *   En consola: window.__mpPlayers()  → tabla de peers activos.
@@ -45,14 +42,14 @@
 
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import * as worldSnapshot from './world_snapshot.js';
 
 // ============================================================
 // Constantes
 // ============================================================
 const MP_HEARTBEAT_INTERVAL = 500;     // ms entre heartbeats al server
-const MP_PEERS_POLL_INTERVAL = 500;    // ms entre polls de peers
-const MP_PEER_INTERP_MS = 500;         // duración de la interpolación visual
-const MP_PEER_TIMEOUT_MS = 10_000;     // sin update tras esto → peer offline
+const MP_PEER_INTERP_MS     = 280;     // ms de interpolación visual (≈ período snapshot + buffer)
+const MP_PEER_TIMEOUT_MS    = 10_000;  // sin update tras esto → peer offline
 
 const NICO_Y_OFFSET = -1.03;           // mismo offset que el player principal
 const NAME_TAG_HEIGHT = 2.0;           // m sobre el grupo del peer
@@ -71,10 +68,12 @@ let apiBase = null;
 
 let mpLastPeerMap = new Map();   // user_id → peer { group, mixer, actions, ... }
 let mpHeartbeatTimer = 0;
-let mpPeersPollTimer = 0;
 let mpInFlightHeartbeat = false;
-let mpInFlightPeers = false;
 let mpPlayerState = 'idle';
+
+// Sesión 27 Bloque 3 — guard: solo procesamos peers cuando el snapshot
+// global tiene un timestamp nuevo respecto al último visto.
+let mpLastProcessedSnapshotNow = 0;
 
 // Velocidad del player local, para reportar state al server
 let _lastPlayerX = 0, _lastPlayerZ = 0, _lastSpeedTime = 0;
@@ -102,10 +101,9 @@ export function start(opts) {
   apiBase      = opts.apiBase;
 
   mpHeartbeatTimer = 0;
-  mpPeersPollTimer = 0;
   mpInFlightHeartbeat = false;
-  mpInFlightPeers = false;
   mpPlayerState = 'idle';
+  mpLastProcessedSnapshotNow = 0;
   _lastSpeedTime = 0;
 
   // Sesión 18 — estilos HP bar
@@ -129,7 +127,7 @@ export function stop() {
   playerRef = characterRef = null;
   authToken = apiBase = null;
   mpHeartbeatTimer = 0;
-  mpPeersPollTimer = 0;
+  mpLastProcessedSnapshotNow = 0;
   started = false;
 }
 
@@ -141,19 +139,17 @@ export function update(dt) {
   if (!started) return;
   if (!authToken || !playerRef) return;
 
-  // 1) Heartbeat periódico
+  // 1) Heartbeat periódico (cliente → server, sigue siendo 500ms)
   mpHeartbeatTimer += dt * 1000;
   if (mpHeartbeatTimer >= MP_HEARTBEAT_INTERVAL && !mpInFlightHeartbeat) {
     mpHeartbeatTimer = 0;
     sendHeartbeat();
   }
 
-  // 2) Poll periódico de peers
-  mpPeersPollTimer += dt * 1000;
-  if (mpPeersPollTimer >= MP_PEERS_POLL_INTERVAL && !mpInFlightPeers) {
-    mpPeersPollTimer = 0;
-    pollPeers();
-  }
+  // 2) Sesión 27 Bloque 3 — Procesar peers del world_snapshot global.
+  // El snapshot se actualiza cada 250ms server-side. Aquí solo procesamos
+  // si el timestamp del snap ha cambiado respecto al último visto.
+  processSnapshotPeers();
 
   // 3) Interpolar peers + actualizar mixers + name tags
   const now = performance.now();
@@ -225,6 +221,51 @@ export function getPeerPositions() {
 }
 
 // ============================================================
+// Sesión 27 Bloque 3 — API pública para PVP (Bloque 3 tanda 2)
+// ============================================================
+/**
+ * Devuelve el peer (objeto interno con su group THREE) por user_id, o null.
+ * Lo usa combat.js / npc_renderer.js para resolver target PVP.
+ */
+export function getPeerById(userId) {
+  return mpLastPeerMap.get(userId) || null;
+}
+
+/**
+ * Posición VISUAL actual del peer (la interpolada, no la última snapshot).
+ * Devuelve {x, z} o null. Esto es lo que combat.js usará para validar el
+ * rango client-side y para el auto-engage PVP.
+ */
+export function getPeerVisualPosition(userId) {
+  const peer = mpLastPeerMap.get(userId);
+  if (!peer || !peer.group) return null;
+  return { x: peer.group.position.x, z: peer.group.position.z };
+}
+
+/**
+ * Itera todos los peers para tap-detection. Devuelve array de:
+ *   { user_id, username, x, z, group, hp_current, hp_max, combat_lvl }
+ * usando la pos VISUAL (interpolada).
+ */
+export function getPeersForTap() {
+  const out = [];
+  for (const [userId, peer] of mpLastPeerMap) {
+    if (!peer.group) continue;
+    out.push({
+      user_id:    userId,
+      username:   peer.username,
+      x:          peer.group.position.x,
+      z:          peer.group.position.z,
+      group:      peer.group,
+      hp_current: peer.hp,
+      hp_max:     peer.hpMax,
+      combat_lvl: peer.combatLvl || 1,
+    });
+  }
+  return out;
+}
+
+// ============================================================
 // Heartbeat — envía mi posición al server
 // ============================================================
 async function sendHeartbeat() {
@@ -276,36 +317,33 @@ function computePlayerSpeed() {
 }
 
 // ============================================================
-// Poll — pregunta al server qué peers hay en mi radio
+// Sesión 27 Bloque 3 — Procesar peers desde el snapshot global
 // ============================================================
-async function pollPeers() {
-  mpInFlightPeers = true;
-  try {
-    const r = await fetch(
-      `${apiBase}/api/world/peers?x=${playerRef.position.x.toFixed(2)}&z=${playerRef.position.z.toFixed(2)}`,
-      { headers: { 'Authorization': 'Bearer ' + authToken } }
-    );
-    if (!r.ok) return;
-    const data = await r.json();
-    const peers = data?.peers || [];
-    const seenIds = new Set();
-    for (const p of peers) {
-      seenIds.add(p.user_id);
-      upsertPeer(p);
-    }
-    // Quitar peers que ya no aparecen (salieron del radio o desconectaron)
-    for (const userId of mpLastPeerMap.keys()) {
-      if (!seenIds.has(userId)) {
-        const peer = mpLastPeerMap.get(userId);
-        if (Date.now() - peer.lastUpdate > 2000) {
-          removePeer(userId);
-        }
+//
+// Sustituye al antiguo pollPeers() que hacía fetch a /api/world/peers
+// cada 500ms. Ahora leemos los players[] del world_snapshot que ya está
+// haciendo poll cada 250ms — una sola petición sirve para NPCs + peers.
+function processSnapshotPeers() {
+  const snap = worldSnapshot.getSnapshot();
+  if (!snap) return;
+  if (snap.now === mpLastProcessedSnapshotNow) return; // nada nuevo
+  mpLastProcessedSnapshotNow = snap.now;
+
+  const peers = snap.players || [];
+  const seenIds = new Set();
+  for (const p of peers) {
+    seenIds.add(p.user_id);
+    upsertPeer(p);
+  }
+  // Quitar peers que ya no aparecen en el snapshot (salieron del radio
+  // o desconectaron). Damos 2s de gracia por si fue un snapshot perdido.
+  for (const userId of mpLastPeerMap.keys()) {
+    if (!seenIds.has(userId)) {
+      const peer = mpLastPeerMap.get(userId);
+      if (Date.now() - peer.lastUpdate > 2000) {
+        removePeer(userId);
       }
     }
-  } catch (err) {
-    // Silencioso
-  } finally {
-    mpInFlightPeers = false;
   }
 }
 
@@ -329,12 +367,18 @@ function upsertPeer(p) {
   peer.interpStart = performance.now();
   peer.lastUpdate = Date.now();
 
-  // Sesión 18 — actualizar HP del peer si el server lo manda.
-  // TODO server: extender /api/world/peers para que devuelva hp_current y
-  // hp_max por cada peer. Mientras no lo haga, dejamos los valores como
-  // están (peer.hp/peer.hpMax se inician a defaults en createPeer).
+  // HP actual y máximo
   if (typeof p.hp_current === 'number') peer.hp = p.hp_current;
   if (typeof p.hp_max === 'number') peer.hpMax = p.hp_max;
+
+  // Sesión 27 Bloque 3 — Niveles + combat_lvl (los necesita el menú PVP
+  // para mostrar "Atacar a Nico (lvl 7)"). Si el server no los devuelve
+  // todavía, defaults seguros.
+  if (typeof p.combat_lvl === 'number') peer.combatLvl = p.combat_lvl;
+  if (typeof p.attack_lvl === 'number') peer.attackLvl = p.attack_lvl;
+  if (typeof p.strength_lvl === 'number') peer.strengthLvl = p.strength_lvl;
+  if (typeof p.defence_lvl === 'number') peer.defenceLvl = p.defence_lvl;
+  if (typeof p.in_combat === 'boolean') peer.inCombat = p.in_combat;
 }
 
 function createPeer(p) {
