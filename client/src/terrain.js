@@ -594,6 +594,8 @@ function initTreeGeometries() {
     if (id === 'normal')      parts = buildNormalTree(def);
     else if (id === 'dead')   parts = buildDeadTree(def);
     else if (id === 'magic')  parts = buildMagicTree(def);
+    else if (id === 'pine')   parts = buildPineTree(def);
+    else if (id === 'yew')    parts = buildYewTree(def);
     else                      parts = buildGenericTree(def);
     TREE_GEOMS[id] = { def, id, parts, isGLB: false };
   }
@@ -765,6 +767,94 @@ function buildMagicTree(def) {
   return [
     { geometry: trunkGeom, material: trunkMat, kind: 'tree-trunk' },
     { geometry: crystalMerge, material: canopyMat, kind: 'tree-canopy' },
+  ];
+}
+
+// ------------------------------------------------------------
+// Pino — tronco recto + copa multi-capa (4 conos apilados de tamaño
+// decreciente). Aspecto árbol de Navidad clásico. La capa de abajo
+// asoma desde el tercio inferior del tronco para tapar la base.
+// ------------------------------------------------------------
+function buildPineTree(def) {
+  const trunkRadius = 0.22 * def.trunkScale;
+  const trunkGeom = new THREE.CylinderGeometry(trunkRadius * 0.6, trunkRadius * 1.0, def.height, 7);
+  trunkGeom.translate(0, def.height / 2, 0);
+  const trunkMat = new THREE.MeshLambertMaterial({ color: def.trunkColor, flatShading: true });
+
+  // 4 conos apilados. El más bajo es el más ancho.
+  const r = def.canopyRadius;
+  const conesSpecs = [
+    // radius factor, height factor, y offset desde def.height
+    { rad: 1.40, h: 1.4, y: -r * 0.20 }, // base ancha que tapa parte alta del tronco
+    { rad: 1.10, h: 1.3, y:  r * 0.45 },
+    { rad: 0.80, h: 1.2, y:  r * 1.00 },
+    { rad: 0.50, h: 1.1, y:  r * 1.45 }, // punta
+  ];
+  const coneGeoms = [];
+  for (const s of conesSpecs) {
+    const cRadius = r * s.rad;
+    const cHeight = r * s.h;
+    const c = new THREE.ConeGeometry(cRadius, cHeight, 8);
+    // Origen del cono en three.js es el CENTRO. Moverlo para que la base
+    // del cono quede a la y especificada.
+    c.translate(0, def.height + s.y + cHeight / 2, 0);
+    coneGeoms.push(c);
+  }
+  const canopyGeom = mergeGeometries(coneGeoms, false);
+  for (const c of coneGeoms) c.dispose();
+  const canopyMat = new THREE.MeshLambertMaterial({ color: def.canopyColor, flatShading: true });
+
+  return [
+    { geometry: trunkGeom, material: trunkMat, kind: 'tree-trunk' },
+    { geometry: canopyGeom, material: canopyMat, kind: 'tree-canopy' },
+  ];
+}
+
+// ------------------------------------------------------------
+// Tejo (yew) — tronco grueso y oscuro + copa muy densa formada por
+// 5 esferas grandes en disposición orgánica. El tejo en RuneScape
+// es un árbol importante de high-level skilling, así que merece
+// look distintivo: copa achatada y baja, casi tocando el suelo,
+// con volumen denso.
+// ------------------------------------------------------------
+function buildYewTree(def) {
+  const trunkRadius = 0.22 * def.trunkScale;
+  // Tronco corto pero ancho (def.trunkScale ya viene 1.6)
+  const trunkGeom = new THREE.CylinderGeometry(trunkRadius * 0.85, trunkRadius * 1.25, def.height * 0.85, 8);
+  trunkGeom.translate(0, def.height * 0.425, 0);
+  const trunkMat = new THREE.MeshLambertMaterial({ color: def.trunkColor, flatShading: true });
+
+  // 5 esferas para copa densa y voluminosa.
+  const r = def.canopyRadius;
+  const baseY = def.height * 0.7; // copa empieza bajo, casi desde mitad del tronco
+
+  // Esfera central grande, ligeramente achatada
+  const c1 = new THREE.IcosahedronGeometry(r * 1.10, 0);
+  c1.scale(1.0, 0.85, 1.0);
+  c1.translate(0, baseY + r * 0.55, 0);
+
+  // 4 esferas satélite alrededor, a distintas alturas
+  const satellites = [
+    { angle: 0.0,            dist: r * 0.78, size: 0.78, yOff: -r * 0.15 },
+    { angle: Math.PI / 2,    dist: r * 0.70, size: 0.72, yOff:  r * 0.10 },
+    { angle: Math.PI,        dist: r * 0.80, size: 0.82, yOff: -r * 0.10 },
+    { angle: 3 * Math.PI / 2,dist: r * 0.72, size: 0.75, yOff:  r * 0.20 },
+  ];
+  const canopyGeoms = [c1];
+  for (const s of satellites) {
+    const geom = new THREE.IcosahedronGeometry(r * s.size, 0);
+    geom.scale(1.0, 0.9, 1.0);
+    geom.translate(Math.cos(s.angle) * s.dist, baseY + r * 0.55 + s.yOff, Math.sin(s.angle) * s.dist);
+    canopyGeoms.push(geom);
+  }
+
+  const canopyGeom = mergeGeometries(canopyGeoms, false);
+  for (const g of canopyGeoms) g.dispose();
+  const canopyMat = new THREE.MeshLambertMaterial({ color: def.canopyColor, flatShading: true });
+
+  return [
+    { geometry: trunkGeom, material: trunkMat, kind: 'tree-trunk' },
+    { geometry: canopyGeom, material: canopyMat, kind: 'tree-canopy' },
   ];
 }
 
