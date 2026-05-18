@@ -112,6 +112,11 @@ export function start(opts) {
   // Hook de debug accesible desde Eruda
   if (typeof window !== 'undefined') {
     window.__mpPlayers = debugListPlayers;
+    // Sesión 27 Bloque 3 — hooks para combat.js (PVP):
+    //   __worldSpawnPlayerHitsplat(userId, dmg) → hitsplat sobre peer
+    //   __worldFlashPeerHit(userId)             → flash visual del peer
+    window.__worldSpawnPlayerHitsplat = spawnHitsplatOnPeer;
+    window.__worldFlashPeerHit = flashPeerHit;
   }
 
   started = true;
@@ -128,6 +133,12 @@ export function stop() {
   authToken = apiBase = null;
   mpHeartbeatTimer = 0;
   mpLastProcessedSnapshotNow = 0;
+  pendingEngagePlayerId = null;
+  closeActionMenu();
+  if (typeof window !== 'undefined') {
+    if (window.__worldSpawnPlayerHitsplat === spawnHitsplatOnPeer) delete window.__worldSpawnPlayerHitsplat;
+    if (window.__worldFlashPeerHit === flashPeerHit) delete window.__worldFlashPeerHit;
+  }
   started = false;
 }
 
@@ -263,6 +274,343 @@ export function getPeersForTap() {
     });
   }
   return out;
+}
+
+// ============================================================
+// Sesión 27 Bloque 3 — Tap detection + Action menu (PVP)
+// ============================================================
+//
+// Mismo patrón que en npc_renderer.js: el world.js pregunta primero al
+// multiplayer si el tap/long-press impacta un peer. Si sí, lo gestiona
+// (auto-walk + engagePlayer / menú contextual) y devuelve true para que
+// world.js no siga propagando a NPC, ground items, etc.
+//
+const PEER_TAP_SCREEN_PX = 90;       // hit-box generosa móvil
+const PEER_ENGAGE_RANGE  = 2.0;      // distancia para auto-engage (igual que NPCs)
+
+let pendingEngagePlayerId = null;    // user_id pendiente de auto-walk → engage
+let pvpActionMenuEl = null;
+let pvpCssInjected = false;
+let _combatModuleRef = null;         // se setea en setCombatModule (evita circular import)
+let _feedLogFn = (() => {});         // se setea en setFeedLog
+
+/**
+ * Inyección de dependencias para evitar imports circulares.
+ * combat.js llama a esto cuando se inicializa para que multiplayer pueda
+ * disparar engagePlayer al hacer tap.
+ */
+export function setCombatModule(combatMod) {
+  _combatModuleRef = combatMod;
+}
+
+/**
+ * Setter del feedLog (combat.feedLog) para mensajes "Vas hacia Nico..." etc.
+ */
+export function setFeedLog(fn) {
+  if (typeof fn === 'function') _feedLogFn = fn;
+}
+
+/**
+ * Tap simple sobre un peer. Devuelve true si gestionó (auto-walk + engage
+ * o engage directo), false si no había peer bajo el tap.
+ *
+ * NOTA: esto NO valida wilderness — eso lo hace el server. El cliente
+ * permite intentar el ataque desde cualquier sitio; si no está en
+ * wilderness, el server devuelve 'not_in_wilderness' y mostramos un
+ * warning en el feed. UX más simple que deshabilitar el botón.
+ */
+export function tryHandleTap(clientX, clientY) {
+  if (!started || !camera || !canvas || !playerRef) return false;
+  const peer = findPeerNearTap(clientX, clientY);
+  if (!peer) return false;
+  triggerPeerTap(peer.user_id);
+  return true;
+}
+
+/**
+ * Long-press sobre un peer: abrir menú contextual.
+ * Devuelve true si abrió menú, false si no había peer.
+ */
+export function openActionMenuAt(cx, cy) {
+  if (!started || !camera || !canvas) return false;
+  closeActionMenu();
+  ensurePvpCss();
+  const peer = findPeerNearTap(cx, cy);
+  if (!peer) return false;
+
+  const peerData = mpLastPeerMap.get(peer.user_id);
+  const lvl = peerData?.combatLvl || 1;
+
+  const menu = document.createElement('div');
+  menu.className = 'pvp-action-menu';
+  menu.innerHTML = `
+    <div class="pvp-action-menu-header">${escapeHtmlSafe(peer.username || 'Jugador')} <span class="pvp-action-lvl">(lvl ${lvl})</span></div>
+    <div class="pvp-action-row danger" data-act="attack">⚔ Atacar</div>
+    <div class="pvp-action-row" data-act="examine">🔍 Examinar</div>
+    <div class="pvp-action-row" data-act="cancel">✕ Cancelar</div>
+  `;
+  document.body.appendChild(menu);
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = cx + 8, top = cy + 8;
+  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+  if (top + mh > window.innerHeight - 4) top = cy - mh - 8;
+  if (top < 4) top = 4;
+  menu.style.left = left + 'px';
+  menu.style.top  = top + 'px';
+  pvpActionMenuEl = menu;
+
+  menu.querySelectorAll('[data-act]').forEach(row => {
+    row.addEventListener('pointerup', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const act = row.getAttribute('data-act');
+      closeActionMenu();
+      if (act === 'attack')        triggerPeerTap(peer.user_id);
+      else if (act === 'examine')  examinePeer(peer);
+    });
+  });
+
+  setTimeout(() => { if (pvpActionMenuEl === menu) closeActionMenu(); }, 5000);
+  return true;
+}
+
+export function closeActionMenu() {
+  if (!pvpActionMenuEl) return;
+  pvpActionMenuEl.remove();
+  pvpActionMenuEl = null;
+}
+
+/**
+ * Si tapeas un peer lejos, te marca como "pendiente de engagear". Cada
+ * frame, world.js llama tickAutoEngage(playerX, playerZ) y si llegamos
+ * cerca del peer (NPC_ENGAGE_RANGE), engagePlayer dispara.
+ *
+ * Devuelve: null | { reached: true } | { chasing: true, targetX, targetZ }
+ */
+export function tickAutoEngage(playerX, playerZ) {
+  if (!started || pendingEngagePlayerId === null) return null;
+  const peer = mpLastPeerMap.get(pendingEngagePlayerId);
+  if (!peer || !peer.group) {
+    pendingEngagePlayerId = null;
+    return null;
+  }
+  const tx = peer.group.position.x;
+  const tz = peer.group.position.z;
+  const dx = tx - playerX, dz = tz - playerZ;
+  if (Math.hypot(dx, dz) <= PEER_ENGAGE_RANGE) {
+    const id = pendingEngagePlayerId;
+    pendingEngagePlayerId = null;
+    if (_combatModuleRef?.engagePlayer) {
+      _combatModuleRef.engagePlayer(id);
+    }
+    return { reached: true };
+  }
+  return { chasing: true, targetX: tx, targetZ: tz };
+}
+
+/**
+ * Cancela el engage pendiente (cuando user mueve joystick).
+ */
+export function cancelAutoEngage() {
+  pendingEngagePlayerId = null;
+}
+
+/**
+ * Hitsplat DOM sobre la cabeza de un peer. Reutiliza el mismo CSS que
+ * los hitsplats de NPC (los inyecta npc_renderer si está cargado, sino
+ * los inyectamos nosotros).
+ */
+export function spawnHitsplatOnPeer(userId, damage) {
+  const peer = mpLastPeerMap.get(userId);
+  if (!peer || !peer.group) return;
+  const layer = ensureHitsplatLayer();
+  const v = new THREE.Vector3(peer.group.position.x, peer.group.position.y + 1.85, peer.group.position.z);
+  v.project(camera);
+  if (v.z > 1 || v.z < -1) return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = (v.x * 0.5 + 0.5) * rect.width;
+  const sy = (-v.y * 0.5 + 0.5) * rect.height;
+  const jitter = (Math.random() - 0.5) * 22;
+  const splat = document.createElement('div');
+  if (damage > 0) {
+    splat.className = 'osrs-hitsplat dmg';
+    splat.innerHTML = `<span>${damage}</span>`;
+  } else {
+    splat.className = 'osrs-hitsplat miss';
+    splat.textContent = '0';
+  }
+  splat.style.left = (sx + jitter) + 'px';
+  splat.style.top  = sy + 'px';
+  layer.appendChild(splat);
+  setTimeout(() => splat.remove(), 950);
+}
+
+/**
+ * Flash rojo + jerk sobre un peer al recibir hit (paralelo a flashHit
+ * de NPC). Como los peers no tienen materiales propios bakeados (son
+ * clones de Nico), aplicamos el flash sobre las luces / emissive de
+ * los materiales del clon.
+ */
+export function flashPeerHit(userId) {
+  const peer = mpLastPeerMap.get(userId);
+  if (!peer || !peer.group) return;
+  // Kick: empuja al peer ligeramente fuera del atacante (player local).
+  // El interp loop sobrescribirá esto en el próximo frame, así que solo
+  // visible 1 frame, pero suficiente para sensación de impacto.
+  // Para hacerlo más visible, parpadeamos el name tag a rojo brevemente.
+  if (peer.nameTagDiv) {
+    const orig = peer.nameTagDiv.style.color;
+    peer.nameTagDiv.style.color = '#ff5050';
+    peer.nameTagDiv.style.textShadow = '0 0 8px rgba(255,80,80,0.9), 1px 1px 0 #000';
+    setTimeout(() => {
+      if (peer.nameTagDiv) {
+        peer.nameTagDiv.style.color = orig || '';
+        peer.nameTagDiv.style.textShadow = '';
+      }
+    }, 180);
+  }
+}
+
+// ---------- helpers internos PVP ----------
+function findPeerNearTap(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const tmpV = new THREE.Vector3();
+  let best = null;
+  let bestDist = PEER_TAP_SCREEN_PX;
+  for (const [userId, peer] of mpLastPeerMap) {
+    if (!peer.group) continue;
+    tmpV.set(peer.group.position.x, peer.group.position.y + 1.0, peer.group.position.z);
+    tmpV.project(camera);
+    if (tmpV.z > 1 || tmpV.z < -1) continue;
+    const sx = (tmpV.x * 0.5 + 0.5) * rect.width;
+    const sy = (-tmpV.y * 0.5 + 0.5) * rect.height;
+    const d = Math.hypot(sx - localX, sy - localY);
+    if (d < bestDist) {
+      bestDist = d;
+      best = {
+        user_id: userId,
+        username: peer.username,
+        x: peer.group.position.x,
+        z: peer.group.position.z,
+      };
+    }
+  }
+  return best;
+}
+
+function triggerPeerTap(userId) {
+  const peer = mpLastPeerMap.get(userId);
+  if (!peer || !peer.group || !playerRef) return;
+  const tx = peer.group.position.x;
+  const tz = peer.group.position.z;
+  const dx = tx - playerRef.position.x;
+  const dz = tz - playerRef.position.z;
+  const dist = Math.hypot(dx, dz);
+  pendingEngagePlayerId = userId;
+  if (dist <= PEER_ENGAGE_RANGE) {
+    pendingEngagePlayerId = null;
+    if (_combatModuleRef?.engagePlayer) {
+      _combatModuleRef.engagePlayer(userId);
+    }
+  } else {
+    // Apuntar al player target del world.js (callback NO disponible aquí
+    // por defecto — lo expone world.js como hook global).
+    if (typeof window !== 'undefined' && typeof window.__setPlayerTarget === 'function') {
+      try { window.__setPlayerTarget(tx, tz); } catch {}
+    }
+    _feedLogFn?.('info', `Vas hacia ${peer.username || 'el jugador'}...`);
+  }
+}
+
+function examinePeer(peer) {
+  const peerData = mpLastPeerMap.get(peer.user_id);
+  const lvl = peerData?.combatLvl || '?';
+  const hp = peerData?.hp != null ? peerData.hp : '?';
+  const hpMax = peerData?.hpMax != null ? peerData.hpMax : '?';
+  _feedLogFn?.('info', `${peer.username} — nivel ${lvl}, ${hp}/${hpMax} HP.`);
+}
+
+function ensureHitsplatLayer() {
+  // Reutiliza el layer ya creado por npc_renderer si existe.
+  let el = document.querySelector('.osrs-hitsplat-layer');
+  if (el) return el;
+  el = document.createElement('div');
+  el.className = 'osrs-hitsplat-layer';
+  (document.getElementById('worldScreen') || document.body).appendChild(el);
+  return el;
+}
+
+function ensurePvpCss() {
+  if (pvpCssInjected) return;
+  pvpCssInjected = true;
+  const style = document.createElement('style');
+  style.id = 'pvp-action-menu-css';
+  style.textContent = `
+    .pvp-action-menu {
+      position: fixed;
+      z-index: 200;
+      min-width: 180px;
+      background: rgba(20, 14, 8, 0.97);
+      border: 2px solid #c84030;
+      border-radius: 4px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.75), 0 0 12px rgba(200,60,40,0.35);
+      padding: 4px;
+      font-family: 'IM Fell English', serif;
+      user-select: none;
+      -webkit-user-select: none;
+      animation: pvpMenuFadeIn 0.12s ease-out;
+    }
+    @keyframes pvpMenuFadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .pvp-action-menu-header {
+      padding: 4px 10px 6px 10px;
+      font-family: 'Cinzel', serif;
+      font-weight: 700;
+      font-size: 12px;
+      color: #ffaa80;
+      text-shadow: 1px 1px 0 #000;
+      border-bottom: 1px solid rgba(200,80,60,0.4);
+      margin-bottom: 4px;
+    }
+    .pvp-action-lvl {
+      color: rgba(255,170,128,0.7);
+      font-size: 10px;
+      font-weight: 400;
+    }
+    .pvp-action-row {
+      padding: 8px 12px;
+      font-size: 14px;
+      color: #f0e0b0;
+      cursor: pointer;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-shadow: 1px 1px 0 #000;
+    }
+    .pvp-action-row:active {
+      background: rgba(200,160,67,0.25);
+      color: #fff;
+    }
+    .pvp-action-row.danger {
+      color: #ff7060;
+      font-weight: 700;
+    }
+    .pvp-action-row.danger:active {
+      background: rgba(200,60,40,0.45);
+      color: #fff;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function escapeHtmlSafe(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ============================================================

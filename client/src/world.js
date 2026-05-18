@@ -225,6 +225,7 @@ export async function startWorld(loggedInUser, token) {
         // Forzar disengage de combat si engaged (el NPC queda lejos)
         try { window.__playerExitCombat?.(); } catch {}
         npcRenderer.cancelAutoEngage?.();
+        multiplayer.cancelAutoEngage?.();  // Sesión 27 Bloque 3 — también peer
         playerTarget = null;
         if (marker) marker.visible = false;
         // Sesión 11c-2 v3 — sala reducida a 8m de alto. La cámara orbital
@@ -613,7 +614,6 @@ function setupScene() {
   scene.add(sun);
   // Sesión 27 fix — luz ambient subida de 0.55 a 0.72 para que zonas
   // densas de árboles (swamp, jungle) no queden en penumbra excesiva.
-  // Mantiene la jerarquía de iluminación pero rellena las sombras.
   const ambient = new THREE.AmbientLight(0x6088a0, 0.72);
   scene.add(ambient);
 }
@@ -2076,7 +2076,12 @@ function setupInput() {
     onTap: (cx, cy) => doCanvasTap(cx, cy),
 
     // Long-press → menú contextual estilo OSRS
-    onLongPress: (cx, cy) => npcRenderer.openActionMenuAt(cx, cy),
+    onLongPress: (cx, cy) => {
+      // Sesión 27 Bloque 3 — long-press primero intenta peer (PVP);
+      // si no impactó un peer, intenta NPC.
+      if (multiplayer.openActionMenuAt(cx, cy)) return;
+      npcRenderer.openActionMenuAt(cx, cy);
+    },
 
     // Drag del dedo en canvas O rotación con dos dedos → rotar cámara
     onCameraDrag: (dyaw, dpitch) => {
@@ -2131,6 +2136,11 @@ function doCanvasTap(clientX, clientY) {
     return;
   }
 
+  // Sesión 27 Bloque 3 — Tap PVP: ¿el tap impacta otro player?
+  // Primero peers (PVP), después NPCs. Si el peer cae bajo el tap,
+  // multiplayer maneja el auto-walk + engagePlayer.
+  if (multiplayer.tryHandleTap(clientX, clientY)) return;
+
   // 1) Tap NPC → auto-walk hacia él y engage cuando lleguemos cerca.
   //    npcRenderer hace raycast + proximidad screen-space (más perdonable en móvil)
   //    y se encarga del auto-walk si está lejos.
@@ -2177,6 +2187,14 @@ function setPlayerTarget(x, z) {
   marker.material.opacity = 0.9;
   marker.visible = true;
   marker.userData.spawnTime = clock.getElapsedTime();
+}
+
+// Sesión 27 Bloque 3 — exponer setPlayerTarget como hook global para
+// que multiplayer.js pueda hacer auto-walk al hacer tap en un peer
+// sin tener que pasar callbacks (multiplayer.js no se inicializa con
+// opts.setPlayerTarget directamente).
+if (typeof window !== 'undefined') {
+  window.__setPlayerTarget = setPlayerTarget;
 }
 
 // Sesión 2 refactor — onKeyDown, setupJoystick, setupTouchCamera
@@ -2275,6 +2293,7 @@ function updatePlayer(dt) {
   if (joyState.active && (Math.abs(joyState.x) > 0.15 || Math.abs(joyState.y) > 0.15)) {
     // User mueve con joystick → cancela cualquier auto-engage pendiente
     npcRenderer.cancelAutoEngage();
+    multiplayer.cancelAutoEngage?.();   // Sesión 27 Bloque 3 — también peer
     const len = Math.hypot(joyState.x, joyState.y);
     const speedScale = Math.min(1, len);
     const camForwardX = -Math.sin(cameraYaw);
@@ -2413,6 +2432,23 @@ function updatePlayer(dt) {
         playerTarget.z = ae.targetZ;
       }
       if (marker) marker.position.set(ae.targetX, 0.05, ae.targetZ);
+    }
+  }
+
+  // Sesión 27 Bloque 3 — Auto-engage PVP (mismo patrón). Si hay un peer
+  // marcado como pending tras tap/menú, le perseguimos hasta entrar en
+  // rango y entonces multiplayer.tickAutoEngage llama a combat.engagePlayer.
+  const aep = multiplayer.tickAutoEngage(player.position.x, player.position.z);
+  if (aep) {
+    if (aep.reached) {
+      playerTarget = null;
+      if (marker) marker.visible = false;
+    } else if (aep.chasing) {
+      if (playerTarget) {
+        playerTarget.x = aep.targetX;
+        playerTarget.z = aep.targetZ;
+      }
+      if (marker) marker.position.set(aep.targetX, 0.05, aep.targetZ);
     }
   }
 

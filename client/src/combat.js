@@ -35,6 +35,7 @@
 import * as api from './api.js';
 import * as equipment from './equipment.js';
 import * as skills from './skills.js';
+import * as multiplayer from './multiplayer.js';   // Sesión 27 Bloque 3 — PVP
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -53,6 +54,12 @@ let isInitialized = false;
 let isTabOpen = false;
 let state = null;
 let currentTarget = null;
+// Sesión 27 Bloque 3 — Target dual. Solo uno puede estar activo a la vez.
+// currentTarget (legacy, lee npc id) se mantiene como alias de
+// currentTargetNpcId para compatibilidad con npc_renderer.js u otros
+// módulos que esperaban un id de NPC.
+let currentTargetNpcId    = null;
+let currentTargetPlayerId = null;
 let attackTimer = null;
 let pollTimer = null;
 let listeners = [];
@@ -77,6 +84,15 @@ export function init() {
       if (isTabOpen) render();
     });
   } catch (e) { console.warn('[combat] equipment.onChange:', e); }
+
+  // Sesión 27 Bloque 3 — Inyectar este módulo en multiplayer para que
+  // multiplayer pueda llamar a engagePlayer() al hacer tap en un peer.
+  // (Evita import circular: combat → multiplayer, multiplayer ← combat
+  // se resuelve por late-binding aquí.)
+  try {
+    multiplayer.setCombatModule({ engagePlayer });
+    multiplayer.setFeedLog(feedLog);
+  } catch (e) { console.warn('[combat] multiplayer wire:', e); }
 
   isInitialized = true;
 }
@@ -112,7 +128,12 @@ export async function refresh() {
 }
 
 export function getStateSnapshot() {
-  return state ? { stats: state.stats, npcs: state.npcs, currentTarget } : null;
+  return state ? {
+    stats: state.stats,
+    npcs: state.npcs,
+    currentTarget: currentTargetNpcId,     // legacy: id del NPC engaged (null si PVP)
+    currentTargetPlayer: currentTargetPlayerId,  // Sesión 27 Bloque 3
+  } : null;
 }
 
 export function onUpdate(cb) {
@@ -145,8 +166,11 @@ function startPolling() {
     // Sesión 26 — Polling siempre activo (no solo cuando tab Combate
     // está abierto) para que el HUD vea la HP regen pasiva calculada
     // por el server cada vez que pedimos state. Mientras hay un target
-    // de combate activo, el auto-attack ya está refrescando por su lado.
-    if (!currentTarget) refresh().catch(() => {});
+    // de combate activo (NPC o player PVP), el auto-attack ya está
+    // refrescando por su lado.
+    if (currentTargetNpcId === null && currentTargetPlayerId === null) {
+      refresh().catch(() => {});
+    }
   }, POLL_INTERVAL_MS);
 }
 
@@ -159,10 +183,13 @@ function stopPolling() {
 // ============================================================
 
 export async function engageNpc(npcId) {
-  if (currentTarget === npcId && attackTimer) return;
+  if (currentTargetNpcId === npcId && attackTimer) return;
+  // Si veníamos atacando otro target, lo limpiamos
+  currentTargetPlayerId = null;
   const npc = state?.npcs?.find(n => n.id === npcId);
   if (npc) feedLog('info', `Atacas: ${npc.name}.`);
-  currentTarget = npcId;
+  currentTargetNpcId = npcId;
+  currentTarget = npcId; // legacy alias
   // Slice 5d — animación: world.js decide si desenvainar (primera vez)
   // o solo cambiar el target (target switch sin envainar entre medio).
   if (typeof window !== 'undefined' && typeof window.__playerEnterCombat === 'function') {
@@ -172,8 +199,31 @@ export async function engageNpc(npcId) {
   await doAttackTick();
 }
 
+/**
+ * Sesión 27 Bloque 3 — engagePlayer
+ * Mismo flujo que engageNpc pero target = otro player.
+ */
+export async function engagePlayer(targetUserId) {
+  if (currentTargetPlayerId === targetUserId && attackTimer) return;
+  currentTargetNpcId = null;
+  currentTarget = null;
+  currentTargetPlayerId = targetUserId;
+  const peer = multiplayer.getPeerById?.(targetUserId);
+  const name = peer?.username || 'jugador';
+  feedLog('info', `Atacas a ${name}.`);
+  // Animación: enterCombat (sin npcId concreto, le pasamos targetUserId
+  // como identificador genérico — el hook solo lo usa para desenvainar.)
+  if (typeof window !== 'undefined' && typeof window.__playerEnterCombat === 'function') {
+    try { window.__playerEnterCombat(`player_${targetUserId}`); } catch {}
+  }
+  if (isTabOpen) render();
+  await doAttackTick();
+}
+
 export function disengage() {
-  const wasEngaged = currentTarget !== null;
+  const wasEngaged = currentTargetNpcId !== null || currentTargetPlayerId !== null;
+  currentTargetNpcId = null;
+  currentTargetPlayerId = null;
   currentTarget = null;
   if (attackTimer) { clearTimeout(attackTimer); attackTimer = null; }
   // Slice 5d — animación: si estábamos en combate, envaina la espada.
@@ -184,14 +234,19 @@ export function disengage() {
 }
 
 async function doAttackTick() {
-  if (!currentTarget) return;
-  const npcId = currentTarget;
+  // Sesión 27 Bloque 3 — Target dual NPC/player.
+  if (currentTargetNpcId !== null) {
+    await doAttackTickNpc();
+  } else if (currentTargetPlayerId !== null) {
+    await doAttackTickPlayer();
+  }
+}
+
+async function doAttackTickNpc() {
+  if (currentTargetNpcId === null) return;
+  const npcId = currentTargetNpcId;
   let result;
   try {
-    // Sesión 27 — Pasar la posición ACTUAL del player (no la persistida)
-    // para que el server valide rango contra ella. Elimina "fuera de
-    // alcance" cuando el cliente ya llegó visualmente pero los datos
-    // server-side están desfasados respecto al render.
     let pos = null;
     try {
       const p = window.__getPlayerPosition?.();
@@ -236,14 +291,6 @@ async function doAttackTick() {
   const npc = state?.npcs?.find(n => n.id === npcId);
   const npcName = npc ? npc.name : 'el objetivo';
 
-  // Slice 5b: dispara la animación de swing del player en CADA tick (hit
-  // o miss — en OSRS el personaje hace el gesto siempre). El hook global
-  // lo expone world.js y rebota a character.playAttack().
-  //
-  // Sesión 26: pasamos stance + weapon_type + cooldown_ms para que
-  // character.js elija la anim correcta (1H usa Punching, 2H usa
-  // sword_attack_N según stance) y la escale al tiempo del cooldown
-  // (anim termina justo cuando puedes pegar otra vez).
   if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
       window.__playerPlayAttack(
@@ -255,28 +302,21 @@ async function doAttackTick() {
   }
 
   if (result.your_hit) {
-    // Sesión 26 — Si fue crítico (solo 2H actualmente), enfatizar en el log
     if (result.is_crit) {
       feedLog('hit', `⚡ ¡CRÍTICO! Golpe demoledor a ${npcName}: ${result.your_damage} HP.`);
     } else {
       feedLog('hit', `Le pegas a ${npcName} y le quitas ${result.your_damage} HP.`);
     }
-    // Dispara el efecto visual de "recibí hit" en world.js (flash + jerk).
-    // Hook global expuesto por world.js para no acoplar módulos.
     if (typeof window !== 'undefined' && typeof window.__worldFlashNpcHit === 'function') {
       try { window.__worldFlashNpcHit(npcId); } catch {}
     }
   } else {
     feedLog('miss', `Fallas a ${npcName}.`);
   }
-  // Hitsplat OSRS sobre el NPC — gota roja para daño, escudo azul para miss/0.
-  // Se dispara siempre, igual que en OSRS clásico (también muestra el "0").
   if (typeof window !== 'undefined' && typeof window.__worldSpawnHitsplat === 'function') {
     try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
   }
 
-  // Sesión 17 — XP DROPS: pildoras flotantes arriba del minimapa por cada
-  // skill que ganó XP. Solo se muestran si damage_splat.js está cargado.
   if (typeof window !== 'undefined' && typeof window.__spawnXpDrops === 'function' && result.xp_gained) {
     try { window.__spawnXpDrops(result.xp_gained); } catch {}
   }
@@ -285,8 +325,6 @@ async function doAttackTick() {
     if (result.npc_hit) feedLog('player-hit', `${npcName} te pega ${result.npc_damage} HP.`);
     else feedLog('player-miss', `${npcName} falla el ataque.`);
 
-    // Sesión 17 — PLAYER SPLAT: cuadrado rojo/azul sobre el player cuando
-    // recibe daño del NPC. damage=0 con miss → splat azul "0" OSRS-style.
     if (typeof window !== 'undefined' && typeof window.__spawnPlayerSplat === 'function') {
       try { window.__spawnPlayerSplat(result.npc_damage || 0, result.npc_hit); } catch {}
     }
@@ -297,8 +335,6 @@ async function doAttackTick() {
       const lvl = result.your_levels[skill];
       feedLog('levelup', `¡Subes a nivel ${lvl} de ${skillLabel(skill)}!`);
     }
-    // Sesión 17 — LEVEL UP BANNER: solo el primer skill que sube (varios
-    // simultáneos es raro y un solo banner es más limpio que apilarlos).
     if (typeof window !== 'undefined' && typeof window.__spawnLevelUpBanner === 'function') {
       const firstSkill = result.level_ups[0];
       const mappedId = SKILL_ID_MAP[firstSkill] || firstSkill;
@@ -307,10 +343,6 @@ async function doAttackTick() {
     }
   }
 
-  // Sesión 25 — Tras CUALQUIER ataque que dé XP, refrescar skills.js cliente
-  // para que el tab Stats muestre el nivel/XP actualizados. El server ya
-  // hizo mirrorCombatXpToUserSkills, pero el cliente no se entera hasta
-  // que pide /api/skills. Antes solo se sincronizaba al cargar el mundo.
   const gotXp = result.xp_gained && (
     result.xp_gained.attack > 0 ||
     result.xp_gained.strength > 0 ||
@@ -346,21 +378,180 @@ async function doAttackTick() {
   }
   if (result.you_died) {
     feedLog('death', 'Has muerto. Toca el botón para volver al spawn.');
-    // Slice 5d — animación de muerte del player
     if (typeof window !== 'undefined' && typeof window.__playerDeath === 'function') {
       try { window.__playerDeath(); } catch {}
     }
-    // Sesión 25 — Mostrar overlay grande "Has muerto" + botón respawn.
-    // Bloquea el resto del juego hasta que el user pulse el botón.
     showDeathOverlay();
     disengage();
     await refresh();
     return;
   }
 
-  // Sesión 26 — Usar cooldown_ms del server (depende del arma equipada
-  // + stance activo) en lugar de un TICK_MS fijo. Si el server no lo
-  // devuelve (fallback), usamos TICK_MS=900ms global.
+  const nextTickMs = (result && typeof result.cooldown_ms === 'number')
+    ? result.cooldown_ms
+    : TICK_MS;
+  attackTimer = setTimeout(() => doAttackTick(), nextTickMs);
+}
+
+// ============================================================
+// Sesión 27 Bloque 3 — Tick PVP (target = otro player)
+// ============================================================
+async function doAttackTickPlayer() {
+  if (currentTargetPlayerId === null) return;
+  const targetId = currentTargetPlayerId;
+  let result;
+  try {
+    let pos = null;
+    try {
+      const p = window.__getPlayerPosition?.();
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = p;
+    } catch {}
+    result = await api.attackPlayer(targetId, pos);
+  } catch (err) {
+    if (err.code) {
+      result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}) };
+    } else {
+      disengage();
+      if (isTabOpen) render();
+      return;
+    }
+  }
+
+  if (result.error) {
+    if (result.error === 'on_cooldown') {
+      const wait = (result.cooldown_remaining_ms || TICK_MS) + 50;
+      attackTimer = setTimeout(() => doAttackTick(), wait);
+      return;
+    }
+    if (result.error === 'out_of_range') {
+      feedLog('warning', 'Fuera de rango. Acércate.');
+      disengage();
+      return;
+    }
+    if (result.error === 'not_in_wilderness') {
+      const who = result.reason === 'target' ? 'tu objetivo está' : 'estás';
+      feedLog('warning', `No puedes atacar: ${who} fuera del Wilderness.`);
+      disengage();
+      return;
+    }
+    if (result.error === 'target_dead' || result.error === 'target_not_found') {
+      disengage();
+      await refresh();
+      return;
+    }
+    if (result.error === 'user_dead' || result.error === 'cannot_attack_self') {
+      disengage();
+      await refresh();
+      return;
+    }
+    disengage();
+    return;
+  }
+
+  const peer = multiplayer.getPeerById?.(targetId);
+  const targetName = peer?.username || 'el jugador';
+
+  // Animación de swing del player (igual que NPC)
+  if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
+    try {
+      window.__playerPlayAttack(
+        uiSelectedStance,
+        result.weapon_type,
+        result.cooldown_ms
+      );
+    } catch {}
+  }
+
+  // Mensaje de hit/miss
+  if (result.your_hit) {
+    if (result.is_crit) {
+      feedLog('hit', `⚡ ¡CRÍTICO! ${targetName}: ${result.your_damage} HP.`);
+    } else {
+      feedLog('hit', `Le pegas a ${targetName}: ${result.your_damage} HP.`);
+    }
+    // Flash visual sobre el peer
+    if (typeof window !== 'undefined' && typeof window.__worldFlashPeerHit === 'function') {
+      try { window.__worldFlashPeerHit(targetId); } catch {}
+    }
+  } else {
+    feedLog('miss', `Fallas a ${targetName}.`);
+  }
+  // Hitsplat sobre el peer (gota roja / escudo azul)
+  if (typeof window !== 'undefined' && typeof window.__worldSpawnPlayerHitsplat === 'function') {
+    try { window.__worldSpawnPlayerHitsplat(targetId, result.your_damage || 0); } catch {}
+  }
+
+  // XP drops (igual que NPC)
+  if (typeof window !== 'undefined' && typeof window.__spawnXpDrops === 'function' && result.xp_gained) {
+    try { window.__spawnXpDrops(result.xp_gained); } catch {}
+  }
+
+  // Contraataque del target sobre nosotros
+  if (result.target_hit !== null && result.target_hit !== undefined) {
+    if (result.target_hit) feedLog('player-hit', `${targetName} te pega ${result.target_damage} HP.`);
+    else feedLog('player-miss', `${targetName} falla el ataque.`);
+    if (typeof window !== 'undefined' && typeof window.__spawnPlayerSplat === 'function') {
+      try { window.__spawnPlayerSplat(result.target_damage || 0, result.target_hit); } catch {}
+    }
+  }
+
+  // Level ups (igual que NPC)
+  if (result.level_ups && result.level_ups.length) {
+    for (const skill of result.level_ups) {
+      const lvl = result.your_levels[skill];
+      feedLog('levelup', `¡Subes a nivel ${lvl} de ${skillLabel(skill)}!`);
+    }
+    if (typeof window !== 'undefined' && typeof window.__spawnLevelUpBanner === 'function') {
+      const firstSkill = result.level_ups[0];
+      const mappedId = SKILL_ID_MAP[firstSkill] || firstSkill;
+      const lvl = result.your_levels[firstSkill];
+      try { window.__spawnLevelUpBanner(mappedId, lvl); } catch {}
+    }
+  }
+
+  const gotXp = result.xp_gained && (
+    result.xp_gained.attack > 0 ||
+    result.xp_gained.strength > 0 ||
+    result.xp_gained.defence > 0 ||
+    result.xp_gained.hp > 0
+  );
+  if (gotXp) {
+    skills.reload().catch(e => console.warn('[combat] skills reload:', e));
+  }
+
+  // Update local stats
+  if (state) {
+    state.stats.hp_current = result.your_hp;
+    state.stats.hp_max = result.your_hp_max;
+    state.stats.attack.level = result.your_levels.attack;
+    state.stats.strength.level = result.your_levels.strength;
+    state.stats.defence.level = result.your_levels.defence;
+    state.stats.hp.level = result.your_levels.hp;
+  }
+  updateHpHud();
+  if (isTabOpen) render();
+  notify();
+
+  // Target murió
+  if (result.target_killed) {
+    feedLog('kill', `¡Has matado a ${targetName}!`);
+    disengage();
+    await refresh();
+    return;
+  }
+  // Yo morí
+  if (result.you_died) {
+    feedLog('death', `Has caído ante ${targetName}. Toca el botón para volver al spawn.`);
+    if (typeof window !== 'undefined' && typeof window.__playerDeath === 'function') {
+      try { window.__playerDeath(); } catch {}
+    }
+    showDeathOverlay();
+    disengage();
+    await refresh();
+    return;
+  }
+
+  // Siguiente tick
   const nextTickMs = (result && typeof result.cooldown_ms === 'number')
     ? result.cooldown_ms
     : TICK_MS;
