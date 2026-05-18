@@ -1,6 +1,6 @@
 /**
  * SebasPresent — Combat handlers (Slice 5a + 5b)
- * Endpoints: /api/combat/state, /attack, /respawn, /style
+ * Endpoints: /api/combat/state, /attack, /attack_player, /respawn, /style
  *
  * La lógica vive en combat_engine.js. Handlers solo orquestan.
  *
@@ -9,11 +9,14 @@
  * contra la pos actual del cliente (no la persistida). Elimina el bug
  * "fuera de alcance" cuando el player llega visualmente al NPC pero el
  * server todavía cree que está lejos.
+ *
+ * Sesión 27 Bloque 3 — handleCombatAttackPlayer: PVP. Mismo patrón,
+ * target = otro player. Solo permitido en wilderness.
  */
 import { json, makeDbAdapter } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import {
-  getCombatState, attackNpc, respawnUser,
+  getCombatState, attackNpc, attackPlayer, respawnUser,
   VALID_STYLES,
 } from '../combat_engine.js';
 export async function handleCombatState(request, env) {
@@ -64,6 +67,62 @@ export async function handleCombatAttack(request, env) {
     return json({ error: 'internal_error', message: err.message }, 500);
   }
 }
+
+/**
+ * Sesión 27 Bloque 3 — POST /api/combat/attack_player
+ *
+ * Body: { target_user_id, x, z }
+ *   - target_user_id: id del player a atacar.
+ *   - x, z: posición ACTUAL del attacker (mismo patrón anti-desfase que
+ *     /attack para NPCs).
+ *
+ * Validaciones server-side (en attackPlayer):
+ *   - Ambos en wilderness.
+ *   - Rango melee (con tolerance + cap).
+ *   - Cooldown attacker.
+ *   - Target online y con HP > 0.
+ *
+ * El target auto-retaliata si tiene cooldown listo.
+ */
+export async function handleCombatAttackPlayer(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  const targetUserId = parseInt(body.target_user_id, 10);
+  if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+    return json({ error: 'invalid_target_user_id' }, 400);
+  }
+  if (targetUserId === session.user_id) {
+    return json({ error: 'cannot_attack_self' }, 400);
+  }
+
+  const opts = {};
+  const cx = Number(body.x);
+  const cz = Number(body.z);
+  if (Number.isFinite(cx) && Number.isFinite(cz)) {
+    opts.userPos = { x: cx, z: cz };
+  }
+
+  const db = makeDbAdapter(env);
+  try {
+    const result = await attackPlayer(db, session.user_id, targetUserId, opts);
+    if (result.error) {
+      const knownClient = new Set([
+        'cannot_attack_self', 'attacker_not_found', 'target_not_found',
+        'target_dead', 'on_cooldown', 'out_of_range',
+        'user_no_position', 'target_no_position', 'user_dead',
+        'not_in_wilderness',
+      ]);
+      if (knownClient.has(result.error)) return json(result, 400);
+    }
+    return json(result);
+  } catch (err) {
+    console.error('[combat/attack_player]', err);
+    return json({ error: 'internal_error', message: err.message }, 500);
+  }
+}
+
 export async function handleCombatRespawn(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
