@@ -138,6 +138,13 @@ const DEATH_LOOT_LIFETIME_MS = 120_000;  // 2 minutos visible en el suelo
 const SPAWN_X = 0;                        // respawn point
 const SPAWN_Z = 0;
 
+// Sesión 27 Bloque 3 — PVP solo permitido en la zona wilderness, igual
+// que en OSRS clásico. La zona wilderness es todo lo que está a la
+// izquierda de la frontera X (espejo del WILDERNESS_X del cliente).
+// Si AMBOS players están en x < WILDERNESS_X_BORDER, el attack se
+// permite. Si alguno está fuera, error 'not_in_wilderness'.
+const WILDERNESS_X_BORDER = -1024;
+
 // Sesión 26 — HP regen pasiva
 //   - HP_REGEN_INTERVAL_MS: cada cuánto se gana 1 HP cuando está fuera de combate
 //   - HP_REGEN_COMBAT_LOCKOUT_MS: tras un ataque, el contador NO empieza
@@ -159,6 +166,7 @@ const COMBAT_SKILL_MAP = {
 export {
   getCombatState,
   attackNpc,
+  attackPlayer,                // Sesión 27 Bloque 3 — PVP
   respawnUser,
   reviveExpiredNpcs,
   rollAndDropLoot,
@@ -770,6 +778,259 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     your_hp: stats.hp_current,
     your_hp_max: xpAfter.hp,
     your_levels: xpAfter,
+  };
+}
+
+// ============================================================
+// PUBLIC: attackPlayer (Sesión 27 Bloque 3 — PVP)
+// ============================================================
+//
+// Mismo patrón que attackNpc pero target = otro player en lugar de NPC.
+//
+// Reglas:
+//   - Ambos players deben estar en wilderness (x < WILDERNESS_X_BORDER).
+//   - No puedes atacarte a ti mismo.
+//   - Validación de rango usa userPos del cliente (mismo patrón anti-desfase
+//     que attackNpc): el atacante manda su pos actual, el server lee la del
+//     target de online_users (heartbeat cada 500ms).
+//   - Cooldown propio del atacante (basado en arma + stance).
+//   - Hit/damage con las mismas fórmulas (rollHit, max_hit por strength).
+//   - Si el target tiene cooldown listo, contraataca automáticamente
+//     (auto-retaliate OSRS-style). Esto requiere que el target esté online
+//     y con HP > 0.
+//   - Al morir el target: HP a 0, last_died_at = now, drop top-3 inventory.
+//   - XP igual que NPC: ambos players ganan XP por golpes dados/recibidos
+//     según su style (attacker activo, target en defensive por su counter).
+//
+async function attackPlayer(db, attackerId, targetId, opts = {}) {
+  const rng = opts.rng || Math.random;
+  const now = opts.now || Date.now();
+
+  // -------- Sanity checks --------
+  if (attackerId === targetId) return { error: 'cannot_attack_self' };
+
+  const attackerStats = await dbGetUserStats(db, attackerId);
+  const targetStats   = await dbGetUserStats(db, targetId);
+  if (!attackerStats) return { error: 'attacker_not_found' };
+  if (!targetStats)   return { error: 'target_not_found' };
+
+  if (attackerStats.hp_current <= 0) return { error: 'user_dead' };
+  if (targetStats.hp_current <= 0)   return { error: 'target_dead' };
+
+  // -------- Posiciones --------
+  // Atacante: usar pos del cliente (fresca). Fallback a persistida.
+  const attackerPos = (opts.userPos && Number.isFinite(opts.userPos.x) && Number.isFinite(opts.userPos.z))
+    ? { x: opts.userPos.x, z: opts.userPos.z }
+    : await dbGetUserPosition(db, attackerId);
+
+  // Target: posición del server (online_users / users.last_x). El cliente
+  // NO puede mentir sobre la pos del target.
+  const targetPos = await dbGetUserPosition(db, targetId);
+
+  if (!attackerPos) return { error: 'user_no_position' };
+  if (!targetPos)   return { error: 'target_no_position' };
+
+  // -------- Zona PVP (solo wilderness) --------
+  if (attackerPos.x >= WILDERNESS_X_BORDER) {
+    return { error: 'not_in_wilderness', reason: 'attacker' };
+  }
+  if (targetPos.x >= WILDERNESS_X_BORDER) {
+    return { error: 'not_in_wilderness', reason: 'target' };
+  }
+
+  // -------- Cooldown attacker --------
+  const weaponType = await getUserWeaponType(db, attackerId);
+  const attackerStyle = await dbGetUserCombatStyle(db, attackerId);
+  const stanceKey = STYLE_TO_STANCE[attackerStyle] || 'smash';
+  const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
+  const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
+  const cooldownMs = Math.round(baseSpeed * stanceMods.speed_mult);
+
+  if (attackerStats.last_attack_at && (now - attackerStats.last_attack_at) < cooldownMs) {
+    return {
+      error: 'on_cooldown',
+      cooldown_remaining_ms: cooldownMs - (now - attackerStats.last_attack_at),
+      cooldown_ms: cooldownMs,
+      weapon_type: weaponType,
+    };
+  }
+
+  // -------- Range --------
+  const d = dist(attackerPos.x, attackerPos.z, targetPos.x, targetPos.z);
+  const isRanged = (weaponType === 'bow');
+  // Para PVP, el "attack_range" base de un player es 1m (melee típico).
+  const PLAYER_BASE_ATTACK_RANGE = 1.0;
+  const maxRange = isRanged
+    ? Math.max(PLAYER_BASE_ATTACK_RANGE + 8.0, 10.0)
+    : Math.min(PLAYER_BASE_ATTACK_RANGE + RANGE_TOLERANCE, MELEE_MAX_RANGE);
+  if (d > maxRange) {
+    return {
+      error: 'out_of_range',
+      distance: d,
+      max_range: maxRange,
+    };
+  }
+
+  // -------- User hit --------
+  const attackerLvls = levelsOf(attackerStats);
+  const targetLvls   = levelsOf(targetStats);
+  const userHit = rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength));
+
+  let dmgRaw = userHit.damage;
+  let isCrit = false;
+  if (userHit.hit && dmgRaw > 0) {
+    const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
+    dmgRaw = dmgRaw * weaponMult * stanceMods.damage_mult;
+    const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+    if (critChance > 0 && rng() < critChance) {
+      isCrit = true;
+      dmgRaw = dmgRaw * CRIT_DAMAGE_MULT;
+    }
+    dmgRaw = Math.max(1, Math.floor(dmgRaw));
+  }
+  const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
+  userHit.damage = dmgToTarget;
+  const targetHpAfter = targetStats.hp_current - dmgToTarget;
+  const targetKilled = targetHpAfter <= 0;
+
+  // -------- XP attacker --------
+  const xpBefore = levelsOf(attackerStats);
+  const xpGained = awardXp(attackerStats, dmgToTarget, attackerStyle);
+  const xpAfter = levelsOf(attackerStats);
+  const levelUps = detectLevelUps(xpBefore, xpAfter);
+
+  // -------- Persist target damage --------
+  targetStats.hp_current = targetKilled ? 0 : targetHpAfter;
+  if (targetKilled) targetStats.last_died_at = now;
+
+  // -------- Target counter-attack (auto-retaliate) --------
+  // El target devuelve el golpe si:
+  //   - Sigue vivo después del golpe
+  //   - Su cooldown propio está listo (usamos el cooldown del attacker
+  //     como aproximación; sin acceso al arma del target sería ideal,
+  //     pero por ahora simplificamos).
+  let targetCounterHit = null;
+  let dmgToAttacker = 0;
+  let attackerKilled = false;
+
+  if (!targetKilled) {
+    const targetCooldownMs = cooldownMs; // simplificación: usa el del attacker
+    const targetReady = !targetStats.last_attack_at ||
+                        (now - targetStats.last_attack_at) >= targetCooldownMs;
+    if (targetReady) {
+      // El target da un golpe defensivo (style: defensive simulado).
+      // Usamos su strength real pero stance "neutra".
+      const targetMaxHit = calcMaxHit(targetLvls.strength);
+      targetCounterHit = rollHit(rng, targetLvls.attack, attackerLvls.defence, targetMaxHit);
+      dmgToAttacker = Math.min(targetCounterHit.damage, attackerStats.hp_current);
+      const attackerHpAfter = attackerStats.hp_current - dmgToAttacker;
+      if (attackerHpAfter <= 0) {
+        attackerKilled = true;
+        attackerStats.hp_current = 0;
+        attackerStats.last_died_at = now;
+        try {
+          await dropExcessInventoryOnDeath(
+            db, attackerId, attackerPos.x, attackerPos.z, now,
+            DEATH_KEEP_TOP_N_SLOTS, rng
+          );
+        } catch (err) {
+          console.error('[combat/pvp/attacker-death-drop]', err);
+        }
+      } else {
+        attackerStats.hp_current = attackerHpAfter;
+      }
+      // Target gana XP de defensa por el contraataque (usa su style si lo tiene)
+      const targetStyle = await dbGetUserCombatStyle(db, targetId);
+      awardXp(targetStats, dmgToAttacker, targetStyle);
+      targetStats.last_attack_at = now;
+    }
+  } else {
+    // Target murió por el golpe → drop su inventario excedente
+    try {
+      await dropExcessInventoryOnDeath(
+        db, targetId, targetPos.x, targetPos.z, now,
+        DEATH_KEEP_TOP_N_SLOTS, rng
+      );
+    } catch (err) {
+      console.error('[combat/pvp/target-death-drop]', err);
+    }
+  }
+
+  attackerStats.last_attack_at = now;
+
+  // -------- Persist attacker --------
+  await db.run(
+    `UPDATE combat_stats
+     SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+         hp_current = ?, last_attack_at = ?, last_died_at = ?
+     WHERE user_id = ?`,
+    [
+      attackerStats.attack_xp, attackerStats.strength_xp,
+      attackerStats.defence_xp, attackerStats.hp_xp,
+      attackerStats.hp_current, attackerStats.last_attack_at,
+      attackerStats.last_died_at,
+      attackerId,
+    ]
+  );
+
+  // -------- Persist target --------
+  await db.run(
+    `UPDATE combat_stats
+     SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+         hp_current = ?, last_attack_at = ?, last_died_at = ?
+     WHERE user_id = ?`,
+    [
+      targetStats.attack_xp, targetStats.strength_xp,
+      targetStats.defence_xp, targetStats.hp_xp,
+      targetStats.hp_current, targetStats.last_attack_at,
+      targetStats.last_died_at,
+      targetId,
+    ]
+  );
+
+  // Mirror XP a user_skills (para que stats tab muestre niveles actualizados)
+  try {
+    await mirrorCombatXpToUserSkills(db, attackerId, attackerStats, now);
+    await mirrorCombatXpToUserSkills(db, targetId, targetStats, now);
+  } catch (err) {
+    console.error('[combat/pvp] mirror failed:', err);
+  }
+
+  // -------- Combat log --------
+  // attacker_type = 0 (player), target_type = 0 (player)
+  await db.run(
+    `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
+     VALUES (?, 0, ?, 0, ?, ?, ?, ?)`,
+    [now, attackerId, targetId, dmgToTarget, userHit.hit ? 1 : 0, targetKilled ? 1 : 0]
+  );
+  if (targetCounterHit) {
+    await db.run(
+      `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
+       VALUES (?, 0, ?, 0, ?, ?, ?, ?)`,
+      [now, targetId, attackerId, dmgToAttacker, targetCounterHit.hit ? 1 : 0, attackerKilled ? 1 : 0]
+    );
+  }
+
+  return {
+    your_hit:      userHit.hit,
+    your_damage:   dmgToTarget,
+    is_crit:       isCrit,
+    cooldown_ms:   cooldownMs,
+    weapon_type:   weaponType,
+    stance:        stanceKey,
+    target_killed: targetKilled,
+    target_hp:     targetStats.hp_current,
+    target_hp_max: levelFromXp(targetStats.hp_xp),
+    target_user_id: targetId,
+    xp_gained:     xpGained,
+    level_ups:     levelUps,
+    style:         attackerStyle,
+    target_hit:    targetCounterHit ? targetCounterHit.hit : null,
+    target_damage: dmgToAttacker,
+    you_died:      attackerKilled,
+    your_hp:       attackerStats.hp_current,
+    your_hp_max:   xpAfter.hp,
+    your_levels:   xpAfter,
   };
 }
 

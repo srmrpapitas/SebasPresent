@@ -111,6 +111,9 @@ export default {
         response = await combat.handleCombatState(request, env);
       } else if (path === '/api/combat/attack' && method === 'POST') {
         response = await combat.handleCombatAttack(request, env);
+      } else if (path === '/api/combat/attack_player' && method === 'POST') {
+        // Sesión 27 Bloque 3 — PVP
+        response = await combat.handleCombatAttackPlayer(request, env);
       } else if (path === '/api/combat/respawn' && method === 'POST') {
         response = await combat.handleCombatRespawn(request, env);
       } else if (path === '/api/combat/style' && method === 'POST') {
