@@ -21,6 +21,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ============================================================
 // Constantes públicas
@@ -125,7 +126,14 @@ const TREE_GLB_URLS = {
   maple:      `${R2_BASE}/trees/maple.glb`,
   willow:     `${R2_BASE}/trees/willow.glb`,
   teak:       `${R2_BASE}/trees/teak.glb`,
-  magic:      `${R2_BASE}/trees/magic_v2.glb`,
+  // Sesión 27 — magic_v2.glb desactivado temporalmente. El asset venía
+  // boca abajo, con un mesh tipo plano enorme que se veía como cuadrado
+  // negro. Los intentos de corrección programática no dieron resultado
+  // limpio en este GLB concreto. Usamos el fallback procedural definido
+  // en TREE_TYPE_DEFS.magic (OctahedronGeometry "crystal" + canopyColor
+  // 0x88ddff + emissive 0x4488ff). Cuando haya GLB nuevo limpio,
+  // descomentar la línea.
+  // magic:      `${R2_BASE}/trees/magic_v2.glb`,
   bush:       `${R2_BASE}/trees/bush.glb`,
   bush_small: `${R2_BASE}/trees/bush_small.glb`,
 };
@@ -252,8 +260,8 @@ export function stop() {
 
   if (TREE_GEOMS) {
     for (const t of Object.values(TREE_GEOMS)) {
-      t.trunkGeom?.dispose(); t.trunkMat?.dispose();
-      t.canopyGeom?.dispose(); t.canopyMat?.dispose();
+      // Sesión 27 — procedurales y GLB unificados en `parts`.
+      if (t.parts) for (const p of t.parts) { p.geometry?.dispose(); p.material?.dispose(); }
       if (t.glbParts) for (const p of t.glbParts) { p.geometry?.dispose(); p.material?.dispose(); }
     }
     TREE_GEOMS = null;
@@ -562,30 +570,202 @@ function noise2d(x, y) {
 }
 
 // ============================================================
+// ============================================================
 // Tree GLBs (carga + geometrías procedurales fallback)
 // ============================================================
+//
+// Sesión 27 — Refactor de árboles procedurales:
+//   - Antes: cada TREE_GEOMS[id] tenía { trunkGeom, canopyGeom, ... } —
+//     solo 2 partes (tronco + copa) con formas básicas.
+//   - Ahora: cada TREE_GEOMS[id] tiene `parts: [{geometry, material}]`
+//     igual que los árboles GLB. Esto permite construir árboles
+//     procedurales con MÚLTIPLES segmentos (varias copas para volumen
+//     orgánico, ramas en dead trees, cristales adicionales para magic).
+//
+// Constructores custom para "normal", "dead" y "magic" — los demás usan
+// el constructor genérico (trunk cilindrico + canopy según canopyShape).
+// El sistema de instanciación (renderTrees) itera sobre `parts`
+// indistintamente entre procedurales y GLB.
+
 function initTreeGeometries() {
   TREE_GEOMS = {};
   for (const [id, def] of Object.entries(TREE_TYPE_DEFS)) {
-    const trunkRadius = 0.22 * def.trunkScale;
-    const trunkGeom = new THREE.CylinderGeometry(trunkRadius * 0.8, trunkRadius * 1.1, def.height, 6);
-    trunkGeom.translate(0, def.height / 2, 0);
-    const trunkMat = new THREE.MeshLambertMaterial({ color: def.trunkColor, flatShading: true });
-    let canopyGeom;
-    if (def.canopyShape === 'sphere') canopyGeom = new THREE.IcosahedronGeometry(def.canopyRadius, 0);
-    else if (def.canopyShape === 'cone') canopyGeom = new THREE.ConeGeometry(def.canopyRadius, def.canopyRadius * 2.4, 7);
-    else if (def.canopyShape === 'flat') { canopyGeom = new THREE.IcosahedronGeometry(def.canopyRadius, 0); canopyGeom.scale(1, 0.35, 1); }
-    else if (def.canopyShape === 'crystal') canopyGeom = new THREE.OctahedronGeometry(def.canopyRadius, 0);
-    else canopyGeom = new THREE.IcosahedronGeometry(def.canopyRadius, 0);
-    canopyGeom.translate(0, def.height + def.canopyRadius * 0.4, 0);
-    const canopyMatOpts = { color: def.canopyColor, flatShading: true };
-    if (def.emissive !== undefined) {
-      canopyMatOpts.emissive = def.emissive;
-      canopyMatOpts.emissiveIntensity = def.emissiveIntensity || 0.3;
-    }
-    const canopyMat = new THREE.MeshLambertMaterial(canopyMatOpts);
-    TREE_GEOMS[id] = { def, id, trunkGeom, trunkMat, canopyGeom, canopyMat, isGLB: false };
+    let parts;
+    if (id === 'normal')      parts = buildNormalTree(def);
+    else if (id === 'dead')   parts = buildDeadTree(def);
+    else if (id === 'magic')  parts = buildMagicTree(def);
+    else                      parts = buildGenericTree(def);
+    TREE_GEOMS[id] = { def, id, parts, isGLB: false };
   }
+}
+
+// ------------------------------------------------------------
+// Constructor genérico (mantiene el look anterior para árboles
+// que no han sido rediseñados todavía).
+// ------------------------------------------------------------
+function buildGenericTree(def) {
+  const trunkRadius = 0.22 * def.trunkScale;
+  const trunkGeom = new THREE.CylinderGeometry(trunkRadius * 0.8, trunkRadius * 1.1, def.height, 6);
+  trunkGeom.translate(0, def.height / 2, 0);
+  const trunkMat = new THREE.MeshLambertMaterial({ color: def.trunkColor, flatShading: true });
+
+  let canopyGeom;
+  if (def.canopyShape === 'sphere') canopyGeom = new THREE.IcosahedronGeometry(def.canopyRadius, 0);
+  else if (def.canopyShape === 'cone') canopyGeom = new THREE.ConeGeometry(def.canopyRadius, def.canopyRadius * 2.4, 7);
+  else if (def.canopyShape === 'flat') { canopyGeom = new THREE.IcosahedronGeometry(def.canopyRadius, 0); canopyGeom.scale(1, 0.35, 1); }
+  else if (def.canopyShape === 'crystal') canopyGeom = new THREE.OctahedronGeometry(def.canopyRadius, 0);
+  else canopyGeom = new THREE.IcosahedronGeometry(def.canopyRadius, 0);
+  canopyGeom.translate(0, def.height + def.canopyRadius * 0.4, 0);
+
+  const canopyMatOpts = { color: def.canopyColor, flatShading: true };
+  if (def.emissive !== undefined) {
+    canopyMatOpts.emissive = def.emissive;
+    canopyMatOpts.emissiveIntensity = def.emissiveIntensity || 0.3;
+  }
+  const canopyMat = new THREE.MeshLambertMaterial(canopyMatOpts);
+
+  return [
+    { geometry: trunkGeom, material: trunkMat, kind: 'tree-trunk' },
+    { geometry: canopyGeom, material: canopyMat, kind: 'tree-canopy' },
+  ];
+}
+
+// ------------------------------------------------------------
+// Árbol "normal" — tronco ligeramente cónico + 3 copas orgánicas
+// (una grande central + 2 satélite) para dar volumen real. Sale
+// cuanto más natural que una sola esfera plana.
+// ------------------------------------------------------------
+function buildNormalTree(def) {
+  const trunkRadius = 0.22 * def.trunkScale;
+  const trunkGeom = new THREE.CylinderGeometry(trunkRadius * 0.7, trunkRadius * 1.2, def.height, 7);
+  trunkGeom.translate(0, def.height / 2, 0);
+  const trunkMat = new THREE.MeshLambertMaterial({ color: def.trunkColor, flatShading: true });
+
+  // 3 esferas para una copa orgánica con volumen.
+  const r = def.canopyRadius;
+  const canopy1 = new THREE.IcosahedronGeometry(r * 1.0, 0);
+  canopy1.translate(0, def.height + r * 0.5, 0);
+  const canopy2 = new THREE.IcosahedronGeometry(r * 0.7, 0);
+  canopy2.translate(r * 0.7, def.height + r * 0.15, r * 0.2);
+  const canopy3 = new THREE.IcosahedronGeometry(r * 0.65, 0);
+  canopy3.translate(-r * 0.55, def.height + r * 0.3, -r * 0.4);
+
+  const canopyGeom = mergeGeometries([canopy1, canopy2, canopy3], false);
+  canopy1.dispose(); canopy2.dispose(); canopy3.dispose();
+  const canopyMat = new THREE.MeshLambertMaterial({ color: def.canopyColor, flatShading: true });
+
+  return [
+    { geometry: trunkGeom, material: trunkMat, kind: 'tree-trunk' },
+    { geometry: canopyGeom, material: canopyMat, kind: 'tree-canopy' },
+  ];
+}
+
+// ------------------------------------------------------------
+// Árbol "muerto" — tronco principal + 4 ramas torcidas saliendo
+// hacia los lados a distintas alturas. Sin copa (es muerto). Color
+// gris-marrón muy oscuro, aspecto siniestro.
+// ------------------------------------------------------------
+function buildDeadTree(def) {
+  const trunkRadius = 0.18 * def.trunkScale;
+  const trunkGeom = new THREE.CylinderGeometry(trunkRadius * 0.5, trunkRadius * 1.2, def.height, 7);
+  trunkGeom.translate(0, def.height / 2, 0);
+  // Inclinar ligeramente el tronco para que no esté perfectamente recto
+  const m = new THREE.Matrix4().makeRotationZ(0.08);
+  trunkGeom.applyMatrix4(m);
+
+  // 4 ramas: cilindros finos que salen a distintas alturas y ángulos.
+  const branchGeoms = [];
+  const branchSpecs = [
+    // y normalizado, ángulo lateral, longitud, grosor relativo
+    { y: 0.55, angle: 0.6,   tilt: 0.9, len: 1.3, thick: 0.55 },
+    { y: 0.72, angle: 2.1,   tilt: 0.7, len: 1.0, thick: 0.45 },
+    { y: 0.85, angle: 4.0,   tilt: 1.0, len: 1.1, thick: 0.50 },
+    { y: 0.95, angle: 5.5,   tilt: 0.5, len: 0.8, thick: 0.40 },
+  ];
+  for (const s of branchSpecs) {
+    const branchLen = def.canopyRadius * s.len;
+    const branchRadius = trunkRadius * s.thick;
+    const b = new THREE.CylinderGeometry(branchRadius * 0.3, branchRadius, branchLen, 5);
+    // Mover origen al extremo inferior (donde se une al tronco)
+    b.translate(0, branchLen / 2, 0);
+    // Tilt en X (separa del tronco hacia afuera)
+    const tilt = new THREE.Matrix4().makeRotationX(-s.tilt);
+    b.applyMatrix4(tilt);
+    // Rotar en Y (ángulo alrededor del tronco)
+    const rot = new THREE.Matrix4().makeRotationY(s.angle);
+    b.applyMatrix4(rot);
+    // Colocar a la altura del tronco
+    const place = new THREE.Matrix4().makeTranslation(0, def.height * s.y, 0);
+    b.applyMatrix4(place);
+    branchGeoms.push(b);
+  }
+
+  const branchMerge = mergeGeometries(branchGeoms, false);
+  for (const b of branchGeoms) b.dispose();
+
+  const trunkMat = new THREE.MeshLambertMaterial({ color: def.trunkColor, flatShading: true });
+  // Las ramas un pelín más claras que el tronco para que se distingan.
+  const branchColor = new THREE.Color(def.trunkColor).lerp(new THREE.Color(0xffffff), 0.15);
+  const branchMat = new THREE.MeshLambertMaterial({ color: branchColor, flatShading: true });
+
+  return [
+    { geometry: trunkGeom, material: trunkMat, kind: 'tree-trunk' },
+    { geometry: branchMerge, material: branchMat, kind: 'tree-canopy' },
+  ];
+}
+
+// ------------------------------------------------------------
+// Árbol "mágico" — tronco azulado + cristal principal en lo alto
+// + 4 cristales secundarios más pequeños orbitando. Emisivo azul
+// para que brille en la oscuridad. Look "RuneScape magic tree".
+// ------------------------------------------------------------
+function buildMagicTree(def) {
+  const trunkRadius = 0.22 * def.trunkScale;
+  const trunkGeom = new THREE.CylinderGeometry(trunkRadius * 0.7, trunkRadius * 1.15, def.height, 8);
+  trunkGeom.translate(0, def.height / 2, 0);
+  const trunkMat = new THREE.MeshLambertMaterial({
+    color: def.trunkColor,
+    flatShading: true,
+    emissive: 0x2244aa,
+    emissiveIntensity: 0.12, // tronco con un sutil glow azul
+  });
+
+  // Cristal principal grande arriba.
+  const r = def.canopyRadius;
+  const cMain = new THREE.OctahedronGeometry(r * 0.95, 0);
+  cMain.scale(0.85, 1.6, 0.85); // alargado vertical para que se vea como un cristal
+  cMain.translate(0, def.height + r * 0.95, 0);
+
+  // 4 cristales secundarios más pequeños en disposición orgánica
+  // alrededor del cristal principal, a distintas alturas.
+  const subSpecs = [
+    { angle: 0.0,        dist: r * 0.7, y: def.height + r * 0.35, size: r * 0.45, stretch: 1.4 },
+    { angle: Math.PI/2,  dist: r * 0.6, y: def.height + r * 0.55, size: r * 0.38, stretch: 1.5 },
+    { angle: Math.PI,    dist: r * 0.75,y: def.height + r * 0.30, size: r * 0.50, stretch: 1.3 },
+    { angle: 3*Math.PI/2,dist: r * 0.65,y: def.height + r * 0.50, size: r * 0.42, stretch: 1.6 },
+  ];
+  const crystalGeoms = [cMain];
+  for (const s of subSpecs) {
+    const c = new THREE.OctahedronGeometry(s.size, 0);
+    c.scale(0.75, s.stretch, 0.75);
+    c.translate(Math.cos(s.angle) * s.dist, s.y, Math.sin(s.angle) * s.dist);
+    crystalGeoms.push(c);
+  }
+
+  const crystalMerge = mergeGeometries(crystalGeoms, false);
+  for (const c of crystalGeoms) c.dispose();
+
+  const canopyMat = new THREE.MeshLambertMaterial({
+    color: def.canopyColor,
+    flatShading: true,
+    emissive: def.emissive !== undefined ? def.emissive : 0x4488ff,
+    emissiveIntensity: def.emissiveIntensity || 0.55,
+  });
+
+  return [
+    { geometry: trunkGeom, material: trunkMat, kind: 'tree-trunk' },
+    { geometry: crystalMerge, material: canopyMat, kind: 'tree-canopy' },
+  ];
 }
 
 async function loadGLBTrees() {
@@ -1246,12 +1426,11 @@ function buildTreesForChunk(cx, cz) {
   for (const [typeId, list] of byType) {
     const tg = TREE_GEOMS[typeId];
     if (!tg) continue;
+    // Sesión 27 — Tanto procedurales como GLB exponen `parts` uniforme.
+    // (Antes los procedurales tenían trunkGeom/canopyGeom separados.)
     const parts = tg.isGLB && tg.glbParts
       ? tg.glbParts.map((p, idx) => ({ geometry: p.geometry, material: p.material, kind: idx === 0 ? 'tree-trunk' : 'tree-canopy' }))
-      : [
-          { geometry: tg.trunkGeom, material: tg.trunkMat, kind: 'tree-trunk' },
-          { geometry: tg.canopyGeom, material: tg.canopyMat, kind: 'tree-canopy' },
-        ];
+      : tg.parts;
     for (const part of parts) {
       const inst = new THREE.InstancedMesh(part.geometry, part.material, list.length);
       inst.userData = { kind: part.kind, treeType: tg.def, typeId, trees: list };
