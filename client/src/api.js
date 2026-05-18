@@ -208,21 +208,29 @@ export async function attackNpc(npcId, pos) {
 }
 
 /**
- * Sesión 27 Bloque 3 — attackPlayer(targetUserId, pos?)
+ * Sesión 27 Bloque 3 — attackPlayer(targetUserId, pos?, targetPos?)
  *
  * PVP. Mismo patrón que attackNpc:
  *   - targetUserId: id del player objetivo (del snapshot players[].user_id).
  *   - pos: {x, z} del attacker AHORA (para validación de rango sin desfase).
+ *   - targetPos: {x, z} del target tal como lo VE el attacker en pantalla.
+ *     Server compara con la pos persistida y si la diff es plausible (<6m)
+ *     confía en ella. Esto evita "fuera de rango" cuando el target se
+ *     mueve entre heartbeats.
  *
  * Server valida que ambos estén en wilderness y aplica las reglas PVP.
  * Errores comunes a manejar en UI:
  *   'not_in_wilderness', 'out_of_range', 'on_cooldown', 'target_dead'.
  */
-export async function attackPlayer(targetUserId, pos) {
+export async function attackPlayer(targetUserId, pos, targetPos) {
   const body = { target_user_id: targetUserId };
   if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.z)) {
     body.x = pos.x;
     body.z = pos.z;
+  }
+  if (targetPos && Number.isFinite(targetPos.x) && Number.isFinite(targetPos.z)) {
+    body.target_x = targetPos.x;
+    body.target_z = targetPos.z;
   }
   return apiFetch('/api/combat/attack_player', {
     method: 'POST',

@@ -406,7 +406,14 @@ async function doAttackTickPlayer() {
       const p = window.__getPlayerPosition?.();
       if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = p;
     } catch {}
-    result = await api.attackPlayer(targetId, pos);
+    // Sesión 27 Bloque 3 fix — Pos visual del target tal como la veo yo
+    // (la interpolada del peer en multiplayer.js). Server la valida
+    // contra la pos persistida y la usa si es plausible.
+    let targetVisualPos = null;
+    try {
+      targetVisualPos = multiplayer.getPeerVisualPosition?.(targetId);
+    } catch {}
+    result = await api.attackPlayer(targetId, pos, targetVisualPos);
   } catch (err) {
     if (err.code) {
       result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}) };
