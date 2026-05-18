@@ -70,7 +70,12 @@ const BIOME_TEXTURE_URLS = {
 const BIOME_TEXTURES = {};
 
 export const PALETTE = {
-  sky: 0x9ec0d6, fog: 0xa8c4d8, skyWild: 0x6a4040, fogWild: 0x6a3838,
+  // Sesión 27 fix — skyWild/fogWild aclarados. Antes 0x6a4040/0x6a3838 dejaban
+  // wilderness y zonas wild casi en negro. Ahora un marrón rojizo medio
+  // que mantiene la atmósfera siniestra pero permite ver lo que tienes
+  // delante. (Swamp sigue usando sky normal — su oscuridad viene de la
+  // densidad de árboles, no del cielo.)
+  sky: 0x9ec0d6, fog: 0xa8c4d8, skyWild: 0x9a6858, fogWild: 0x9a5a52,
   ocean: 0x4a7896, player: 0xc04a3a, marker: 0xfff04a,
 };
 
@@ -591,11 +596,55 @@ async function loadGLBTrees() {
     if (!TREE_GEOMS[typeId]) return;
     try {
       const gltf = await loader.loadAsync(url);
-      const baked = bakeGlbModel(gltf.scene, TREE_TYPE_DEFS[typeId].height * 1.4, 0x8a6a4a);
+
+      // Sesión 27 fix — magic_v2.glb viene BOCA ABAJO en R2 y trae un
+      // mesh tipo "ground plane" / "billboard de sombra" enorme que se
+      // ve como un cuadrado negro al mirar el árbol desde detrás.
+      //
+      // Aplicamos dos correcciones:
+      //   1. Rotación X += PI antes del bake → árbol al derecho.
+      //      Pasamos forceNoZUp:true a bakeGlbModel para que NO intente
+      //      su propia detección de Z-up (que se confundiría con el GLB
+      //      ya pre-rotado).
+      //   2. Después del bake, filtramos parts cuyo bbox sea desproporcio-
+      //      nadamente grande respecto al resto. El árbol normaliza a
+      //      4.5m * 1.4 = 6.3m. Cualquier mesh con dimensión > 13m es
+      //      claramente un decorado no deseado (plano/cubo de fondo).
+      const isMagic = (typeId === 'magic');
+      if (isMagic) {
+        gltf.scene.rotation.x += Math.PI;
+        gltf.scene.updateMatrixWorld(true);
+      }
+
+      const baked = bakeGlbModel(
+        gltf.scene,
+        TREE_TYPE_DEFS[typeId].height * 1.4,
+        0x8a6a4a,
+        false,           // forceZUp
+        false,           // forceZUpInvert
+        isMagic,         // forceNoZUp — magic ya está pre-rotado
+      );
       if (!baked) return;
+
+      if (isMagic) {
+        const MAX_PART_SIZE = TREE_TYPE_DEFS[typeId].height * 2.5;
+        const keptParts = [];
+        for (const p of baked.parts) {
+          p.geometry.computeBoundingBox();
+          const bb = p.geometry.boundingBox;
+          const dx = bb.max.x - bb.min.x;
+          const dy = bb.max.y - bb.min.y;
+          const dz = bb.max.z - bb.min.z;
+          const maxSize = Math.max(dx, dy, dz);
+          if (maxSize <= MAX_PART_SIZE) keptParts.push(p);
+          else console.log(`[magic_tree] filtered oversized part (${maxSize.toFixed(1)}m > ${MAX_PART_SIZE.toFixed(1)}m)`);
+        }
+        baked.parts = keptParts;
+      }
+
       TREE_GEOMS[typeId].isGLB = true;
       TREE_GEOMS[typeId].glbParts = baked.parts;
-      console.log(`Loaded tree '${typeId}'`);
+      console.log(`Loaded tree '${typeId}' (parts=${baked.parts.length})`);
     } catch (err) {
       console.warn(`Tree '${typeId}' load failed:`, err.message);
     }

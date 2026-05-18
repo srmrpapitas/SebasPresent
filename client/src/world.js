@@ -611,7 +611,10 @@ function setupScene() {
   const sun = new THREE.DirectionalLight(0xffeecc, 1.0);
   sun.position.set(-30, 50, 20);
   scene.add(sun);
-  const ambient = new THREE.AmbientLight(0x6088a0, 0.55);
+  // Sesión 27 fix — luz ambient subida de 0.55 a 0.72 para que zonas
+  // densas de árboles (swamp, jungle) no queden en penumbra excesiva.
+  // Mantiene la jerarquía de iluminación pero rellena las sombras.
+  const ambient = new THREE.AmbientLight(0x6088a0, 0.72);
   scene.add(ambient);
 }
 
@@ -1950,9 +1953,12 @@ function ensureRegionEl() {
   if (el) return el;
   el = document.createElement('div');
   el.id = 'worldRegion';
+  // Sesión 27 fix — Bajado a 210px para no solaparse con el HUD lateral
+  // (HP/Prayer/Run icons + minimap ocupan los primeros ~200px arriba-derecha).
+  // z-index 30 (era 12) para que aparezca por encima de cualquier HUD.
   el.style.cssText = `position: absolute;
-    top: calc(env(safe-area-inset-top, 0px) + 60px);
-    left: 50%; transform: translateX(-50%); z-index: 12; pointer-events: none;
+    top: calc(env(safe-area-inset-top, 0px) + 210px);
+    left: 50%; transform: translateX(-50%); z-index: 30; pointer-events: none;
     background: rgba(20, 14, 8, 0.78);
     border: 1px solid rgba(200, 170, 120, 0.4);
     color: rgba(232, 197, 96, 0.95);
@@ -1990,8 +1996,10 @@ function ensureBannerEl() {
   if (el) return el;
   el = document.createElement('div');
   el.id = 'worldBanner';
+  // Sesión 27 fix — z-index 30 (era 25) para garantizar que aparece por
+  // encima del HUD lateral en cualquier resolución.
   el.style.cssText = `position: absolute; top: 30%; left: 50%;
-    transform: translate(-50%, -45%); z-index: 25; pointer-events: none;
+    transform: translate(-50%, -45%); z-index: 30; pointer-events: none;
     background: rgba(20, 14, 8, 0.88); border: 2px solid #c8a043;
     color: #fff8d0; font-family: 'Cinzel', serif; font-weight: 700;
     font-size: 22px; padding: 14px 30px; border-radius: 4px;
