@@ -1,23 +1,24 @@
 /**
- * SebasPresent — World Snapshot handler (Sesión 27, Bloque 1 PVP)
+ * SebasPresent — World Snapshot handler (Sesión 27, Bloques 1 + 2 PVP)
  * Endpoint: GET /api/world/snapshot?x=&z=
  *
- * Objetivo del Bloque 1: tener UN único endpoint server-authoritative que
- * devuelva en una sola response la "verdad" del mundo en este tick:
- *   - players cercanos con pos + hp + combat status
- *   - NPCs cercanos con pos + hp + combat status
- *   - timestamp server (para lag compensation futura)
- *
- * NO sustituye a /api/world/peers ni a /api/combat/state. Vive en paralelo
- * durante Bloque 1. En Bloque 2 los clientes migran a este endpoint y los
- * pollings antiguos mueren.
+ * Bloque 1: endpoint server-authoritative que devuelve players+NPCs+timestamp.
+ * Bloque 2: ampliado para ser drop-in replacement de /api/combat/state respecto
+ *           a NPCs. npc_renderer.js cliente ahora lee de aquí (250ms) en
+ *           lugar de polear combat/state (5s).
  *
  * Diseño:
- *   - Radio único de 200m (suficiente para minimap y peers).
- *   - Players: join online_users (pos/yaw/state fresca, heartbeat 500ms)
- *     con combat_stats (hp_current, hp_max derivado de hp_xp, last_attack_at).
- *   - NPCs: directamente de npc_instances + npc_defs (status=0=vivos).
- *   - in_combat se computa como now - last_attack_at < IN_COMBAT_WINDOW_MS.
+ *   - Radio 500m (necesario para el minimap del cliente, que dibuja NPCs
+ *     hasta 500m). El cliente filtra a 100m para crear meshes, pero recibe
+ *     hasta 500m para pintar en el minimap.
+ *   - Players: join online_users (pos/yaw/state, heartbeat 500ms) con
+ *     combat_stats (hp_current, hp_max derivado de hp_xp, last_attack_at).
+ *   - NPCs: formato idéntico al de combat_engine.getCombatState — incluye
+ *     name, max_hp, attack_lvl, strength_lvl, defence_lvl, max_hit,
+ *     attack_range, model. Así npc_renderer y combat.js son intercambiables
+ *     sobre la fuente de datos.
+ *   - in_combat (player y npc) se computa como
+ *     now - last_attack_at < IN_COMBAT_WINDOW_MS.
  *
  * Cuesta poco al worker:
  *   - 2 queries D1 (1 players + 1 npcs) con bounding-box prefilter.
@@ -27,9 +28,9 @@
 import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
-// Radio de visibilidad. 100m es suficiente para peers, pero el cliente
-// dibuja NPCs en el minimap con radio mayor. Usamos 200m como compromiso.
-const SNAPSHOT_RADIUS_M       = 200;
+// Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
+// Para 90 NPCs en un mundo de 4096m, 500m típicamente devuelve 30-50 NPCs.
+const SNAPSHOT_RADIUS_M       = 500;
 // Timeout para considerar a un player "online" según online_users.last_seen.
 const SNAPSHOT_PEER_TIMEOUT_MS = 10_000;
 // Si last_attack_at fue hace menos de esto, el actor está in_combat.
@@ -37,7 +38,7 @@ const SNAPSHOT_PEER_TIMEOUT_MS = 10_000;
 const IN_COMBAT_WINDOW_MS     = 8_000;
 
 // XP → level table (replica de skills_engine para no importar circular)
-// Solo necesitamos hp_xp → hp_max. Función chiquita inline.
+// Solo necesitamos hp_xp → hp_max para players. Función chiquita inline.
 function levelFromXp(xp) {
   if (xp <= 0) return 1;
   let points = 0;
@@ -126,12 +127,14 @@ export async function handleWorldSnapshot(request, env) {
       });
 
     // -------------------- NPCs --------------------
-    // Solo vivos (status=0). Devolvemos hp_current + max_hp del def.
+    // Bloque 2: formato idéntico al de combat_engine.getCombatState para que
+    // npc_renderer.js sea drop-in replacement. Solo vivos (status=0).
     // in_combat_with es directamente el user_id o NULL.
     const npcRows = await env.DB.prepare(
       `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
               i.in_combat_with, i.last_attack_at,
-              d.max_hp, d.name
+              d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
+              d.attack_speed_ticks, d.max_hit, d.attack_range, d.model
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
@@ -154,8 +157,14 @@ export async function handleWorldSnapshot(request, env) {
         x:              r.x,
         z:              r.z,
         hp_current:     r.hp_current,
-        hp_max:         r.max_hp,
+        max_hp:         r.max_hp,
         status:         r.status,
+        attack_lvl:     r.attack_lvl,
+        strength_lvl:   r.strength_lvl,
+        defence_lvl:    r.defence_lvl,
+        max_hit:        r.max_hit,
+        attack_range:   r.attack_range,
+        model:          r.model,
         in_combat_with: r.in_combat_with,
         in_combat: r.last_attack_at != null &&
           (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS,
