@@ -119,13 +119,28 @@ export async function handleGroundItemsPickup(request, env) {
     const userX = userRow.last_x ?? 0;
     const userZ = userRow.last_z ?? 0;
 
-    // Cargar las filas pedidas
+    // Cargar las filas pedidas, ya ORDENADAS por valor unitario DESC.
+    // Sesión 27 Bloque 3 — el pickup procesa primero los items más
+    // valiosos. Así, si tu mochila se llena a medio recoger un pile,
+    // te quedas con lo más valioso (lo barato se queda en el suelo
+    // hasta que vuelvas con espacio).
+    //
+    // Coins = unit_value 1 (no usa shop_stock). Resto = sell_price.
+    // Items sin precio = 0 (rocas, herramientas básicas, etc).
     const ph = ids.map(() => '?').join(',');
     const groundRows = await db.all(
       `SELECT g.id, g.item_id, g.qty, g.x, g.z, g.dropped_at, g.dropped_by_user, g.despawn_at,
-              i.stackable
-       FROM ground_items g LEFT JOIN items i ON i.id = g.item_id
-       WHERE g.id IN (${ph})`,
+              i.stackable,
+              (CASE WHEN g.item_id = 'coins' THEN 1
+                    ELSE COALESCE(s.sell_price, 0) END) AS unit_value
+       FROM ground_items g
+       LEFT JOIN items i ON i.id = g.item_id
+       LEFT JOIN shop_stock s ON s.item_id = g.item_id AND s.shop_id = 'general_store'
+       WHERE g.id IN (${ph})
+       ORDER BY (CASE WHEN g.item_id = 'coins' THEN 1
+                      ELSE COALESCE(s.sell_price, 0) END) DESC,
+                g.qty DESC,
+                g.dropped_at ASC`,
       ids
     );
 
