@@ -1,8 +1,18 @@
 /**
  * SebasPresent — Entry point (Slice 4a)
+ *
+ * Sesión 27 fix — Botón "↩ Salir" arriba-izquierda:
+ *   - Si estás dentro de un edificio (interiors.isActive()) → sale del
+ *     edificio con interiors.leave(), NO cierra sesión.
+ *   - Si estás fuera → comportamiento original (logout).
+ *
+ * El botón de logout "oficial" sigue siendo el del sidebar abajo-derecha
+ * (tab "logout" → #sidebarLogoutBtn), gestionado por ui.js.
  */
 import * as ui from './ui.js';
 import * as auth from './auth.js';
+import * as interiors from './interiors.js';
+
 async function boot() {
   wireEvents();
   ui.initSidebar({ onLogout: auth.handleLogout });
@@ -34,9 +44,21 @@ function wireEvents() {
       ui.showScreen('loginScreen');
     });
   }
-  // World logout button (Slice 2)
+  // Sesión 27 fix — Botón ↩ Salir arriba-izquierda:
+  //   - Si estás en un edificio → sales del edificio (NO logout).
+  //   - Si estás fuera → logout normal.
+  // El logout "oficial" vive en el sidebar abajo-derecha (tab logout).
   if (ui.els.worldLogoutBtn) {
-    ui.els.worldLogoutBtn.addEventListener('click', auth.handleLogout);
+    ui.els.worldLogoutBtn.addEventListener('click', (ev) => {
+      let inInterior = false;
+      try { inInterior = !!interiors.isActive?.(); } catch {}
+      if (inInterior) {
+        ev.preventDefault?.();
+        try { interiors.leave?.(); } catch (e) { console.warn('[main] interiors.leave:', e); }
+        return;
+      }
+      auth.handleLogout(ev);
+    });
   }
 }
 boot().catch(err => {
