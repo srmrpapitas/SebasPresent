@@ -823,18 +823,45 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     ? { x: opts.userPos.x, z: opts.userPos.z }
     : await dbGetUserPosition(db, attackerId);
 
-  // Target: posición del server (online_users / users.last_x). El cliente
-  // NO puede mentir sobre la pos del target.
-  const targetPos = await dbGetUserPosition(db, targetId);
+  // Target: pos PERSISTIDA en el server (la "verdad").
+  const targetPosServer = await dbGetUserPosition(db, targetId);
 
-  if (!attackerPos) return { error: 'user_no_position' };
-  if (!targetPos)   return { error: 'target_no_position' };
+  if (!attackerPos)      return { error: 'user_no_position' };
+  if (!targetPosServer)  return { error: 'target_no_position' };
+
+  // Sesión 27 Bloque 3 fix — Mismo problema que con NPCs antes del
+  // refactor: el target puede haberse movido entre heartbeats. El
+  // cliente lo ve VISUALMENTE al lado, pero la pos del server tiene
+  // hasta 500ms de retraso (≈5m a velocidad de run).
+  //
+  // El attacker manda en el body opts.targetPos = {x, z} con la pos
+  // que VE en pantalla (la del lerp visual del peer en multiplayer.js).
+  // Server acepta esa pos si y solo si la discrepancia respecto a la
+  // persistida es FÍSICAMENTE PLAUSIBLE en el último intervalo de
+  // heartbeat. Esto previene cheating (no puedes decir "el target
+  // está al lado" si en el server cree que está a 50m).
+  //
+  // Tolerancia: 6m = 12m/s × 0.5s (run boost máximo × heartbeat
+  // interval). Si la diff es mayor, ignoramos lo que dice el cliente.
+  const TARGET_POS_PLAUSIBILITY_M = 6.0;
+  let targetPos = targetPosServer;
+  if (opts.targetPos && Number.isFinite(opts.targetPos.x) && Number.isFinite(opts.targetPos.z)) {
+    const diff = dist(opts.targetPos.x, opts.targetPos.z, targetPosServer.x, targetPosServer.z);
+    if (diff <= TARGET_POS_PLAUSIBILITY_M) {
+      // Confiamos en lo que ve el cliente.
+      targetPos = { x: opts.targetPos.x, z: opts.targetPos.z };
+    }
+    // Si excede plausibilidad → mantener pos server (no rechazamos el
+    // attack, solo ignoramos la pos sospechosa).
+  }
 
   // -------- Zona PVP (solo wilderness) --------
+  // Para wilderness usamos la pos PERSISTIDA del server, no la visual,
+  // para que un cliente comprometido no pueda atacar fuera de PVP zone.
   if (attackerPos.x >= WILDERNESS_X_BORDER) {
     return { error: 'not_in_wilderness', reason: 'attacker' };
   }
-  if (targetPos.x >= WILDERNESS_X_BORDER) {
+  if (targetPosServer.x >= WILDERNESS_X_BORDER) {
     return { error: 'not_in_wilderness', reason: 'target' };
   }
 
@@ -945,10 +972,13 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       targetStats.last_attack_at = now;
     }
   } else {
-    // Target murió por el golpe → drop su inventario excedente
+    // Target murió por el golpe → drop su inventario excedente en la
+    // pos PERSISTIDA del server (no la visual del cliente atacante,
+    // porque el target podría haber sido visto por el atacante en una
+    // posición distinta a donde realmente "estaba" en el server tick).
     try {
       await dropExcessInventoryOnDeath(
-        db, targetId, targetPos.x, targetPos.z, now,
+        db, targetId, targetPosServer.x, targetPosServer.z, now,
         DEATH_KEEP_TOP_N_SLOTS, rng
       );
     } catch (err) {
