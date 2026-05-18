@@ -28,6 +28,45 @@ import * as api from './api.js';
 import * as inventory from './inventory.js';
 import { renderItemIcon } from './item_icons.js';
 
+// Sesión 26 — CSS inyectado para layout compacto del banco (6 columnas
+// estilo OSRS). Se inyecta una sola vez al cargar el módulo. Usamos
+// !important porque sobreescribe estilos definidos en otro lado del
+// proyecto que no podemos editar desde aquí.
+(function injectBankLayoutStyles() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('bank-layout-compact-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'bank-layout-compact-styles';
+  style.textContent = `
+    .bank-grid {
+      display: grid !important;
+      grid-template-columns: repeat(6, 1fr) !important;
+      gap: 3px !important;
+      padding: 4px !important;
+    }
+    .bank-slot-bank {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      aspect-ratio: 1 / 1 !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      font-size: 22px !important;
+      padding: 0 !important;
+      position: relative !important;
+      box-sizing: border-box !important;
+    }
+    .bank-slot-bank .bank-icon {
+      font-size: inherit !important;
+    }
+    .bank-slot-bank .bank-qty {
+      font-size: 10px !important;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
 const INV_SLOTS = 28;
 const DRAG_THRESHOLD_PX = 6;
 
