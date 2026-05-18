@@ -11,6 +11,7 @@
  *   - 90 NPCs sincronizados con /api/combat/state (pollos/vacas/goblins)
  *   - Tap NPC → engage combat. HP bar flotante sobre cada NPC
  *   - NPCs como puntos blancos en minimapa
+ *   - Sesión 27 Bloque 1: world_snapshot polea /api/world/snapshot en paralelo
  */
 
 import * as THREE from 'three';
@@ -32,6 +33,7 @@ import * as inventory from './inventory.js';
 import * as shop from './shop.js';
 import * as damageSplat from './damage_splat.js';
 import * as npcRenderer from './npc_renderer.js';
+import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
 import { getSkillIconHtml } from './item_icons.js';
 import {
   PALETTE, PLACES, BIOMES,
@@ -470,6 +472,18 @@ export async function startWorld(loggedInUser, token) {
       });
     } catch (e) { console.warn('[world] damage_splat start:', e); }
 
+    // Sesión 27 Bloque 1 — arrancar polling del snapshot server-authoritative.
+    // Vive en paralelo con multiplayer.js y npc_renderer.js. En Bloque 2 esos
+    // dos migran a leer del snapshot y los pollings antiguos mueren.
+    // Verificar en Eruda: window.__snapshotDebug()
+    try {
+      worldSnapshot.start({
+        getPlayer:    () => player,
+        getAuthToken: () => authToken,
+        apiBase:      API_BASE,
+      });
+    } catch (e) { console.warn('[world] world_snapshot start:', e); }
+
     hideWorldLoading();
     animate();
   } catch (err) {
@@ -500,6 +514,9 @@ export function stopWorld() {
 
   // Sesión 21 — damage_splat cleanup
   try { damageSplat.stop(); } catch {}
+
+  // Sesión 27 Bloque 1 — world_snapshot cleanup
+  try { worldSnapshot.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
   multiplayer.stop();
@@ -2184,6 +2201,7 @@ function animate() {
   updateRegionTracking();
   npcRenderer.update(dt);
   multiplayer.update(dt);
+  worldSnapshot.update(dt);   // Sesión 27 Bloque 1
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
   drawMinimap();
