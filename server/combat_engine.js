@@ -380,6 +380,15 @@ async function mirrorCombatXpToUserSkills(db, userId, stats, now) {
 
 async function reviveExpiredNpcs(db, opts = {}) {
   const now = opts.now || Date.now();
+  // Sesión 26 — Spawn jitter: al respawnear, los NPCs aparecen en un
+  // punto aleatorio dentro de un radio del spawn point del def en lugar
+  // de exactamente sobre él. Antes todos los pollos/NPCs del mismo def
+  // aparecían en el mismo (x,z) → quedaban orbitando juntos.
+  //   RANDOM() en SQLite devuelve un INTEGER grande con signo. Lo
+  //   normalizamos a [-1, 1] con:
+  //     ((RANDOM() % 2000) / 1000.0) → rango aproximado [-2, 2]
+  //     dividido entre 2 → ~[-1, 1]
+  //   Luego multiplicamos por SPAWN_JITTER_RADIUS (5 unidades).
   const result = await db.run(
     `UPDATE npc_instances
      SET status = 0,
@@ -387,8 +396,10 @@ async function reviveExpiredNpcs(db, opts = {}) {
          died_at = NULL,
          in_combat_with = NULL,
          last_attack_at = NULL,
-         x = (SELECT spawn_x FROM npc_defs WHERE id = npc_instances.def_id),
+         x = (SELECT spawn_x FROM npc_defs WHERE id = npc_instances.def_id)
+             + (((ABS(RANDOM()) % 2000) - 1000) / 200.0),
          z = (SELECT spawn_z FROM npc_defs WHERE id = npc_instances.def_id)
+             + (((ABS(RANDOM()) % 2000) - 1000) / 200.0)
      WHERE status = 1
        AND died_at IS NOT NULL
        AND (died_at + (SELECT respawn_ms FROM npc_defs WHERE id = npc_instances.def_id)) <= ?`,
