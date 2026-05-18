@@ -32,6 +32,7 @@ import * as inventory from './inventory.js';
 import * as shop from './shop.js';
 import * as damageSplat from './damage_splat.js';
 import * as npcRenderer from './npc_renderer.js';
+import { getSkillIconHtml } from './item_icons.js';
 import {
   PALETTE, PLACES, BIOMES,
   WORLD_HALF, WILDERNESS_X, FOG_NEAR, FOG_FAR,
@@ -1558,7 +1559,7 @@ function renderSkillsPanel(pane) {
     const categoryClass = def.combat ? 'combat-skill' : (def.gathering ? 'gathering-skill' : '');
     html += `
       <div class="skill-slot ${categoryClass}" data-skill-id="${def.id}">
-        <span class="skill-slot-icon">${def.icon}</span>
+        <span class="skill-slot-icon">${getSkillIconHtml(def.id, def.icon)}</span>
         <span class="skill-slot-current">${level}</span>
         <span class="skill-slot-max">${level}</span>
         <span class="skill-slot-name">${def.name}</span>
@@ -1616,7 +1617,7 @@ function showSkillTooltip(skillId, clientX, clientY) {
   el.className = 'skill-tooltip';
   el.innerHTML = `
     <button class="skill-tooltip-close" aria-label="Cerrar">✕</button>
-    <div class="skill-tooltip-title">${def.icon} ${def.name}</div>
+    <div class="skill-tooltip-title"><span class="skill-tooltip-title-icon">${getSkillIconHtml(def.id, def.icon)}</span> ${def.name}</div>
     <div class="skill-tooltip-row"><span>Nivel actual:</span><b>${level} / 99</b></div>
     <div class="skill-tooltip-row"><span>XP total:</span><b>${xp.toLocaleString('es-ES')}</b></div>
     ${nextXp !== null

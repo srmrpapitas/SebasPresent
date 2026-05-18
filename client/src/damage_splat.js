@@ -26,6 +26,7 @@
  */
 
 import * as skills from './skills.js';
+import { getSkillIconHtml } from './item_icons.js';
 
 // ============================================================
 // Estado
@@ -73,7 +74,7 @@ export function spawnXpDrop(skillId, amount) {
   if (!def) return;
   const el = document.createElement('div');
   el.className = 'xp-drop';
-  el.innerHTML = `<span class="xp-drop-icon">${def.icon}</span><span class="xp-drop-amount">+${amount}</span><span class="xp-drop-skill">${def.name}</span>`;
+  el.innerHTML = `<span class="xp-drop-icon">${getSkillIconHtml(def.id, def.icon)}</span><span class="xp-drop-amount">+${amount}</span><span class="xp-drop-skill">${def.name}</span>`;
   xpStackEl.appendChild(el);
   // Animar con CSS: la animación dura 1500ms, luego se elimina
   setTimeout(() => { try { el.remove(); } catch {} }, 1600);
@@ -108,9 +109,9 @@ export function spawnLevelUpBanner(skillId, newLevel) {
   ensureBanner();
   const def = skills.SKILL_DEFS_BY_ID[skillId];
   const skillName = def?.name || skillId;
-  const icon = def?.icon || '⭐';
+  const iconHtml = def ? getSkillIconHtml(def.id, def.icon) : '⭐';
   bannerEl.innerHTML = `
-    <div class="lvup-icon">${icon}</div>
+    <div class="lvup-icon">${iconHtml}</div>
     <div class="lvup-text">¡Has subido al<br><b>Nivel ${newLevel}</b> de <b>${skillName}</b>!</div>
   `;
   bannerEl.classList.remove('visible');
