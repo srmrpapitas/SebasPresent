@@ -54,13 +54,19 @@
     .inv-icon svg, .inv-ghost svg, .shop-cell-icon svg,
     .equip-slot-icon-wrap svg, .equip-tooltip-icon svg,
     .inv-context-menu-icon svg,
-    .skill-slot-icon svg, .skill-tooltip-title-icon svg,
-    .bank-icon svg, .bank-ghost svg {
+    .skill-slot-icon svg, .skill-tooltip-title-icon svg {
       width: 100%;
       height: 100%;
       display: block;
       max-width: 100%;
       max-height: 100%;
+    }
+    /* Banco — el SVG escala con el font-size del slot (mantiene la
+       proporción que tenía el emoji original sin estirarse al 100%). */
+    .bank-icon svg, .bank-ghost svg {
+      width: 1em;
+      height: 1em;
+      display: block;
     }
     /* Fallback: si el icono es emoji (.emoji-icon), mantener el font-size
        del contenedor original (el CSS del juego decide cuánto). */
