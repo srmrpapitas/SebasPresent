@@ -132,6 +132,15 @@ const DEATH_LOOT_LIFETIME_MS = 120_000;  // 2 minutos visible en el suelo
 const SPAWN_X = 0;                        // respawn point
 const SPAWN_Z = 0;
 
+// Sesión 26 — HP regen pasiva
+//   - HP_REGEN_INTERVAL_MS: cada cuánto se gana 1 HP cuando está fuera de combate
+//   - HP_REGEN_COMBAT_LOCKOUT_MS: tras un ataque, el contador NO empieza
+//     hasta pasado este tiempo (evita "regen instantáneo" mientras lucha).
+// El regen se calcula LAZY en getCombatState (cada vez que el cliente
+// pide estado). No hay timer servidor — se computa por delta de tiempo.
+const HP_REGEN_INTERVAL_MS = 20_000;
+const HP_REGEN_COMBAT_LOCKOUT_MS = 8_000;
+
 // Sesión 16 — Mapping de skills internos (combat_engine) → skill_ids en
 // la tabla user_skills (catálogo de 13 skills).
 const COMBAT_SKILL_MAP = {
@@ -390,6 +399,61 @@ async function reviveExpiredNpcs(db, opts = {}) {
 }
 
 // ============================================================
+// Sesión 26 — HP regen pasivo
+// ============================================================
+/**
+ * Calcula cuántos puntos de HP debería regenerar el user desde el último
+ * ataque y los aplica directamente a `stats` + persiste en DB.
+ *
+ * Reglas:
+ *   - Sin regen si hp_current = 0 (muerto, necesita /respawn explícito).
+ *   - Sin regen si hp_current >= hp_max (ya al máximo).
+ *   - Lockout: durante los primeros HP_REGEN_COMBAT_LOCKOUT_MS tras un
+ *     ataque, no cuenta tiempo (estás "en combate").
+ *   - Cada HP_REGEN_INTERVAL_MS adicionales = +1 HP, hasta el cap.
+ *
+ * Implementación: avanzamos virtualmente `last_attack_at` por
+ * (LOCKOUT + ticks × INTERVAL). Esto permite que la próxima llamada
+ * a getCombatState empiece el cómputo desde un timestamp posterior y
+ * no doble-aplique ticks ya consumidos. No interfiere con el cooldown
+ * de ataques (porque last_attack_at avanzado sigue estando en el pasado,
+ * solo que más cercano al ahora).
+ *
+ * Si last_attack_at es NULL (nunca atacó), tratamos el lockout como ya
+ * pasado y permitimos regenerar desde el momento en que entró el user
+ * por primera vez (asume created_at o si no, fija ya last_attack_at a
+ * un valor antiguo para que la siguiente call no cuente el mismo delta).
+ */
+async function applyPassiveHpRegen(db, userId, stats, now) {
+  const hpMax = levelFromXp(stats.hp_xp);
+  if (stats.hp_current <= 0) return;            // muerto: respawn requerido
+  if (stats.hp_current >= hpMax) return;        // ya al máximo
+
+  const baseTs = stats.last_attack_at || 0;
+  const elapsed = now - baseTs;
+  if (elapsed < HP_REGEN_COMBAT_LOCKOUT_MS) return; // aún en combate
+
+  const usableElapsed = elapsed - HP_REGEN_COMBAT_LOCKOUT_MS;
+  const ticksAvailable = Math.floor(usableElapsed / HP_REGEN_INTERVAL_MS);
+  if (ticksAvailable <= 0) return;
+
+  const missing = hpMax - stats.hp_current;
+  const ticksToApply = Math.min(ticksAvailable, missing);
+  if (ticksToApply <= 0) return;
+
+  stats.hp_current += ticksToApply;
+  // Avanzar last_attack_at virtualmente para que la próxima llamada
+  // continúe el conteo desde aquí (evita doble-aplicación).
+  const newLastAttackAt = baseTs + HP_REGEN_COMBAT_LOCKOUT_MS + ticksToApply * HP_REGEN_INTERVAL_MS;
+  stats.last_attack_at = newLastAttackAt;
+
+  await db.run(
+    'UPDATE combat_stats SET hp_current = ?, last_attack_at = ? WHERE user_id = ?',
+    [stats.hp_current, newLastAttackAt, userId]
+  );
+}
+
+// ============================================================
 // PUBLIC: getCombatState
 // ============================================================
 
@@ -398,13 +462,25 @@ async function getCombatState(db, userId, opts = {}) {
   const stats = await dbGetUserStats(db, userId);
   const pos = await dbGetUserPosition(db, userId);
   const combatStyle = await dbGetUserCombatStyle(db, userId);
+  const now = opts.now || Date.now();
+
+  // Sesión 26 — HP regen pasivo: +1 HP cada HP_REGEN_INTERVAL_MS si el
+  // user no está en combate (no ha atacado en HP_REGEN_COMBAT_LOCKOUT_MS).
+  // Se calcula lazy aquí; el delta se persiste en hp_current y se
+  // "avanza" last_attack_at para que las próximas llamadas no doble-cuenten.
+  // Sin regen si HP=0 (necesita respawn explícito) o ya está al máximo.
+  try {
+    await applyPassiveHpRegen(db, userId, stats, now);
+  } catch (err) {
+    console.error('[combat/state] hp-regen failed:', err);
+  }
 
   // Sesión 16 — Asegurar que user_skills está al día tras un getCombatState.
   // Esto cubre el caso de cuentas viejas que tenían XP en combat_stats
   // antes de que user_skills existiera: al primer getCombatState tras el
   // deploy, se hace backfill automático.
   try {
-    await mirrorCombatXpToUserSkills(db, userId, stats, opts.now || Date.now());
+    await mirrorCombatXpToUserSkills(db, userId, stats, now);
   } catch (err) {
     console.error('[combat/state] mirror failed:', err);
   }
