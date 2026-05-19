@@ -70,9 +70,9 @@ export async function handleFiremakingLight(request, env) {
   const userId = session.user_id;
   const now = Date.now();
 
-  // 1) Pos del player
+  // 1) Pos + yaw del player
   const meRow = await env.DB.prepare(
-    'SELECT x, z FROM online_users WHERE user_id = ?'
+    'SELECT x, z, yaw FROM online_users WHERE user_id = ?'
   ).bind(userId).first();
   if (!meRow) return json({ error: 'no_position' }, 400);
 
@@ -133,9 +133,21 @@ export async function handleFiremakingLight(request, env) {
   await env.DB.batch(stmts);
 
   // Fire insert separado para obtener last_row_id.
+  // Sesión 30 — Spawneamos el fuego 1m DELANTE del player en la dirección
+  // donde está mirando (yaw). Así el char queda al lado del fuego, no
+  // encima visualmente. Si no hay yaw (legacy heartbeat), spawneamos
+  // en la pos del player como fallback.
+  //
+  // Convención three.js: yaw=0 → mira hacia -Z. Forward vector:
+  //   fx = -sin(yaw), fz = -cos(yaw)
+  const FIRE_FORWARD_OFFSET_M = 1.2;
+  const yaw = (typeof meRow.yaw === 'number') ? meRow.yaw : 0;
+  const fireX = meRow.x - Math.sin(yaw) * FIRE_FORWARD_OFFSET_M;
+  const fireZ = meRow.z - Math.cos(yaw) * FIRE_FORWARD_OFFSET_M;
+
   const fireResult = await env.DB.prepare(
     'INSERT INTO fires (x, z, log_type, user_id, lit_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(meRow.x, meRow.z, invRow.item_id, userId, now, expiresAt).run();
+  ).bind(fireX, fireZ, invRow.item_id, userId, now, expiresAt).run();
 
   const fireId = fireResult?.meta?.last_row_id ?? null;
 
@@ -143,8 +155,8 @@ export async function handleFiremakingLight(request, env) {
     ok: true,
     fire: {
       id: fireId,
-      x: meRow.x,
-      z: meRow.z,
+      x: fireX,
+      z: fireZ,
       log_type: invRow.item_id,
       lit_at: now,
       expires_at: expiresAt,
