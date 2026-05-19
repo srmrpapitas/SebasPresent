@@ -20,6 +20,8 @@
  *   GET  /api/ground_items, POST /pickup                        → handlers/ground_items.js
  *   GET  /api/skills, POST /api/skills/grant                    → handlers/skills.js   (Sesión 14)
  *   GET  /api/equipment, POST /equip /unequip                   → handlers/equipment.js (Sesión 22)
+ *   GET  /api/party/state, POST /invite /accept /decline /leave /kick → handlers/party.js (S27)
+ *   GET  /api/duel/state,  POST /challenge /accept /decline /cancel /leave → handlers/duel.js (S28)
  *   GET  /api/health
  *
  *   Cron (cada 1 min): GE matcher, NPC revive, ground_items cleanup.
@@ -42,6 +44,7 @@ import * as skills from './handlers/skills.js';
 import * as equipment from './handlers/equipment.js';
 import * as shop from './handlers/shop.js';
 import * as party from './handlers/party.js';        // Sesión 27 Bloque 3 — Party
+import * as duel from './handlers/duel.js';          // Sesión 28 — Duelos PVP no-wild
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -133,6 +136,20 @@ export default {
         response = await party.handlePartyLeave(request, env);
       } else if (path === '/api/party/kick' && method === 'POST') {
         response = await party.handlePartyKick(request, env);
+
+      // ----- Duel (Sesión 28) -----
+      } else if (path === '/api/duel/state' && method === 'GET') {
+        response = await duel.handleDuelState(request, env);
+      } else if (path === '/api/duel/challenge' && method === 'POST') {
+        response = await duel.handleDuelChallenge(request, env);
+      } else if (path === '/api/duel/accept' && method === 'POST') {
+        response = await duel.handleDuelAccept(request, env);
+      } else if (path === '/api/duel/decline' && method === 'POST') {
+        response = await duel.handleDuelDecline(request, env);
+      } else if (path === '/api/duel/cancel' && method === 'POST') {
+        response = await duel.handleDuelCancel(request, env);
+      } else if (path === '/api/duel/leave' && method === 'POST') {
+        response = await duel.handleDuelLeave(request, env);
 
       // ----- World (multiplayer) -----
       } else if (path === '/api/world/heartbeat' && method === 'POST') {
