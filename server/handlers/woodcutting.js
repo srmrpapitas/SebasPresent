@@ -62,11 +62,30 @@ async function wcTablesExist(env) {
   }
 }
 
-async function findAxeSlot(env, userId) {
-  const row = await env.DB.prepare(
-    "SELECT slot_index FROM user_inventory WHERE user_id = ? AND item_id = 'axe' LIMIT 1"
+// ============================================================
+// Helper: ¿el player tiene un hacha disponible? Busca en inventario
+// (cualquier slot) Y TAMBIÉN en equipment.weapon. Si está equipada
+// como arma, igualmente sirve para talar (es lo más natural).
+// Sesión 30 — devuelve true/false.
+// ============================================================
+async function hasAxeAvailable(env, userId) {
+  // 1) Inventario
+  const invRow = await env.DB.prepare(
+    "SELECT 1 FROM user_inventory WHERE user_id = ? AND item_id = 'axe' LIMIT 1"
   ).bind(userId).first();
-  return row ? row.slot_index : null;
+  if (invRow) return true;
+
+  // 2) Equipment: weapon slot con item_id = 'axe'
+  try {
+    const eqRow = await env.DB.prepare(
+      "SELECT 1 FROM user_equipment WHERE user_id = ? AND slot_id = 'weapon' AND item_id = 'axe' LIMIT 1"
+    ).bind(userId).first();
+    if (eqRow) return true;
+  } catch {
+    // Tabla user_equipment puede no existir en algunos despliegues — silencio.
+  }
+
+  return false;
 }
 
 async function findInventorySpotForItem(env, userId, itemId) {
@@ -126,8 +145,8 @@ export async function handleWoodcuttingChop(request, env) {
   }
 
   // 2) Axe
-  const axeSlot = await findAxeSlot(env, userId);
-  if (axeSlot == null) {
+  const hasAxe = await hasAxeAvailable(env, userId);
+  if (!hasAxe) {
     return json({ error: 'no_axe', message: 'Necesitas un hacha.' }, 400);
   }
 
