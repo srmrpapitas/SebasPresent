@@ -47,7 +47,10 @@ import * as THREE from 'three';
 // ============================================================
 // Constantes (deben matchear server/handlers/woodcutting.js)
 // ============================================================
-const CHOP_TICK_S = 2.5;              // segundos entre intentos de chop
+// Tick mínimo entre intentos de chop (en ms). Si la anim Woodcut dura
+// más que esto, usamos su duración real (más natural). Si dura menos,
+// igualmente esperamos este mínimo para no spammear el server.
+const MIN_CHOP_TICK_MS = 1800;
 const MAX_CHOP_DIST_M = 3.0;          // cliente más estricto que server (3.5)
 const APPROACH_DIST_M = 2.5;          // distancia objetivo cuando caminamos hacia el árbol
 const STOP_LOOP_AFTER_FAILS = 3;      // si falla N veces seguidas, paramos
@@ -215,20 +218,25 @@ export function update(dt) {
   if (!activeChop.started) {
     activeChop.started = true;
     feedLog('info', `Comienzas a talar...`);
-    // Disparamos primer chop inmediato (lastChopAt = now - CHOP_TICK_S
-    // para que el siguiente tick lo dispare ya).
-    activeChop.lastChopAt = performance.now() - CHOP_TICK_S * 1000;
+    // Disparamos primer chop inmediato (lastChopAt = 0 fuerza tick now).
+    activeChop.lastChopAt = 0;
+    activeChop.tickMs = MIN_CHOP_TICK_MS;  // empezar con tick mínimo
   }
 
   const now = performance.now();
-  const sinceLast = (now - activeChop.lastChopAt) / 1000;
-  if (sinceLast >= CHOP_TICK_S && !activeChop.waitingResponse) {
+  const sinceLast = now - activeChop.lastChopAt;
+  if (sinceLast >= activeChop.tickMs && !activeChop.waitingResponse) {
     activeChop.lastChopAt = now;
     activeChop.waitingResponse = true;
-    // Animar el char (anim "woodcut" — escala a CHOP_TICK_S segundos)
+    // Animar el char con la duración NATURAL de la anim Woodcut.
+    // playGather devuelve la duración real (ms) — la usamos como tick
+    // para que la próxima anim arranque justo cuando ésta termina.
     const character = getCharacter?.();
     if (character && character.playGather) {
-      character.playGather('woodcut', CHOP_TICK_S * 1000);
+      const dur = character.playGather('woodcut', 0);  // 0 = usar natural
+      if (dur > 0) {
+        activeChop.tickMs = Math.max(MIN_CHOP_TICK_MS, dur);
+      }
     }
     attemptChop(activeChop.tree_type, activeChop.tx, activeChop.tz)
       .catch(err => console.warn('[woodcutting] chop err:', err?.message));

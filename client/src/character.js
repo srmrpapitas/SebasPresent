@@ -557,7 +557,14 @@ export class Character {
       else if (name.startsWith('attack_') || name === 'punching'
             || name === 'draw' || name === 'sheath' || name === 'drink') {
         mode = 'all';
-      } else {
+      }
+      // Sesión 30 — gathering anims también necesitan mode='all' porque
+      // tienen root motion vertical (kneel baja las caderas, woodcut puede
+      // bajar mucho el centro). Sin esto, char se hunde en el suelo.
+      else if (name === 'woodcut' || name === 'kneel') {
+        mode = 'all';
+      }
+      else {
         mode = 'horizontal';
       }
       stripHipsPositionTrack(clip, mode);
@@ -784,29 +791,73 @@ export class Character {
    *
    * One-shot para anims de gathering (woodcut, kneel, mining futuro).
    * animKey debe existir en ANIM_FILES (ej: 'woodcut', 'kneel').
-   * durationMs: cuánto dura el ciclo visual. La anim se escala a ese tiempo.
+   * durationMs: cuánto dura el ciclo visual. Si es null/0/undefined, usa
+   *             la duración NATURAL del clip (recomendado — la anim se ve
+   *             completa a velocidad normal). Si pasás un número, la anim
+   *             se acelera (no se ralentiza) para entrar en ese tiempo.
    *
    * Marca isInTransition durante la anim para que el player no pueda
    * caminar visualmente mientras tala/enciende (la lógica de movement
    * en world.js respeta isInTransition vía character.play()).
+   *
+   * Devuelve la duración real (ms) de la anim, para que el llamador
+   * sincronice el próximo tick. Devuelve 0 si no pudo arrancar.
+   *
+   * Sesión 30 fix:
+   *   - Suspende temporalmente combatStance durante la anim para que
+   *     entre tick y tick NO vuelva a sword_idle (que muestra la espada).
+   *     Restauramos el estado original al terminar.
+   *   - clampWhenFinished=false al terminar — fuerza salir del último
+   *     frame (que dejaba al char "hundido" en pose final). Llamamos
+   *     play('idle') al final para volver limpio.
+   *   - Si durationMs es null/0, usa la duración natural del clip.
    */
-  playGather(animKey, durationMs = 1500) {
-    if (!this.loaded || this.isDead) return;
-    if (this.isAttacking || this.isInTransition) return;
+  playGather(animKey, durationMs) {
+    if (!this.loaded || this.isDead) return 0;
+    if (this.isAttacking || this.isInTransition) return 0;
     const action = this.actions[animKey];
     if (!action) {
       console.warn('[character] playGather: anim no encontrada:', animKey);
-      return;
+      return 0;
     }
 
-    this._scaleOneShot(action, durationMs);
+    const clipMs = action.getClip().duration * 1000;
+    // Si no pasaron duración, usamos la natural. Si la pasaron pero el
+    // clip dura MENOS, también usamos la natural (no queremos ralentizar).
+    const useNatural = !durationMs || durationMs <= 0 || clipMs <= durationMs;
+    const dur = useNatural ? clipMs : durationMs;
+
+    // Suspender combat stance: que entre swings no vea "sword_idle".
+    const wasCombatStance = this.combatStance;
+    this.combatStance = false;
+
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    const timeScale = useNatural ? 1 : (clipMs / durationMs);
+    action.setEffectiveTimeScale(timeScale);
+    action.setEffectiveWeight(1);
     this._crossFadeTo(action, 0.12);
     this.isInTransition = true;
-    const dur = Math.max(120, action.getClip().duration * 1000 / action.timeScale);
+
+    // Justo antes de terminar (100ms), bajar weight para que el char salga
+    // del último frame hacia idle (sin esto, queda "planted" en pose final).
+    const exitMs = Math.max(60, dur - 100);
+    setTimeout(() => {
+      try {
+        action.clampWhenFinished = false;
+      } catch {}
+    }, exitMs);
+
     setTimeout(() => {
       this.isInTransition = false;
       this.current = null;
+      // Restaurar combat stance original
+      this.combatStance = wasCombatStance;
+      // Forzar transición a idle/sword_idle limpio
+      try { this.play('idle'); } catch {}
     }, dur + 20);
+
+    return dur;
   }
 
   _scaleOneShot(action, targetMs) {

@@ -212,10 +212,10 @@ export async function lightFireFromSlot(slotIdx) {
     return;
   }
 
-  // Anim "Kneel" mientras el server procesa.
+  // Anim "Kneel" — usar duración natural (0 = natural).
   const character = getCharacter?.();
   if (character && character.playGather) {
-    character.playGather('kneel', KNEEL_DURATION_MS);
+    character.playGather('kneel', 0);
   }
 
   feedLog('info', `Enciendes ${logDef.displayName}...`);
