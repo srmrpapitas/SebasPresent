@@ -311,12 +311,29 @@ async function attemptChop(treeType, tx, tz) {
 
 function syncDepletedFromSnapshot() {
   const snap = getSnapshot?.();
-  if (!snap || !Array.isArray(snap.depleted_trees)) return;
+  if (!snap) return;
+
+  // Debug: si el snapshot NO tiene 'depleted_trees', el server no se actualizó
+  if (!('depleted_trees' in snap)) {
+    if (!_warnedNoDepleted) {
+      console.warn('[woodcutting] El snapshot NO incluye `depleted_trees`. ¿Subiste server/handlers/snapshot.js actualizado?');
+      _warnedNoDepleted = true;
+    }
+    return;
+  }
+
+  if (!Array.isArray(snap.depleted_trees)) return;
   const terrainMod = getTerrain?.();
   if (!terrainMod || !terrainMod.getInteractableMeshes) return;
 
   const meshes = terrainMod.getInteractableMeshes();
   if (!meshes || meshes.length === 0) return;
+
+  // Log cuando llega un cambio en cantidad de árboles depletados
+  if (snap.depleted_trees.length !== _lastDepletedCount) {
+    console.log(`[woodcutting] snapshot.depleted_trees =`, snap.depleted_trees.length, 'meshes interactables:', meshes.length);
+    _lastDepletedCount = snap.depleted_trees.length;
+  }
 
   // Build set de keys "depletadas en este snapshot"
   const currentKeys = new Set();
@@ -324,13 +341,26 @@ function syncDepletedFromSnapshot() {
     const k = depletedKey(d.tree_type, d.x, d.z);
     currentKeys.add(k);
     if (!depletedHidden.has(k)) {
-      // Nuevo árbol depletado → ocultar + spawn stump
-      const entry = hideTreeAt(meshes, d.tree_type, d.x, d.z);
-      if (entry) {
-        depletedHidden.set(k, entry);
-        console.log(`[woodcutting] tree depleted: type=${d.tree_type} pos=(${d.x.toFixed(2)}, ${d.z.toFixed(2)}) hidden=${entry.hiddenCount}`);
+      // Sesión 30 — SIEMPRE crear tocón visible en la pos del server.
+      // Si además podemos ocultar el árbol del InstancedMesh, mejor.
+      // Pero la prioridad es que el player VEA feedback visual.
+      const hideEntry = hideTreeAt(meshes, d.tree_type, d.x, d.z);
+      const stumpEntry = createStumpAtScene(d.x, d.z, meshes);
+
+      // Combinar las dos entradas
+      const combined = {
+        hiddenCount: hideEntry?.hiddenCount || 0,
+        restore: () => {
+          try { hideEntry?.restore?.(); } catch {}
+          try { stumpEntry?.restore?.(); } catch {}
+        },
+      };
+      depletedHidden.set(k, combined);
+
+      if (hideEntry) {
+        console.log(`[woodcutting] ✅ tree depleted+hidden: type=${d.tree_type} pos=(${d.x.toFixed(2)}, ${d.z.toFixed(2)})`);
       } else {
-        console.warn(`[woodcutting] tree depleted but NO MATCH found: type=${d.tree_type} pos=(${d.x.toFixed(2)}, ${d.z.toFixed(2)})`);
+        console.warn(`[woodcutting] ⚠ tree depleted but NOT hidden (stump created anyway): type=${d.tree_type} pos=(${d.x.toFixed(2)}, ${d.z.toFixed(2)})`);
       }
     }
   }
@@ -342,6 +372,9 @@ function syncDepletedFromSnapshot() {
     }
   }
 }
+
+let _warnedNoDepleted = false;
+let _lastDepletedCount = -1;
 
 function depletedKey(treeType, x, z) {
   // Redondeo a 0.01m, igual que el server.
@@ -359,46 +392,58 @@ function depletedKey(treeType, x, z) {
  * con tx, tz. Devuelve {restore, hiddenCount} para volver al estado original.
  */
 function hideTreeAt(meshes, treeType, tx, tz) {
-  // Sesión 30 — Tolerancia subida de 0.5 a 1.5m: árboles están espaciados
-  // MIN_SPACING (típicamente >2m en terrain.js) así que no hay riesgo de
-  // matchear otro árbol cercano. Y el cliente puede llegar a tener pos
-  // del árbol ligeramente diferentes por scale random aplicado al matrix.
-  const tol = 1.5;
+  // Sesión 30 — Tolerancia 3m: los árboles tienen MIN_SPACING en terrain.js
+  // pero el matching exacto puede fallar por scale random/rotación.
+  const tol = 3.0;
   const tolSq = tol * tol;
-  const restores = [];
+
+  // Buscar la instancia MÁS CERCANA (no todas las dentro del radio).
+  // Un árbol "Tree" puede tener 2 InstancedMesh (trunk + canopy) en el mismo
+  // chunk, así que para el typeId dado capturamos TODAS las instancias del
+  // mismo índice i en cualquier mesh con userData.trees[i] cercano.
+  let bestIdx = -1;
+  let bestDist = Infinity;
+  let bestTree = null;
+  let candidateMeshes = [];
 
   for (const mesh of meshes) {
     if (!mesh?.userData) continue;
     if (mesh.userData.typeId !== treeType) continue;
     const list = mesh.userData.trees;
     if (!Array.isArray(list)) continue;
+    // Recordar este mesh para luego ocultar la instancia
+    candidateMeshes.push({ mesh, list });
     for (let i = 0; i < list.length; i++) {
       const t = list[i];
       const dx = t.x - tx, dz = t.z - tz;
-      if (dx * dx + dz * dz <= tolSq) {
-        // Guardar matriz original.
-        const orig = new THREE.Matrix4();
-        mesh.getMatrixAt(i, orig);
-        // Sustituir por matriz de scale 0 (invisible).
-        const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-        mesh.setMatrixAt(i, zero);
-        mesh.instanceMatrix.needsUpdate = true;
-        restores.push({ mesh, i, orig });
+      const d2 = dx * dx + dz * dz;
+      if (d2 <= tolSq && d2 < bestDist) {
+        bestDist = d2;
+        bestIdx = i;
+        bestTree = t;
       }
     }
   }
 
-  if (restores.length === 0) return null;
+  if (bestIdx < 0 || !bestTree) return null;
 
-  // Spawn de tocón visible (OSRS-style): cilindro chato marrón.
-  // Lo añadimos al mismo padre del primer mesh (la escena root).
-  const stumpGroup = createStump(tx, tz);
-  const firstMesh = restores[0].mesh;
-  const parent = firstMesh.parent || null;
-  if (parent && stumpGroup) {
-    parent.add(stumpGroup);
+  // Ahora ocultar bestIdx en TODOS los candidateMeshes que tengan ese
+  // mismo árbol en su lista (típicamente trunk + canopy del mismo cluster).
+  const restores = [];
+  for (const { mesh, list } of candidateMeshes) {
+    if (bestIdx >= list.length) continue;
+    const t = list[bestIdx];
+    // Verificar que el árbol en este mesh sea EL MISMO (mismas coords).
+    if (t.x !== bestTree.x || t.z !== bestTree.z) continue;
+    const orig = new THREE.Matrix4();
+    mesh.getMatrixAt(bestIdx, orig);
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    mesh.setMatrixAt(bestIdx, zero);
+    mesh.instanceMatrix.needsUpdate = true;
+    restores.push({ mesh, i: bestIdx, orig });
   }
 
+  if (restores.length === 0) return null;
   return {
     hiddenCount: restores.length,
     restore: () => {
@@ -408,6 +453,43 @@ function hideTreeAt(meshes, treeType, tx, tz) {
           r.mesh.instanceMatrix.needsUpdate = true;
         } catch {}
       }
+    },
+  };
+}
+
+/**
+ * Crea un tocón visible en (tx, tz) y lo agrega a la escena.
+ * INDEPENDIENTE de si el árbol fue ocultado o no — siempre se intenta crear.
+ * Lo agrega al parent del primer mesh disponible (o a la escena raíz si
+ * no hay meshes).
+ */
+function createStumpAtScene(tx, tz, meshes) {
+  const stumpGroup = createStump(tx, tz);
+  if (!stumpGroup) return null;
+
+  // Buscar un parent al que añadir. Cualquier mesh sirve (todos están en
+  // la escena). Si no hay meshes, intentamos getScene del world.
+  let parent = null;
+  if (meshes && meshes.length > 0) {
+    for (const m of meshes) {
+      if (m?.parent) { parent = m.parent; break; }
+    }
+  }
+  // Fallback: navegar arriba desde character.group
+  if (!parent) {
+    const ch = getCharacter?.();
+    if (ch?.group?.parent) parent = ch.group.parent;
+  }
+  if (!parent) {
+    console.warn('[woodcutting] createStumpAtScene: no parent found, stump not added');
+    return null;
+  }
+
+  parent.add(stumpGroup);
+  console.log(`[woodcutting] 🪵 stump added at (${tx.toFixed(2)}, ${tz.toFixed(2)}) parent="${parent.name || parent.type}"`);
+
+  return {
+    restore: () => {
       if (stumpGroup && stumpGroup.parent) {
         try {
           stumpGroup.parent.remove(stumpGroup);
@@ -426,24 +508,25 @@ function hideTreeAt(meshes, treeType, tx, tz) {
 
 /**
  * Crea un tocón visible en (tx, tz) — cilindro chato marrón estilo OSRS.
- * Disco superior con anillos para sugerir madera cortada.
+ * Sesión 30: más grande y visible (60cm radio, 50cm alto) para feedback claro.
  */
 function createStump(tx, tz) {
   const group = new THREE.Group();
   group.position.set(tx, 0, tz);
+  group.name = 'wc_stump';
 
-  // Cilindro del tocón (40cm de radio, 30cm de alto)
-  const trunkGeom = new THREE.CylinderGeometry(0.4, 0.45, 0.3, 12);
+  // Cilindro del tocón (60cm radio, 50cm alto)
+  const trunkGeom = new THREE.CylinderGeometry(0.55, 0.65, 0.5, 12);
   const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a3a1d, flatShading: true });
   const trunk = new THREE.Mesh(trunkGeom, trunkMat);
-  trunk.position.y = 0.15;
+  trunk.position.y = 0.25;
   group.add(trunk);
 
-  // Disco superior (corte) más claro
-  const topGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.02, 12);
-  const topMat = new THREE.MeshLambertMaterial({ color: 0xb98a4a, flatShading: true });
+  // Disco superior (corte) más claro - bien visible
+  const topGeom = new THREE.CylinderGeometry(0.55, 0.55, 0.05, 12);
+  const topMat = new THREE.MeshLambertMaterial({ color: 0xd4a868, flatShading: true });
   const top = new THREE.Mesh(topGeom, topMat);
-  top.position.y = 0.31;
+  top.position.y = 0.52;
   group.add(top);
 
   return group;

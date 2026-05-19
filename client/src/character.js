@@ -275,9 +275,18 @@ export class Character {
     this.mixer = new THREE.AnimationMixer(characterFBX);
 
     this._boneNames = new Set();
+    // Sesión 30 — Bug fix: algunos FBX importados por Three.js no marcan
+    // los huesos con isBone=true (quedan como Object3D plano). Si capturamos
+    // solo bones reales, el Set queda VACÍO y adaptTrackNamesToSkeleton
+    // dropea TODOS los tracks porque ningún candidato matchea contra Set vacío.
+    // Resultado anterior: char acostado durante Woodcut/Kneel.
+    // Fix: capturar TODOS los nodos con nombre (no solo isBone).
     characterFBX.traverse(o => {
-      if (o.isBone && o.name) this._boneNames.add(o.name);
+      if (o.name && typeof o.name === 'string' && o.name.length > 0) {
+        this._boneNames.add(o.name);
+      }
     });
+    console.log('[character] boneNames capturadas:', this._boneNames.size);
     const sample = [...this._boneNames].filter(n => /hips|spine|head/i.test(n)).slice(0, 4);
     if (sample.length) console.log('[character] bone scheme sample:', sample);
 
@@ -566,8 +575,10 @@ export class Character {
   _findBone(candidates) {
     if (!this.mesh) return null;
     let found = null;
+    // Sesión 30 — Bug fix: no filtrar por isBone porque algunos FBX importados
+    // por Three.js no marcan los huesos como Bone (quedan como Object3D).
     this.mesh.traverse(o => {
-      if (found || !o.isBone) return;
+      if (found || !o.name) return;
       if (candidates.includes(o.name)) found = o;
     });
     return found;
@@ -609,6 +620,12 @@ export class Character {
       // lugar de Hips. Esto lo cubre todo de un saque.
       if (name === 'woodcut' || name === 'kneel') {
         stripAllRootPositionTracks(clip);
+        // Sesión 30 — Anti-ACOSTADO: las anims Woodcut/Kneel de Mixamo
+        // pueden traer rotaciones del torso (Hips/Spine/Neck) que vienen
+        // mal aplicadas al rig si los nombres difieren. Resultado: char
+        // acostado. Solución: ELIMINAR esos tracks de rotación. El torso
+        // queda en bind pose (parado), y los brazos hacen el movimiento.
+        stripTorsoRotationTracks(clip);
       }
     }
     this.clips[name] = clip;
@@ -871,6 +888,12 @@ export class Character {
     const wasCombatStance = this.combatStance;
     this.combatStance = false;
 
+    // Sesión 30 — flag indicador para que world.js sepa que estamos en
+    // anim de gathering (woodcut/kneel) y aplique offset Y extra.
+    // _gatherAnimName indica cuál anim para distinguir offsets.
+    this._gatheringActive = true;
+    this._gatherAnimName = animKey;
+
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
     const timeScale = useNatural ? 1 : (clipMs / durationMs);
@@ -892,6 +915,8 @@ export class Character {
       this.isInTransition = false;
       this.current = null;
       this.combatStance = wasCombatStance;
+      this._gatheringActive = false;
+      this._gatherAnimName = null;
       try { this.play('idle'); } catch {}
     }, dur + 20);
 
@@ -1017,12 +1042,32 @@ function generateBoneCandidates(name) {
     if (core.startsWith(p)) { core = core.slice(p.length); break; }
   }
   if (core.startsWith(':')) core = core.slice(1);
+  // Original name + variantes de prefijo
   out.push(name);
   out.push('mixamorig:' + core);
   out.push('mixamorig' + core);
   out.push('mixamorig1:' + core);
   out.push('mixamorig1' + core);
   out.push(core);
+
+  // Sesión 30 — Strip de sufijo numérico (Mixamo a veces nombra como
+  // "Neck1", "Spine1", "Spine2" cuando el skeleton base solo tiene
+  // "Neck", "Spine"). Sin esto, Woodcut/Kneel no aplicaba la rotación
+  // del cuello/columna y el char quedaba en bind pose (T-pose acostado).
+  // Generamos variantes SIN el sufijo si lo tiene.
+  const stripped = core.replace(/[12]$/, '');
+  if (stripped !== core && stripped.length > 0) {
+    out.push('mixamorig:' + stripped);
+    out.push('mixamorig' + stripped);
+    out.push('mixamorig1:' + stripped);
+    out.push('mixamorig1' + stripped);
+    out.push(stripped);
+  }
+  // También probar AGREGANDO sufijo numérico (caso inverso)
+  out.push('mixamorig:' + core + '1');
+  out.push('mixamorig' + core + '1');
+  out.push(core + '1');
+
   return out;
 }
 
@@ -1061,15 +1106,6 @@ function stripHipsPositionTrack(clip, mode = 'horizontal') {  let count = 0;
   }
 }
 
-// ============================================================
-// Sesión 30 — Anti-hundido ULTRA
-// ============================================================
-// Para gathering anims (woodcut/kneel), neutralizamos TODOS los tracks
-// de position de TODOS los bones. Esto garantiza que ningún bone (Hips,
-// Pelvis, Spine, Armature, Root, etc.) genere root motion vertical ni
-// horizontal. La anim queda 100% in-place — solo rotaciones de huesos.
-//
-// El char queda EXACTAMENTE en su pos actual sin deriva.
 function stripAllRootPositionTracks(clip) {
   let count = 0;
   const boneNamesAffected = [];
@@ -1094,6 +1130,45 @@ function stripAllRootPositionTracks(clip) {
   }
   if (count > 0) {
     console.log(`[character] clip "${clip.name}": stripped ALL position tracks (${count}) bones=`, boneNamesAffected);
+  }
+}
+
+// ============================================================
+// Sesión 30 — Anti-ACOSTADO
+// ============================================================
+// Para gathering anims (woodcut/kneel), eliminar tracks de rotación
+// de los huesos del TORSO (Hips, Spine, Spine1, Spine2, Neck, Neck1,
+// Head). Estos huesos quedan en su pose default del rig (parado).
+// La animación de tala sigue funcionando porque mueve hombros, brazos,
+// y manos — que NO son del torso.
+//
+// Cubre los nombres con cualquier prefijo: "Hips", "mixamorigHips",
+// "mixamorig:Hips", "mixamorig1:Hips", etc.
+function stripTorsoRotationTracks(clip) {
+  const TORSO_NAMES = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Neck1', 'Head'];
+  let removed = 0;
+  const removedNames = [];
+  clip.tracks = clip.tracks.filter(t => {
+    const dotIdx = t.name.lastIndexOf('.');
+    if (dotIdx < 0) return true;
+    const property = t.name.slice(dotIdx + 1);
+    if (property !== 'quaternion') return true; // solo quitamos rotaciones
+    // Extraer el nombre del bone (sin prefijo mixamorig)
+    let core = t.name.slice(0, dotIdx);
+    const prefixes = ['mixamorig1:', 'mixamorig:', 'mixamorig1', 'mixamorig'];
+    for (const p of prefixes) {
+      if (core.startsWith(p)) { core = core.slice(p.length); break; }
+    }
+    if (core.startsWith(':')) core = core.slice(1);
+    if (TORSO_NAMES.includes(core)) {
+      removed++;
+      removedNames.push(t.name);
+      return false; // drop
+    }
+    return true; // keep
+  });
+  if (removed > 0) {
+    console.log(`[character] clip "${clip.name}": removed ${removed} torso rotation tracks =`, removedNames);
   }
 }
 
