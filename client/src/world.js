@@ -756,8 +756,13 @@ if (typeof window !== 'undefined') {
       let weaponType = 'unarmed';
       try { weaponType = equipment.getWeaponType?.() || 'unarmed'; } catch {}
       const isMelee = weaponType === '1h_sword' || weaponType === '2h_sword';
+      // Sesión 30 — axe/pickaxe son herramientas: melee pero sin draw.
+      const isToolMelee = weaponType === 'axe' || weaponType === 'pickaxe';
       if (isMelee) {
         try { character?.playDraw?.(); } catch (e) { console.warn('[world] playDraw:', e); }
+      } else if (isToolMelee) {
+        // Herramientas: combatStance pero sin draw. Anim de attack = punching.
+        try { character?.setCombatStance?.(true); } catch {}
       } else if (weaponType !== 'unarmed') {
         // Bow/staff: activar combatStance manualmente (no hay anim de draw
         // específica, pero queremos que las anims de attack_1..4 se usen
@@ -771,9 +776,10 @@ if (typeof window !== 'undefined') {
     let weaponType = 'unarmed';
     try { weaponType = equipment.getWeaponType?.() || 'unarmed'; } catch {}
     const isMelee = weaponType === '1h_sword' || weaponType === '2h_sword';
+    const isToolMelee = weaponType === 'axe' || weaponType === 'pickaxe';
     if (isMelee) {
       try { character?.playSheath?.(); } catch (e) { console.warn('[world] playSheath:', e); }
-    } else if (weaponType !== 'unarmed') {
+    } else if (isToolMelee || weaponType !== 'unarmed') {
       try { character?.setCombatStance?.(false); } catch {}
     }
   };
@@ -2076,7 +2082,17 @@ function showTreeTooltip(treeType, clientX, clientY) {
   el.style.top  = Math.min(Math.max(clientY - 30, 60), maxY) + 'px';
   el.style.opacity = '1';
   clearTimeout(el._hideTimer);
-  el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, 3500);
+  // Sesión 30 — bajado de 3500ms a 1200ms para no tapar al char durante
+  // la animación de tala.
+  el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, 1200);
+}
+
+// Sesión 30 — Ocultar tooltip inmediatamente (llamado al empezar tala).
+function hideTreeTooltipNow() {
+  const el = document.getElementById('worldTooltip');
+  if (!el) return;
+  clearTimeout(el._hideTimer);
+  el.style.opacity = '0';
 }
 
 function ensureRegionEl() {
@@ -2306,6 +2322,9 @@ function doCanvasTap(clientX, clientY) {
       showTreeTooltip(treeType, clientX, clientY);
       try { woodcutting.startChopAt(typeId, tree.x, tree.z); }
       catch (e) { console.warn('[world] startChopAt err:', e); }
+      // Sesión 30 — ocultar tooltip rápido (~600ms) si el char ya está
+      // cerca y va a talar. El tooltip estorba la vista del char.
+      setTimeout(() => { try { hideTreeTooltipNow(); } catch {} }, 600);
       return;
     }
     // Fallback (no instanceId disponible) — solo tooltip

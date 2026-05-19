@@ -312,10 +312,10 @@ async function attemptChop(treeType, tx, tz) {
 function syncDepletedFromSnapshot() {
   const snap = getSnapshot?.();
   if (!snap || !Array.isArray(snap.depleted_trees)) return;
-  const terrain = getTerrain?.();
-  if (!terrain || !terrain.getInteractableMeshes) return;
+  const terrainMod = getTerrain?.();
+  if (!terrainMod || !terrainMod.getInteractableMeshes) return;
 
-  const meshes = terrain.getInteractableMeshes();
+  const meshes = terrainMod.getInteractableMeshes();
   if (!meshes || meshes.length === 0) return;
 
   // Build set de keys "depletadas en este snapshot"
@@ -324,9 +324,14 @@ function syncDepletedFromSnapshot() {
     const k = depletedKey(d.tree_type, d.x, d.z);
     currentKeys.add(k);
     if (!depletedHidden.has(k)) {
-      // Nuevo árbol depletado → ocultar
+      // Nuevo árbol depletado → ocultar + spawn stump
       const entry = hideTreeAt(meshes, d.tree_type, d.x, d.z);
-      if (entry) depletedHidden.set(k, entry);
+      if (entry) {
+        depletedHidden.set(k, entry);
+        console.log(`[woodcutting] tree depleted: type=${d.tree_type} pos=(${d.x.toFixed(2)}, ${d.z.toFixed(2)}) hidden=${entry.hiddenCount}`);
+      } else {
+        console.warn(`[woodcutting] tree depleted but NO MATCH found: type=${d.tree_type} pos=(${d.x.toFixed(2)}, ${d.z.toFixed(2)})`);
+      }
     }
   }
   // Restaurar los que ya no están depletados en el snapshot.
@@ -346,13 +351,19 @@ function depletedKey(treeType, x, z) {
 }
 
 /**
- * Oculta la(s) instance(s) del árbol en la posición dada. Un árbol puede
- * tener MÚLTIPLES InstancedMesh (trunk + canopy). Recorremos todos los
- * meshes y para cada uno buscamos en `userData.trees` el árbol con tx, tz.
- * Devuelve {restore} para volver al estado original.
+ * Oculta la(s) instance(s) del árbol en la posición dada Y spawnea un
+ * "tocón" visible (cilindro chato marrón en y=0, estilo OSRS).
+ *
+ * Un árbol puede tener MÚLTIPLES InstancedMesh (trunk + canopy). Recorremos
+ * todos los meshes y para cada uno buscamos en `userData.trees` el árbol
+ * con tx, tz. Devuelve {restore, hiddenCount} para volver al estado original.
  */
 function hideTreeAt(meshes, treeType, tx, tz) {
-  const tol = 0.5;          // tolerancia generosa (árboles están espaciados >1m)
+  // Sesión 30 — Tolerancia subida de 0.5 a 1.5m: árboles están espaciados
+  // MIN_SPACING (típicamente >2m en terrain.js) así que no hay riesgo de
+  // matchear otro árbol cercano. Y el cliente puede llegar a tener pos
+  // del árbol ligeramente diferentes por scale random aplicado al matrix.
+  const tol = 1.5;
   const tolSq = tol * tol;
   const restores = [];
 
@@ -378,7 +389,18 @@ function hideTreeAt(meshes, treeType, tx, tz) {
   }
 
   if (restores.length === 0) return null;
+
+  // Spawn de tocón visible (OSRS-style): cilindro chato marrón.
+  // Lo añadimos al mismo padre del primer mesh (la escena root).
+  const stumpGroup = createStump(tx, tz);
+  const firstMesh = restores[0].mesh;
+  const parent = firstMesh.parent || null;
+  if (parent && stumpGroup) {
+    parent.add(stumpGroup);
+  }
+
   return {
+    hiddenCount: restores.length,
     restore: () => {
       for (const r of restores) {
         try {
@@ -386,8 +408,45 @@ function hideTreeAt(meshes, treeType, tx, tz) {
           r.mesh.instanceMatrix.needsUpdate = true;
         } catch {}
       }
+      if (stumpGroup && stumpGroup.parent) {
+        try {
+          stumpGroup.parent.remove(stumpGroup);
+          stumpGroup.traverse(o => {
+            if (o.geometry) o.geometry.dispose?.();
+            if (o.material) {
+              const mats = Array.isArray(o.material) ? o.material : [o.material];
+              for (const m of mats) m.dispose?.();
+            }
+          });
+        } catch {}
+      }
     },
   };
+}
+
+/**
+ * Crea un tocón visible en (tx, tz) — cilindro chato marrón estilo OSRS.
+ * Disco superior con anillos para sugerir madera cortada.
+ */
+function createStump(tx, tz) {
+  const group = new THREE.Group();
+  group.position.set(tx, 0, tz);
+
+  // Cilindro del tocón (40cm de radio, 30cm de alto)
+  const trunkGeom = new THREE.CylinderGeometry(0.4, 0.45, 0.3, 12);
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a3a1d, flatShading: true });
+  const trunk = new THREE.Mesh(trunkGeom, trunkMat);
+  trunk.position.y = 0.15;
+  group.add(trunk);
+
+  // Disco superior (corte) más claro
+  const topGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.02, 12);
+  const topMat = new THREE.MeshLambertMaterial({ color: 0xb98a4a, flatShading: true });
+  const top = new THREE.Mesh(topGeom, topMat);
+  top.position.y = 0.31;
+  group.add(top);
+
+  return group;
 }
 
 // ============================================================

@@ -139,6 +139,24 @@ const WEAPON_TRANSFORMS = {
     rotation: [-1.142, -0.892, 1.258],
     hand: 'left',
   },
+  // Sesión 30 — Hacha de talar (item_id='axe', weapon_type='axe').
+  // Placeholder: usa los mismos valores que 1h_sword. Calibrar con
+  // __weaponDebug() y pegar los valores aquí cuando estén bien.
+  'axe': {
+    scale: 77.0,
+    position: [-22.5, 12.0, 3.0],
+    rotation: [1.658, 0.058, -1.692],
+    hand: 'right',
+  },
+  // Sesión 30 — Pico de minería (item_id='pickaxe_bronze', weapon_type='pickaxe').
+  // Placeholder: usa los mismos valores que 1h_sword. Calibrar con
+  // __weaponDebug() cuando llegue la sesión de minería.
+  'pickaxe': {
+    scale: 77.0,
+    position: [-22.5, 12.0, 3.0],
+    rotation: [1.658, 0.058, -1.692],
+    hand: 'right',
+  },
   'default': {
     scale: 50.0,
     position: [0, 0, 0],
@@ -208,6 +226,12 @@ export class Character {
     this.isInTransition = false;
     this.isDead = false;
     this.attackCycle = 0;
+
+    // Sesión 30 — flag para forzar Y=0 mientras hace anim de gathering
+    // (woodcut/kneel). Algunas anims FBX traen root motion vertical que
+    // hunde al char en el suelo; con este flag pinneamos la pos local Y
+    // del mesh a 0 cada frame durante esas anims.
+    this._gatheringActive = false;
 
     // Sesión 24 — Weapon attach state
     this._rightHandBone = null;
@@ -285,6 +309,18 @@ export class Character {
     if (this._spineBone) console.log('[character] spine bone:', this._spineBone.name);
     if (this._headBone) console.log('[character] head bone:', this._headBone.name);
     if (this._neckBone) console.log('[character] neck bone:', this._neckBone.name);
+
+    // Sesión 30 — Hips bone para anti-hundido en gathering.
+    // Guardamos el Y inicial (bind pose) para pinearlo cada frame durante
+    // las anims de woodcut/kneel.
+    this._hipsBone = this._findBone([
+      'mixamorig:Hips', 'mixamorigHips', 'Hips',
+      'mixamorig:Spine', 'Spine',  // fallback
+    ]);
+    if (this._hipsBone) {
+      this._hipsInitialY = this._hipsBone.position.y;
+      console.log('[character] hips bone:', this._hipsBone.name, 'Y0=', this._hipsInitialY.toFixed(3));
+    }
 
     onProgress?.(0.55, 'Cargando animaciones críticas…');
     const criticalEntries = CRITICAL_ANIMS.map(name => [name, ANIM_FILES[name]]);
@@ -831,6 +867,9 @@ export class Character {
     const wasCombatStance = this.combatStance;
     this.combatStance = false;
 
+    // Activar flag para que update() fuerce Y=0 (anti-hundido).
+    this._gatheringActive = true;
+
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
     const timeScale = useNatural ? 1 : (clipMs / durationMs);
@@ -853,6 +892,8 @@ export class Character {
       this.current = null;
       // Restaurar combat stance original
       this.combatStance = wasCombatStance;
+      // Quitar flag de anti-hundido
+      this._gatheringActive = false;
       // Forzar transición a idle/sword_idle limpio
       try { this.play('idle'); } catch {}
     }, dur + 20);
@@ -891,6 +932,13 @@ export class Character {
 
   update(dt) {
     if (this.mixer) this.mixer.update(dt);
+    // Sesión 30 — anti-hundido durante gathering: fijar el Hips bone Y
+    // a su valor inicial DESPUÉS del mixer.update. El bone es lo que la
+    // anim de Kneel/Woodcut está moviendo verticalmente (root motion).
+    // Pinearlo a su Y inicial = char no se hunde.
+    if (this._gatheringActive && this._hipsBone) {
+      this._hipsBone.position.y = this._hipsInitialY;
+    }
   }
 
   dispose() {
