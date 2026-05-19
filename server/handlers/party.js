@@ -1,5 +1,5 @@
 /**
- * SebasPresent — Party handlers (Sesión 27 Bloque 3)
+ * SebasPresent — Party handlers (Sesión 27 Bloque 3 + Sesión 28 group frame)
  *
  * Endpoints:
  *   POST   /api/party/invite   { target_user_id }
@@ -8,6 +8,13 @@
  *   POST   /api/party/leave
  *   POST   /api/party/kick     { target_user_id }   (solo leader)
  *   GET    /api/party/state                          → tu party + invites
+ *
+ * Sesión 28 — getPartyMembers ahora devuelve también:
+ *   - hp_current, hp_max  (para barra HP estilo WoW)
+ *   - combat_lvl          (junto al nombre)
+ *   - weapon_type         (para icono de clase: melee / ranged / mage)
+ *   - in_combat           (highlight rojo cuando está peleando)
+ * Esto permite al cliente pintar un group frame compacto sin polling extra.
  *
  * Reglas:
  *   - Un user en máximo 1 party (UNIQUE en party_members.user_id).
@@ -19,15 +26,36 @@
  *   - Si solo queda 1, la party se borra.
  *   - Si la tabla parties no existe (migración no corrida), devolver
  *     'party_disabled' en vez de petar.
- *
- * Bloqueo PVP entre miembros: NO se gestiona aquí. Se hace en
- * combat_engine.attackPlayer leyendo party_members ANTES de aplicar daño.
  */
 import { json, makeDbAdapter } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
 const INVITE_TTL_MS = 60_000;
 const DEFAULT_MAX_PARTY = 4;
+const IN_COMBAT_WINDOW_MS = 8_000;
+
+// XP → level table (replica para no importar circular).
+function levelFromXp(xp) {
+  if (xp == null || xp <= 0) return 1;
+  let points = 0;
+  for (let lvl = 1; lvl < 99; lvl++) {
+    points += Math.floor(lvl + 300 * Math.pow(2, lvl / 7));
+    const required = Math.floor(points / 4);
+    if (xp < required) return lvl;
+  }
+  return 99;
+}
+
+// Combat lvl OSRS reducido (sin ranged/magic/prayer todavía).
+function calcCombatLvl(attXp, strXp, defXp, hpXp) {
+  const att = levelFromXp(attXp);
+  const str = levelFromXp(strXp);
+  const def = levelFromXp(defXp);
+  const hp  = levelFromXp(hpXp);
+  const base  = (def + hp) / 4;
+  const melee = (att + str) * 13 / 40;
+  return Math.floor(base + melee);
+}
 
 // ============================================================
 // Helper: verifica si las tablas de party existen.
@@ -57,17 +85,69 @@ async function getUserParty(db, userId) {
 }
 
 // ============================================================
-// Helper: lista de miembros de una party con sus usernames.
+// Helper: lista de miembros con info extendida para group frame.
+// Sesión 28 — añade hp, combat_lvl, weapon_type, in_combat.
+//
+// LEFT JOIN defensivo con combat_stats (puede no tener fila para
+// users nuevos) y user_equipment/items (puede no tener weapon equipada).
+// Si una tabla falta, fallback a query mínima.
 // ============================================================
 async function getPartyMembers(db, partyId) {
-  return await db.all(
-    `SELECT pm.user_id, pm.joined_at, u.username
-     FROM party_members pm
-     JOIN users u ON u.id = pm.user_id
-     WHERE pm.party_id = ?
-     ORDER BY pm.joined_at ASC`,
-    [partyId]
-  );
+  const now = Date.now();
+  try {
+    const rows = await db.all(
+      `SELECT pm.user_id, pm.joined_at, u.username,
+              cs.hp_current, cs.hp_xp,
+              cs.attack_xp, cs.strength_xp, cs.defence_xp,
+              cs.last_attack_at,
+              i.weapon_type
+       FROM party_members pm
+       JOIN users u            ON u.id = pm.user_id
+       LEFT JOIN combat_stats cs ON cs.user_id = pm.user_id
+       LEFT JOIN user_equipment eq ON eq.user_id = pm.user_id AND eq.slot_id = 'weapon'
+       LEFT JOIN items i         ON i.id = eq.item_id
+       WHERE pm.party_id = ?
+       ORDER BY pm.joined_at ASC`,
+      [partyId]
+    );
+    return (rows || []).map(r => {
+      const hpMax = r.hp_xp != null ? levelFromXp(r.hp_xp) : 10;
+      const hpCur = typeof r.hp_current === 'number' ? r.hp_current : hpMax;
+      const combatLvl = calcCombatLvl(r.attack_xp, r.strength_xp, r.defence_xp, r.hp_xp);
+      const inCombat = r.last_attack_at != null &&
+        (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS;
+      return {
+        user_id:    r.user_id,
+        username:   r.username,
+        joined_at:  r.joined_at,
+        hp_current: hpCur,
+        hp_max:     hpMax,
+        combat_lvl: combatLvl,
+        weapon_type: r.weapon_type || 'unarmed',
+        in_combat:  inCombat,
+      };
+    });
+  } catch (err) {
+    console.warn('[party/getMembers] fallback to minimal query:', err?.message);
+    // Fallback: query mínima sin JOINs (compatibilidad pre-Sesión 28).
+    const rows = await db.all(
+      `SELECT pm.user_id, pm.joined_at, u.username
+       FROM party_members pm
+       JOIN users u ON u.id = pm.user_id
+       WHERE pm.party_id = ?
+       ORDER BY pm.joined_at ASC`,
+      [partyId]
+    );
+    return (rows || []).map(r => ({
+      user_id: r.user_id,
+      username: r.username,
+      joined_at: r.joined_at,
+      hp_current: 10, hp_max: 10,
+      combat_lvl: 3,
+      weapon_type: 'unarmed',
+      in_combat: false,
+    }));
+  }
 }
 
 // ============================================================
@@ -90,7 +170,7 @@ export async function handlePartyState(request, env) {
     if (party) {
       members = await getPartyMembers(db, party.id);
     }
-    // Invites entrantes (gente que te invitó, no expiradas)
+    // Invites entrantes
     const invitesIn = await db.all(
       `SELECT i.id, i.from_user_id, u.username AS from_username, i.party_id, i.sent_at, i.expires_at
        FROM party_invites i
@@ -99,7 +179,7 @@ export async function handlePartyState(request, env) {
        ORDER BY i.sent_at DESC`,
       [session.user_id, now]
     );
-    // Invites salientes (tuyas, pendientes)
+    // Invites salientes
     const invitesOut = await db.all(
       `SELECT i.id, i.to_user_id, u.username AS to_username, i.party_id, i.sent_at, i.expires_at
        FROM party_invites i
@@ -146,17 +226,14 @@ export async function handlePartyInvite(request, env) {
     const now = Date.now();
     const expiresAt = now + INVITE_TTL_MS;
 
-    // ¿Existe el target?
     const targetUser = await db.first(`SELECT id, username FROM users WHERE id = ?`, [targetId]);
     if (!targetUser) return json({ error: 'target_not_found' }, 404);
 
-    // ¿El target ya está en una party?
     const targetParty = await db.first(
       `SELECT party_id FROM party_members WHERE user_id = ?`, [targetId]
     );
     if (targetParty) return json({ error: 'target_in_party' }, 400);
 
-    // ¿Yo tengo party? Si sí, ¿hay espacio?
     const myParty = await getUserParty(db, session.user_id);
     if (myParty) {
       const memberCount = await db.first(
@@ -165,7 +242,6 @@ export async function handlePartyInvite(request, env) {
       if (memberCount.c >= myParty.max_size) return json({ error: 'party_full' }, 400);
     }
 
-    // Insertar/replace invite (UNIQUE from-to, así que si re-invitas refresca TTL)
     await db.run(`DELETE FROM party_invites WHERE from_user_id = ? AND to_user_id = ?`,
       [session.user_id, targetId]);
     await db.run(
@@ -197,7 +273,6 @@ export async function handlePartyAccept(request, env) {
 
   try {
     const now = Date.now();
-    // Buscar el invite vivo
     const invite = await db.first(
       `SELECT id, party_id FROM party_invites
        WHERE from_user_id = ? AND to_user_id = ? AND expires_at > ?`,
@@ -205,7 +280,6 @@ export async function handlePartyAccept(request, env) {
     );
     if (!invite) return json({ error: 'invite_not_found_or_expired' }, 404);
 
-    // ¿Ya estoy en una party? Si sí, no puedo aceptar
     const myParty = await getUserParty(db, session.user_id);
     if (myParty) return json({ error: 'already_in_party' }, 400);
 
@@ -213,25 +287,20 @@ export async function handlePartyAccept(request, env) {
     let createdNewParty = false;
 
     if (!partyId) {
-      // El inviter no tenía party — la creamos y añadimos al inviter como leader.
-      // Pero primero verificar: ¿el inviter ya está en otra? (race condition)
       const inviterParty = await getUserParty(db, fromId);
       if (inviterParty) {
         partyId = inviterParty.id;
       } else {
-        // Crear party con inviter como leader
         const created = await db.run(
           `INSERT INTO parties (leader_user_id, created_at, max_size) VALUES (?, ?, ?)`,
           [fromId, now, DEFAULT_MAX_PARTY]
         );
         partyId = created.lastInsertRowid ?? created.lastID ?? created.meta?.last_row_id;
         if (!partyId) {
-          // Fallback: query
           const p = await db.first(`SELECT id FROM parties WHERE leader_user_id = ? ORDER BY id DESC LIMIT 1`, [fromId]);
           partyId = p?.id;
         }
         if (!partyId) return json({ error: 'party_create_failed' }, 500);
-        // Añadir al inviter como miembro
         await db.run(
           `INSERT INTO party_members (party_id, user_id, joined_at) VALUES (?, ?, ?)`,
           [partyId, fromId, now]
@@ -239,20 +308,17 @@ export async function handlePartyAccept(request, env) {
         createdNewParty = true;
       }
     } else {
-      // Verificar que la party aún existe y tiene sitio
       const p = await db.first(`SELECT id, max_size FROM parties WHERE id = ?`, [partyId]);
       if (!p) return json({ error: 'party_no_longer_exists' }, 410);
       const c = await db.first(`SELECT COUNT(*) AS c FROM party_members WHERE party_id = ?`, [partyId]);
       if (c.c >= p.max_size) return json({ error: 'party_full' }, 400);
     }
 
-    // Añadirme a la party
     await db.run(
       `INSERT INTO party_members (party_id, user_id, joined_at) VALUES (?, ?, ?)`,
       [partyId, session.user_id, now]
     );
 
-    // Limpiar este invite (y cualquier otro pendiente míos)
     await db.run(`DELETE FROM party_invites WHERE to_user_id = ?`, [session.user_id]);
 
     return json({ ok: true, party_id: partyId, created_new_party: createdNewParty });
@@ -302,10 +368,8 @@ export async function handlePartyLeave(request, env) {
     const party = await getUserParty(db, session.user_id);
     if (!party) return json({ error: 'not_in_party' }, 400);
 
-    // Quitarme
     await db.run(`DELETE FROM party_members WHERE user_id = ?`, [session.user_id]);
 
-    // Si era el leader, promover al siguiente más antiguo
     if (party.leader_user_id === session.user_id) {
       const next = await db.first(
         `SELECT user_id FROM party_members WHERE party_id = ? ORDER BY joined_at ASC LIMIT 1`,
@@ -314,12 +378,9 @@ export async function handlePartyLeave(request, env) {
       if (next) {
         await db.run(`UPDATE parties SET leader_user_id = ? WHERE id = ?`, [next.user_id, party.id]);
       } else {
-        // Party vacía → borrar
         await db.run(`DELETE FROM parties WHERE id = ?`, [party.id]);
       }
     } else {
-      // ¿Quedó solo 1 miembro? Si sí, no la borramos (1 puede invitar a más).
-      // Pero si quedó 0 (no debería pasar pero por si acaso):
       const remaining = await db.first(
         `SELECT COUNT(*) AS c FROM party_members WHERE party_id = ?`, [party.id]
       );
@@ -355,7 +416,6 @@ export async function handlePartyKick(request, env) {
     if (!myParty) return json({ error: 'not_in_party' }, 400);
     if (myParty.leader_user_id !== session.user_id) return json({ error: 'not_leader' }, 403);
 
-    // ¿Target está en mi party?
     const targetMember = await db.first(
       `SELECT party_id FROM party_members WHERE user_id = ?`, [targetId]
     );
@@ -372,8 +432,7 @@ export async function handlePartyKick(request, env) {
 }
 
 // ============================================================
-// Helper exportado: getPartyIdOfUser (lo usa combat_engine para
-// bloquear PVP entre miembros).
+// Helper exportado para combat_engine.
 // ============================================================
 export async function getPartyIdOfUser(db, userId) {
   try {
@@ -382,7 +441,6 @@ export async function getPartyIdOfUser(db, userId) {
     );
     return r?.party_id || null;
   } catch {
-    // Si tabla no existe, sin party.
     return null;
   }
 }
