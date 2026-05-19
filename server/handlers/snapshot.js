@@ -1,11 +1,15 @@
 /**
- * SebasPresent — World Snapshot handler (Sesión 27, Bloques 1 + 2 PVP)
+ * SebasPresent — World Snapshot handler (Sesión 27, Bloques 1 + 2 PVP + Sesión 28 duelos)
  * Endpoint: GET /api/world/snapshot?x=&z=
  *
  * Bloque 1: endpoint server-authoritative que devuelve players+NPCs+timestamp.
  * Bloque 2: ampliado para ser drop-in replacement de /api/combat/state respecto
  *           a NPCs. npc_renderer.js cliente ahora lee de aquí (250ms) en
  *           lugar de polear combat/state (5s).
+ * Sesión 28: añadido me.duel, me.duel_invites_in, me.duel_invite_out para que
+ *           el cliente sepa estado del duelo activo y notifications sin un
+ *           polling extra. Cleanup lazy de duelos cuyo leave_cast_ends_at
+ *           ya expiró (cierra el duelo).
  *
  * Diseño:
  *   - Radio 500m (necesario para el minimap del cliente, que dibuja NPCs
@@ -22,6 +26,7 @@
  *
  * Cuesta poco al worker:
  *   - 2 queries D1 (1 players + 1 npcs) con bounding-box prefilter.
+ *   - + 3 queries pequeñas para me (last_attacker, party_id, duel).
  *   - Polling 250ms desde N clientes = N*4 queries/sec/cliente. Sostenible.
  */
 
@@ -231,7 +236,13 @@ export async function handleWorldSnapshot(request, env) {
     // attacker_type: 0=player, 1=npc).
     const RETALIATE_WINDOW_MS = 8_000;
     const retaliateCutoff = now - RETALIATE_WINDOW_MS;
-    let me = { last_attacker: null, party_id: null };
+    let me = {
+      last_attacker: null,
+      party_id: null,
+      duel: null,           // Sesión 28
+      duel_invites_in: [],  // Sesión 28
+      duel_invite_out: null // Sesión 28
+    };
     try {
       const lastAtk = await env.DB.prepare(
         `SELECT attacker_type, attacker_id, ts
@@ -257,6 +268,125 @@ export async function handleWorldSnapshot(request, env) {
       if (myParty?.party_id != null) me.party_id = myParty.party_id;
     } catch {
       // tabla no existe → me.party_id queda null
+    }
+
+    // Sesión 28 — duelo activo + invites
+    // Defensivo: si tabla `duels` no existe (migración no corrida), todo
+    // queda en null/[] y el cliente no muestra HUD de duelo.
+    try {
+      // 1) Cleanup lazy: cerrar duelos cuyo cast de salida ya terminó.
+      //    Esto es UN UPDATE como mucho. Lo hacemos aquí para que el HUD
+      //    del cliente se actualice rápido (snapshot polling = 250ms).
+      await env.DB.prepare(
+        `UPDATE duels SET ended_at = ?
+         WHERE ended_at IS NULL
+           AND leave_cast_ends_at IS NOT NULL
+           AND leave_cast_ends_at <= ?`
+      ).bind(now, now).run();
+
+      // 2) Duelo activo del user actual.
+      const duelRow = await env.DB.prepare(
+        `SELECT id, user_a_id, user_b_id, started_at,
+                leaving_a_at, leaving_b_at, leave_cast_ends_at
+         FROM duels
+         WHERE ended_at IS NULL AND (user_a_id = ? OR user_b_id = ?)
+         LIMIT 1`
+      ).bind(session.user_id, session.user_id).first();
+
+      if (duelRow) {
+        // Determinar oponente y username + combat_lvl. El opponent puede
+        // estar fuera del radio del snapshot (los duelistas se pueden
+        // alejar). Por eso hacemos query separada.
+        const otherId = duelRow.user_a_id === session.user_id
+          ? duelRow.user_b_id
+          : duelRow.user_a_id;
+        const otherRow = await env.DB.prepare(
+          `SELECT u.id, u.username, cs.attack_xp, cs.strength_xp,
+                  cs.defence_xp, cs.hp_xp
+           FROM users u
+           LEFT JOIN combat_stats cs ON cs.user_id = u.id
+           WHERE u.id = ?`
+        ).bind(otherId).first();
+
+        let otherCombatLvl = 3;
+        let otherUsername = '?';
+        if (otherRow) {
+          otherUsername = otherRow.username;
+          const att = otherRow.attack_xp   != null ? levelFromXp(otherRow.attack_xp)   : 1;
+          const str = otherRow.strength_xp != null ? levelFromXp(otherRow.strength_xp) : 1;
+          const def = otherRow.defence_xp  != null ? levelFromXp(otherRow.defence_xp)  : 1;
+          const hp  = otherRow.hp_xp       != null ? levelFromXp(otherRow.hp_xp)       : 10;
+          otherCombatLvl = Math.floor((def + hp) / 4 + (att + str) * 13 / 40);
+        }
+
+        // ¿Es mi cast el que está activo?
+        const isA = duelRow.user_a_id === session.user_id;
+        const myLeavingAt = isA ? duelRow.leaving_a_at : duelRow.leaving_b_at;
+
+        me.duel = {
+          id: duelRow.id,
+          opponent_user_id: otherId,
+          opponent_username: otherUsername,
+          opponent_combat_lvl: otherCombatLvl,
+          started_at: duelRow.started_at,
+          // leaving_at = el momento en que YO inicié mi cast (o null).
+          // El otro puede estar casteando también — leave_cast_ends_at
+          // refleja el cast más reciente (el que terminará primero).
+          my_leaving_at: myLeavingAt,
+          opponent_leaving_at: isA ? duelRow.leaving_b_at : duelRow.leaving_a_at,
+          leave_cast_ends_at: duelRow.leave_cast_ends_at,
+        };
+      }
+
+      // 3) Invites recibidas (pendientes, no expiradas).
+      const invitesIn = await env.DB.prepare(
+        `SELECT r.from_user_id, r.expires_at, u.username AS from_username,
+                cs.attack_xp, cs.strength_xp, cs.defence_xp, cs.hp_xp
+         FROM duel_requests r
+         JOIN users u ON u.id = r.from_user_id
+         LEFT JOIN combat_stats cs ON cs.user_id = r.from_user_id
+         WHERE r.to_user_id = ? AND r.expires_at >= ?
+         ORDER BY r.expires_at ASC`
+      ).bind(session.user_id, now).all();
+
+      me.duel_invites_in = (invitesIn.results || []).map(r => {
+        const att = r.attack_xp   != null ? levelFromXp(r.attack_xp)   : 1;
+        const str = r.strength_xp != null ? levelFromXp(r.strength_xp) : 1;
+        const def = r.defence_xp  != null ? levelFromXp(r.defence_xp)  : 1;
+        const hp  = r.hp_xp       != null ? levelFromXp(r.hp_xp)       : 10;
+        const cb  = Math.floor((def + hp) / 4 + (att + str) * 13 / 40);
+        return {
+          from_user_id: r.from_user_id,
+          from_username: r.from_username,
+          from_combat_lvl: cb,
+          expires_at: r.expires_at,
+        };
+      });
+
+      // 4) Invite outgoing (mi request pendiente).
+      const inviteOut = await env.DB.prepare(
+        `SELECT r.to_user_id, r.expires_at, u.username AS to_username
+         FROM duel_requests r
+         JOIN users u ON u.id = r.to_user_id
+         WHERE r.from_user_id = ? AND r.expires_at >= ?
+         LIMIT 1`
+      ).bind(session.user_id, now).first();
+
+      if (inviteOut) {
+        me.duel_invite_out = {
+          to_user_id: inviteOut.to_user_id,
+          to_username: inviteOut.to_username,
+          expires_at: inviteOut.expires_at,
+        };
+      }
+    } catch (err) {
+      // tabla duels no existe → me.duel sigue null y el cliente no muestra
+      // HUD. Loggeamos solo si NO es "no such table" (que esperamos durante
+      // migración).
+      const msg = err?.message || '';
+      if (!msg.includes('no such table')) {
+        console.warn('[snapshot/duel]', msg);
+      }
     }
 
     return json({ now, players, npcs, me });
