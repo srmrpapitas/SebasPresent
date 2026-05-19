@@ -165,7 +165,7 @@ export function update(dt) {
     const flickerScale = 1 + Math.sin(t * 9 + fire._phase) * 0.10
                           + Math.sin(t * 13.7 + fire._phase) * 0.05;
     const flickerOpacity = 0.85 + Math.sin(t * 11 + fire._phase) * 0.15;
-    fire.sprite.scale.set(0.9 * flickerScale, 1.2 * flickerScale, 1);
+    fire.sprite.scale.set(1.2 * flickerScale, 1.6 * flickerScale, 1);
     fire.sprite.material.opacity = Math.max(0.5, Math.min(1, flickerOpacity));
   }
 }
@@ -222,6 +222,7 @@ export async function lightFireFromSlot(slotIdx) {
 
   try {
     const res = await api.fmLight(slotIdx);
+    console.log('[firemaking] /api/firemaking/light response:', res);
     if (res?.ok) {
       try { await skills.reload(); } catch {}
       try { await window.inventory?.refresh?.(); } catch {}
@@ -230,10 +231,20 @@ export async function lightFireFromSlot(slotIdx) {
         feedLog('info', `¡Subes a nivel ${res.new_level} de Fuego!`);
         try { window.__spawnLevelUpBanner?.('firemaking', res.new_level); } catch {}
       }
+      // Sesión 30 — Renderizar el fire LOCAL inmediato sin esperar snapshot.
+      // El server lo devuelve directamente en res.fire. Si por algún motivo
+      // el snapshot tarda o no incluye `fires`, igual lo vemos aparecer ya.
+      if (res.fire && res.fire.id != null) {
+        if (!firesMap.has(res.fire.id)) {
+          console.log('[firemaking] adding fire from light response:', res.fire);
+          addFire(res.fire);
+        }
+      }
       // Forzar sync inmediato para que el fire aparezca rápido
       syncTimer = FIRE_SYNC_INTERVAL_S;
     }
   } catch (err) {
+    console.warn('[firemaking] light error:', err?.code, err?.message);
     const code = err?.code;
     if (code === 'no_tinderbox') feedLog('error', 'Necesitas un yesquero.');
     else if (code === 'not_a_log') feedLog('error', 'Eso no es un log.');
@@ -249,14 +260,34 @@ export async function lightFireFromSlot(slotIdx) {
 // ============================================================
 function syncFromSnapshot() {
   const snap = getSnapshot?.();
-  if (!snap || !Array.isArray(snap.fires)) return;
+  if (!snap) return;
+
+  // Sesión 30 debug: si el snapshot NO tiene la propiedad 'fires',
+  // significa que el server no fue actualizado (snapshot.js viejo).
+  // Loguear una vez como warning.
+  if (!('fires' in snap)) {
+    if (!_warnedNoFires) {
+      console.warn('[firemaking] El snapshot del server NO incluye `fires`. ¿Subiste server/handlers/snapshot.js actualizado?');
+      _warnedNoFires = true;
+    }
+    return;
+  }
+
+  if (!Array.isArray(snap.fires)) return;
   const now = Date.now();
+
+  // Log cuando llegan fires nuevos (sólo cambio para no spammear).
+  if (snap.fires.length !== _lastFiresCount) {
+    console.log(`[firemaking] snapshot.fires =`, snap.fires.length, 'fires');
+    _lastFiresCount = snap.fires.length;
+  }
 
   const seenIds = new Set();
   for (const f of snap.fires) {
     seenIds.add(f.id);
     if (f.expires_at <= now) continue;
     if (!firesMap.has(f.id)) {
+      console.log(`[firemaking] addFire id=${f.id} pos=(${f.x.toFixed(2)}, ${f.z.toFixed(2)}) expires_at=${f.expires_at}`);
       addFire(f);
     }
   }
@@ -267,6 +298,9 @@ function syncFromSnapshot() {
     }
   }
 }
+
+let _warnedNoFires = false;
+let _lastFiresCount = -1;
 
 function addFire(f) {
   if (!scene) return;
@@ -292,11 +326,14 @@ function addFire(f) {
     transparent: true,
     opacity: 1,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    // Sesión 30 — NormalBlending en vez de Additive para asegurar
+    // que se ve en todos los navegadores móviles (algunos sprites con
+    // Additive se ven negros en iOS Safari según versión).
   });
   const sprite = new THREE.Sprite(spriteMat);
-  sprite.scale.set(0.9, 1.2, 1);
-  sprite.position.y = 0.6;
+  // Tamaño más grande para que se note bien.
+  sprite.scale.set(1.2, 1.6, 1);
+  sprite.position.y = 0.8;
   group.add(sprite);
 
   scene.add(group);

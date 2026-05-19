@@ -866,11 +866,13 @@ export class Character {
     const wasCombatStance = this.combatStance;
     this.combatStance = false;
 
-    // Activar flag para que update() haga la compensación anti-hundido.
-    // Reseteamos las refs de tracking — update() las captura en el primer frame.
+    // Sesión 30 — anti-hundido: usamos compensación RELATIVA.
+    // Recordamos cuánto sumamos para restarlo limpio al terminar.
+    // No tocamos absolute group.position.y porque world.js lo está
+    // moviendo simultáneamente (movement del player).
     this._gatheringActive = true;
     this._gatherBaseHipsY = null;
-    this._gatherGroupBaseY = null;
+    this._gatherCompensationY = 0;
 
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
@@ -894,13 +896,15 @@ export class Character {
       this.current = null;
       // Restaurar combat stance original
       this.combatStance = wasCombatStance;
-      // Quitar flag de anti-hundido + resetear tracking + restaurar group Y
+      // Sesión 30 — restaurar Y RESTANDO la compensación que sumamos.
+      // No "absolute set" porque world.js puede haber movido el group
+      // por su cuenta durante la anim. Solo deshacemos lo NUESTRO.
       this._gatheringActive = false;
-      if (this._gatherGroupBaseY != null && this.group) {
-        this.group.position.y = this._gatherGroupBaseY;
+      if (this.group && this._gatherCompensationY) {
+        this.group.position.y -= this._gatherCompensationY;
       }
+      this._gatherCompensationY = 0;
       this._gatherBaseHipsY = null;
-      this._gatherGroupBaseY = null;
       // Forzar transición a idle/sword_idle limpio
       try { this.play('idle'); } catch {}
     }, dur + 20);
@@ -940,30 +944,38 @@ export class Character {
   update(dt) {
     if (this.mixer) this.mixer.update(dt);
     // Sesión 30 — anti-hundido durante gathering.
-    // Estrategia: medir cuánto bajó el Hips en world-space respecto al
-    // primer frame, y subir character.group.position.y para compensar.
-    // Funciona sea cual sea el rig (no depende de que el track de Hips.position
-    // exista — funciona también si la baja viene de Spine/Pelvis/otros).
+    // ESTRATEGIA: offset RELATIVO sobre group.position.y.
+    //   1) Primer frame: capturamos base Y del Hips en world.
+    //   2) Cada frame siguiente: medimos drop = baseY - currentY.
+    //   3) Si drop > prev_compensation: subimos group por la diferencia.
+    //      Si drop < prev_compensation: bajamos group por la diferencia.
+    //   4) Recordamos cuánto compensamos TOTAL (this._gatherCompensationY)
+    //      para poder restarlo limpio al terminar.
+    // Así NO tocamos absoluto el group.position.y — solo sumamos/restamos
+    // delta. World.js puede mover el group por su cuenta y no rompemos nada.
     if (this._gatheringActive && this._hipsBone && this.group) {
-      // En el primer frame del gathering, capturamos el Y "esperado"
-      // (donde estaba el Hips en world antes de la anim).
+      if (!this._tmpVec) this._tmpVec = new THREE.Vector3();
+
       if (this._gatherBaseHipsY == null) {
-        // tmp Vector3
-        if (!this._tmpVec) this._tmpVec = new THREE.Vector3();
+        // Primer frame: capturar Y de referencia del Hips world-space.
         this._hipsBone.getWorldPosition(this._tmpVec);
         this._gatherBaseHipsY = this._tmpVec.y;
-        this._gatherGroupBaseY = this.group.position.y;
+        // compensación arranca en 0; no movemos nada todavía.
       } else {
-        if (!this._tmpVec) this._tmpVec = new THREE.Vector3();
+        // Cuánto bajó el Hips desde el inicio?
         this._hipsBone.getWorldPosition(this._tmpVec);
-        const drop = this._gatherBaseHipsY - this._tmpVec.y;
-        // Solo compensamos si el Hips BAJÓ (no subimos cuando sube,
-        // así no rompemos jumping anims). Y solo más de 1cm para evitar
-        // micro-jitter por floating point.
-        if (drop > 0.01) {
-          this.group.position.y = this._gatherGroupBaseY + drop;
-        } else {
-          this.group.position.y = this._gatherGroupBaseY;
+        // Pero ojo: el Hips world-Y ya incluye nuestra compensación previa.
+        // Para medir el drop REAL del bone, restamos nuestra compensación.
+        const adjustedHipsY = this._tmpVec.y - this._gatherCompensationY;
+        const drop = this._gatherBaseHipsY - adjustedHipsY;
+
+        // Diferencia que falta compensar (puede ser positiva o negativa)
+        let targetComp = drop > 0 ? drop : 0;
+        const delta = targetComp - this._gatherCompensationY;
+
+        if (Math.abs(delta) > 0.005) {
+          this.group.position.y += delta;
+          this._gatherCompensationY = targetComp;
         }
       }
     }
