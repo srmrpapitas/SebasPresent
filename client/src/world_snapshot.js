@@ -11,6 +11,15 @@
  * Bloque 2 (futuro): multiplayer.js y npc_renderer.js leerán de aquí
  * en vez de hacer sus propios fetches. Pollings antiguos mueren entonces.
  *
+ * Sesión 28:
+ *   - FIX: `me` (last_attacker, party_id, duel, duel_invites_in,
+ *     duel_invite_out) ahora SÍ se persiste en lastSnapshot. En S27 el
+ *     campo se leía pero nunca se asignaba — auto-retaliate quedaba
+ *     silenciosamente devolviendo {}.
+ *   - HOOK: tras cada snapshot fresco, llamamos duel.onSnapshotMe(me)
+ *     para que el módulo duel.js actualice HUD/invites sin polling
+ *     separado.
+ *
  * Uso desde world.js:
  *
  *   import * as worldSnapshot from './world_snapshot.js';
@@ -31,8 +40,11 @@
  *   window.__snapshotDebug()         → último snapshot completo
  *   window.__snapshotDebug.peers()   → solo players cercanos
  *   window.__snapshotDebug.npcs()    → solo NPCs cercanos
+ *   window.__snapshotDebug.me()      → solo bloque me (Sesión 28)
  *   window.__snapshotDebug.lag()     → ms entre server.now y client.recv
  */
+
+import * as duel from './duel.js';   // Sesión 28 — hook onSnapshotMe
 
 const SNAPSHOT_POLL_INTERVAL_MS = 250;   // 4 ticks/sec, según plan Bloque 1
 const SNAPSHOT_STALE_AFTER_MS   = 5_000; // tras esto consideramos stale
@@ -49,7 +61,7 @@ let inFlight = false;
 let started = false;
 
 // Último snapshot recibido. Estructura:
-// { now, players: [...], npcs: [...], _receivedAt: client ts, _serverLagMs }
+// { now, players: [...], npcs: [...], me: {...}, _receivedAt, _serverLagMs }
 let lastSnapshot = null;
 let lastError = null;
 
@@ -74,9 +86,10 @@ export function start(opts) {
   // Hooks de debug en window (Eruda)
   if (typeof window !== 'undefined') {
     const dbg = () => lastSnapshot;
-    dbg.peers   = () => lastSnapshot?.players || [];
-    dbg.npcs    = () => lastSnapshot?.npcs    || [];
-    dbg.lag     = () => lastSnapshot?._serverLagMs ?? null;
+    dbg.peers     = () => lastSnapshot?.players || [];
+    dbg.npcs      = () => lastSnapshot?.npcs    || [];
+    dbg.me        = () => lastSnapshot?.me      || {};   // Sesión 28
+    dbg.lag       = () => lastSnapshot?._serverLagMs ?? null;
     dbg.lastError = () => lastError;
     window.__snapshotDebug = dbg;
   }
@@ -140,17 +153,22 @@ export function getNpcs() {
 }
 
 /**
- * Sesión 27 Bloque 3 — Devuelve info del propio user que viene en el
- * snapshot. Actualmente solo contiene last_attacker (para auto-retaliate).
+ * Sesión 27 Bloque 3 + Sesión 28 — Devuelve info del propio user que
+ * viene en el snapshot.
  *
- * Estructura: { last_attacker: { type: 0|1, id, at } | null }
- *   - type 0 = el atacante fue otro PLAYER
- *   - type 1 = el atacante fue un NPC
- *   - id      = user_id o npc_instance_id según type
- *   - at      = ms epoch del último ataque
+ * Estructura:
+ *   {
+ *     last_attacker: { type: 0|1, id, at } | null,
+ *     party_id: number | null,
+ *     duel: { id, opponent_user_id, opponent_username, opponent_combat_lvl,
+ *             started_at, my_leaving_at, opponent_leaving_at,
+ *             leave_cast_ends_at } | null,
+ *     duel_invites_in: [{ from_user_id, from_username, from_combat_lvl, expires_at }],
+ *     duel_invite_out: { to_user_id, to_username, expires_at } | null
+ *   }
  *
- * Devuelve {} si no hay snapshot (no null, para que el cliente pueda
- * leer .last_attacker?.type sin chequear).
+ * Devuelve {} si no hay snapshot fresco (no null, para que el cliente
+ * pueda leer .last_attacker?.type sin chequear).
  */
 export function getMe() {
   const s = getSnapshot();
@@ -210,11 +228,21 @@ async function fetchSnapshot() {
       now: data.now,
       players: Array.isArray(data.players) ? data.players : [],
       npcs:    Array.isArray(data.npcs)    ? data.npcs    : [],
+      me:      data.me || {},          // Sesión 28 FIX — antes se perdía
       _sentAt: sentAt,
       _receivedAt: receivedAt,
       _serverLagMs: serverLagMs,
     };
     lastError = null;
+
+    // Sesión 28 — Hook a duel.js para que actualice HUD + invites con
+    // los datos frescos sin polling separado. Defensivo: si duel.start()
+    // todavía no se llamó, onSnapshotMe simplemente no hace nada.
+    try {
+      duel.onSnapshotMe(lastSnapshot.me);
+    } catch (err) {
+      console.warn('[world_snapshot] duel.onSnapshotMe error:', err?.message);
+    }
   } catch (err) {
     lastError = { reason: 'fetch_failed', message: err?.message, ts: Date.now() };
   } finally {

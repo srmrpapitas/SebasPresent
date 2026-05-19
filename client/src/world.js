@@ -20,6 +20,7 @@ import * as combat from './combat.js';
 import * as input from './input.js';
 import * as multiplayer from './multiplayer.js';
 import * as party from './party.js';                  // Sesión 27 Bloque 3 — Party
+import * as duel from './duel.js';                    // Sesión 28 — Duelos PVP no-wild
 import * as homeTele from './home_teleport.js';
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
@@ -305,6 +306,14 @@ export async function startWorld(loggedInUser, token) {
     party.start({
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
     }).catch(e => console.warn('[party.start]', e));
+
+    // Sesión 28 — arrancar duel. NO hace polling propio (lee me.duel /
+    // me.duel_invites_in del snapshot via duel.onSnapshotMe llamado
+    // desde world_snapshot.js cada 250ms). start() solo cachea userId
+    // y monta CSS.
+    duel.start({
+      feedLog: (type, msg) => combat.feedLog?.(type, msg),
+    }).catch(e => console.warn('[duel.start]', e));
 
     // Sesión 4 refactor — arrancar home_teleport (botón + cast + cooldown)
     homeTele.start({

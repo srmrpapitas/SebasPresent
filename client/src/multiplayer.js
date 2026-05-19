@@ -44,6 +44,7 @@ import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as worldSnapshot from './world_snapshot.js';
 import * as party from './party.js';   // Sesión 27 Bloque 3 — colorear según party
+import * as duel from './duel.js';     // Sesión 28 — Retar a duelo desde action menu
 
 // ============================================================
 // Constantes
@@ -356,11 +357,21 @@ export function openActionMenuAt(cx, cy) {
   //     sin pedir party.state; mostramos siempre y el server rechaza).
   const showInvite = !peerIsInMyParty;
 
+  // Sesión 28 — Mostrar "Retar a duelo" si:
+  //   - El peer no está en mi party (los party members son aliados).
+  //   - Yo no estoy en duelo ya.
+  // No filtramos aquí por nivel ni por zona — el server hace los checks
+  // finales (±10 niveles, no estar en duelo, etc.) y devuelve error
+  // claro. Esto evita ocultar la opción y dejar al user sin entender.
+  const inAnyDuel = duel.inAnyDuel?.() || false;
+  const showDuel = !peerIsInMyParty && !inAnyDuel;
+
   const menu = document.createElement('div');
   menu.className = 'pvp-action-menu';
   menu.innerHTML = `
     <div class="pvp-action-menu-header">${escapeHtmlSafe(peer.username || 'Jugador')} <span class="pvp-action-lvl">(lvl ${lvl})</span></div>
     <div class="pvp-action-row danger" data-act="attack">⚔ Atacar</div>
+    ${showDuel ? `<div class="pvp-action-row" data-act="duel">🤺 Retar a duelo</div>` : ''}
     ${showInvite ? `<div class="pvp-action-row" data-act="invite">👥 Invitar a grupo</div>` : ''}
     <div class="pvp-action-row" data-act="examine">🔍 Examinar</div>
     <div class="pvp-action-row" data-act="cancel">✕ Cancelar</div>
@@ -384,6 +395,7 @@ export function openActionMenuAt(cx, cy) {
       if (act === 'attack')        triggerPeerTap(peer.user_id);
       else if (act === 'examine')  examinePeer(peer);
       else if (act === 'invite')   party.inviteUser?.(peer.user_id, peer.username);
+      else if (act === 'duel')     duel.challengeUser?.(peer.user_id, peer.username);
     });
   });
 

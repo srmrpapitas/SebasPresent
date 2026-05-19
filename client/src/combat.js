@@ -445,8 +445,17 @@ async function doAttackTickPlayer() {
       return;
     }
     if (result.error === 'not_in_wilderness') {
+      // Legacy S27 — el server S28 ya no devuelve este código pero
+      // mantenemos handler por si algún flujo viejo lo dispara.
       const who = result.reason === 'target' ? 'tu objetivo está' : 'estás';
       feedLog('warning', `No puedes atacar: ${who} fuera del Wilderness.`);
+      disengage();
+      return;
+    }
+    if (result.error === 'not_in_wilderness_no_duel') {
+      // Sesión 28 — fuera de wilderness solo PVP si hay duelo activo.
+      const who = result.reason === 'target' ? 'tu objetivo está' : 'estás';
+      feedLog('warning', `${who} fuera del Wilderness. Reta a duelo o entrad ambos al wild.`);
       disengage();
       return;
     }
