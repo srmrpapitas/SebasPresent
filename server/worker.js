@@ -22,9 +22,11 @@
  *   GET  /api/equipment, POST /equip /unequip                   → handlers/equipment.js (Sesión 22)
  *   GET  /api/party/state, POST /invite /accept /decline /leave /kick → handlers/party.js (S27)
  *   GET  /api/duel/state,  POST /challenge /accept /decline /cancel /leave → handlers/duel.js (S28)
+ *   GET  /api/chat/recent, POST /api/chat/send                  → handlers/chat.js (S29)
  *   GET  /api/health
  *
- *   Cron (cada 1 min): GE matcher, NPC revive, ground_items cleanup.
+ *   Cron (cada 1 min): GE matcher, NPC revive, ground_items cleanup,
+ *                      shop restock, chat cleanup (>24h).
  */
 
 import { json, corsResponse, withCors } from './lib/db.js';
@@ -45,6 +47,7 @@ import * as equipment from './handlers/equipment.js';
 import * as shop from './handlers/shop.js';
 import * as party from './handlers/party.js';        // Sesión 27 Bloque 3 — Party
 import * as duel from './handlers/duel.js';          // Sesión 28 — Duelos PVP no-wild
+import * as chat from './handlers/chat.js';          // Sesión 29 — Chat global
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -150,6 +153,12 @@ export default {
         response = await duel.handleDuelCancel(request, env);
       } else if (path === '/api/duel/leave' && method === 'POST') {
         response = await duel.handleDuelLeave(request, env);
+
+      // ----- Chat global (Sesión 29) -----
+      } else if (path === '/api/chat/recent' && method === 'GET') {
+        response = await chat.handleChatRecent(request, env);
+      } else if (path === '/api/chat/send' && method === 'POST') {
+        response = await chat.handleChatSend(request, env);
 
       // ----- World (multiplayer) -----
       } else if (path === '/api/world/heartbeat' && method === 'POST') {
