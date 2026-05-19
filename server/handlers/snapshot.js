@@ -89,25 +89,51 @@ export async function handleWorldSnapshot(request, env) {
     // pero todavía no tenga fila en combat_stats/user_skills (cuenta recién
     // creada antes del primer combate). Excluimos al propio user.
     //
-    // Sesión 27 Bloque 3 — añadidos campos para PVP:
+    // Sesión 27 Bloque 3 — añadidos campos para PVP + Party:
     //   - attack_xp / strength_xp / defence_xp → niveles para mostrar y
     //     calcular combat_lvl client-side.
     //   - combat_lvl pre-calculado server-side (más eficiente).
-    const playerRows = await env.DB.prepare(
-      `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
-              c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
-              c.last_attack_at
-       FROM online_users o
-       LEFT JOIN combat_stats c ON c.user_id = o.user_id
-       WHERE o.last_seen > ?
-         AND o.user_id != ?
-         AND o.x BETWEEN ? AND ?
-         AND o.z BETWEEN ? AND ?`
-    ).bind(
-      peerCutoff, session.user_id,
-      centerX - margin, centerX + margin,
-      centerZ - margin, centerZ + margin,
-    ).all();
+    //   - party_id (LEFT JOIN party_members, NULL si no en party).
+    //
+    // Defensa: si party_members no existe (migración no corrida), la query
+    // con JOIN falla. Probamos con JOIN primero; si falla, fallback sin.
+    let playerRows;
+    try {
+      playerRows = await env.DB.prepare(
+        `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
+                c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
+                c.last_attack_at,
+                pm.party_id
+         FROM online_users o
+         LEFT JOIN combat_stats c ON c.user_id = o.user_id
+         LEFT JOIN party_members pm ON pm.user_id = o.user_id
+         WHERE o.last_seen > ?
+           AND o.user_id != ?
+           AND o.x BETWEEN ? AND ?
+           AND o.z BETWEEN ? AND ?`
+      ).bind(
+        peerCutoff, session.user_id,
+        centerX - margin, centerX + margin,
+        centerZ - margin, centerZ + margin,
+      ).all();
+    } catch (err) {
+      // party_members no existe → repetir sin JOIN
+      playerRows = await env.DB.prepare(
+        `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
+                c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
+                c.last_attack_at
+         FROM online_users o
+         LEFT JOIN combat_stats c ON c.user_id = o.user_id
+         WHERE o.last_seen > ?
+           AND o.user_id != ?
+           AND o.x BETWEEN ? AND ?
+           AND o.z BETWEEN ? AND ?`
+      ).bind(
+        peerCutoff, session.user_id,
+        centerX - margin, centerX + margin,
+        centerZ - margin, centerZ + margin,
+      ).all();
+    }
 
     const players = (playerRows.results || [])
       .filter(r => {
@@ -145,6 +171,7 @@ export async function handleWorldSnapshot(request, env) {
           combat_lvl:   combatLvl,
           in_combat:  inCombat,
           last_seen:  r.last_seen,
+          party_id:   r.party_id != null ? r.party_id : null,   // Sesión 27 Bloque 3
         };
       });
 
@@ -204,7 +231,7 @@ export async function handleWorldSnapshot(request, env) {
     // attacker_type: 0=player, 1=npc).
     const RETALIATE_WINDOW_MS = 8_000;
     const retaliateCutoff = now - RETALIATE_WINDOW_MS;
-    let me = { last_attacker: null };
+    let me = { last_attacker: null, party_id: null };
     try {
       const lastAtk = await env.DB.prepare(
         `SELECT attacker_type, attacker_id, ts
@@ -214,16 +241,22 @@ export async function handleWorldSnapshot(request, env) {
       ).bind(session.user_id, retaliateCutoff).first();
       if (lastAtk) {
         me.last_attacker = {
-          type: lastAtk.attacker_type,   // 0=player, 1=npc
+          type: lastAtk.attacker_type,
           id:   lastAtk.attacker_id,
           at:   lastAtk.ts,
         };
       }
     } catch (err) {
-      // Si la query falla (índice ausente, tabla vacía, etc), no es crítico
-      // — solo significa que el auto-retaliate de este snapshot no
-      // disparará. Próximo snapshot intentamos de nuevo.
       console.warn('[snapshot] last_attacker query failed:', err.message);
+    }
+    // Sesión 27 Bloque 3 — mi party_id (defensivo: si tabla no existe, null)
+    try {
+      const myParty = await env.DB.prepare(
+        `SELECT party_id FROM party_members WHERE user_id = ?`
+      ).bind(session.user_id).first();
+      if (myParty?.party_id != null) me.party_id = myParty.party_id;
+    } catch {
+      // tabla no existe → me.party_id queda null
     }
 
     return json({ now, players, npcs, me });

@@ -122,6 +122,7 @@ export async function handleCombatAttackPlayer(request, env) {
         'target_dead', 'on_cooldown', 'out_of_range',
         'user_no_position', 'target_no_position', 'user_dead',
         'not_in_wilderness',
+        'same_party',                              // Sesión 27 Bloque 3
       ]);
       if (knownClient.has(result.error)) return json(result, 400);
     }
