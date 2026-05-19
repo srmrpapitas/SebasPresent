@@ -8,6 +8,7 @@
  *   3) Combat: revive NPCs que llevan tiempo muertos.
  *   4) Ground items: limpia items expirados.
  *   5) Shop restock: cada 30 min, sube stock +5 sin pasar max (Sesión 23).
+ *   6) Chat cleanup: borra mensajes > 24h (Sesión 29).
  */
 import { makeDbAdapter } from '../lib/db.js';
 import { runMatcher, reseedGhostOrders } from '../ge_engine.js';
@@ -20,6 +21,9 @@ import { restockShops } from './shop.js';
 // como guardia (ya está). Aquí solo evitamos llamar 30 veces seguidas.
 let lastShopRestockMs = 0;
 const SHOP_RESTOCK_INTERVAL_MS = 30 * 60 * 1000;
+
+// Sesión 29 — Retención del chat global.
+const CHAT_RETENTION_MS = 24 * 60 * 60 * 1000;   // 24h
 
 export async function scheduledHandler(event, env, ctx) {
   const db = makeDbAdapter(env);
@@ -66,5 +70,22 @@ export async function scheduledHandler(event, env, ctx) {
     }
   } catch (err) {
     console.error('[shop-cron] error:', err);
+  }
+
+  // 5) Chat cleanup: mensajes > 24h (Sesión 29).
+  //    Si la tabla chat_messages no existe (D1 reseteada antes de re-crear),
+  //    el catch evita ruido en logs. Es best-effort: si falla un minuto no
+  //    pasa nada — el siguiente lo reintenta.
+  try {
+    const cutoff = Date.now() - CHAT_RETENTION_MS;
+    const res = await env.DB.prepare(
+      'DELETE FROM chat_messages WHERE sent_at < ?'
+    ).bind(cutoff).run();
+    const changes = res?.meta?.changes || 0;
+    if (changes > 0) {
+      console.log(`[chat-cron] cleaned=${changes}`);
+    }
+  } catch {
+    // Tabla puede no existir — silencioso.
   }
 }
