@@ -603,7 +603,7 @@ function ensureCss() {
     .chat-tab-icon { font-size: 14px; }
     /* Label "Chat" oculta (Sesión 29 ajuste UI): el icono 💬 ya es claro
        y reducimos x2 el ancho del botón minimizado. Si quieres devolverlo,
-       cambia a `display: inline`. */
+       cambia 'display: none' a 'display: inline'. */
     .chat-tab-label { display: none; letter-spacing: 0.04em; }
     .chat-unread {
       background: #d04030;
