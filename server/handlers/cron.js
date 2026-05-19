@@ -9,6 +9,8 @@
  *   4) Ground items: limpia items expirados.
  *   5) Shop restock: cada 30 min, sube stock +5 sin pasar max (Sesión 23).
  *   6) Chat cleanup: borra mensajes > 24h (Sesión 29).
+ *   7) Fires cleanup: borra fuegos expirados (Sesión 30).
+ *   8) Tree_state cleanup: borra árboles depletados con respawn ya cumplido (S30).
  */
 import { makeDbAdapter } from '../lib/db.js';
 import { runMatcher, reseedGhostOrders } from '../ge_engine.js';
@@ -84,6 +86,36 @@ export async function scheduledHandler(event, env, ctx) {
     const changes = res?.meta?.changes || 0;
     if (changes > 0) {
       console.log(`[chat-cron] cleaned=${changes}`);
+    }
+  } catch {
+    // Tabla puede no existir — silencioso.
+  }
+
+  // 6) Fires cleanup: borra fuegos cuyo expires_at ya pasó (Sesión 30).
+  try {
+    const now = Date.now();
+    const res = await env.DB.prepare(
+      'DELETE FROM fires WHERE expires_at <= ?'
+    ).bind(now).run();
+    const changes = res?.meta?.changes || 0;
+    if (changes > 0) {
+      console.log(`[fires-cron] cleaned=${changes}`);
+    }
+  } catch {
+    // Tabla puede no existir — silencioso.
+  }
+
+  // 7) Tree_state cleanup: borra árboles cuyo respawn ya se cumplió (Sesión 30).
+  // Esto NO afecta visualmente (el cliente ya los muestra al no estar en
+  // snapshot), pero mantiene la tabla compacta para queries más rápidas.
+  try {
+    const now = Date.now();
+    const res = await env.DB.prepare(
+      'DELETE FROM tree_state WHERE depleted_until <= ?'
+    ).bind(now).run();
+    const changes = res?.meta?.changes || 0;
+    if (changes > 0) {
+      console.log(`[tree_state-cron] cleaned=${changes}`);
     }
   } catch {
     // Tabla puede no existir — silencioso.

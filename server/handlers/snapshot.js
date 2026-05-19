@@ -389,7 +389,76 @@ export async function handleWorldSnapshot(request, env) {
       }
     }
 
-    return json({ now, players, npcs, me });
+    // -------------------- Fires + depleted_trees (Sesión 30) --------------------
+    // Defensive: si tabla fires no existe (migración no corrida), array vacío.
+    // Radio 100m (fuegos no se ven desde lejos visualmente).
+    const FIRES_RADIUS_M = 100;
+    let fires = [];
+    try {
+      const fireRows = await env.DB.prepare(
+        `SELECT id, x, z, log_type, lit_at, expires_at, user_id
+         FROM fires
+         WHERE expires_at > ?
+           AND x BETWEEN ? AND ?
+           AND z BETWEEN ? AND ?`
+      ).bind(
+        now,
+        centerX - FIRES_RADIUS_M, centerX + FIRES_RADIUS_M,
+        centerZ - FIRES_RADIUS_M, centerZ + FIRES_RADIUS_M,
+      ).all();
+      // Filtrar a radio circular (no bbox)
+      const radSq = FIRES_RADIUS_M * FIRES_RADIUS_M;
+      fires = (fireRows.results || []).filter(r => {
+        const dxF = r.x - centerX, dzF = r.z - centerZ;
+        return (dxF * dxF + dzF * dzF) <= radSq;
+      }).map(r => ({
+        id:         r.id,
+        x:          r.x,
+        z:          r.z,
+        log_type:   r.log_type,
+        lit_at:     r.lit_at,
+        expires_at: r.expires_at,
+        user_id:    r.user_id,
+      }));
+    } catch (err) {
+      const msg = err?.message || '';
+      if (!msg.includes('no such table')) {
+        console.warn('[snapshot/fires]', msg);
+      }
+    }
+
+    // Depleted trees: árboles depletados en radio 100m (mismo que fires).
+    let depleted_trees = [];
+    try {
+      const treeRows = await env.DB.prepare(
+        `SELECT x, z, tree_type, depleted_until
+         FROM tree_state
+         WHERE depleted_until > ?
+           AND x BETWEEN ? AND ?
+           AND z BETWEEN ? AND ?`
+      ).bind(
+        now,
+        centerX - FIRES_RADIUS_M, centerX + FIRES_RADIUS_M,
+        centerZ - FIRES_RADIUS_M, centerZ + FIRES_RADIUS_M,
+      ).all();
+      const radSq = FIRES_RADIUS_M * FIRES_RADIUS_M;
+      depleted_trees = (treeRows.results || []).filter(r => {
+        const dxT = r.x - centerX, dzT = r.z - centerZ;
+        return (dxT * dxT + dzT * dzT) <= radSq;
+      }).map(r => ({
+        x:               r.x,
+        z:               r.z,
+        tree_type:       r.tree_type,
+        depleted_until:  r.depleted_until,
+      }));
+    } catch (err) {
+      const msg = err?.message || '';
+      if (!msg.includes('no such table')) {
+        console.warn('[snapshot/tree_state]', msg);
+      }
+    }
+
+    return json({ now, players, npcs, me, fires, depleted_trees });
   } catch (err) {
     console.error('[world/snapshot]', err);
     return json({ error: 'internal_error', message: err.message }, 500);
