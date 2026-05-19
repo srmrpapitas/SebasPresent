@@ -143,17 +143,17 @@ const WEAPON_TRANSFORMS = {
   // Calibrado in-game con __weaponDebug() por Nico.
   'axe': {
     scale: 7.0,
-    position: [-7.0, 30.0, 27.5],
-    rotation: [1.658, -1.692, -0.742],
+    position: [-7.0, 16.0, 13.5],
+    rotation: [1.658, -1.292, -0.992],
     hand: 'right',
   },
   // Sesión 30 — Pico de minería (item_id='pickaxe_bronze', weapon_type='pickaxe').
-  // Placeholder: usa los mismos valores que 1h_sword. Calibrar con
-  // __weaponDebug() cuando llegue la sesión de minería.
+  // Calibrado in-game con __weaponDebug() por Nico. scale ajustado a 0.7
+  // (el slider del panel arrancaba en 1 pero seguía grande).
   'pickaxe': {
-    scale: 77.0,
-    position: [-22.5, 12.0, 3.0],
-    rotation: [1.658, 0.058, -1.692],
+    scale: 0.7,
+    position: [8.5, 12.0, 4.5],
+    rotation: [-0.992, 0.058, -1.392],
     hand: 'right',
   },
   'default': {
