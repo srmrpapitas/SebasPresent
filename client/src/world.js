@@ -1391,6 +1391,35 @@ function injectInventoryGridCss() {
       max-width: 42px !important;
       max-height: 42px !important;
       box-sizing: border-box !important;
+      overflow: visible !important;
+    }
+    /* Sesión 30 — fix qty mal posicionado en columna izquierda.
+       El número de cantidad estaba con left:2px y se cortaba/pegaba al
+       borde del slot. Lo movemos a top:2px/left:3px con padding y
+       fondo semi-transparente para legibilidad sobre cualquier icono. */
+    .osrs-tab-pane[data-tab="inventory"] .inv-qty {
+      top: 2px !important;
+      left: 3px !important;
+      padding: 1px 3px !important;
+      font-size: 10px !important;
+      background: rgba(0, 0, 0, 0.4) !important;
+      border-radius: 2px !important;
+      z-index: 2 !important;
+      pointer-events: none !important;
+    }
+    /* Asegurar que el icono SVG NO se sale de su slot */
+    .osrs-tab-pane[data-tab="inventory"] .inv-icon {
+      width: 36px !important;
+      height: 36px !important;
+      max-width: 36px !important;
+      max-height: 36px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    .osrs-tab-pane[data-tab="inventory"] .inv-icon svg {
+      width: 100% !important;
+      height: 100% !important;
     }
   `;
   document.head.appendChild(style);

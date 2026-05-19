@@ -140,12 +140,11 @@ const WEAPON_TRANSFORMS = {
     hand: 'left',
   },
   // Sesión 30 — Hacha de talar (item_id='axe', weapon_type='axe').
-  // Placeholder: usa los mismos valores que 1h_sword. Calibrar con
-  // __weaponDebug() y pegar los valores aquí cuando estén bien.
+  // Calibrado in-game con __weaponDebug() por Nico.
   'axe': {
-    scale: 77.0,
-    position: [-22.5, 12.0, 3.0],
-    rotation: [1.658, 0.058, -1.692],
+    scale: 7.0,
+    position: [-7.0, 30.0, 27.5],
+    rotation: [1.658, -1.692, -0.742],
     hand: 'right',
   },
   // Sesión 30 — Pico de minería (item_id='pickaxe_bronze', weapon_type='pickaxe').
@@ -867,8 +866,11 @@ export class Character {
     const wasCombatStance = this.combatStance;
     this.combatStance = false;
 
-    // Activar flag para que update() fuerce Y=0 (anti-hundido).
+    // Activar flag para que update() haga la compensación anti-hundido.
+    // Reseteamos las refs de tracking — update() las captura en el primer frame.
     this._gatheringActive = true;
+    this._gatherBaseHipsY = null;
+    this._gatherGroupBaseY = null;
 
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
@@ -892,8 +894,13 @@ export class Character {
       this.current = null;
       // Restaurar combat stance original
       this.combatStance = wasCombatStance;
-      // Quitar flag de anti-hundido
+      // Quitar flag de anti-hundido + resetear tracking + restaurar group Y
       this._gatheringActive = false;
+      if (this._gatherGroupBaseY != null && this.group) {
+        this.group.position.y = this._gatherGroupBaseY;
+      }
+      this._gatherBaseHipsY = null;
+      this._gatherGroupBaseY = null;
       // Forzar transición a idle/sword_idle limpio
       try { this.play('idle'); } catch {}
     }, dur + 20);
@@ -932,12 +939,33 @@ export class Character {
 
   update(dt) {
     if (this.mixer) this.mixer.update(dt);
-    // Sesión 30 — anti-hundido durante gathering: fijar el Hips bone Y
-    // a su valor inicial DESPUÉS del mixer.update. El bone es lo que la
-    // anim de Kneel/Woodcut está moviendo verticalmente (root motion).
-    // Pinearlo a su Y inicial = char no se hunde.
-    if (this._gatheringActive && this._hipsBone) {
-      this._hipsBone.position.y = this._hipsInitialY;
+    // Sesión 30 — anti-hundido durante gathering.
+    // Estrategia: medir cuánto bajó el Hips en world-space respecto al
+    // primer frame, y subir character.group.position.y para compensar.
+    // Funciona sea cual sea el rig (no depende de que el track de Hips.position
+    // exista — funciona también si la baja viene de Spine/Pelvis/otros).
+    if (this._gatheringActive && this._hipsBone && this.group) {
+      // En el primer frame del gathering, capturamos el Y "esperado"
+      // (donde estaba el Hips en world antes de la anim).
+      if (this._gatherBaseHipsY == null) {
+        // tmp Vector3
+        if (!this._tmpVec) this._tmpVec = new THREE.Vector3();
+        this._hipsBone.getWorldPosition(this._tmpVec);
+        this._gatherBaseHipsY = this._tmpVec.y;
+        this._gatherGroupBaseY = this.group.position.y;
+      } else {
+        if (!this._tmpVec) this._tmpVec = new THREE.Vector3();
+        this._hipsBone.getWorldPosition(this._tmpVec);
+        const drop = this._gatherBaseHipsY - this._tmpVec.y;
+        // Solo compensamos si el Hips BAJÓ (no subimos cuando sube,
+        // así no rompemos jumping anims). Y solo más de 1cm para evitar
+        // micro-jitter por floating point.
+        if (drop > 0.01) {
+          this.group.position.y = this._gatherGroupBaseY + drop;
+        } else {
+          this.group.position.y = this._gatherGroupBaseY;
+        }
+      }
     }
   }
 
