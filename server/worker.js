@@ -41,6 +41,7 @@ import * as groundItems from './handlers/ground_items.js';
 import * as skills from './handlers/skills.js';
 import * as equipment from './handlers/equipment.js';
 import * as shop from './handlers/shop.js';
+import * as party from './handlers/party.js';        // Sesión 27 Bloque 3 — Party
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -118,6 +119,20 @@ export default {
         response = await combat.handleCombatRespawn(request, env);
       } else if (path === '/api/combat/style' && method === 'POST') {
         response = await combat.handleCombatStyle(request, env);
+
+      // ----- Party (Sesión 27 Bloque 3) -----
+      } else if (path === '/api/party/state' && method === 'GET') {
+        response = await party.handlePartyState(request, env);
+      } else if (path === '/api/party/invite' && method === 'POST') {
+        response = await party.handlePartyInvite(request, env);
+      } else if (path === '/api/party/accept' && method === 'POST') {
+        response = await party.handlePartyAccept(request, env);
+      } else if (path === '/api/party/decline' && method === 'POST') {
+        response = await party.handlePartyDecline(request, env);
+      } else if (path === '/api/party/leave' && method === 'POST') {
+        response = await party.handlePartyLeave(request, env);
+      } else if (path === '/api/party/kick' && method === 'POST') {
+        response = await party.handlePartyKick(request, env);
 
       // ----- World (multiplayer) -----
       } else if (path === '/api/world/heartbeat' && method === 'POST') {

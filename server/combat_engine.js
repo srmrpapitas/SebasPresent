@@ -828,6 +828,26 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   if (attackerStats.hp_current <= 0) return { error: 'user_dead' };
   if (targetStats.hp_current <= 0)   return { error: 'target_dead' };
 
+  // Sesión 27 Bloque 3 — Bloqueo PVP entre miembros de la misma party.
+  // Lectura defensiva: si party_members no existe (migración no corrida),
+  // la query falla silenciosamente y se permite el attack (comportamiento
+  // pre-Party).
+  try {
+    const attackerParty = await db.first(
+      `SELECT party_id FROM party_members WHERE user_id = ?`, [attackerId]
+    );
+    if (attackerParty?.party_id != null) {
+      const targetParty = await db.first(
+        `SELECT party_id FROM party_members WHERE user_id = ?`, [targetId]
+      );
+      if (targetParty?.party_id === attackerParty.party_id) {
+        return { error: 'same_party' };
+      }
+    }
+  } catch {
+    // tabla no existe → ignorar, PVP libre
+  }
+
   // -------- Posiciones --------
   // Atacante: usar pos del cliente (fresca). Fallback a persistida.
   const attackerPos = (opts.userPos && Number.isFinite(opts.userPos.x) && Number.isFinite(opts.userPos.z))
