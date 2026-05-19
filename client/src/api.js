@@ -7,6 +7,9 @@
  * Sesión 27 — attackNpc(npcId, pos?) ahora acepta una posición opcional
  * {x, z} que se incluye en el body. Server-side, combat_engine la usa para
  * validar rango y elimina el bug "fuera de alcance".
+ *
+ * Sesión 28 — añadidas funciones duel*: state, challenge, accept, decline,
+ * cancel, leave. Sistema de duelos PVP fuera del wilderness.
  */
 // In dev (running `wrangler dev`), the Worker listens on http://localhost:8787.
 // In production, replace with your deployed Worker URL.
@@ -218,9 +221,10 @@ export async function attackNpc(npcId, pos) {
  *     confía en ella. Esto evita "fuera de rango" cuando el target se
  *     mueve entre heartbeats.
  *
- * Server valida que ambos estén en wilderness y aplica las reglas PVP.
- * Errores comunes a manejar en UI:
- *   'not_in_wilderness', 'out_of_range', 'on_cooldown', 'target_dead'.
+ * Server valida que ambos estén en wilderness O que tengan duelo activo
+ * entre ellos (Sesión 28). Errores comunes a manejar en UI:
+ *   'not_in_wilderness_no_duel', 'out_of_range', 'on_cooldown',
+ *   'target_dead', 'same_party'.
  */
 export async function attackPlayer(targetUserId, pos, targetPos) {
   const body = { target_user_id: targetUserId };
@@ -276,6 +280,82 @@ export async function partyKick(targetUserId) {
     method: 'POST', auth: true,
     body: { target_user_id: targetUserId },
   });
+}
+
+// ============================================================
+// Sesión 28 — Duelos PVP fuera del wilderness
+// ============================================================
+
+/**
+ * GET /api/duel/state
+ * Devuelve { duel, duel_other, invites_in, invite_out }.
+ * Sin embargo, snapshot ya trae estos campos en me.duel / me.duel_invites_in /
+ * me.duel_invite_out — usa esos para minimizar requests. Esta función se
+ * usa solo si necesitas un fetch sin esperar al snapshot (e.g. justo
+ * después de aceptar una invitación).
+ */
+export async function duelState() {
+  return apiFetch('/api/duel/state', { auth: true });
+}
+
+/**
+ * POST /api/duel/challenge { target_user_id }
+ * Reta a otro player a duelo. El target tiene 60s para aceptar.
+ * Errores comunes:
+ *   - cannot_challenge_self
+ *   - target_not_found
+ *   - same_party
+ *   - already_in_duel       (tú ya tienes duelo activo)
+ *   - target_in_duel        (el target ya está en otro duelo)
+ *   - level_gap_too_big     (diferencia > 10 niveles de combate)
+ */
+export async function duelChallenge(targetUserId) {
+  return apiFetch('/api/duel/challenge', {
+    method: 'POST', auth: true,
+    body: { target_user_id: targetUserId },
+  });
+}
+
+/**
+ * POST /api/duel/accept { from_user_id }
+ * Acepta el reto de from_user_id. Inicia el duelo.
+ */
+export async function duelAccept(fromUserId) {
+  return apiFetch('/api/duel/accept', {
+    method: 'POST', auth: true,
+    body: { from_user_id: fromUserId },
+  });
+}
+
+/**
+ * POST /api/duel/decline { from_user_id }
+ * Rechaza el reto.
+ */
+export async function duelDecline(fromUserId) {
+  return apiFetch('/api/duel/decline', {
+    method: 'POST', auth: true,
+    body: { from_user_id: fromUserId },
+  });
+}
+
+/**
+ * POST /api/duel/cancel
+ * Cancela tu request outgoing (si lo tienes).
+ */
+export async function duelCancel() {
+  return apiFetch('/api/duel/cancel', { method: 'POST', auth: true });
+}
+
+/**
+ * POST /api/duel/leave
+ * Inicia el cast de 5s para salir del duelo. Una vez iniciado NO se
+ * cancela y SIGUE corriendo aunque te peguen. Si mueres durante el
+ * cast → muerte normal PVP con drop completo.
+ *
+ * Respuesta: { ok: true, leave_cast_ends_at, cast_duration_ms }
+ */
+export async function duelLeave() {
+  return apiFetch('/api/duel/leave', { method: 'POST', auth: true });
 }
 
 export async function respawnUser() {
