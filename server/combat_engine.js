@@ -154,6 +154,11 @@ const PVP_DEATH_KEEP_TOP_N = 3;
 // izquierda de la frontera X (espejo del WILDERNESS_X del cliente).
 // Si AMBOS players están en x < WILDERNESS_X_BORDER, el attack se
 // permite. Si alguno está fuera, error 'not_in_wilderness'.
+//
+// Sesión 28 — Fuera de wilderness se permite PVP SOLO si los dos están
+// en un duelo activo (consensual). El check se hace contra la tabla
+// `duels` con helper getActiveDuelBetween (lectura defensiva: si la
+// tabla no existe, fallback al comportamiento S27 = bloqueo total).
 const WILDERNESS_X_BORDER = -1024;
 
 // Sesión 26 — HP regen pasiva
@@ -886,14 +891,36 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     // attack, solo ignoramos la pos sospechosa).
   }
 
-  // -------- Zona PVP (solo wilderness) --------
-  // Para wilderness usamos la pos PERSISTIDA del server, no la visual,
-  // para que un cliente comprometido no pueda atacar fuera de PVP zone.
-  if (attackerPos.x >= WILDERNESS_X_BORDER) {
-    return { error: 'not_in_wilderness', reason: 'attacker' };
-  }
-  if (targetPosServer.x >= WILDERNESS_X_BORDER) {
-    return { error: 'not_in_wilderness', reason: 'target' };
+  // -------- Zona PVP (wilderness o duelo consensual) -------- Sesión 28
+  // Reglas:
+  //   1) Si AMBOS están en wilderness → PVP libre (multi). Si attacker
+  //      tiene un duelo activo y entra al wild, el duelo se cancela
+  //      automáticamente (entrar wild rompe la "burbuja" del duelo).
+  //   2) Si alguno está FUERA wilderness → solo permitido si los dos
+  //      tienen un duelo activo entre ellos. Si no, error.
+  const attackerInWild = attackerPos.x < WILDERNESS_X_BORDER;
+  const targetInWild   = targetPosServer.x < WILDERNESS_X_BORDER;
+
+  if (attackerInWild && targetInWild) {
+    // ambos en wild → libre. Si attacker tenía duelo activo (con
+    // cualquiera, no solo target), cancelar.
+    const myDuel = await getActiveDuelForUser(db, attackerId);
+    if (myDuel) {
+      await closeDuelById(db, myDuel.id, now);
+    }
+  } else {
+    // alguno fuera wild → exigir duelo activo entre los dos.
+    const duel = await getActiveDuelBetween(db, attackerId, targetId);
+    if (!duel) {
+      // Si attacker está fuera wild → error attacker
+      // Si target está fuera wild → error target
+      if (!attackerInWild) {
+        return { error: 'not_in_wilderness_no_duel', reason: 'attacker' };
+      }
+      return { error: 'not_in_wilderness_no_duel', reason: 'target' };
+    }
+    // Hay duelo → permitir attack. (No cancelar el duelo aquí — solo
+    // se cancela al morir alguno o al entrar wild ambos.)
   }
 
   // -------- Cooldown attacker --------
@@ -1010,6 +1037,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         } catch (err) {
           console.error('[combat/pvp/attacker-death-drop]', err);
         }
+        // Sesión 28 — Si había duelo, cerrarlo.
+        try {
+          const duel = await getActiveDuelBetween(db, attackerId, targetId);
+          if (duel) await closeDuelById(db, duel.id, now);
+        } catch {}
       } else {
         attackerStats.hp_current = attackerHpAfter;
       }
@@ -1030,6 +1062,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     } catch (err) {
       console.error('[combat/pvp/target-death-drop]', err);
     }
+    // Sesión 28 — Si había duelo activo entre los dos, cerrarlo.
+    try {
+      const duel = await getActiveDuelBetween(db, attackerId, targetId);
+      if (duel) await closeDuelById(db, duel.id, now);
+    } catch {}
   }
 
   attackerStats.last_attack_at = now;
@@ -1435,6 +1472,54 @@ async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, 
   console.log(
     `[combat/pvp-death] user ${userId}: kept=${kept.length} entries, dropped=${Object.keys(dropAgg).length} types`
   );
+}
+
+// ============================================================
+// Sesión 28 — Helpers de duelo (lectura defensiva si tabla no existe)
+// ============================================================
+// Estos helpers replican los de handlers/duel.js. Los inline aquí
+// para evitar import circular (handlers → engine). Si la tabla
+// `duels` no existe (migración no corrida), los helpers devuelven
+// null y attackPlayer cae al comportamiento S27 (PVP solo wild).
+
+async function getActiveDuelBetween(db, userIdA, userIdB) {
+  const [a, b] = userIdA < userIdB ? [userIdA, userIdB] : [userIdB, userIdA];
+  try {
+    const row = await db.first(
+      `SELECT id, user_a_id, user_b_id, leave_cast_ends_at, ended_at
+       FROM duels
+       WHERE ended_at IS NULL AND user_a_id = ? AND user_b_id = ?
+       LIMIT 1`,
+      [a, b]
+    );
+    return row || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getActiveDuelForUser(db, userId) {
+  try {
+    const row = await db.first(
+      `SELECT id, user_a_id, user_b_id, leave_cast_ends_at, ended_at
+       FROM duels
+       WHERE ended_at IS NULL AND (user_a_id = ? OR user_b_id = ?)
+       LIMIT 1`,
+      [userId, userId]
+    );
+    return row || null;
+  } catch {
+    return null;
+  }
+}
+
+async function closeDuelById(db, duelId, now) {
+  try {
+    await db.run(
+      `UPDATE duels SET ended_at = ? WHERE id = ? AND ended_at IS NULL`,
+      [now, duelId]
+    );
+  } catch {}
 }
 
 // Helper PVP: inserta en el primer slot libre o preferido del inventario.
