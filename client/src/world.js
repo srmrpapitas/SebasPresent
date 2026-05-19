@@ -19,6 +19,7 @@ import { Character } from './character.js';
 import * as combat from './combat.js';
 import * as input from './input.js';
 import * as multiplayer from './multiplayer.js';
+import * as party from './party.js';                  // Sesión 27 Bloque 3 — Party
 import * as homeTele from './home_teleport.js';
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
@@ -297,6 +298,13 @@ export async function startWorld(loggedInUser, token) {
       authToken,
       apiBase: API_BASE,
     });
+
+    // Sesión 27 Bloque 3 — arrancar party. Lee el user_id propio via api.me()
+    // y empieza a hacer poll cada 4s para detectar invites + actualizar
+    // estado del grupo. No bloqueante.
+    party.start({
+      feedLog: (type, msg) => combat.feedLog?.(type, msg),
+    }).catch(e => console.warn('[party.start]', e));
 
     // Sesión 4 refactor — arrancar home_teleport (botón + cast + cooldown)
     homeTele.start({
@@ -885,14 +893,19 @@ function drawMinimap() {
     ctx.stroke();
   }
 
-  // Slice 5c.5 — Otros players como puntos azules brillantes en minimapa
+  // Otros players como puntos en el minimapa.
+  // Sesión 27 Bloque 3 — Color según relación:
+  //   - Mi party → verde brillante.
+  //   - Otros (PVP rivals / desconocidos) → azul (default).
+  const myPartyId = party.getMyPartyId();
   for (const peer of multiplayer.getPeerPositions()) {
     const dx = peer.x - px, dz = peer.z - pz;
     if (dx * dx + dz * dz > NPC_RAD_SQ) continue;
     const sx = cx + dx * scale, sy = cy + dz * scale;
     ctx.beginPath();
     ctx.arc(sx, sy, 3, 0, Math.PI * 2);
-    ctx.fillStyle = '#4090ff';
+    const sameParty = myPartyId != null && peer.party_id === myPartyId;
+    ctx.fillStyle = sameParty ? '#4adc4a' : '#4090ff';
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.lineWidth = 1;
@@ -1145,6 +1158,68 @@ function setupHud() {
       toggleRunMode();
     });
   }
+
+  // Sesión 27 Bloque 3 — Botón flotante "Grupo" (HUD lateral).
+  // Posición: arriba-izquierda, debajo del minimap.
+  // Click → abre modal de party. El contador (1/4) se actualiza cada vez
+  // que cambia el snapshot global.
+  setupPartyButton();
+}
+
+function setupPartyButton() {
+  if (document.getElementById('partyHudBtn')) return;
+  const btn = document.createElement('div');
+  btn.id = 'partyHudBtn';
+  btn.style.cssText = `
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 160px);
+    right: 8px;
+    z-index: 22;
+    background: rgba(20, 14, 8, 0.85);
+    border: 1.5px solid #c8a043;
+    border-radius: 4px;
+    color: #f0e0b0;
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 9px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    text-shadow: 1px 1px 0 #000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  `;
+  btn.innerHTML = `<span>👥</span><span id="partyHudCount">Grupo</span>`;
+  document.body.appendChild(btn);
+  btn.addEventListener('pointerup', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault();
+    party.openModal?.();
+  });
+  // Refresh contador cada segundo
+  setInterval(() => {
+    const countEl = document.getElementById('partyHudCount');
+    if (!countEl) return;
+    const state = party.getState?.();
+    const p = state?.party;
+    if (p && p.members) {
+      countEl.textContent = `${p.members.length}/${p.max_size}`;
+      btn.style.borderColor = '#4abc4a';
+    } else {
+      countEl.textContent = 'Grupo';
+      btn.style.borderColor = '#c8a043';
+    }
+    // Indicador rojo si hay invites pendientes
+    const inv = state?.invites_in || [];
+    if (inv.length > 0) {
+      btn.style.boxShadow = '0 0 12px rgba(255,80,80,0.7), 0 2px 4px rgba(0,0,0,0.6)';
+    } else {
+      btn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.6)';
+    }
+  }, 1000);
 }
 
 function toggleRunMode() {

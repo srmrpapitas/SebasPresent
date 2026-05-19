@@ -450,6 +450,11 @@ async function doAttackTickPlayer() {
       disengage();
       return;
     }
+    if (result.error === 'same_party') {
+      feedLog('warning', 'No puedes atacar a un miembro de tu grupo.');
+      disengage();
+      return;
+    }
     if (result.error === 'target_dead' || result.error === 'target_not_found') {
       disengage();
       await refresh();

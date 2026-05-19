@@ -43,6 +43,7 @@
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as worldSnapshot from './world_snapshot.js';
+import * as party from './party.js';   // Sesión 27 Bloque 3 — colorear según party
 
 // ============================================================
 // Constantes
@@ -216,16 +217,22 @@ export function update(dt) {
 
 /**
  * Devuelve las posiciones de todos los peers visibles. Lo usa el minimap
- * de world.js para pintar puntos azules. Iterable de {x, z, username}.
+ * de world.js para pintar puntos. Iterable de
+ * { x, z, username, user_id, party_id }.
+ *
+ * Sesión 27 Bloque 3 — añadido user_id + party_id para que world.js
+ * pueda colorear según relación (mi party = verde, otros = azul).
  */
 export function getPeerPositions() {
   const result = [];
-  for (const peer of mpLastPeerMap.values()) {
+  for (const [userId, peer] of mpLastPeerMap) {
     if (!peer.group) continue;
     result.push({
       x: peer.group.position.x,
       z: peer.group.position.z,
       username: peer.username,
+      user_id: userId,
+      party_id: peer.partyId || null,
     });
   }
   return result;
@@ -255,7 +262,7 @@ export function getPeerVisualPosition(userId) {
 
 /**
  * Itera todos los peers para tap-detection. Devuelve array de:
- *   { user_id, username, x, z, group, hp_current, hp_max, combat_lvl }
+ *   { user_id, username, x, z, group, hp_current, hp_max, combat_lvl, party_id }
  * usando la pos VISUAL (interpolada).
  */
 export function getPeersForTap() {
@@ -271,6 +278,7 @@ export function getPeersForTap() {
       hp_current: peer.hp,
       hp_max:     peer.hpMax,
       combat_lvl: peer.combatLvl || 1,
+      party_id:   peer.partyId || null,
     });
   }
   return out;
@@ -340,12 +348,20 @@ export function openActionMenuAt(cx, cy) {
 
   const peerData = mpLastPeerMap.get(peer.user_id);
   const lvl = peerData?.combatLvl || 1;
+  const myPartyId = party.getMyPartyId?.();
+  const peerIsInMyParty = myPartyId != null && peerData?.partyId === myPartyId;
+  // Mostrar "Invitar a grupo" solo si:
+  //   - El peer no está ya en mi party.
+  //   - Yo no tengo party llena (no podemos saberlo aquí client-side
+  //     sin pedir party.state; mostramos siempre y el server rechaza).
+  const showInvite = !peerIsInMyParty;
 
   const menu = document.createElement('div');
   menu.className = 'pvp-action-menu';
   menu.innerHTML = `
     <div class="pvp-action-menu-header">${escapeHtmlSafe(peer.username || 'Jugador')} <span class="pvp-action-lvl">(lvl ${lvl})</span></div>
     <div class="pvp-action-row danger" data-act="attack">⚔ Atacar</div>
+    ${showInvite ? `<div class="pvp-action-row" data-act="invite">👥 Invitar a grupo</div>` : ''}
     <div class="pvp-action-row" data-act="examine">🔍 Examinar</div>
     <div class="pvp-action-row" data-act="cancel">✕ Cancelar</div>
   `;
@@ -367,6 +383,7 @@ export function openActionMenuAt(cx, cy) {
       closeActionMenu();
       if (act === 'attack')        triggerPeerTap(peer.user_id);
       else if (act === 'examine')  examinePeer(peer);
+      else if (act === 'invite')   party.inviteUser?.(peer.user_id, peer.username);
     });
   });
 
@@ -723,6 +740,8 @@ function upsertPeer(p) {
   if (typeof p.strength_lvl === 'number') peer.strengthLvl = p.strength_lvl;
   if (typeof p.defence_lvl === 'number') peer.defenceLvl = p.defence_lvl;
   if (typeof p.in_combat === 'boolean') peer.inCombat = p.in_combat;
+  // Sesión 27 Bloque 3 — party_id del peer (null si no en party)
+  peer.partyId = p.party_id != null ? p.party_id : null;
 }
 
 function createPeer(p) {
@@ -924,6 +943,29 @@ function updatePeerNameTag(peer) {
     const next = String(peer.combatLvl);
     if (current !== next) peer.nameplate.lvlNum.textContent = next;
   }
+
+  // Sesión 27 Bloque 3 — Color del nameplate según party.
+  // Mi party → nombre verde, borde verde.
+  // Otros (incluyendo PVP rivals) → dorado por defecto.
+  const myPartyId = party.getMyPartyId?.();
+  const sameParty = myPartyId != null && peer.partyId === myPartyId;
+  const labelEl = peer.nameplate.root.querySelector('.osrs-nameplate-label');
+  const nameEl  = peer.nameplate.name;
+  if (sameParty) {
+    if (labelEl && !labelEl.classList.contains('is-party')) {
+      labelEl.classList.add('is-party');
+    }
+    if (nameEl && !nameEl.classList.contains('is-party')) {
+      nameEl.classList.add('is-party');
+    }
+  } else {
+    if (labelEl && labelEl.classList.contains('is-party')) {
+      labelEl.classList.remove('is-party');
+    }
+    if (nameEl && nameEl.classList.contains('is-party')) {
+      nameEl.classList.remove('is-party');
+    }
+  }
 }
 
 // ============================================================
@@ -979,6 +1021,12 @@ function ensurePeerHpBarStyles() {
     }
     .osrs-nameplate-name {
       color: #ffe080;
+    }
+    .osrs-nameplate-label.is-party {
+      border-color: #4abc4a;
+    }
+    .osrs-nameplate-name.is-party {
+      color: #b0f0a0;
     }
     .osrs-nameplate-lvl {
       color: rgba(232, 197, 96, 0.75);

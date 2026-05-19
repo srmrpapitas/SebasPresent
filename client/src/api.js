@@ -239,6 +239,45 @@ export async function attackPlayer(targetUserId, pos, targetPos) {
   });
 }
 
+// ============================================================
+// Sesión 27 Bloque 3 — Party / Equipo
+// ============================================================
+export async function partyState() {
+  return apiFetch('/api/party/state', { auth: true });
+}
+
+export async function partyInvite(targetUserId) {
+  return apiFetch('/api/party/invite', {
+    method: 'POST', auth: true,
+    body: { target_user_id: targetUserId },
+  });
+}
+
+export async function partyAccept(fromUserId) {
+  return apiFetch('/api/party/accept', {
+    method: 'POST', auth: true,
+    body: { from_user_id: fromUserId },
+  });
+}
+
+export async function partyDecline(fromUserId) {
+  return apiFetch('/api/party/decline', {
+    method: 'POST', auth: true,
+    body: { from_user_id: fromUserId },
+  });
+}
+
+export async function partyLeave() {
+  return apiFetch('/api/party/leave', { method: 'POST', auth: true });
+}
+
+export async function partyKick(targetUserId) {
+  return apiFetch('/api/party/kick', {
+    method: 'POST', auth: true,
+    body: { target_user_id: targetUserId },
+  });
+}
+
 export async function respawnUser() {
   return apiFetch('/api/combat/respawn', {
     method: 'POST',
