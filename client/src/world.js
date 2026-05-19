@@ -21,6 +21,7 @@ import * as input from './input.js';
 import * as multiplayer from './multiplayer.js';
 import * as party from './party.js';                  // Sesión 27 Bloque 3 — Party
 import * as duel from './duel.js';                    // Sesión 28 — Duelos PVP no-wild
+import * as chat from './chat.js';                    // Sesión 29 — Chat global
 import * as homeTele from './home_teleport.js';
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
@@ -315,6 +316,17 @@ export async function startWorld(loggedInUser, token) {
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
     }).catch(e => console.warn('[duel.start]', e));
 
+    // Sesión 29 — arrancar chat global. Polling cada 2.5s a /api/chat/recent.
+    // El overhead text sobre la cabeza usa getCamera + getCanvas para
+    // proyectar pos 3D → pos 2D pantalla cada frame (igual patrón que
+    // multiplayer.updatePeerNameTag). chat.update(dt) se llama desde animate().
+    chat.start({
+      getPlayer:    () => player,
+      getCamera:    () => camera,
+      getCanvas:    () => canvas,
+      feedLog:      (type, msg) => combat.feedLog?.(type, msg),
+    }).catch(e => console.warn('[chat.start]', e));
+
     // Sesión 4 refactor — arrancar home_teleport (botón + cast + cooldown)
     homeTele.start({
       getPlayer:    () => player,
@@ -535,6 +547,9 @@ export function stopWorld() {
 
   // Sesión 27 Bloque 1 — world_snapshot cleanup
   try { worldSnapshot.stop(); } catch {}
+
+  // Sesión 29 — chat cleanup (quita root DOM + bubbles + polling)
+  try { chat.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
   multiplayer.stop();
@@ -2315,6 +2330,7 @@ function animate() {
   npcRenderer.update(dt);
   multiplayer.update(dt);
   worldSnapshot.update(dt);   // Sesión 27 Bloque 1
+  chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
   drawMinimap();

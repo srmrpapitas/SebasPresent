@@ -10,6 +10,9 @@
  *
  * Sesión 28 — añadidas funciones duel*: state, challenge, accept, decline,
  * cancel, leave. Sistema de duelos PVP fuera del wilderness.
+ *
+ * Sesión 29 — añadidas funciones chatSend, chatRecent. Sistema de chat global
+ * con polling 2.5s + overhead text 7s sobre la cabeza del jugador.
  */
 // In dev (running `wrangler dev`), the Worker listens on http://localhost:8787.
 // In production, replace with your deployed Worker URL.
@@ -381,4 +384,48 @@ export async function setCombatStyle(style) {
     auth: true,
     body: { style },
   });
+}
+
+// ============================================================
+// Sesión 29 — Chat global con polling
+// ============================================================
+
+/**
+ * POST /api/chat/send { message, channel? = 'global' }
+ *
+ * Devuelve { ok: true, id, username, channel, message, sent_at }.
+ *
+ * Errores comunes a manejar en UI (err.code):
+ *   - rate_limited        (429) → "Demasiado rápido (5/10s)"
+ *   - message_too_long    (400) → "Máx 200 chars"
+ *   - empty_message       (400) → ignorar / mensaje vacío
+ *   - invalid_message     (400) → tipo incorrecto
+ *   - invalid_channel     (400) → channel desconocido
+ *   - chat_disabled       (503) → tabla no existe, esconder UI
+ */
+export async function chatSend(message, channel = 'global') {
+  return apiFetch('/api/chat/send', {
+    method: 'POST',
+    auth: true,
+    body: { message, channel },
+  });
+}
+
+/**
+ * GET /api/chat/recent?since=<ts>&channel=global
+ *
+ * Sin `since` → últimos 30 mensajes (orden ASC, listos para append).
+ * Con `since` → solo mensajes con sent_at > since (orden ASC, cap 50).
+ *
+ * Devuelve { messages: [{id, user_id, username, message, sent_at}], server_now }.
+ * Si la tabla no existe en D1, devuelve { messages: [], server_now, chat_disabled: true }.
+ */
+export async function chatRecent(since, channel = 'global') {
+  const params = new URLSearchParams();
+  if (since != null && Number.isFinite(since) && since > 0) {
+    params.set('since', String(since));
+  }
+  if (channel) params.set('channel', channel);
+  const qs = params.toString();
+  return apiFetch(`/api/chat/recent${qs ? '?' + qs : ''}`, { auth: true });
 }
