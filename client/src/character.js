@@ -603,6 +603,13 @@ export class Character {
         mode = 'horizontal';
       }
       stripHipsPositionTrack(clip, mode);
+      // Sesión 30 — Anti-hundido ULTRA: para gathering anims, neutralizar
+      // TODOS los tracks de position de TODOS los bones (no solo Hips).
+      // Algunos rigs tienen el root motion en bone Pelvis/Armature/Root en
+      // lugar de Hips. Esto lo cubre todo de un saque.
+      if (name === 'woodcut' || name === 'kneel') {
+        stripAllRootPositionTracks(clip);
+      }
     }
     this.clips[name] = clip;
     const action = this.mixer.clipAction(clip);
@@ -857,22 +864,12 @@ export class Character {
     }
 
     const clipMs = action.getClip().duration * 1000;
-    // Si no pasaron duración, usamos la natural. Si la pasaron pero el
-    // clip dura MENOS, también usamos la natural (no queremos ralentizar).
     const useNatural = !durationMs || durationMs <= 0 || clipMs <= durationMs;
     const dur = useNatural ? clipMs : durationMs;
 
     // Suspender combat stance: que entre swings no vea "sword_idle".
     const wasCombatStance = this.combatStance;
     this.combatStance = false;
-
-    // Sesión 30 — anti-hundido: usamos compensación RELATIVA.
-    // Recordamos cuánto sumamos para restarlo limpio al terminar.
-    // No tocamos absolute group.position.y porque world.js lo está
-    // moviendo simultáneamente (movement del player).
-    this._gatheringActive = true;
-    this._gatherBaseHipsY = null;
-    this._gatherCompensationY = 0;
 
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
@@ -882,8 +879,8 @@ export class Character {
     this._crossFadeTo(action, 0.12);
     this.isInTransition = true;
 
-    // Justo antes de terminar (100ms), bajar weight para que el char salga
-    // del último frame hacia idle (sin esto, queda "planted" en pose final).
+    // Antes de terminar, bajar clampWhenFinished para no quedarse en
+    // último frame al hacer la transición.
     const exitMs = Math.max(60, dur - 100);
     setTimeout(() => {
       try {
@@ -894,18 +891,7 @@ export class Character {
     setTimeout(() => {
       this.isInTransition = false;
       this.current = null;
-      // Restaurar combat stance original
       this.combatStance = wasCombatStance;
-      // Sesión 30 — restaurar Y RESTANDO la compensación que sumamos.
-      // No "absolute set" porque world.js puede haber movido el group
-      // por su cuenta durante la anim. Solo deshacemos lo NUESTRO.
-      this._gatheringActive = false;
-      if (this.group && this._gatherCompensationY) {
-        this.group.position.y -= this._gatherCompensationY;
-      }
-      this._gatherCompensationY = 0;
-      this._gatherBaseHipsY = null;
-      // Forzar transición a idle/sword_idle limpio
       try { this.play('idle'); } catch {}
     }, dur + 20);
 
@@ -943,42 +929,6 @@ export class Character {
 
   update(dt) {
     if (this.mixer) this.mixer.update(dt);
-    // Sesión 30 — anti-hundido durante gathering.
-    // ESTRATEGIA: offset RELATIVO sobre group.position.y.
-    //   1) Primer frame: capturamos base Y del Hips en world.
-    //   2) Cada frame siguiente: medimos drop = baseY - currentY.
-    //   3) Si drop > prev_compensation: subimos group por la diferencia.
-    //      Si drop < prev_compensation: bajamos group por la diferencia.
-    //   4) Recordamos cuánto compensamos TOTAL (this._gatherCompensationY)
-    //      para poder restarlo limpio al terminar.
-    // Así NO tocamos absoluto el group.position.y — solo sumamos/restamos
-    // delta. World.js puede mover el group por su cuenta y no rompemos nada.
-    if (this._gatheringActive && this._hipsBone && this.group) {
-      if (!this._tmpVec) this._tmpVec = new THREE.Vector3();
-
-      if (this._gatherBaseHipsY == null) {
-        // Primer frame: capturar Y de referencia del Hips world-space.
-        this._hipsBone.getWorldPosition(this._tmpVec);
-        this._gatherBaseHipsY = this._tmpVec.y;
-        // compensación arranca en 0; no movemos nada todavía.
-      } else {
-        // Cuánto bajó el Hips desde el inicio?
-        this._hipsBone.getWorldPosition(this._tmpVec);
-        // Pero ojo: el Hips world-Y ya incluye nuestra compensación previa.
-        // Para medir el drop REAL del bone, restamos nuestra compensación.
-        const adjustedHipsY = this._tmpVec.y - this._gatherCompensationY;
-        const drop = this._gatherBaseHipsY - adjustedHipsY;
-
-        // Diferencia que falta compensar (puede ser positiva o negativa)
-        let targetComp = drop > 0 ? drop : 0;
-        const delta = targetComp - this._gatherCompensationY;
-
-        if (Math.abs(delta) > 0.005) {
-          this.group.position.y += delta;
-          this._gatherCompensationY = targetComp;
-        }
-      }
-    }
   }
 
   dispose() {
@@ -1076,8 +1026,7 @@ function generateBoneCandidates(name) {
   return out;
 }
 
-function stripHipsPositionTrack(clip, mode = 'horizontal') {
-  let count = 0;
+function stripHipsPositionTrack(clip, mode = 'horizontal') {  let count = 0;
   for (const t of clip.tracks) {
     const dotIdx = t.name.lastIndexOf('.');
     if (dotIdx < 0) continue;
@@ -1109,6 +1058,42 @@ function stripHipsPositionTrack(clip, mode = 'horizontal') {
   }
   if (count > 0) {
     console.log(`[character] clip "${clip.name}": neutralized Hips.position (mode=${mode})`);
+  }
+}
+
+// ============================================================
+// Sesión 30 — Anti-hundido ULTRA
+// ============================================================
+// Para gathering anims (woodcut/kneel), neutralizamos TODOS los tracks
+// de position de TODOS los bones. Esto garantiza que ningún bone (Hips,
+// Pelvis, Spine, Armature, Root, etc.) genere root motion vertical ni
+// horizontal. La anim queda 100% in-place — solo rotaciones de huesos.
+//
+// El char queda EXACTAMENTE en su pos actual sin deriva.
+function stripAllRootPositionTracks(clip) {
+  let count = 0;
+  const boneNamesAffected = [];
+  for (const t of clip.tracks) {
+    const dotIdx = t.name.lastIndexOf('.');
+    if (dotIdx < 0) continue;
+    const property = t.name.slice(dotIdx + 1);
+    if (property !== 'position') continue;
+    // Capturar valores iniciales (frame 0) y replicarlos en TODOS los frames.
+    const v = t.values;
+    const nFrames = v.length / 3;
+    const x0 = v[0];
+    const y0 = v[1];
+    const z0 = v[2];
+    for (let i = 0; i < nFrames; i++) {
+      v[i * 3 + 0] = x0;
+      v[i * 3 + 1] = y0;
+      v[i * 3 + 2] = z0;
+    }
+    boneNamesAffected.push(t.name.slice(0, dotIdx));
+    count++;
+  }
+  if (count > 0) {
+    console.log(`[character] clip "${clip.name}": stripped ALL position tracks (${count}) bones=`, boneNamesAffected);
   }
 }
 
