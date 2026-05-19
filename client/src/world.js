@@ -2205,10 +2205,13 @@ function setupInput() {
       joyState.y = s.y;
     },
 
-    // Teclado (debug en PC) → Q/E giran cámara
+    // Teclado: input.js gestiona WASD (movimiento) y flechas (cámara)
+    // internamente, emitiendo a los callbacks de joystick y cameraDrag.
+    // Esto deja onKey solo para teclas globales futuras (hotkeys de UI,
+    // chat, etc.). Q/E retirados en Sesión 29 — se sustituyeron por
+    // flechas izq/der.
     onKey: (key) => {
-      if (key === 'q' || key === 'Q') cameraYaw += 0.15;
-      if (key === 'e' || key === 'E') cameraYaw -= 0.15;
+      // (vacío por ahora — espacio para hotkeys futuras)
     },
   });
 

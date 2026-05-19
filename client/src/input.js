@@ -179,11 +179,16 @@ export function setup(opts) {
   }
 
   function onPointerDown(e) {
-    if (e.button !== undefined && e.button !== 0) return;
+    // Sesión 29 OSRS-PC: aceptar botón izquierdo (0) Y derecho (2). El
+    // izquierdo es para tap/walk-to/atacar; el derecho mantenido es
+    // para rotar cámara (drag) y soltado sin drag es action menu.
+    if (e.button !== undefined && e.button !== 0 && e.button !== 2) return;
     // Filtro mejorado: aceptar pointerdown sobre el canvas O sobre cualquier
-    // elemento que NO sea UI conocida. Antes filtraba con `e.target !== canvas`,
-    // lo cual rompía el drag si algún overlay transparente cubría el canvas.
+    // elemento que NO sea UI conocida.
     if (e.target !== canvas && isUiElement(e.target)) return;
+
+    const isMouse = e.pointerType === 'mouse';
+    const isRight = isMouse && e.button === 2;
 
     pointer = {
       x0: e.clientX, y0: e.clientY,
@@ -192,16 +197,22 @@ export function setup(opts) {
       pointerId: e.pointerId,
       longPressFired: false,
       longPressTimer: null,
+      isMouse,
+      isRight,
     };
 
-    // Notifica al consumidor (típicamente para cerrar menús abiertos)
+    // Notifica al consumidor (cerrar menús abiertos, etc.)
     onTouchStart(e.clientX, e.clientY);
 
-    pointer.longPressTimer = setTimeout(() => {
-      if (!pointer || pointer.isDrag) return;
-      pointer.longPressFired = true;
-      onLongPress(pointer.lastX, pointer.lastY);
-    }, LONG_PRESS_MS);
+    // Long-press solo en touch/pen (móvil/iPad) y solo con botón izquierdo.
+    // En PC con ratón el equivalente es click derecho (gestionado en pointerup).
+    if (!isMouse && !isRight) {
+      pointer.longPressTimer = setTimeout(() => {
+        if (!pointer || pointer.isDrag) return;
+        pointer.longPressFired = true;
+        onLongPress(pointer.lastX, pointer.lastY);
+      }, LONG_PRESS_MS);
+    }
   }
 
   function onPointerMove(e) {
@@ -220,7 +231,14 @@ export function setup(opts) {
 
     const dx = e.clientX - pointer.lastX;
     const dy = e.clientY - pointer.lastY;
-    onCameraDrag(dx * CAMERA_DRAG_YAW_SENS, dy * CAMERA_DRAG_PITCH_SENS);
+
+    // Sesión 29 OSRS-PC: en PC con ratón, SOLO el click derecho mantenido
+    // mueve la cámara. El drag con click izquierdo no hace nada (evita el
+    // bug "quería atacar pero moví el ratón sin querer y rotó la cámara").
+    // En móvil/touch, cualquier drag con dedo rota la cámara igual que antes.
+    if (!pointer.isMouse || pointer.isRight) {
+      onCameraDrag(dx * CAMERA_DRAG_YAW_SENS, dy * CAMERA_DRAG_PITCH_SENS);
+    }
 
     pointer.lastX = e.clientX;
     pointer.lastY = e.clientY;
@@ -237,13 +255,23 @@ export function setup(opts) {
     }
     const wasDrag = pointer.isDrag;
     const longPressFired = pointer.longPressFired;
+    const wasRight = pointer.isRight;
+    const wasMouse = pointer.isMouse;
     const clientX = e.clientX;
     const clientY = e.clientY;
     pointer = null;
 
     if (wasDrag) return;
     if (longPressFired) return;
-    onTap(clientX, clientY);
+
+    // Sesión 29 OSRS-PC:
+    // - Click derecho sin drag (PC) → action menu (Examinar/Atacar/etc).
+    // - Click izquierdo sin drag (cualquier dispositivo) → tap (walk/atacar).
+    if (wasMouse && wasRight) {
+      onLongPress(clientX, clientY);
+    } else {
+      onTap(clientX, clientY);
+    }
   }
 
   // CRÍTICO: capture:true. Si en el proyecto hay overlays absolutos que
@@ -255,7 +283,25 @@ export function setup(opts) {
   on(window, 'pointermove',  onPointerMove,   { capture: true });
   on(window, 'pointerup',    onPointerUp,     { capture: true });
   on(window, 'pointercancel', onPointerUp,    { capture: true });
-  on(canvas, 'contextmenu',  e => e.preventDefault());
+
+  // Sesión 29 — Bloquear menú contextual del navegador. La lógica del
+  // action menu va por pointerup (button=2 sin drag), aquí solo
+  // suprimimos el menú nativo del browser.
+  on(canvas, 'contextmenu', (e) => {
+    e.preventDefault();
+  });
+
+  // Sesión 29 — Scroll wheel → zoom de cámara. Usa el callback
+  // onCameraZoom ya existente (que en móvil se dispara con pinch).
+  // deltaY positivo (scroll abajo / rueda hacia ti) = zoom out.
+  on(canvas, 'wheel', (e) => {
+    if (isUiElement(e.target)) return;
+    e.preventDefault();
+    // Normalizar: deltaMode 0 = pixel, 1 = line, 2 = page. La mayoría de
+    // ratones son pixel. line mode da deltaY ~3-5 por click.
+    const unit = e.deltaMode === 0 ? 0.02 : 1;
+    onCameraZoom(e.deltaY * unit);
+  }, { passive: false });
 
   // ============================================================
   // Joystick (movimiento del player)
@@ -383,10 +429,167 @@ export function setup(opts) {
   // ============================================================
   // Teclado
   // ============================================================
+  // Sesión 29 — WASD para movimiento, flechas para rotación de cámara.
+  //
+  // Movimiento (reutiliza canal de joystick virtual):
+  //   W = adelante (y: -1)
+  //   S = atrás    (y: +1)
+  //   A = izq      (x: -1)
+  //   D = der      (x: +1)
+  //
+  // Cámara (rotación continua mientras se mantienen pulsadas):
+  //   ← (ArrowLeft)  → yaw -  (gira cámara a la izquierda)
+  //   → (ArrowRight) → yaw +
+  //   ↑ (ArrowUp)    → pitch - (mira hacia arriba)
+  //   ↓ (ArrowDown)  → pitch +
+  //
+  // Velocidad de rotación con teclado: ARROW_YAW_RATE rad/s.
+  //
+  // Si hay un campo de texto enfocado (chat input), las teclas pasan al
+  // input y NO mueven al player ni rotan cámara.
+  const wasdState   = { w: false, a: false, s: false, d: false };
+  const arrowState  = { left: false, right: false, up: false, down: false };
+  let wasdActive    = false;
+  let arrowRafId    = null;
+  let arrowLastTs   = 0;
+
+  // rad/s mientras mantienes una flecha. ~90° por segundo a 1.57 rad/s.
+  const ARROW_YAW_RATE   = 1.6;
+  const ARROW_PITCH_RATE = 1.0;
+
+  function isTextInputFocused() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
+  function emitWasdAsJoystick() {
+    let x = 0, y = 0;
+    if (wasdState.d) x += 1;
+    if (wasdState.a) x -= 1;
+    if (wasdState.s) y += 1;
+    if (wasdState.w) y -= 1;
+    const anyHeld = wasdState.w || wasdState.a || wasdState.s || wasdState.d;
+    if (anyHeld) {
+      wasdActive = true;
+      onJoystickMove({ active: true, x, y });
+    } else if (wasdActive) {
+      wasdActive = false;
+      onJoystickMove({ active: false, x: 0, y: 0 });
+    }
+  }
+
+  function arrowAnyHeld() {
+    return arrowState.left || arrowState.right || arrowState.up || arrowState.down;
+  }
+
+  function arrowTick(ts) {
+    if (!arrowAnyHeld()) {
+      arrowRafId = null;
+      arrowLastTs = 0;
+      return;
+    }
+    const dt = arrowLastTs ? Math.min(0.1, (ts - arrowLastTs) / 1000) : 0.016;
+    arrowLastTs = ts;
+    let dyaw = 0, dpitch = 0;
+    if (arrowState.left)  dyaw   -= ARROW_YAW_RATE   * dt;
+    if (arrowState.right) dyaw   += ARROW_YAW_RATE   * dt;
+    if (arrowState.up)    dpitch -= ARROW_PITCH_RATE * dt;
+    if (arrowState.down)  dpitch += ARROW_PITCH_RATE * dt;
+    // Mismo signo / convención que onCameraDrag → world hace cameraYaw -= dyaw,
+    // por lo que mantenemos el sentido: dyaw positivo = girar a la derecha.
+    // En camera.drag, dx (mouse mov derecha) → onCameraDrag(positive yaw),
+    // y world hace cameraYaw -= dyaw → girar A la IZQUIERDA. Para que las
+    // flechas coincidan con el comportamiento esperado (← gira a la izq):
+    onCameraDrag(-dyaw, dpitch);
+    arrowRafId = requestAnimationFrame(arrowTick);
+  }
+
+  function startArrowLoopIfNeeded() {
+    if (arrowRafId == null && arrowAnyHeld()) {
+      arrowLastTs = 0;
+      arrowRafId = requestAnimationFrame(arrowTick);
+    }
+  }
+
   function onKeyDown(e) {
+    // No interceptar si el usuario está escribiendo en un input.
+    if (isTextInputFocused()) {
+      onKey(e.key);
+      return;
+    }
+    // WASD = movimiento
+    let handled = false;
+    switch (e.key) {
+      case 'w': case 'W': wasdState.w = true; handled = true; break;
+      case 's': case 'S': wasdState.s = true; handled = true; break;
+      case 'a': case 'A': wasdState.a = true; handled = true; break;
+      case 'd': case 'D': wasdState.d = true; handled = true; break;
+    }
+    if (handled) {
+      e.preventDefault();
+      emitWasdAsJoystick();
+      return;
+    }
+    // Flechas = cámara
+    switch (e.key) {
+      case 'ArrowLeft':  arrowState.left  = true; handled = true; break;
+      case 'ArrowRight': arrowState.right = true; handled = true; break;
+      case 'ArrowUp':    arrowState.up    = true; handled = true; break;
+      case 'ArrowDown':  arrowState.down  = true; handled = true; break;
+    }
+    if (handled) {
+      e.preventDefault();
+      startArrowLoopIfNeeded();
+      return;
+    }
     onKey(e.key);
   }
+
+  function onKeyUp(e) {
+    if (isTextInputFocused()) return;
+    let wasd = false, arrow = false;
+    switch (e.key) {
+      case 'w': case 'W': wasdState.w = false; wasd = true; break;
+      case 's': case 'S': wasdState.s = false; wasd = true; break;
+      case 'a': case 'A': wasdState.a = false; wasd = true; break;
+      case 'd': case 'D': wasdState.d = false; wasd = true; break;
+      case 'ArrowLeft':  arrowState.left  = false; arrow = true; break;
+      case 'ArrowRight': arrowState.right = false; arrow = true; break;
+      case 'ArrowUp':    arrowState.up    = false; arrow = true; break;
+      case 'ArrowDown':  arrowState.down  = false; arrow = true; break;
+    }
+    if (wasd) {
+      e.preventDefault();
+      emitWasdAsJoystick();
+    }
+    if (arrow) {
+      e.preventDefault();
+      // arrowTick autodetecta cuando ya no hay flechas activas y se para
+      // a sí mismo. No hace falta cancelAnimationFrame manualmente.
+    }
+  }
+
   on(window, 'keydown', onKeyDown);
+  on(window, 'keyup',   onKeyUp);
+
+  // Si la ventana pierde focus con teclas pulsadas, el keyup nunca llega.
+  // Limpiar estado para no quedarse "moviendo solo" o "rotando solo".
+  on(window, 'blur', () => {
+    let any = false;
+    if (wasdState.w || wasdState.a || wasdState.s || wasdState.d) any = true;
+    wasdState.w = wasdState.a = wasdState.s = wasdState.d = false;
+    if (arrowState.left || arrowState.right || arrowState.up || arrowState.down) any = true;
+    arrowState.left = arrowState.right = arrowState.up = arrowState.down = false;
+    if (any) emitWasdAsJoystick();
+    if (arrowRafId != null) {
+      cancelAnimationFrame(arrowRafId);
+      arrowRafId = null;
+    }
+  });
 
   // ============================================================
   // Dispose
@@ -394,6 +597,10 @@ export function setup(opts) {
   return function dispose() {
     if (pointer?.longPressTimer) clearTimeout(pointer.longPressTimer);
     pointer = null;
+    if (arrowRafId != null) {
+      cancelAnimationFrame(arrowRafId);
+      arrowRafId = null;
+    }
     for (const { target, type, fn, options } of listeners) {
       try { target.removeEventListener(type, fn, options); } catch {}
     }
