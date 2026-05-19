@@ -2426,21 +2426,14 @@ function animate() {
       const baseY = (typeof window !== 'undefined' && typeof window.__sebasOffsetY === 'number')
         ? window.__sebasOffsetY
         : -1.03;
-      // Sesión 30 — durante gathering (woodcut/kneel), el clip puede haber
-      // tenido root motion vertical (que ya strippeamos en character.js)
-      // PERO la "altura natural" del rig durante esas poses es DISTINTA
-      // a la pose Idle. La calibración `-1.03` funciona para Idle pero
-      // hunde al char en otras anims.
-      //
-      // Solución pragmática: durante gathering, Y=0 (configurable por
-      // anim desde Eruda: window.__gatherY = { woodcut: 0, kneel: 0 }).
-      // Si el char se ve flotando o hundido durante una de estas anims,
-      // calibrar con __gatherY.<animName> = X (probar -0.5 a 0.5).
+      // Sesión 30 — Solo aplicamos offset especial para 'kneel' (fuego).
+      // Para 'punching' (tala), no tocamos Y porque es una anim que no
+      // baja el centro del char — usa el mismo -1.03 que idle/walk.
+      // Configurable: window.__gatherY = { kneel: -0.5, punching: -1.03 }
       let y = baseY;
-      if (character?._gatheringActive && character._gatherAnimName) {
+      if (character?._gatheringActive && character._gatherAnimName === 'kneel') {
         const overrides = (typeof window !== 'undefined' && window.__gatherY) || {};
-        const animName = character._gatherAnimName;
-        y = overrides[animName] != null ? overrides[animName] : 0;
+        y = overrides.kneel != null ? overrides.kneel : 0;
       }
       player.position.y = y;
     }

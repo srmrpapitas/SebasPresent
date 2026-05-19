@@ -228,12 +228,13 @@ export function update(dt) {
   if (sinceLast >= activeChop.tickMs && !activeChop.waitingResponse) {
     activeChop.lastChopAt = now;
     activeChop.waitingResponse = true;
-    // Animar el char con la duración NATURAL de la anim Woodcut.
-    // playGather devuelve la duración real (ms) — la usamos como tick
-    // para que la próxima anim arranque justo cuando ésta termina.
+    // Sesión 30 — Usamos 'punching' en lugar de 'woodcut' porque el FBX
+    // de Woodcut.fbx no tiene tracks compatibles con el rig del char y
+    // queda en T-pose mezclada. Punching es un puñetazo lateral que se
+    // ve bien como hachazo cuando tenés el axe en la mano.
     const character = getCharacter?.();
     if (character && character.playGather) {
-      const dur = character.playGather('woodcut', 0);  // 0 = usar natural
+      const dur = character.playGather('punching', 0);  // 0 = usar natural
       if (dur > 0) {
         activeChop.tickMs = Math.max(MIN_CHOP_TICK_MS, dur);
       }
