@@ -2415,10 +2415,34 @@ function animate() {
     // Y del player: -1.03 tras recalibración (era -1.10, el personaje
     // quedaba un pelín hundido). El override window.__sebasOffsetY sigue
     // disponible para futuras pruebas.
+    //
+    // Sesión 30 — durante gathering (woodcut/kneel), las anims tienen
+    // los huesos en otra altura relativa a los pies del modelo. Aplicamos
+    // un offset ADICIONAL por anim para que el char quede al ras del suelo.
+    // Cada anim tiene su offset independiente (woodcut baja menos que kneel).
+    // Configurables desde Eruda en runtime:
+    //   window.__gatherOffsets = { woodcut: 0.0, kneel: 0.85 };
     if (player && !characterFallback) {
-      player.position.y = (typeof window !== 'undefined' && typeof window.__sebasOffsetY === 'number')
+      const baseY = (typeof window !== 'undefined' && typeof window.__sebasOffsetY === 'number')
         ? window.__sebasOffsetY
         : -1.03;
+      // Sesión 30 — durante gathering (woodcut/kneel), el clip puede haber
+      // tenido root motion vertical (que ya strippeamos en character.js)
+      // PERO la "altura natural" del rig durante esas poses es DISTINTA
+      // a la pose Idle. La calibración `-1.03` funciona para Idle pero
+      // hunde al char en otras anims.
+      //
+      // Solución pragmática: durante gathering, Y=0 (configurable por
+      // anim desde Eruda: window.__gatherY = { woodcut: 0, kneel: 0 }).
+      // Si el char se ve flotando o hundido durante una de estas anims,
+      // calibrar con __gatherY.<animName> = X (probar -0.5 a 0.5).
+      let y = baseY;
+      if (character?._gatheringActive && character._gatherAnimName) {
+        const overrides = (typeof window !== 'undefined' && window.__gatherY) || {};
+        const animName = character._gatherAnimName;
+        y = overrides[animName] != null ? overrides[animName] : 0;
+      }
+      player.position.y = y;
     }
   }
   updateNameTag();
