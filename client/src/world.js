@@ -37,6 +37,8 @@ import * as shop from './shop.js';
 import * as damageSplat from './damage_splat.js';
 import * as npcRenderer from './npc_renderer.js';
 import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
+import * as woodcutting from './woodcutting.js';        // Sesión 30
+import * as firemaking from './firemaking.js';          // Sesión 30
 import { getSkillIconHtml } from './item_icons.js';
 import {
   PALETTE, PLACES, BIOMES,
@@ -514,6 +516,29 @@ export async function startWorld(loggedInUser, token) {
       });
     } catch (e) { console.warn('[world] world_snapshot start:', e); }
 
+    // Sesión 30 — Woodcutting + Firemaking
+    // Verificar en Eruda: window.__wcDebug(), window.__fmDebug()
+    try {
+      woodcutting.start({
+        getPlayer:      () => player,
+        getAuthToken:   () => authToken,
+        getCharacter:   () => character,
+        getTerrain:     () => terrain,
+        setPlayerTarget:(x, z) => setPlayerTarget(x, z),
+        feedLog:        (type, msg) => combat.feedLog?.(type, msg),
+        getSnapshot:    () => worldSnapshot.getSnapshot(),
+      });
+    } catch (e) { console.warn('[world] woodcutting start:', e); }
+    try {
+      firemaking.start({
+        scene,
+        getPlayer:    () => player,
+        getCharacter: () => character,
+        getSnapshot:  () => worldSnapshot.getSnapshot(),
+        feedLog:      (type, msg) => combat.feedLog?.(type, msg),
+      });
+    } catch (e) { console.warn('[world] firemaking start:', e); }
+
     hideWorldLoading();
     animate();
   } catch (err) {
@@ -550,6 +575,10 @@ export function stopWorld() {
 
   // Sesión 29 — chat cleanup (quita root DOM + bubbles + polling)
   try { chat.stop(); } catch {}
+
+  // Sesión 30 — woodcutting + firemaking cleanup
+  try { woodcutting.stop(); } catch {}
+  try { firemaking.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
   multiplayer.stop();
@@ -2260,18 +2289,34 @@ function doCanvasTap(clientX, clientY) {
   // Sesión 11b parcial — Tap edificio → placeholder (en 11c será "entrar")
   if (buildings.tryHandleTap(clientX, clientY)) return;
 
-  // 3) Tap árbol → tooltip
+  // 3) Tap árbol → arrancar chop (Sesión 30).
+  //    El raycast contra InstancedMesh devuelve `instanceId` que apunta al
+  //    índice del árbol en userData.trees. Sacamos x,z reales y tipo, y le
+  //    pasamos a woodcutting.startChopAt — él se ocupa de caminar + chopear.
+  //    Mostramos el tooltip como feedback (auto-fade en 3.5s).
   const treeHits = raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
   if (treeHits.length > 0) {
     const hit = treeHits[0];
-    const treeType = hit.object.userData.treeType;
+    const ud = hit.object.userData;
+    const treeType = ud?.treeType;
+    const typeId = ud?.typeId;
+    const idx = hit.instanceId;
+    const tree = (Array.isArray(ud?.trees) && idx != null) ? ud.trees[idx] : null;
+    if (treeType && typeId && tree) {
+      showTreeTooltip(treeType, clientX, clientY);
+      try { woodcutting.startChopAt(typeId, tree.x, tree.z); }
+      catch (e) { console.warn('[world] startChopAt err:', e); }
+      return;
+    }
+    // Fallback (no instanceId disponible) — solo tooltip
     if (treeType) {
       showTreeTooltip(treeType, clientX, clientY);
       return;
     }
   }
 
-  // 4) Tap suelo → goto
+  // 4) Tap suelo → goto (cualquier tap al suelo cancela un chop activo)
+  try { woodcutting.stopChop?.('tap_ground'); } catch {}
   const hits = raycaster.intersectObjects(terrain.getTerrainMeshes());
   if (hits.length > 0) {
     const p = hits[0].point;
@@ -2334,6 +2379,8 @@ function animate() {
   multiplayer.update(dt);
   worldSnapshot.update(dt);   // Sesión 27 Bloque 1
   chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles
+  woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
+  firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
   drawMinimap();

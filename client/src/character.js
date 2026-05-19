@@ -54,6 +54,10 @@ const ANIM_FILES = {
   punching: 'Punching.fbx',
   death:    'Death_Backward.fbx',
   drink:    'Drinking.fbx',
+
+  // Sesión 30 — Gathering anims (woodcutting + firemaking)
+  woodcut:  'Woodcut.fbx',
+  kneel:    'Kneel.fbx',
 };
 
 const CRITICAL_ANIMS = ['idle', 'walk_forward', 'run_forward'];
@@ -70,6 +74,9 @@ const CLIPS_TO_STRIP_ROOT = new Set([
   'sword_run_back',
   'sword_run_left',
   'sword_run_right',
+  // Sesión 30 — gathering anims también tienen root motion
+  'woodcut',
+  'kneel',
 ]);
 
 const CHARACTER_SCALE = 0.01;
@@ -764,6 +771,36 @@ export class Character {
 
     this._scaleOneShot(action, 900);
     this._crossFadeTo(action, 0.1);
+    this.isInTransition = true;
+    const dur = Math.max(120, action.getClip().duration * 1000 / action.timeScale);
+    setTimeout(() => {
+      this.isInTransition = false;
+      this.current = null;
+    }, dur + 20);
+  }
+
+  /**
+   * Sesión 30 — playGather(animKey, durationMs)
+   *
+   * One-shot para anims de gathering (woodcut, kneel, mining futuro).
+   * animKey debe existir en ANIM_FILES (ej: 'woodcut', 'kneel').
+   * durationMs: cuánto dura el ciclo visual. La anim se escala a ese tiempo.
+   *
+   * Marca isInTransition durante la anim para que el player no pueda
+   * caminar visualmente mientras tala/enciende (la lógica de movement
+   * en world.js respeta isInTransition vía character.play()).
+   */
+  playGather(animKey, durationMs = 1500) {
+    if (!this.loaded || this.isDead) return;
+    if (this.isAttacking || this.isInTransition) return;
+    const action = this.actions[animKey];
+    if (!action) {
+      console.warn('[character] playGather: anim no encontrada:', animKey);
+      return;
+    }
+
+    this._scaleOneShot(action, durationMs);
+    this._crossFadeTo(action, 0.12);
     this.isInTransition = true;
     const dur = Math.max(120, action.getClip().duration * 1000 / action.timeScale);
     setTimeout(() => {

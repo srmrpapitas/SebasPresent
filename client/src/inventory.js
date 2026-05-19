@@ -386,6 +386,12 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   if (item.equip_slot) {
     html += `<div class="inv-context-row" data-act="equip">⚔ Equipar</div>`;
   }
+  // Sesión 30 — Encender fuego: aparece solo si el item es un log
+  // y el player tiene un yesquero en inv.
+  const fm = (typeof window !== 'undefined') ? window.__firemaking : null;
+  if (fm && fm.isLogItem && fm.isLogItem(item.item_id) && hasTinderboxInInventory()) {
+    html += `<div class="inv-context-row" data-act="light_fire">🔥 Encender fuego</div>`;
+  }
   html += `<div class="inv-context-row" data-act="examine">🔍 Examinar</div>`;
   html += `<div class="inv-context-row danger" data-act="cancel">✕ Cancelar</div>`;
   menu.innerHTML = html;
@@ -413,6 +419,13 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
         await doEquip(slotIdx);
       } else if (act === 'examine') {
         showError(item.name + (item.equip_slot ? ` · ${item.equip_slot}` : '') + (item.stackable ? ` · stackable (x${item.quantity})` : ''));
+      } else if (act === 'light_fire') {
+        // Sesión 30 — Encender fuego desde un log
+        try {
+          await window.__firemaking?.lightFireFromSlot?.(slotIdx);
+        } catch (err) {
+          console.warn('[inventory] light_fire err:', err);
+        }
       }
       // 'cancel' o cualquier otra: nada
     });
@@ -555,4 +568,16 @@ function applyClientMove(from, to) {
   // Case 4: both occupied, different → swap
   slots[from] = b;
   slots[to]   = a;
+}
+
+// ============================================================
+// Sesión 30 — Helper para detectar tinderbox en cualquier slot.
+// Usado por el context menu para decidir si mostrar "Encender fuego".
+// ============================================================
+function hasTinderboxInInventory() {
+  for (let i = 0; i < SLOTS; i++) {
+    const s = slots[i];
+    if (s && s.item_id === 'tinderbox') return true;
+  }
+  return false;
 }

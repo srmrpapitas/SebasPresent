@@ -13,6 +13,8 @@
  *
  * Sesión 29 — añadidas funciones chatSend, chatRecent. Sistema de chat global
  * con polling 2.5s + overhead text 7s sobre la cabeza del jugador.
+ *
+ * Sesión 30 — añadidas wcChop, fmLight. Tala + Encender fuego.
  */
 // In dev (running `wrangler dev`), the Worker listens on http://localhost:8787.
 // In production, replace with your deployed Worker URL.
@@ -428,4 +430,65 @@ export async function chatRecent(since, channel = 'global') {
   if (channel) params.set('channel', channel);
   const qs = params.toString();
   return apiFetch(`/api/chat/recent${qs ? '?' + qs : ''}`, { auth: true });
+}
+
+// ============================================================
+// Sesión 30 — Woodcutting + Firemaking
+// ============================================================
+
+/**
+ * POST /api/woodcutting/chop { tree_type, x, z }
+ *
+ * Intenta talar el árbol en (x, z). Server valida proximidad (online_users),
+ * axe, nivel, no depleted, espacio en inventario. Si todo ok, suma 1 log
+ * al inventory y XP al skill 'woodcutting'.
+ *
+ * Devuelve:
+ *   { ok, log_item, xp_gained, skill_id, new_xp, new_level, level_up,
+ *     levels_gained, prev_level, depleted_until }
+ *
+ * Errores comunes (err.code):
+ *   - no_position        → sin heartbeat reciente
+ *   - out_of_range       → demasiado lejos del árbol
+ *   - no_axe             → no tenés hacha
+ *   - level_too_low      → nivel insuficiente
+ *   - tree_depleted      → árbol agotado, esperar respawn
+ *   - inventory_full     → mochila llena
+ *   - invalid_tree_type  → tree_type desconocido
+ *   - wc_disabled        → tabla tree_state no migrada
+ */
+export async function wcChop(treeType, x, z) {
+  return apiFetch('/api/woodcutting/chop', {
+    method: 'POST',
+    auth: true,
+    body: { tree_type: treeType, x, z },
+  });
+}
+
+/**
+ * POST /api/firemaking/light { slot }
+ *
+ * Enciende un fuego en la pos del player consumiendo 1 log del `slot`
+ * indicado del inventario. Requiere yesquero (tinderbox) en cualquier slot.
+ *
+ * Devuelve:
+ *   { ok, fire: {id, x, z, log_type, lit_at, expires_at},
+ *     consumed_item, xp_gained, skill_id, new_xp, new_level,
+ *     level_up, levels_gained, prev_level }
+ *
+ * Errores comunes (err.code):
+ *   - invalid_slot      → slot fuera de [0, 27]
+ *   - empty_slot        → no hay item en ese slot
+ *   - not_a_log         → ese item no es log
+ *   - no_tinderbox      → no tenés yesquero
+ *   - level_too_low     → nivel insuficiente
+ *   - no_position       → sin heartbeat reciente
+ *   - fm_disabled       → tabla fires no migrada
+ */
+export async function fmLight(slot) {
+  return apiFetch('/api/firemaking/light', {
+    method: 'POST',
+    auth: true,
+    body: { slot },
+  });
 }
