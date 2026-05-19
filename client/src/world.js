@@ -2429,13 +2429,26 @@ function animate() {
       // Sesión 30 — Solo aplicamos offset especial para 'kneel' (fuego).
       // Para 'punching' (tala), no tocamos Y porque es una anim que no
       // baja el centro del char — usa el mismo -1.03 que idle/walk.
-      // Configurable: window.__gatherY = { kneel: -0.5, punching: -1.03 }
-      let y = baseY;
+      // Configurable: window.__gatherY = { kneel: -0.6 }
+      let targetY = baseY;
       if (character?._gatheringActive && character._gatherAnimName === 'kneel') {
         const overrides = (typeof window !== 'undefined' && window.__gatherY) || {};
-        y = overrides.kneel != null ? overrides.kneel : 0;
+        targetY = overrides.kneel != null ? overrides.kneel : -0.6;
       }
-      player.position.y = y;
+      // Sesión 30 — Lerp suave para evitar "flash teleport" al terminar
+      // anim de gathering (cuando Y vuelve de -0.6 a -1.03).
+      // Si la diferencia es >0.02, hacemos lerp; si es chica, asignación directa.
+      const currentY = player.position.y;
+      const diff = targetY - currentY;
+      if (Math.abs(diff) < 0.02) {
+        player.position.y = targetY;
+      } else {
+        // Lerp con factor proporcional al dt para que sea estable a 30/60 fps.
+        // 8 = unidades por segundo aprox, suficiente para que se sienta inmediato
+        // pero sin salto brusco visual.
+        const k = Math.min(1, dt * 8);
+        player.position.y = currentY + diff * k;
+      }
     }
   }
   updateNameTag();
