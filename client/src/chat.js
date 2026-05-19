@@ -45,9 +45,10 @@ const OVERHEAD_FADE_MS         = 600;       // últimos N ms de fade-out
 const MAX_MESSAGES_IN_VIEW     = 30;
 const MAX_MESSAGE_LENGTH       = 200;
 // Altura del overhead sobre la base del personaje (metros).
-// El nameplate del peer está a 2.0m; el overhead va un poco más arriba.
-const OVERHEAD_HEIGHT_PEER     = 2.7;
-const OVERHEAD_HEIGHT_LOCAL    = 2.5;
+// El nameplate del peer está a 2.0m + barra HP. El overhead va por encima
+// del conjunto entero para no tapar la HP bar.
+const OVERHEAD_HEIGHT_PEER     = 3.5;
+const OVERHEAD_HEIGHT_LOCAL    = 3.3;
 
 // ============================================================
 // Estado del módulo
@@ -580,7 +581,7 @@ function ensureCss() {
     /* Botón minimizado */
     .chat-tab-toggle {
       align-items: center;
-      gap: 4px;
+      gap: 3px;
       background: rgba(20, 14, 8, 0.85);
       border: 1.5px solid rgba(200, 160, 67, 0.5);
       border-radius: 4px;
@@ -588,7 +589,7 @@ function ensureCss() {
       font-family: 'Cinzel', serif;
       font-size: 11px;
       font-weight: 700;
-      padding: 6px 10px;
+      padding: 6px 7px;
       cursor: pointer;
       text-shadow: 1px 1px 0 #000;
       box-shadow: 0 2px 4px rgba(0,0,0,0.6);
@@ -600,7 +601,10 @@ function ensureCss() {
     }
     .chat-tab-toggle:active { background: rgba(35, 24, 14, 0.95); }
     .chat-tab-icon { font-size: 14px; }
-    .chat-tab-label { letter-spacing: 0.04em; }
+    /* Label "Chat" oculta (Sesión 29 ajuste UI): el icono 💬 ya es claro
+       y reducimos x2 el ancho del botón minimizado. Si quieres devolverlo,
+       cambia a `display: inline`. */
+    .chat-tab-label { display: none; letter-spacing: 0.04em; }
     .chat-unread {
       background: #d04030;
       color: #ffffff;
