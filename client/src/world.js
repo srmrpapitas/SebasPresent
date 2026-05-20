@@ -37,8 +37,13 @@ import * as shop from './shop.js';
 import * as damageSplat from './damage_splat.js';
 import * as npcRenderer from './npc_renderer.js';
 import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
-import * as woodcutting from './woodcutting.js';        // Sesión 30
-import * as firemaking from './firemaking.js';          // Sesión 30
+// Sesión 31 — skills movidas a client/src/skills/. Mismo API, paths nuevos.
+import * as woodcutting from './skills/woodcutting.js';
+import * as firemaking  from './skills/firemaking.js';
+// Sesión 31 — extraído de world.js: setup de three.js + cámara orbital.
+import * as sceneSetup    from './core/scene.js';
+import * as cameraOrbital from './core/camera.js';
+import * as combatHooks   from './core/combat_hooks.js';
 import { getSkillIconHtml } from './item_icons.js';
 import {
   PALETTE, PLACES, BIOMES,
@@ -67,21 +72,14 @@ let scene, camera, renderer, clock, raycaster, ocean;
 let player, marker;
 let character = null;
 let characterFallback = false;
-// Slice 5d — animaciones de combate. ID del NPC que estamos atacando.
-// Cuando != null, el player rota hacia el NPC (no hacia donde camina) y la
-// dirección de movimiento se calcula relativa al facing.
-let combatTargetNpcId = null;
+// Sesión 31 — combatTargetNpcId movido a core/combat_hooks.js.
+// Se accede via combatHooks.getCombatTargetNpcId().
 let user = null;
 let running = false;
 let canvas = null;
 
-// CAMARA OSRS: alejada y elevada
-let cameraDist = 14;
-let cameraYaw = Math.PI * 0.25;
-let cameraPitch = 0.55;
-// Sesión 11c-1 — override de cámara mientras estamos en interior (sala pequeña)
-let savedCameraDist = null;
-let savedCameraPitch = null;
+// Sesión 31 — cameraDist/Yaw/Pitch + savedDist/Pitch movidos a core/camera.js.
+// Se accede via cameraOrbital.getYaw() / .onDrag() / .pushInteriorOverrides() etc.
 
 let playerTarget = null;
 let joyState = { active: false, x: 0, y: 0 };
@@ -189,8 +187,16 @@ export async function startWorld(loggedInUser, token) {
   showWorldLoading('Cargando el reino…');
 
   try {
-    setupScene();
-    setupOcean();
+    // Sesión 31 — scene/camera/renderer/raycaster/canvas/ocean ahora salen
+    // de core/scene.js. Las refs siguen siendo locales a world.js para no
+    // tocar el resto del archivo.
+    ({ scene, camera, renderer, raycaster, canvas } = sceneSetup.init({
+      canvasId: 'worldCanvas',
+      palette: PALETTE,
+      fogNear: FOG_NEAR,
+      fogFar:  FOG_FAR,
+    }));
+    ocean = sceneSetup.setupOcean({ scene, palette: PALETTE, worldHalf: WORLD_HALF });
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -234,15 +240,10 @@ export async function startWorld(loggedInUser, token) {
         playerTarget = null;
         if (marker) marker.visible = false;
         // Sesión 11c-2 v3 — sala reducida a 8m de alto. La cámara orbital
-        // exterior (cameraDist típicamente 7-10m con cameraPitch hasta 1.3)
-        // se sitúa a sin(1.3)*10=9.6m sobre el player — POR ENCIMA del techo
-        // de 8m. La cámara atraviesa el techo y el pitch queda clampeado al
-        // máximo, dando la sensación de que la cámara no se mueve vertical.
-        // Fix: ajustar cámara a valores que quepan dentro de la sala.
-        if (savedCameraDist === null)  savedCameraDist  = cameraDist;
-        if (savedCameraPitch === null) savedCameraPitch = cameraPitch;
-        cameraDist  = 5;     // antes ~7-10m → ahora 5m (cabe en sala 8m alto)
-        cameraPitch = 0.55;  // ~31° — vista intermedia (lejos del clamp max)
+        // exterior (typical 7-10m con pitch hasta 1.3) se sitúa a sin(1.3)*10=9.6m
+        // sobre el player — POR ENCIMA del techo de 8m. Fix: ajustar a valores
+        // que quepan en la sala. Sesión 31 — delegado a core/camera.js.
+        cameraOrbital.pushInteriorOverrides({ dist: 5, pitch: 0.55 });
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
@@ -251,9 +252,8 @@ export async function startWorld(loggedInUser, token) {
         try { audio.sfx('door_open'); audio.music(null); } catch {}
       },
       onLeave: () => {
-        // Sesión 11c-1 — restaurar cámara exterior (por si se hubiera forzado)
-        if (savedCameraDist !== null) { cameraDist = savedCameraDist; savedCameraDist = null; }
-        if (savedCameraPitch !== null) { cameraPitch = savedCameraPitch; savedCameraPitch = null; }
+        // Sesión 11c-1 — restaurar cámara exterior (Sesión 31: via core/camera.js).
+        cameraOrbital.popInteriorOverrides();
         try { terrain.primeChunks(player.position.x, player.position.z); } catch {}
         lastRegionName = '';
         playerTarget = null;
@@ -267,6 +267,15 @@ export async function startWorld(loggedInUser, token) {
       },
     });
     await setupPlayer();
+    // Sesión 31 — cámara orbital ahora vive en core/camera.js. Init después
+    // de setupPlayer para tener el getter al player listo.
+    cameraOrbital.init({
+      threeCamera: camera,
+      getPlayer:   () => player,
+      isCharacterFallback: () => characterFallback,
+      distMin: CAMERA_DIST_MIN,
+      distMax: CAMERA_DIST_MAX,
+    });
     setupMarker();
     setupInput();
     setupMinimap();
@@ -455,6 +464,24 @@ export async function startWorld(loggedInUser, token) {
         }
       }
     } catch (e) { console.warn('[world] equipment init:', e); }
+
+    // Sesión 31 — registrar combat hooks (antes vivían inline). Después de
+    // equipment.init para que getWeaponType() ya pueda leer.
+    combatHooks.register({
+      getCharacter:  () => character,
+      getWeaponType: () => {
+        try { return equipment.getWeaponType?.() || 'unarmed'; }
+        catch { return 'unarmed'; }
+      },
+      onRespawn: () => {
+        if (!player) return;
+        player.position.x = 0;
+        player.position.z = 0;
+        playerTarget = null;
+        if (marker) marker.visible = false;
+        try { terrain.primeChunks(0, 0); } catch {}
+      },
+    });
 
     // Sesión 23 — Shop (overlay tienda del banker)
     try {
@@ -655,38 +682,8 @@ export function stopWorld() {
 // ============================================================
 //                       Scene
 // ============================================================
-
-function setupScene() {
-  canvas = document.getElementById('worldCanvas');
-  if (!canvas) throw new Error('No #worldCanvas element in DOM');
-  // Bloquear pinch-zoom nativo del browser sobre el canvas (sin tocar
-  // joystick/minimapa, que tienen sus propios listeners).
-  canvas.style.touchAction = 'none';
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(PALETTE.sky);
-  scene.fog = new THREE.Fog(PALETTE.fog, FOG_NEAR, FOG_FAR);
-  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, FOG_FAR + 50);
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
-  raycaster = new THREE.Raycaster();
-  const sun = new THREE.DirectionalLight(0xffeecc, 1.0);
-  sun.position.set(-30, 50, 20);
-  scene.add(sun);
-  // Sesión 27 fix — luz ambient subida de 0.55 a 0.72 para que zonas
-  // densas de árboles (swamp, jungle) no queden en penumbra excesiva.
-  const ambient = new THREE.AmbientLight(0x6088a0, 0.72);
-  scene.add(ambient);
-}
-
-function setupOcean() {
-  const oceanGeom = new THREE.PlaneGeometry(WORLD_HALF * 6, WORLD_HALF * 6);
-  oceanGeom.rotateX(-Math.PI / 2);
-  const oceanMat = new THREE.MeshLambertMaterial({ color: PALETTE.ocean, flatShading: true });
-  ocean = new THREE.Mesh(oceanGeom, oceanMat);
-  ocean.position.y = -0.4;
-  scene.add(ocean);
-}
+// Sesión 31 — setupScene() y setupOcean() movidos a core/scene.js.
+// Llamados desde startWorld() directamente.
 
 // ============================================================
 //                       Player
@@ -728,104 +725,10 @@ function setupMarker() {
 // ============================================================
 //   Player animation hooks (combat.js → character.js)
 // ============================================================
-// combat.js dispara estos hooks vía window.__player* para reproducir las
-// animaciones del personaje del jugador (atacar, desenvainar, morir...).
-// Los registramos al inicio del módulo (una sola vez) para que estén
-// disponibles antes incluso del primer startWorld(). Lo único que tocan es
-// el `character` del player y la variable `combatTargetNpcId` que viven
-// aquí en world.js.
-if (typeof window !== 'undefined') {
-  // Sesión 26 — combat.js pasa stance + weaponType + cooldownMs. El
-  // character usa weaponType para decidir qué FBX usar (1H=Punching,
-  // 2H=Sword_Attack_X según stance) y escala la anim a cooldownMs.
-  // Backwards compatible: si combat.js antiguo solo pasa stance, los
-  // otros params son undefined y character.js cae a defaults.
-  window.__playerPlayAttack = (stanceKey, weaponType, cooldownMs) => {
-    try { character?.playAttack?.(stanceKey, weaponType, cooldownMs); } catch (e) { console.warn('[world] playAttack:', e); }
-  };
-  // Slice 5d: animaciones de combate (engage/disengage = draw/sheath
-  // espada; death/revive cuando mueres/respawneas).
-  //
-  // Sesión 25: con equipment ya integrado, reactivamos playDraw/playSheath
-  // SOLO si el arma equipada es melee (1h_sword / 2h_sword). Para bow/staff
-  // no tiene sentido el sword_draw. Para unarmed tampoco.
-  window.__playerEnterCombat = (npcId) => {
-    const wasEngaged = combatTargetNpcId !== null;
-    combatTargetNpcId = npcId;
-    if (!wasEngaged) {
-      let weaponType = 'unarmed';
-      try { weaponType = equipment.getWeaponType?.() || 'unarmed'; } catch {}
-      const isMelee = weaponType === '1h_sword' || weaponType === '2h_sword';
-      // Sesión 30 — axe/pickaxe son herramientas: melee pero sin draw.
-      const isToolMelee = weaponType === 'axe' || weaponType === 'pickaxe';
-      if (isMelee) {
-        try { character?.playDraw?.(); } catch (e) { console.warn('[world] playDraw:', e); }
-      } else if (isToolMelee) {
-        // Herramientas: combatStance pero sin draw. Anim de attack = punching.
-        try { character?.setCombatStance?.(true); } catch {}
-      } else if (weaponType !== 'unarmed') {
-        // Bow/staff: activar combatStance manualmente (no hay anim de draw
-        // específica, pero queremos que las anims de attack_1..4 se usen
-        // cuando se ataque en lugar de punch).
-        try { character?.setCombatStance?.(true); } catch {}
-      }
-    }
-  };
-  window.__playerExitCombat = () => {
-    combatTargetNpcId = null;
-    let weaponType = 'unarmed';
-    try { weaponType = equipment.getWeaponType?.() || 'unarmed'; } catch {}
-    const isMelee = weaponType === '1h_sword' || weaponType === '2h_sword';
-    const isToolMelee = weaponType === 'axe' || weaponType === 'pickaxe';
-    if (isMelee) {
-      try { character?.playSheath?.(); } catch (e) { console.warn('[world] playSheath:', e); }
-    } else if (isToolMelee || weaponType !== 'unarmed') {
-      try { character?.setCombatStance?.(false); } catch {}
-    }
-  };
-  window.__playerDeath = () => {
-    combatTargetNpcId = null;
-    try { character?.playDeath?.(); } catch (e) { console.warn('[world] playDeath:', e); }
-  };
-  window.__playerRevive = () => {
-    combatTargetNpcId = null;
-    // Slice 5c mini-fix: hook revive robusto.
-    // - Si character tiene revive(), lo usa (Character clase real).
-    // - Si character es fallback (cápsula sin métodos), no rompe.
-    // - Si revive() falla por lo que sea, forzamos arranque de idle directo
-    //   en el mixer para que el modelo no se quede en pose de muerte.
-    try {
-      if (character?.revive) {
-        character.revive();
-      } else if (character?.mixer && character?.actions?.idle) {
-        // Plan B: no hay método revive() pero sí mixer + idle clip.
-        character.isDead = false;
-        character.isAttacking = false;
-        character.isInTransition = false;
-        character.mixer.stopAllAction();
-        character.mixer.setTime(0);
-        character.actions.idle.reset();
-        character.actions.idle.setEffectiveWeight(1);
-        character.actions.idle.enabled = true;
-        character.actions.idle.play();
-        character.current = character.actions.idle;
-      }
-    } catch (e) {
-      console.warn('[world] revive failed:', e);
-    }
-    // Teleport al hub (0,0) + refresh chunks.
-    // El server (combatRespawnUser) solo restaura HP, no toca posición.
-    try {
-      if (player) {
-        player.position.x = 0;
-        player.position.z = 0;
-        playerTarget = null;
-        if (marker) marker.visible = false;
-        terrain.primeChunks(0, 0);
-      }
-    } catch (e) { console.warn('[world] respawn teleport:', e); }
-  };
-}
+// Sesión 31 — TODO el bloque movido a core/combat_hooks.js. Se registra desde
+// startWorld() después de equipment.init() vía combatHooks.register(...).
+// combatTargetNpcId también vive ahora ahí; se accede con
+// combatHooks.getCombatTargetNpcId().
 
 
 
@@ -2260,17 +2163,11 @@ function setupInput() {
     },
 
     // Drag del dedo en canvas O rotación con dos dedos → rotar cámara
-    onCameraDrag: (dyaw, dpitch) => {
-      cameraYaw   -= dyaw;
-      cameraPitch -= dpitch;
-      cameraPitch = Math.max(0.1, Math.min(1.3, cameraPitch));
-    },
+    // Sesión 31 — delegado a core/camera.js.
+    onCameraDrag: (dyaw, dpitch) => cameraOrbital.onDrag(dyaw, dpitch),
 
     // Pinch con dos dedos → zoom de cámara
-    onCameraZoom: (deltaDist) => {
-      cameraDist += deltaDist;
-      cameraDist = Math.max(CAMERA_DIST_MIN, Math.min(CAMERA_DIST_MAX, cameraDist));
-    },
+    onCameraZoom: (deltaDist) => cameraOrbital.onZoom(deltaDist),
 
     // Joystick virtual → escribe en joyState que usa updatePlayer
     onJoystickMove: (s) => {
@@ -2408,7 +2305,8 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.1);
   updatePlayer(dt);
   terrain.update(dt, player.position.x, player.position.z);
-  updateCamera(dt);
+  // Sesión 31 — cámara delegada a core/camera.js
+  cameraOrbital.update();
   updateMarker();
   if (character) {
     character.update(dt);
@@ -2527,10 +2425,12 @@ function updatePlayer(dt) {
     multiplayer.cancelAutoEngage?.();   // Sesión 27 Bloque 3 — también peer
     const len = Math.hypot(joyState.x, joyState.y);
     const speedScale = Math.min(1, len);
-    const camForwardX = -Math.sin(cameraYaw);
-    const camForwardZ = -Math.cos(cameraYaw);
-    const camRightX = Math.cos(cameraYaw);
-    const camRightZ = -Math.sin(cameraYaw);
+    // Sesión 31 — yaw via core/camera.js
+    const _yaw = cameraOrbital.getYaw();
+    const camForwardX = -Math.sin(_yaw);
+    const camForwardZ = -Math.cos(_yaw);
+    const camRightX = Math.cos(_yaw);
+    const camRightZ = -Math.sin(_yaw);
     const wx = camRightX * joyState.x + camForwardX * (-joyState.y);
     const wz = camRightZ * joyState.x + camForwardZ * (-joyState.y);
     const speed = maxSpeed * speedScale;
@@ -2590,15 +2490,17 @@ function updatePlayer(dt) {
   // ============================================================
   // Slice 5d — Rotación + locomoción direccional
   // ============================================================
-  // En combate (combatTargetNpcId != null): el player se queda mirando al NPC.
+  // En combate (target != null): el player se queda mirando al NPC.
   // El movimiento puede ir en cualquier dirección relativa a ese facing
   // (forward/back/left/right) y la animación cambia según la dirección.
   //
   // Fuera de combate: el player rota hacia donde se mueve (forward siempre).
+  // Sesión 31 — target ahora vive en core/combat_hooks.js.
   // ============================================================
   let facingLockedToNpc = false;
-  if (combatTargetNpcId !== null) {
-    const mesh = npcRenderer.getNpcMeshes().get(combatTargetNpcId);
+  const _combatTarget = combatHooks.getCombatTargetNpcId();
+  if (_combatTarget !== null) {
+    const mesh = npcRenderer.getNpcMeshes().get(_combatTarget);
     if (mesh) {
       const tx = mesh.position.x - player.position.x;
       const tz = mesh.position.z - player.position.z;
@@ -2705,21 +2607,7 @@ function updatePlayer(dt) {
   }
 }
 
-function updateCamera(dt) {
-  // Sesión 11c-2 v4 — antes hardcodeaba pitch=0.3 y r=5 dentro del interior,
-  // lo cual ignoraba cameraPitch del input → drag vertical no movía la cámara
-  // visualmente aunque cameraPitch cambiase matemáticamente. AHORA el onEnter
-  // de interiors ajusta cameraDist=5 y cameraPitch=0.55 una sola vez al entrar,
-  // y respetamos cameraPitch normalmente para que drag vertical funcione.
-  const r = cameraDist;
-  const pitch = cameraPitch;
-  const desiredX = player.position.x + Math.sin(cameraYaw) * Math.cos(pitch) * r;
-  const desiredY = player.position.y + Math.sin(pitch) * r;
-  const desiredZ = player.position.z + Math.cos(cameraYaw) * Math.cos(pitch) * r;
-  camera.position.set(desiredX, desiredY, desiredZ);
-  const lookHeight = characterFallback ? 0.5 : 1.0;
-  camera.lookAt(player.position.x, player.position.y + lookHeight, player.position.z);
-}
+// Sesión 31 — updateCamera() movida a core/camera.js (cameraOrbital.update()).
 
 function updateMarker() {
   if (!marker.visible) return;
