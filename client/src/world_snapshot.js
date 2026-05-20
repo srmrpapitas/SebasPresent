@@ -209,7 +209,14 @@ async function fetchSnapshot() {
     const sentAt = Date.now();
     const res = await fetch(
       `${apiBase}/api/world/snapshot?x=${x}&z=${z}`,
-      { headers: { 'Authorization': 'Bearer ' + token } }
+      {
+        headers: { 'Authorization': 'Bearer ' + token },
+        // Sesión 32 — bypass cache HTTP del navegador. Sin esto, algunos
+        // browsers cachean respuestas del endpoint y el cliente ve un
+        // snapshot stale aunque el server tenga datos frescos (typical bug
+        // tras deploy del server: el cliente recibe la respuesta vieja).
+        cache: 'no-store',
+      }
     );
     const receivedAt = Date.now();
     if (!res.ok) {
