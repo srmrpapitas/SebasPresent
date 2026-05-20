@@ -107,6 +107,7 @@ function applyServerSlots(serverSlots) {
       icon:      s.icon,
       stackable: !!s.stackable,
       equip_slot: s.equip_slot || null,   // sesión 22
+      weapon_type: s.weapon_type || null, // S33 — failsafe para "Equipar"
     };
   }
 }
@@ -383,7 +384,15 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   menu.className = 'inv-context-menu';
 
   let html = `<div class="inv-context-menu-header"><span class="inv-context-menu-icon">${getItemIconHtml(item.item_id, item.icon)}</span> ${escapeHtml(item.name)}</div>`;
-  if (item.equip_slot) {
+  // S33 — Triple failsafe para mostrar "Equipar":
+  //   1) equip_slot está poblado (lógica vieja)
+  //   2) weapon_type está poblado (failsafe nivel 2)
+  //   3) item_id matchea pattern de weapon conocida (failsafe nivel 3)
+  // El server valida el equip de todas formas; si el item NO es equipable
+  // por más que el menú lo muestre, el server rechaza y el cliente avisa.
+  const isWeaponByName = /^(axe|pickaxe|sword|bow|staff|dagger|hammer|spear|shield)(_|$)/i.test(item.item_id || '');
+  const isEquipable = item.equip_slot || item.weapon_type || isWeaponByName;
+  if (isEquipable) {
     html += `<div class="inv-context-row" data-act="equip">⚔ Equipar</div>`;
   }
   // Sesión 30 — Encender fuego: aparece solo si el item es un log
