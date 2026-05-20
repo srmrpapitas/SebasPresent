@@ -992,6 +992,17 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const targetHpAfter = targetStats.hp_current - dmgToTarget;
   const targetKilled = targetHpAfter <= 0;
 
+  // -------- Sesión 32 — Guardar el hit recibido en target stats --------
+  // El target lo lee del snapshot.me y muestra hitsplat + anim de reacción.
+  // Sin esto, el target ve el HP bajar pero NO ve feedback visual cuando un
+  // peer le pega SIN que él mismo esté atacando.
+  if (userHit.hit && dmgToTarget > 0) {
+    targetStats.last_hit_from_user_id = attackerId;
+    targetStats.last_hit_damage = dmgToTarget;
+    targetStats.last_hit_at = now;
+    targetStats.last_hit_is_crit = isCrit ? 1 : 0;
+  }
+
   // -------- XP attacker --------
   const xpBefore = levelsOf(attackerStats);
   const xpGained = awardXp(attackerStats, dmgToTarget, attackerStyle);
@@ -1049,6 +1060,15 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       const targetStyle = await dbGetUserCombatStyle(db, targetId);
       awardXp(targetStats, dmgToAttacker, targetStyle);
       targetStats.last_attack_at = now;
+
+      // Sesión 32 — Guardar el counter hit en attacker stats. Si el target
+      // contraataca exitosamente, el attacker lo verá en su snapshot.me.
+      if (targetCounterHit && targetCounterHit.hit && dmgToAttacker > 0) {
+        attackerStats.last_hit_from_user_id = targetId;
+        attackerStats.last_hit_damage = dmgToAttacker;
+        attackerStats.last_hit_at = now;
+        attackerStats.last_hit_is_crit = 0;
+      }
     }
   } else {
     // Target murió por el golpe → drop sus items en la pos PERSISTIDA
@@ -1072,34 +1092,90 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   attackerStats.last_attack_at = now;
 
   // -------- Persist attacker --------
-  await db.run(
-    `UPDATE combat_stats
-     SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
-         hp_current = ?, last_attack_at = ?, last_died_at = ?
-     WHERE user_id = ?`,
-    [
-      attackerStats.attack_xp, attackerStats.strength_xp,
-      attackerStats.defence_xp, attackerStats.hp_xp,
-      attackerStats.hp_current, attackerStats.last_attack_at,
-      attackerStats.last_died_at,
-      attackerId,
-    ]
-  );
+  // Sesión 32 — incluir last_hit_*. Si las columnas no existen (migración
+  // pendiente), el UPDATE falla con "no such column" y caemos al UPDATE
+  // legacy sin los campos nuevos.
+  try {
+    await db.run(
+      `UPDATE combat_stats
+       SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+           hp_current = ?, last_attack_at = ?, last_died_at = ?,
+           last_hit_from_user_id = ?, last_hit_damage = ?,
+           last_hit_at = ?, last_hit_is_crit = ?
+       WHERE user_id = ?`,
+      [
+        attackerStats.attack_xp, attackerStats.strength_xp,
+        attackerStats.defence_xp, attackerStats.hp_xp,
+        attackerStats.hp_current, attackerStats.last_attack_at,
+        attackerStats.last_died_at,
+        attackerStats.last_hit_from_user_id ?? null,
+        attackerStats.last_hit_damage ?? null,
+        attackerStats.last_hit_at ?? null,
+        attackerStats.last_hit_is_crit ?? null,
+        attackerId,
+      ]
+    );
+  } catch (err) {
+    if (String(err?.message || '').includes('no such column')) {
+      await db.run(
+        `UPDATE combat_stats
+         SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+             hp_current = ?, last_attack_at = ?, last_died_at = ?
+         WHERE user_id = ?`,
+        [
+          attackerStats.attack_xp, attackerStats.strength_xp,
+          attackerStats.defence_xp, attackerStats.hp_xp,
+          attackerStats.hp_current, attackerStats.last_attack_at,
+          attackerStats.last_died_at,
+          attackerId,
+        ]
+      );
+    } else {
+      throw err;
+    }
+  }
 
   // -------- Persist target --------
-  await db.run(
-    `UPDATE combat_stats
-     SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
-         hp_current = ?, last_attack_at = ?, last_died_at = ?
-     WHERE user_id = ?`,
-    [
-      targetStats.attack_xp, targetStats.strength_xp,
-      targetStats.defence_xp, targetStats.hp_xp,
-      targetStats.hp_current, targetStats.last_attack_at,
-      targetStats.last_died_at,
-      targetId,
-    ]
-  );
+  // Sesión 32 — incluir last_hit_* (mismo fallback).
+  try {
+    await db.run(
+      `UPDATE combat_stats
+       SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+           hp_current = ?, last_attack_at = ?, last_died_at = ?,
+           last_hit_from_user_id = ?, last_hit_damage = ?,
+           last_hit_at = ?, last_hit_is_crit = ?
+       WHERE user_id = ?`,
+      [
+        targetStats.attack_xp, targetStats.strength_xp,
+        targetStats.defence_xp, targetStats.hp_xp,
+        targetStats.hp_current, targetStats.last_attack_at,
+        targetStats.last_died_at,
+        targetStats.last_hit_from_user_id ?? null,
+        targetStats.last_hit_damage ?? null,
+        targetStats.last_hit_at ?? null,
+        targetStats.last_hit_is_crit ?? null,
+        targetId,
+      ]
+    );
+  } catch (err) {
+    if (String(err?.message || '').includes('no such column')) {
+      await db.run(
+        `UPDATE combat_stats
+         SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+             hp_current = ?, last_attack_at = ?, last_died_at = ?
+         WHERE user_id = ?`,
+        [
+          targetStats.attack_xp, targetStats.strength_xp,
+          targetStats.defence_xp, targetStats.hp_xp,
+          targetStats.hp_current, targetStats.last_attack_at,
+          targetStats.last_died_at,
+          targetId,
+        ]
+      );
+    } else {
+      throw err;
+    }
+  }
 
   // Mirror XP a user_skills (para que stats tab muestre niveles actualizados)
   try {
