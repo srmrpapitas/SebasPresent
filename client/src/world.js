@@ -2335,16 +2335,19 @@ function animate() {
       }
       // Sesión 30 — Lerp suave para evitar "flash teleport" al terminar
       // anim de gathering (cuando Y vuelve de -0.6 a -1.03).
-      // Si la diferencia es >0.02, hacemos lerp; si es chica, asignación directa.
+      // Si la diferencia es >0.005, hacemos lerp; si es chica, asignación directa.
+      //
+      // Sesión 31 fix kneel — antes k=8 + threshold 0.02. El lerp tardaba
+      // ~500ms y la transición de anim (crossfade 250ms a idle) terminaba
+      // ANTES de que el Y llegara al target → flash visible.
+      // Ahora k=15 → lerp ~250ms, alineado con el crossfade.
+      // Threshold a 0.005 para que el snap final sea imperceptible.
       const currentY = player.position.y;
       const diff = targetY - currentY;
-      if (Math.abs(diff) < 0.02) {
+      if (Math.abs(diff) < 0.005) {
         player.position.y = targetY;
       } else {
-        // Lerp con factor proporcional al dt para que sea estable a 30/60 fps.
-        // 8 = unidades por segundo aprox, suficiente para que se sienta inmediato
-        // pero sin salto brusco visual.
-        const k = Math.min(1, dt * 8);
+        const k = Math.min(1, dt * 15);
         player.position.y = currentY + diff * k;
       }
     }
