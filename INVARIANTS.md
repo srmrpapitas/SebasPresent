@@ -347,12 +347,27 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
 
 ## 10. Bugs conocidos (workaround o pendiente)
 
-### 10.1 Tocón no aparece visualmente al talar (S30 → S32)
-- **Status**: ABIERTO.
-- Snapshot `depleted_trees` llega populado, `createStumpAtScene()` ejecuta `parent.add(stumpGroup)`, log dice "🪵 stump added at..." pero el cilindro no es visible.
-- **Posible causa**: el parent es uno de los meshes del árbol talado que se está siendo removido al mismo tiempo.
-- **Investigación pendiente**: ver `client/src/skills/woodcutting.js` `createStumpAtScene` línea ~491.
-- **Workaround**: ninguno. Es cosmético, no afecta gameplay.
+### 10.1 Tocón no aparece visualmente al talar (S30 → S32, FIXED)
+- **Status**: FIXED en S32.
+- **Causa REAL**: bug en `world_snapshot.js` líneas ~234-242 — el cliente
+  construía `lastSnapshot` copiando explícitamente solo 7 campos (`now`,
+  `players`, `npcs`, `me`, `_sentAt`, `_receivedAt`, `_serverLagMs`).
+  Aunque el server enviaba `fires` y `depleted_trees`, el cliente los
+  DESCARTABA al guardar. `woodcutting.js syncDepletedFromSnapshot()` veía
+  `snap.depleted_trees = undefined` y nunca creaba tocones.
+- **Síntoma engañoso**: parecía bug del cliente (createStumpAtScene), pero
+  era bug en CAPA DE TRANSPORTE (el snapshot guardado descartaba campos).
+- **Fix aplicado**: agregar `fires` y `depleted_trees` al objeto que se
+  guarda en `lastSnapshot`.
+- **Lección crítica**: cuando un campo nuevo se agrega al server response,
+  hay que ASEGURARSE que el cliente lo preserva en su capa de storage.
+  No alcanza con que llegue al fetch — tiene que llegar al consumer final.
+- **Cómo se detectó**: comparando `fetch` directo desde Eruda (mostraba los
+  campos) vs `__diag.printSnapshot()` (no los mostraba). Esa discrepancia
+  es la firma típica de este patrón.
+
+### 10.1b Bug del kneel (FIXED S31)
+- Ver sección anterior 10.2 del documento original — kneel pose residual.
 
 ### 10.2 Kneel — pose residual en idle (S31, FIXED)
 - **Status**: FIXED en S31.
