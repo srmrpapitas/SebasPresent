@@ -175,6 +175,10 @@ export async function handleWorldSnapshot(request, env) {
           defence_lvl:  defLvl,
           combat_lvl:   combatLvl,
           in_combat:  inCombat,
+          // Sesión 32 — exponer last_attack_at para que multiplayer.js
+          // pueda detectar cuando este peer acaba de atacar y reproducir
+          // la anim de attack sobre su mesh local.
+          last_attack_at: r.last_attack_at,
           last_seen:  r.last_seen,
           party_id:   r.party_id != null ? r.party_id : null,   // Sesión 27 Bloque 3
         };
@@ -241,8 +245,32 @@ export async function handleWorldSnapshot(request, env) {
       party_id: null,
       duel: null,           // Sesión 28
       duel_invites_in: [],  // Sesión 28
-      duel_invite_out: null // Sesión 28
+      duel_invite_out: null,// Sesión 28
+      // Sesión 32 — último hit recibido (de quién, cuánto, cuándo).
+      // El cliente usa esto para spawn hitsplats + anim de reacción cuando
+      // un peer le pega SIN que el target haya iniciado el combate.
+      last_hit_from_user_id: null,
+      last_hit_damage: null,
+      last_hit_at: null,
+      last_hit_is_crit: null,
     };
+    // Sesión 32 — fetch last_hit_* del combat_stats. Defensivo: si las
+    // columnas no existen, los campos quedan null (cliente maneja como
+    // "no hit").
+    try {
+      const hitRow = await env.DB.prepare(
+        `SELECT last_hit_from_user_id, last_hit_damage, last_hit_at, last_hit_is_crit
+         FROM combat_stats WHERE user_id = ?`
+      ).bind(session.user_id).first();
+      if (hitRow) {
+        me.last_hit_from_user_id = hitRow.last_hit_from_user_id;
+        me.last_hit_damage = hitRow.last_hit_damage;
+        me.last_hit_at = hitRow.last_hit_at;
+        me.last_hit_is_crit = hitRow.last_hit_is_crit;
+      }
+    } catch {
+      // columnas no existen → me.last_hit_* quedan null. OK.
+    }
     try {
       const lastAtk = await env.DB.prepare(
         `SELECT attacker_type, attacker_id, ts
