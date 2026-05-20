@@ -58,6 +58,9 @@ const ANIM_FILES = {
   // Sesión 30 — Gathering anims (woodcutting + firemaking)
   woodcut:  'Woodcut.fbx',
   kneel:    'Kneel.fbx',
+
+  // Sesión 32 — Hit reaction (cuando recibes un hit de peer/NPC)
+  react:    'Reaction.fbx',
 };
 
 const CRITICAL_ANIMS = ['idle', 'walk_forward', 'run_forward'];
@@ -68,6 +71,7 @@ const CLIPS_TO_STRIP_ROOT = new Set([
   'draw', 'sheath',
   'death', 'sword_death',
   'drink',
+  'react',          // Sesión 32 — la anim de react puede tener drift
   'walk_back', 'walk_left', 'walk_right',
   'run_back', 'run_left', 'run_right',
   'sword_run_forward',
@@ -1043,6 +1047,73 @@ export class Character {
     }, dur + 20);
 
     return dur;
+  }
+
+  /**
+   * Sesión 32 — Reacción visual al recibir un hit (PvP / NPC).
+   *
+   * Reproduce una anim corta de "flinch" cuando te pegan. NO interrumpe:
+   *   - Anim de attack en curso (tu attack es prioridad — se ve fluido)
+   *   - Gather (talar/encender fuego — no se rompe la acción)
+   *   - Transiciones (draw/sheath)
+   *   - Muerte
+   *
+   * Si nada de eso bloquea, reproduce 'react' como one-shot acelerado
+   * (~400ms) y vuelve al estado anterior (idle/sword_idle/walk/run).
+   *
+   * @returns {boolean} true si reprodujo la anim, false si fue ignorada.
+   */
+  playHitReaction() {
+    if (!this.loaded || this.isDead) return false;
+    if (this.isAttacking) return false;       // No interrumpe attack
+    if (this.isInTransition) return false;    // No durante draw/sheath
+    if (this._gatheringActive) return false;  // No durante gather
+
+    const action = this.actions.react;
+    if (!action) {
+      // Anim no cargada (Reaction.fbx no subida o falló). No-op silencioso.
+      return false;
+    }
+
+    // Si ya estamos reproduciendo react, ignorar (evita stack de reacciones
+    // si recibís 2 hits casi simultáneos).
+    if (this._isReacting) return false;
+
+    // Target de la anim: 400ms. Si la natural es más corta, usa la natural
+    // (no la ralentizamos). Si es más larga, la acelera.
+    const TARGET_MS = 400;
+    const clipMs = action.getClip().duration * 1000;
+    const useNatural = clipMs <= TARGET_MS;
+    const dur = useNatural ? clipMs : TARGET_MS;
+    const timeScale = useNatural ? 1 : (clipMs / TARGET_MS);
+
+    // Recordar el estado actual para volver después
+    const wasCombatStance = this.combatStance;
+    this._isReacting = true;
+
+    action.reset();
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = false;  // Que no se quede en último frame
+    action.setEffectiveTimeScale(timeScale);
+    action.setEffectiveWeight(1);
+    action.play();
+    if (this.current) {
+      action.crossFadeFrom(this.current, 0.08, true);
+    }
+    this.current = action;
+
+    // Al terminar, volver al estado anterior (idle/sword_idle según stance)
+    setTimeout(() => {
+      this._isReacting = false;
+      try {
+        action.setEffectiveTimeScale(1);
+        this.current = null;
+        this.combatStance = wasCombatStance;
+        this.play('idle');
+      } catch {}
+    }, dur + 20);
+
+    return true;
   }
 
   _scaleOneShot(action, targetMs) {

@@ -65,6 +65,11 @@ let started = false;
 let lastSnapshot = null;
 let lastError = null;
 
+// Sesión 32 — tracking del último hit recibido procesado. Usado por
+// handleIncomingHit() para no spawnear el mismo splat 2 veces. Se resetea
+// al start/stop del polling.
+let _lastProcessedHitAt = 0;
+
 // ============================================================
 // API pública
 // ============================================================
@@ -82,6 +87,7 @@ export function start(opts) {
   lastSnapshot  = null;
   lastError     = null;
   started       = true;
+  _lastProcessedHitAt = 0;  // Sesión 32 — reset al arrancar el mundo
 
   // Hooks de debug en window (Eruda)
   if (typeof window !== 'undefined') {
@@ -107,6 +113,7 @@ export function stop() {
   inFlight     = false;
   lastSnapshot = null;
   lastError    = null;
+  _lastProcessedHitAt = 0;  // Sesión 32
   if (typeof window !== 'undefined' && window.__snapshotDebug) {
     delete window.__snapshotDebug;
   }
@@ -256,9 +263,73 @@ async function fetchSnapshot() {
     } catch (err) {
       console.warn('[world_snapshot] duel.onSnapshotMe error:', err?.message);
     }
+
+    // Sesión 32 — Detectar hits recibidos vía snapshot y disparar splat +
+    // anim de reacción. Usado cuando un peer te ataca sin que vos hayas
+    // iniciado el combate. Sin esto ves HP bajar pero no ves feedback.
+    try {
+      handleIncomingHit(lastSnapshot.me);
+    } catch (err) {
+      console.warn('[world_snapshot] handleIncomingHit error:', err?.message);
+    }
   } catch (err) {
     lastError = { reason: 'fetch_failed', message: err?.message, ts: Date.now() };
   } finally {
     inFlight = false;
   }
+}
+
+// ============================================================
+// Sesión 32 — Procesamiento de hits recibidos vía snapshot
+// ============================================================
+//
+// last_hit_at funciona como ID único del hit. Si llega uno nuevo (timestamp
+// distinto al que ya procesamos), spawn splat + anim de reacción. Si llega
+// el mismo, ignora (snapshot polled de nuevo sin nuevo hit).
+//
+// Ignoramos hits con age > 3s para que un re-login no spawnee el splat de
+// un hit viejo.
+function handleIncomingHit(me) {
+  if (!me) return;
+  const hitAt = me.last_hit_at;
+  if (!hitAt || typeof hitAt !== 'number') return;
+  if (hitAt <= _lastProcessedHitAt) return;  // ya procesado
+
+  const age = Date.now() - hitAt;
+  if (age > 3000) {
+    _lastProcessedHitAt = hitAt;  // marcar como procesado igual
+    return;
+  }
+
+  _lastProcessedHitAt = hitAt;
+
+  const damage = me.last_hit_damage || 0;
+
+  // 1) Spawn del hitsplat sobre el player local
+  try {
+    if (typeof window.__spawnPlayerSplat === 'function') {
+      window.__spawnPlayerSplat(damage, damage > 0);
+    }
+  } catch {}
+
+  // 2) Anim de reacción (Reaction.fbx) — el char hace un flinch
+  try {
+    if (typeof window.__playerReact === 'function') {
+      window.__playerReact();
+    }
+  } catch {}
+
+  // 3) Feed log
+  try {
+    if (typeof window.__feedLog === 'function' && damage > 0) {
+      const fromId = me.last_hit_from_user_id;
+      const peer = lastSnapshot?.players?.find?.(p => p.user_id === fromId);
+      const attackerName = peer?.username || 'Otro jugador';
+      const isCrit = me.last_hit_is_crit === 1;
+      const msg = isCrit
+        ? `⚡ ¡${attackerName} te hace un CRÍTICO! ${damage} HP.`
+        : `${attackerName} te pega ${damage} HP.`;
+      window.__feedLog('player-hit', msg);
+    }
+  } catch {}
 }

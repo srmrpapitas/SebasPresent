@@ -190,13 +190,18 @@ export function update(dt) {
     // Crossfade entre clips según state. Los clips reales (de Character)
     // se llaman 'idle', 'run_forward', 'walk_forward', 'attack_1', etc.,
     // NO 'run' o 'attack' a secas. Aquí hacemos el mapeo state → clip.
-    if (peer.actions && Object.keys(peer.actions).length > 0) {
+    //
+    // Sesión 32 — si el peer está reproduciendo anim de attack (disparada
+    // por upsertPeer al detectar cambio de last_attack_at), NO sobrescribir
+    // con idle/walk. Dejarla terminar (~600ms). Sino se cortaba en mitad
+    // del swing apenas llegaba el próximo snapshot.
+    const isPlayingAttack = peer._attackingUntil && Date.now() < peer._attackingUntil;
+    if (!isPlayingAttack && peer.actions && Object.keys(peer.actions).length > 0) {
       let desiredName = 'idle';
       if (peer.state === 'run')         desiredName = 'run_forward';
       else if (peer.state === 'walk')   desiredName = 'walk_forward';
       else if (peer.state === 'attack') desiredName = 'attack_1';
       // Fallback chain: el clip pedido → run_forward → idle.
-      // (Si el server reporta 'walk' pero solo cargó 'run_forward', usa run.)
       const desiredAction =
         peer.actions[desiredName] ||
         peer.actions.run_forward ||
@@ -744,16 +749,64 @@ function upsertPeer(p) {
   if (typeof p.hp_current === 'number') peer.hp = p.hp_current;
   if (typeof p.hp_max === 'number') peer.hpMax = p.hp_max;
 
-  // Sesión 27 Bloque 3 — Niveles + combat_lvl (los necesita el menú PVP
-  // para mostrar "Atacar a Nico (lvl 7)"). Si el server no los devuelve
-  // todavía, defaults seguros.
+  // Sesión 27 Bloque 3 — Niveles + combat_lvl
   if (typeof p.combat_lvl === 'number') peer.combatLvl = p.combat_lvl;
   if (typeof p.attack_lvl === 'number') peer.attackLvl = p.attack_lvl;
   if (typeof p.strength_lvl === 'number') peer.strengthLvl = p.strength_lvl;
   if (typeof p.defence_lvl === 'number') peer.defenceLvl = p.defence_lvl;
   if (typeof p.in_combat === 'boolean') peer.inCombat = p.in_combat;
-  // Sesión 27 Bloque 3 — party_id del peer (null si no en party)
   peer.partyId = p.party_id != null ? p.party_id : null;
+
+  // Sesión 32 — Detectar cuando el peer acabó de atacar (last_attack_at
+  // del server cambió) → reproducir anim de attack sobre su mesh.
+  //
+  // Lógica:
+  //   - El server marca last_attack_at cada vez que el peer hace /attack
+  //   - Si el last_attack_at que llega es distinto al que ya procesamos Y
+  //     es reciente (< 1.5s), disparamos la anim
+  //   - Sin esto, vos no ves a tu papá pegándote — solo veías tu HP bajar
+  //
+  // attackCycle alterna entre attack_1, attack_2, attack_3 para que se vea
+  // variedad de swings en peleas largas.
+  if (typeof p.last_attack_at === 'number' && p.last_attack_at > 0) {
+    const lastSeen = peer._lastAttackAtSeen || 0;
+    const age = Date.now() - p.last_attack_at;
+    if (p.last_attack_at > lastSeen && age < 1500) {
+      peer._lastAttackAtSeen = p.last_attack_at;
+      triggerPeerAttackAnim(peer);
+    }
+  }
+}
+
+/**
+ * Sesión 32 — Reproducir anim de attack sobre el mesh del peer.
+ * Solo aplica si el peer es un Nico clonado (tiene mixer + actions).
+ * Si es la cápsula fallback, no-op (no tiene anims).
+ *
+ * Cicla entre attack_1, attack_2, attack_3 para variedad.
+ */
+function triggerPeerAttackAnim(peer) {
+  if (!peer || !peer.actions || !peer.mixer) return;
+
+  // Pick anim: ciclo 1→2→3→1
+  peer._attackCycle = ((peer._attackCycle || 0) % 3) + 1;
+  const animName = `attack_${peer._attackCycle}`;
+  const action = peer.actions[animName] || peer.actions.attack_1 || peer.actions.punching;
+  if (!action) return;
+
+  // Reset + play one-shot. clampWhenFinished=false para que no se quede
+  // en último frame.
+  action.reset();
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = false;
+  action.setEffectiveTimeScale(1);
+  action.setEffectiveWeight(1);
+  action.play();
+  if (peer.currentAction && peer.currentAction !== action) {
+    action.crossFadeFrom(peer.currentAction, 0.08, true);
+  }
+  peer.currentAction = action;
+  peer._attackingUntil = Date.now() + 600;  // bloquea idle override por 600ms
 }
 
 function createPeer(p) {

@@ -525,6 +525,17 @@ export async function startWorld(loggedInUser, token) {
       window.__spawnXpDrops = (xpMap) => damageSplat.spawnXpDrops(xpMap);
       window.__spawnPlayerSplat = (damage, hit) => damageSplat.spawnPlayerDamageSplat(damage, hit);
       window.__spawnLevelUpBanner = (skillId, newLevel) => damageSplat.spawnLevelUpBanner(skillId, newLevel);
+      // Sesión 32 — exponer feedLog para que world_snapshot mande mensajes
+      // "X te pega Y HP" cuando detecta hits vía snapshot (caso PvP donde
+      // el atacante inicia sin que vos estés atacando).
+      window.__feedLog = (type, text) => {
+        try { combat.feedLog(type, text); } catch {}
+      };
+      // Sesión 32 — exponer playHitReaction para que world_snapshot dispare
+      // la anim cuando detecta un hit recibido.
+      window.__playerReact = () => {
+        try { character?.playHitReaction?.(); } catch {}
+      };
       // Level up banner también vía skills.onLevelUp (cubre grants vía API directa)
       skills.onLevelUp((evt) => {
         try { damageSplat.spawnLevelUpBanner(evt.skillId, evt.newLevel); } catch {}
