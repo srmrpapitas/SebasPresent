@@ -110,8 +110,10 @@ export async function handleWoodcuttingChop(request, env) {
     }, 400);
   }
 
-  // 2) Axe (en inv o equipado)
-  if (!(await hasItemAvailable(env, userId, 'axe'))) {
+  // 2) Axe (en inv o equipado). Sesión 32 — migrado de 'axe' a 'axe_bronze'
+  // como parte de la unificación de tiers. Cuando agreguemos hierro/acero
+  // serán axe_iron, axe_steel.
+  if (!(await hasItemAvailable(env, userId, 'axe_bronze'))) {
     return json({ error: 'no_axe', message: 'Necesitas un hacha.' }, 400);
   }
 
