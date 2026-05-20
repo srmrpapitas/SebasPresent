@@ -17,7 +17,7 @@ export async function handleGetInventory(request, env) {
 
   const result = await env.DB.prepare(
     `SELECT inv.slot_index AS slot, inv.item_id, inv.quantity,
-            i.name, i.icon, i.stackable, i.equip_slot
+            i.name, i.icon, i.stackable, i.equip_slot, i.weapon_type
      FROM user_inventory inv
      JOIN items i ON i.id = inv.item_id
      WHERE inv.user_id = ?
@@ -32,6 +32,7 @@ export async function handleGetInventory(request, env) {
     icon: r.icon,
     stackable: r.stackable === 1,
     equip_slot: r.equip_slot || null,   // sesión 22: null si no es equipable
+    weapon_type: r.weapon_type || null, // S33 — failsafe para "Equipar" en cliente
   }));
 
   return json({ slots: rows });
