@@ -23,8 +23,8 @@
  *   GET  /api/party/state, POST /invite /accept /decline /leave /kick → handlers/party.js (S27)
  *   GET  /api/duel/state,  POST /challenge /accept /decline /cancel /leave → handlers/duel.js (S28)
  *   GET  /api/chat/recent, POST /api/chat/send                  → handlers/chat.js (S29)
- *   POST /api/woodcutting/chop                                  → handlers/woodcutting.js (S30)
- *   POST /api/firemaking/light                                  → handlers/firemaking.js (S30)
+ *   POST /api/woodcutting/chop                                  → handlers/skills/woodcutting.js (S30, movido S32)
+ *   POST /api/firemaking/light                                  → handlers/skills/firemaking.js (S30, movido S32)
  *   GET  /api/health
  *
  *   Cron (cada 1 min): GE matcher, NPC revive, ground_items cleanup,
@@ -50,8 +50,8 @@ import * as shop from './handlers/shop.js';
 import * as party from './handlers/party.js';        // Sesión 27 Bloque 3 — Party
 import * as duel from './handlers/duel.js';          // Sesión 28 — Duelos PVP no-wild
 import * as chat from './handlers/chat.js';          // Sesión 29 — Chat global
-import * as woodcutting from './handlers/woodcutting.js';  // Sesión 30
-import * as firemaking from './handlers/firemaking.js';    // Sesión 30
+import * as woodcutting from './handlers/skills/woodcutting.js';  // Sesión 30 (movido a skills/ en S32)
+import * as firemaking from './handlers/skills/firemaking.js';    // Sesión 30 (movido a skills/ en S32)
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
