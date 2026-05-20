@@ -11,8 +11,14 @@
 import * as ui from './ui.js';
 import * as auth from './auth.js';
 import * as interiors from './interiors.js';
+// Sesión 31 — Debug system (badge + panel + __sebasHealth + __diag.*)
+// Idempotente, 100% observer, no toca world.js. Se inicia ANTES que cualquier
+// otra cosa para que atrape errores tempranos de boot.
+import { initDebugSystem } from './debug/index.js';
 
 async function boot() {
+  // Sesión 31 — primero el debug system para captura de errores temprana.
+  initDebugSystem();
   wireEvents();
   ui.initSidebar({ onLogout: auth.handleLogout });
   const resumed = await auth.tryResumeSession();
