@@ -917,6 +917,16 @@ export class Character {
       this.combatStance = wasCombatStance;
       this._gatheringActive = false;
       this._gatherAnimName = null;
+      // Sesión 31 fix kneel — resetear timeScale del action que acabamos
+      // de usar Y del idle al que vamos a transicionar. Sin esto, idle
+      // hereda un timeScale ~0.47 → corre a la mitad de velocidad durante
+      // ~10s, el char queda "anatómicamente entre poses" con los pies
+      // hundidos, hasta que el ciclo de idle termina y se resetea.
+      try {
+        action.setEffectiveTimeScale(1);
+        const idleAction = this.actions.idle;
+        if (idleAction) idleAction.setEffectiveTimeScale(1);
+      } catch {}
       try { this.play('idle'); } catch {}
     }, dur + 20);
 
