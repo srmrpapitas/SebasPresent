@@ -1,57 +1,104 @@
 /**
- * SebasPresent — Woodcutting handler (Sesión 30)
+ * SebasPresent — Woodcutting handler (Sesión 30 + S31 rebalance)
  *
  * Endpoint:
  *   POST /api/woodcutting/chop { tree_type, x, z }
  *
- * Flujo:
- *   1) Valida sesión + tree_type contra TREE_DEFS.
- *   2) Valida proximidad: pos del player desde online_users debe estar
- *      a <= MAX_CHOP_DIST_M del (x, z) del árbol.
- *   3) Valida axe en inventario.
- *   4) Valida nivel de woodcutting >= chopLevel del árbol.
- *   5) Valida que la pos (x, z) NO esté ya depleted en tree_state.
- *   6) Verifica espacio en inventario (slot libre O stack existente).
- *   7) Aplica grant XP + inserta/incrementa log + marca tree_state.depleted_until.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Mecánica nueva (S31, estilo OSRS):
  *
- * Defensive: si tabla `tree_state` no existe → 503 'wc_disabled'.
+ * Cada llamada hace DOS rolls separados:
+ *
+ *   1) ROLL DE ÉXITO (chop_success)
+ *      Probabilidad de "cortar" en este intento. Si falla → no log, no XP,
+ *      el cliente sigue talando el mismo árbol. Si tiene éxito → +1 log + XP.
+ *      Probabilidad scaling lineal: baseSuccess (lvl req) → maxSuccess (lvl 99).
+ *
+ *   2) ROLL DE "ÁRBOL CAE" (tree_falls)
+ *      Solo si el roll 1 fue éxito. Probabilidad de que el árbol se caiga
+ *      tras este log. Si cae → árbol depleted (respawn variable según
+ *      especie) + cliente para el loop. Si no cae → árbol sigue, podés
+ *      seguir talándolo.
+ *
+ * Resultado: un árbol da 1-N logs antes de caerse, similar a OSRS. Hay
+ * varianza, no es siempre "1 chop = 1 log + cae".
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * Respuesta:
+ *
+ *   Cuando log_gained = true:
+ *     { ok: true, log_gained: true, tree_falls: bool, log_item, xp_gained,
+ *       skill_id, new_xp, new_level, level_up, levels_gained, prev_level,
+ *       depleted_until: number | null }
+ *
+ *   Cuando log_gained = false (chop falló):
+ *     { ok: true, log_gained: false, tree_falls: false, message: 'no_log' }
+ *
+ *   Errores (igual que antes):
+ *     { error: 'tree_depleted' | 'no_axe' | 'level_too_low' | ... }
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * Backwards compat:
+ *   Si un cliente VIEJO (que no sabe de log_gained) recibe log_gained=false
+ *   con log_item=null, simplemente no podrá agregar el log al inventario
+ *   (porque log_item es null) — no rompe, solo no muestra mensaje.
  *
  * Anti-cheat:
- *   - Server controla XP/log values via TREE_DEFS (cliente NO los manda).
- *   - Server valida proximidad usando online_users (heartbeat ~500ms).
- *
- * Respuesta:
- *   { ok, log_item, xp_gained, skill_id, new_xp, new_level, level_up,
- *     levels_gained, prev_level, depleted_until }
+ *   - Server controla XP/log values/rolls via TREE_DEFS y Math.random server-side.
+ *   - Cliente NO ve los % de éxito ni puede manipularlos.
  */
 
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { applyXpGrant, xpToLevel, startingXpFor } from '../lib/skills_engine.js';
 
-// Catálogo de árboles. DEBE coincidir con TREE_TYPES en client/src/terrain.js
-// líneas ~95-108. Si tocás uno, tocá el otro.
+// ─────────────────────────────────────────────────────────────────────────
+// Catálogo de árboles — INVARIANTE: tiene que coincidir con TREE_TYPES en
+// client/src/terrain.js líneas ~95-108. Si tocás uno, tocá el otro.
+//
+// Campos:
+//   chopLevel:     nivel de woodcutting requerido
+//   xpReward:      XP por log conseguido (no por intento)
+//   logItem:       item_id del log que produce
+//   baseSuccess:   chop_success% al nivel mínimo (0-1)
+//   maxSuccess:    chop_success% al nivel 99 (0-1, scaling lineal)
+//   treeFalls:     prob de caer tras cada log conseguido (0-1)
+//   respawnMs:     tiempo de respawn (ms) — solo se aplica si tree_falls
+// ─────────────────────────────────────────────────────────────────────────
 const TREE_DEFS = {
-  normal:    { name: 'Árbol',        chopLevel: 1,  xpReward: 25,  logItem: 'logs' },
-  oak:       { name: 'Roble',        chopLevel: 15, xpReward: 37,  logItem: 'oak_logs' },
-  palm:      { name: 'Palmera',      chopLevel: 20, xpReward: 35,  logItem: 'palm_logs' },
-  pine:      { name: 'Pino',         chopLevel: 30, xpReward: 65,  logItem: 'pine_logs' },
-  willow:    { name: 'Sauce',        chopLevel: 30, xpReward: 67,  logItem: 'willow_logs' },
-  teak:      { name: 'Teca',         chopLevel: 35, xpReward: 85,  logItem: 'teak_logs' },
-  maple:     { name: 'Arce',         chopLevel: 45, xpReward: 100, logItem: 'maple_logs' },
-  mahogany:  { name: 'Caoba',        chopLevel: 50, xpReward: 125, logItem: 'mahogany_logs' },
-  yew:       { name: 'Tejo',         chopLevel: 60, xpReward: 175, logItem: 'yew_logs' },
-  magic:     { name: 'Árbol Mágico', chopLevel: 75, xpReward: 250, logItem: 'magic_logs' },
-  dead:      { name: 'Árbol Muerto', chopLevel: 1,  xpReward: 12,  logItem: 'dead_logs' },
-  bush:      { name: 'Arbusto',      chopLevel: 1,  xpReward: 8,   logItem: 'bush_leaves' },
-  bush_small:{ name: 'Matorral',     chopLevel: 1,  xpReward: 5,   logItem: 'bush_leaves' },
+  normal:    { name: 'Árbol',        chopLevel: 1,  xpReward: 25,  logItem: 'logs',
+               baseSuccess: 0.75, maxSuccess: 0.95, treeFalls: 0.40, respawnMs:    30_000 },
+  oak:       { name: 'Roble',        chopLevel: 15, xpReward: 37,  logItem: 'oak_logs',
+               baseSuccess: 0.40, maxSuccess: 0.85, treeFalls: 0.12, respawnMs:    60_000 },
+  palm:      { name: 'Palmera',      chopLevel: 20, xpReward: 35,  logItem: 'palm_logs',
+               baseSuccess: 0.40, maxSuccess: 0.80, treeFalls: 0.15, respawnMs:   120_000 },
+  pine:      { name: 'Pino',         chopLevel: 30, xpReward: 65,  logItem: 'pine_logs',
+               baseSuccess: 0.35, maxSuccess: 0.80, treeFalls: 0.10, respawnMs:   120_000 },
+  willow:    { name: 'Sauce',        chopLevel: 30, xpReward: 67,  logItem: 'willow_logs',
+               baseSuccess: 0.35, maxSuccess: 0.80, treeFalls: 0.08, respawnMs:   180_000 },
+  teak:      { name: 'Teca',         chopLevel: 35, xpReward: 85,  logItem: 'teak_logs',
+               baseSuccess: 0.30, maxSuccess: 0.75, treeFalls: 0.08, respawnMs:   240_000 },
+  maple:     { name: 'Arce',         chopLevel: 45, xpReward: 100, logItem: 'maple_logs',
+               baseSuccess: 0.25, maxSuccess: 0.70, treeFalls: 0.06, respawnMs:   360_000 },
+  mahogany:  { name: 'Caoba',        chopLevel: 50, xpReward: 125, logItem: 'mahogany_logs',
+               baseSuccess: 0.22, maxSuccess: 0.65, treeFalls: 0.05, respawnMs:   480_000 },
+  yew:       { name: 'Tejo',         chopLevel: 60, xpReward: 175, logItem: 'yew_logs',
+               baseSuccess: 0.18, maxSuccess: 0.55, treeFalls: 0.03, respawnMs:   900_000 },
+  magic:     { name: 'Árbol Mágico', chopLevel: 75, xpReward: 250, logItem: 'magic_logs',
+               baseSuccess: 0.12, maxSuccess: 0.40, treeFalls: 0.01, respawnMs: 1_800_000 },
+  dead:      { name: 'Árbol Muerto', chopLevel: 1,  xpReward: 12,  logItem: 'dead_logs',
+               baseSuccess: 0.80, maxSuccess: 0.95, treeFalls: 0.50, respawnMs:    30_000 },
+  bush:      { name: 'Arbusto',      chopLevel: 1,  xpReward: 8,   logItem: 'bush_leaves',
+               baseSuccess: 0.80, maxSuccess: 0.95, treeFalls: 0.50, respawnMs:    30_000 },
+  bush_small:{ name: 'Matorral',     chopLevel: 1,  xpReward: 5,   logItem: 'bush_leaves',
+               baseSuccess: 0.80, maxSuccess: 0.95, treeFalls: 0.50, respawnMs:    30_000 },
 };
 
 const MAX_CHOP_DIST_M = 3.5;
 const TREE_POS_TOLERANCE_M = 0.05;
-const TREE_RESPAWN_MS = 30_000;
 const SKILL_ID = 'woodcutting';
 const INVENTORY_SLOTS = 28;
+const MAX_LEVEL_FOR_SCALING = 99;
 
 async function wcTablesExist(env) {
   try {
@@ -62,29 +109,20 @@ async function wcTablesExist(env) {
   }
 }
 
-// ============================================================
-// Helper: ¿el player tiene un hacha disponible? Busca en inventario
-// (cualquier slot) Y TAMBIÉN en equipment.weapon. Si está equipada
-// como arma, igualmente sirve para talar (es lo más natural).
-// Sesión 30 — devuelve true/false.
-// ============================================================
 async function hasAxeAvailable(env, userId) {
-  // 1) Inventario
   const invRow = await env.DB.prepare(
     "SELECT 1 FROM user_inventory WHERE user_id = ? AND item_id = 'axe' LIMIT 1"
   ).bind(userId).first();
   if (invRow) return true;
 
-  // 2) Equipment: weapon slot con item_id = 'axe'
   try {
     const eqRow = await env.DB.prepare(
       "SELECT 1 FROM user_equipment WHERE user_id = ? AND slot_id = 'weapon' AND item_id = 'axe' LIMIT 1"
     ).bind(userId).first();
     if (eqRow) return true;
   } catch {
-    // Tabla user_equipment puede no existir en algunos despliegues — silencio.
+    // user_equipment puede no existir en algunos despliegues — silencio.
   }
-
   return false;
 }
 
@@ -101,6 +139,18 @@ async function findInventorySpotForItem(env, userId, itemId) {
     if (!used.has(i)) return { kind: 'empty', slot: i };
   }
   return { kind: 'full' };
+}
+
+/**
+ * Calcula la probabilidad de éxito del chop según nivel del player.
+ * Scaling lineal entre baseSuccess (en chopLevel) y maxSuccess (en 99).
+ */
+function computeChopSuccessRate(def, playerLevel) {
+  if (playerLevel <= def.chopLevel) return def.baseSuccess;
+  if (playerLevel >= MAX_LEVEL_FOR_SCALING) return def.maxSuccess;
+  const range = MAX_LEVEL_FOR_SCALING - def.chopLevel;
+  const progress = (playerLevel - def.chopLevel) / range;
+  return def.baseSuccess + (def.maxSuccess - def.baseSuccess) * progress;
 }
 
 export async function handleWoodcuttingChop(request, env) {
@@ -180,16 +230,35 @@ export async function handleWoodcuttingChop(request, env) {
     }, 400);
   }
 
-  // 5) Espacio inv?
+  // 5) ROLL 1 — éxito del chop
+  const chopSuccessRate = computeChopSuccessRate(def, currentLevel);
+  const chopRoll = Math.random();
+  const chopSuccess = chopRoll < chopSuccessRate;
+
+  if (!chopSuccess) {
+    return json({
+      ok: true,
+      log_gained: false,
+      tree_falls: false,
+      message: 'no_log',
+      chop_success_rate: +chopSuccessRate.toFixed(3),
+    });
+  }
+
+  // 6) Espacio inv? (solo chequea si efectivamente vamos a dar log)
   const spot = await findInventorySpotForItem(env, userId, def.logItem);
   if (spot.kind === 'full') {
     return json({ error: 'inventory_full', message: 'Mochila llena.' }, 400);
   }
 
-  // 6) Aplicar todo en batch
+  // 7) ROLL 2 — el árbol cae?
+  const fallsRoll = Math.random();
+  const treeFalls = fallsRoll < def.treeFalls;
+  const depletedUntil = treeFalls ? now + def.respawnMs : null;
+
+  // 8) Aplicar todo en batch
   const xpResult = applyXpGrant(currentXp, def.xpReward);
   const prevLevel = currentLevel;
-  const depletedUntil = now + TREE_RESPAWN_MS;
   const xKey = Math.round(x * 100) / 100;
   const zKey = Math.round(z * 100) / 100;
 
@@ -212,14 +281,18 @@ export async function handleWoodcuttingChop(request, env) {
       'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, 1, ?)'
     ).bind(userId, spot.slot, def.logItem, now));
   }
-  stmts.push(env.DB.prepare(
-    'INSERT OR REPLACE INTO tree_state (x, z, tree_type, depleted_until) VALUES (?, ?, ?, ?)'
-  ).bind(xKey, zKey, treeType, depletedUntil));
+  if (treeFalls) {
+    stmts.push(env.DB.prepare(
+      'INSERT OR REPLACE INTO tree_state (x, z, tree_type, depleted_until) VALUES (?, ?, ?, ?)'
+    ).bind(xKey, zKey, treeType, depletedUntil));
+  }
 
   await env.DB.batch(stmts);
 
   return json({
     ok: true,
+    log_gained: true,
+    tree_falls: treeFalls,
     log_item: def.logItem,
     xp_gained: def.xpReward,
     skill_id: SKILL_ID,
@@ -229,5 +302,6 @@ export async function handleWoodcuttingChop(request, env) {
     levels_gained: xpResult.levelsGained,
     prev_level: prevLevel,
     depleted_until: depletedUntil,
+    chop_success_rate: +chopSuccessRate.toFixed(3),
   });
 }
