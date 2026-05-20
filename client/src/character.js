@@ -139,8 +139,10 @@ const WEAPON_TRANSFORMS = {
     rotation: [-1.142, -0.892, 1.258],
     hand: 'left',
   },
-  // Sesión 30 — Hacha de talar (item_id='axe', weapon_type='axe').
-  // Calibrado in-game con __weaponDebug() por Nico.
+  // Sesión 30 — Hacha de talar. item_id='axe_bronze' (renombrado en S32),
+  // weapon_type='axe'. Calibrado in-game con __weaponDebug() por Nico.
+  // WEAPON_TRANSFORMS está indexado por weapon_type (no item_id), por eso
+  // la key 'axe' queda igual aunque el item_id cambió a 'axe_bronze'.
   'axe': {
     scale: 7.0,
     position: [-7.0, 18.5, 17.0],

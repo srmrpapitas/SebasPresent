@@ -136,8 +136,8 @@ const ICONS = {
     <rect x="14" y="6" width="3" height="6" fill="#3a2510" stroke="#000" stroke-width="0.5"/>
   </svg>`,
 
-  // alias para items legacy
-  axe: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+  // Sesión 32 — renombrado de 'axe' a 'axe_bronze' (consistencia de tiers).
+  axe_bronze: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
     <line x1="20" y1="3" x2="11" y2="29" stroke="#5a3a1d" stroke-width="2.5"/>
     <line x1="20" y1="3" x2="11" y2="29" stroke="#7a5430" stroke-width="1"/>
     <path d="M 15 4 L 26 6 L 24 14 L 14 12 Z" fill="#c98a3d" stroke="#000" stroke-width="1"/>
