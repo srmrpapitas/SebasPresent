@@ -236,6 +236,12 @@ async function fetchSnapshot() {
       players: Array.isArray(data.players) ? data.players : [],
       npcs:    Array.isArray(data.npcs)    ? data.npcs    : [],
       me:      data.me || {},          // Sesión 28 FIX — antes se perdía
+      // Sesión 32 FIX — antes el cliente descartaba estos campos aunque
+      // el server los enviara, porque solo se copiaban explícitamente los
+      // campos viejos. Por eso firemaking/woodcutting nunca veían los datos
+      // server-side. Bug encontrado al debuggear el tocón que no aparecía.
+      fires:           Array.isArray(data.fires)          ? data.fires          : [],
+      depleted_trees:  Array.isArray(data.depleted_trees) ? data.depleted_trees : [],
       _sentAt: sentAt,
       _receivedAt: receivedAt,
       _serverLagMs: serverLagMs,
