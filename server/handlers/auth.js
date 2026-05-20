@@ -48,12 +48,13 @@ export async function handleRegister(request, env) {
 
   const userId = result.meta.last_row_id;
 
-  // Starter pack: hacha + yesquero + 25 monedas.
+  // Starter pack: hacha de bronce + yesquero + 25 monedas.
+  // Sesión 32 — migrado de 'axe' a 'axe_bronze' (unificación de tiers).
   try {
     await env.DB.batch([
       env.DB.prepare(
         'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, 0, ?, 1, ?)'
-      ).bind(userId, 'axe', now),
+      ).bind(userId, 'axe_bronze', now),
       env.DB.prepare(
         'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, 1, ?, 1, ?)'
       ).bind(userId, 'tinderbox', now),
