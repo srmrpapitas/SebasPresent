@@ -251,19 +251,43 @@ async function attemptChop(treeType, tx, tz) {
   try {
     const res = await api.wcChop(treeType, tx, tz);
     if (activeChop) activeChop.waitingResponse = false;
-    if (res?.ok) {
-      // Refrescar skills cache (server es source of truth)
-      try { await skills.reload(); } catch {}
-      // Refrescar inventory para mostrar el nuevo log
-      try { await window.inventory?.refresh?.(); } catch {}
-      // Feed log
-      const got = LOG_DISPLAY_NAMES[res.log_item] || res.log_item;
-      feedLog('xp', `+${res.xp_gained} XP Tala (${got})`);
-      if (res.level_up) {
-        feedLog('info', `¡Subes a nivel ${res.new_level} de Tala!`);
-        try { window.__spawnLevelUpBanner?.('woodcutting', res.new_level); } catch {}
-      }
+    if (!res?.ok) return;
+
+    // Sesión 31 — Nueva mecánica OSRS-style. El server ahora hace 2 rolls:
+    //   log_gained: false       → falló el chop, no log, no XP, seguimos talando
+    //   log_gained: true + tree_falls: false → +1 log + XP, árbol sigue vivo
+    //   log_gained: true + tree_falls: true  → +1 log + XP, árbol cae, paramos
+    //
+    // Backwards compat: si el server VIEJO responde sin log_gained, asumimos
+    // que sí lo dio (comportamiento pre-S31).
+    const logGained = res.log_gained !== false;  // default true para server viejo
+    const treeFalls = res.tree_falls !== false;  // default true para server viejo
+
+    if (!logGained) {
+      // Roll de chop falló. Reset fail counter (no es un error real) y seguir.
       if (activeChop) activeChop.fails = 0;
+      return;
+    }
+
+    // Llegamos acá → +1 log + XP
+    // Refrescar skills cache (server es source of truth)
+    try { await skills.reload(); } catch {}
+    // Refrescar inventory para mostrar el nuevo log
+    try { await window.inventory?.refresh?.(); } catch {}
+    // Feed log
+    const got = LOG_DISPLAY_NAMES[res.log_item] || res.log_item;
+    feedLog('xp', `+${res.xp_gained} XP Tala (${got})`);
+    if (res.level_up) {
+      feedLog('info', `¡Subes a nivel ${res.new_level} de Tala!`);
+      try { window.__spawnLevelUpBanner?.('woodcutting', res.new_level); } catch {}
+    }
+    if (activeChop) activeChop.fails = 0;
+
+    // Si el árbol cayó → mensaje + parar loop. Si no, seguimos talando.
+    if (treeFalls) {
+      const treeName = res.tree_type || treeType;
+      feedLog('info', `El árbol cae.`);
+      stopChop('depleted');
     }
   } catch (err) {
     if (activeChop) activeChop.waitingResponse = false;
