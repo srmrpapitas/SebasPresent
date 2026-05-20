@@ -1011,12 +1011,16 @@ function adaptTrackNamesToSkeleton(clip, boneNames) {
   if (!boneNames || boneNames.size === 0) return;
   let adapted = 0;
   let dropped = 0;
+  // Sesión 31 — guardamos cuántos matcheaban *de entrada* (sin adaptar) para
+  // distinguir "todo OK desde el principio" de "adaptamos a otro esquema".
+  let alreadyOk = 0;
+  const total = clip.tracks.length;
   for (const track of clip.tracks) {
     const dotIdx = track.name.lastIndexOf('.');
     if (dotIdx < 0) continue;
     const original = track.name.slice(0, dotIdx);
     const property = track.name.slice(dotIdx);
-    if (boneNames.has(original)) continue;
+    if (boneNames.has(original)) { alreadyOk++; continue; }
     const candidates = generateBoneCandidates(original);
     let found = null;
     for (const c of candidates) {
@@ -1029,8 +1033,28 @@ function adaptTrackNamesToSkeleton(clip, boneNames) {
       dropped++;
     }
   }
-  if (adapted > 0 || dropped > 0) {
-    console.log(`[character] clip "${clip.name}": ${adapted} tracks adaptados, ${dropped} sin match`);
+  // Sesión 31 — validador FBX. Reporta match% para detectar anims rotas
+  // antes de que se vean rotas en pantalla. Ataca el problema #3 del retro
+  // de S30: "no hay validador de anims FBX al cargar".
+  const matched = alreadyOk + adapted;
+  const pct = total > 0 ? Math.round((matched / total) * 100) : 100;
+  const tag = '[character/fbx-validator]';
+  if (total === 0) {
+    console.warn(tag, 'clip "' + clip.name + '" sin tracks — anim vacía o rota');
+  } else if (pct < 60) {
+    // Match bajo: la anim se va a ver MAL (huesos sin animar quedan en
+    // bind pose, T-pose parcial, etc). Avisar fuerte.
+    console.warn(tag, '⚠️ LOW MATCH ' + pct + '% — clip "' + clip.name +
+      '": ' + matched + '/' + total + ' tracks (' + alreadyOk + ' direct + ' +
+      adapted + ' adapted, ' + dropped + ' dropped). La anim puede verse ROTA.');
+    // Marcar el clip como "unstable" para que diag/health puedan reportarlo.
+    clip.userData = clip.userData || {};
+    clip.userData.fbxMatchPct = pct;
+    clip.userData.fbxUnstable = true;
+  } else if (adapted > 0 || dropped > 0) {
+    // Match decente pero hubo trabajo: log informativo.
+    console.log(tag, 'clip "' + clip.name + '": ' + pct + '% match (' +
+      alreadyOk + ' direct + ' + adapted + ' adapted, ' + dropped + ' dropped)');
   }
 }
 
