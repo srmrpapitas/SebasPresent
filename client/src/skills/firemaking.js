@@ -212,10 +212,14 @@ export async function lightFireFromSlot(slotIdx) {
     return;
   }
 
-  // Anim "Kneel" — usar duración natural (0 = natural).
+  // Anim "Kneel" — Sesión 31 fix: usar KNEEL_DURATION_MS (1800ms) en vez
+  // de 0 (natural). El clip natural de Kneel.fbx es demasiado largo, deja
+  // al char arrodillado más tiempo del que dura el feedback visual. Con
+  // 1800ms acompaña mejor el flujo de "tap → fuego aparece".
+  // Si la anim queda muy rápida o muy lenta al ojo, ajustar KNEEL_DURATION_MS arriba.
   const character = getCharacter?.();
   if (character && character.playGather) {
-    character.playGather('kneel', 0);
+    character.playGather('kneel', KNEEL_DURATION_MS);
   }
 
   feedLog('info', `Enciendes ${logDef.displayName}...`);
