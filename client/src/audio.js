@@ -101,7 +101,9 @@ const PREFS_KEY = 'sp_audio_prefs';
 const DEFAULT_PREFS = {
   master: 0.7,
   sfx: 0.6,
-  music: 0.035,
+  // Sesión 32 — bajado de 0.035 a 0.007 (80% menos) por feedback de Nico.
+  // La música ambient debe sentirse "de fondo", no competir con SFX.
+  music: 0.007,
   ui: 0.5,
   muted: false,
 };
@@ -343,6 +345,15 @@ function loadPrefs() {
     const raw = localStorage.getItem(PREFS_KEY);
     if (raw) prefs = { ...DEFAULT_PREFS, ...JSON.parse(raw) };
   } catch {}
+  // Sesión 32 — cap defensivo del volumen de música. Si el user tenía un
+  // valor guardado en localStorage de antes (cuando el default era más
+  // alto), recapear al nuevo máximo. Sin esto, el cambio de DEFAULT_PREFS
+  // no surte efecto para users existentes.
+  const MUSIC_CAP = 0.01;  // 1% del max — ambient muy de fondo
+  if (prefs.music > MUSIC_CAP) {
+    prefs.music = MUSIC_CAP;
+    savePrefs();
+  }
 }
 function savePrefs() {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
