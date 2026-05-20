@@ -1,0 +1,23 @@
+# Cloudflare Pages — Headers config (Sesión 32)
+# JavaScript modules — revalidate siempre
+/src/*
+  Cache-Control: no-cache, must-revalidate, max-age=0
+
+# index.html — nunca cachear
+/index.html
+  Cache-Control: no-cache, must-revalidate, max-age=0
+
+/
+  Cache-Control: no-cache, must-revalidate, max-age=0
+
+# Assets binarios (CSS, FBX, GLB, audio, imágenes) — cachear largo
+/style.css
+  Cache-Control: public, max-age=86400, must-revalidate
+
+/assets/*
+  Cache-Control: public, max-age=2592000
+
+# Seguridad
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
