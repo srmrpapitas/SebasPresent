@@ -319,6 +319,16 @@ function handleIncomingHit(me) {
     }
   } catch {}
 
+  // Sesión 32 — SFX cuando recibís hit (mismo SFX que cuando pegás, hasta
+  // que tengamos un player_hurt.ogg específico). Solo si conectó (damage>0).
+  if (damage > 0) {
+    try {
+      if (typeof window.__playSfx === 'function') {
+        window.__playSfx('hit_blade');
+      }
+    } catch {}
+  }
+
   // 3) Feed log
   try {
     if (typeof window.__feedLog === 'function' && damage > 0) {

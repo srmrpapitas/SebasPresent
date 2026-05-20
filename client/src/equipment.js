@@ -230,6 +230,13 @@ export async function equipFromInventory(slotIndex) {
     const data = await res.json();
     if (!res.ok) return data;
     await refresh();
+    // Sesión 32 — SFX al equipar (post-refresh para que ya esté en su slot
+    // visualmente). Misma lógica para weapon/armor/cualquier item.
+    try {
+      if (typeof window.__playSfx === 'function') {
+        window.__playSfx('equip_weapon');
+      }
+    } catch {}
     return data;
   } catch (err) {
     console.error('[equipment] equip err:', err);

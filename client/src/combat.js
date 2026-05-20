@@ -37,6 +37,7 @@ import * as equipment from './equipment.js';
 import * as skills from './skills.js';
 import * as multiplayer from './multiplayer.js';   // Sesión 27 Bloque 3 — PVP
 import * as worldSnapshot from './world_snapshot.js'; // Sesión 27 Bloque 3 — auto-retaliate
+import * as audio from './audio.js';               // Sesión 32 — SFX de combat
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -316,6 +317,9 @@ async function doAttackTickNpc() {
     } else {
       feedLog('hit', `Le pegas a ${npcName} y le quitas ${result.your_damage} HP.`);
     }
+    // Sesión 32 — SFX hit. Solo en hits que conectan (los misses tendrán
+    // su propio SFX más adelante cuando lo tengamos en R2).
+    try { audio.sfx('hit_blade'); } catch {}
     if (typeof window !== 'undefined' && typeof window.__worldFlashNpcHit === 'function') {
       try { window.__worldFlashNpcHit(npcId); } catch {}
     }
@@ -499,6 +503,8 @@ async function doAttackTickPlayer() {
     } else {
       feedLog('hit', `Le pegas a ${targetName}: ${result.your_damage} HP.`);
     }
+    // Sesión 32 — SFX hit (igual que NPC)
+    try { audio.sfx('hit_blade'); } catch {}
     // Flash visual sobre el peer
     if (typeof window !== 'undefined' && typeof window.__worldFlashPeerHit === 'function') {
       try { window.__worldFlashPeerHit(targetId); } catch {}

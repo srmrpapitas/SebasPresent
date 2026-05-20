@@ -536,6 +536,11 @@ export async function startWorld(loggedInUser, token) {
       window.__playerReact = () => {
         try { character?.playHitReaction?.(); } catch {}
       };
+      // Sesión 32 — exponer audio.sfx para que cualquier módulo pueda
+      // disparar SFX sin import circular (world_snapshot, multiplayer, etc).
+      window.__playSfx = (name, opts) => {
+        try { audio.sfx(name, opts); } catch {}
+      };
       // Level up banner también vía skills.onLevelUp (cubre grants vía API directa)
       skills.onLevelUp((evt) => {
         try { damageSplat.spawnLevelUpBanner(evt.skillId, evt.newLevel); } catch {}

@@ -382,6 +382,14 @@ async function pickupItem(itemDropId) {
       const id = pu.id || pu;
       removeItem(id);
     }
+    // Sesión 32 — SFX al recoger item (solo si recogió al menos uno)
+    if (pickedUp.length > 0) {
+      try {
+        if (typeof window.__playSfx === 'function') {
+          window.__playSfx('item_grab');
+        }
+      } catch {}
+    }
     // Procesar skipped: feedback al user
     const skipped = data?.skipped || [];
     for (const sk of skipped) {
