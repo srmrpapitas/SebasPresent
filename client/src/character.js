@@ -639,6 +639,29 @@ export class Character {
   // ============================================================
   // PUBLIC: locomoción + idle
   // ============================================================
+
+  /**
+   * Reproduce una animación de locomoción (idle/walk/run) en cierta dirección.
+   * Es la API principal para mover el char visualmente. No-op si está atacando,
+   * en transición, muerto o no cargado.
+   *
+   * Comportamiento según combatStance:
+   *   - false → usa anims normales (idle, walk_forward, run_forward, etc).
+   *   - true  → usa anims con espada (sword_idle, sword_run_forward, etc).
+   *
+   * Direcciones soportadas:
+   *   - 'forward' (default) — siempre disponible
+   *   - 'back', 'left', 'right' — fallback a 'forward' si no existe la anim
+   *
+   * @param {'idle'|'walk'|'run'} state
+   * @param {'forward'|'back'|'left'|'right'} [direction='forward']
+   *
+   * @example
+   *   character.play('walk');                 // walk_forward
+   *   character.play('run', 'left');          // run_left si existe, sino run_forward
+   *   character.setCombatStance(true);
+   *   character.play('run', 'back');          // sword_run_back si existe
+   */
   play(state, direction = 'forward') {
     if (!this.loaded) return;
     if (this.isAttacking || this.isInTransition || this.isDead) return;
@@ -668,10 +691,31 @@ export class Character {
     return state === 'run' ? 'run_forward' : 'walk_forward';
   }
 
+  /**
+   * Activa/desactiva la pose de combate. Cambia qué anims se usan en `play()`:
+   *
+   *   - true  → idle = sword_idle, walk/run = sword_*
+   *   - false → idle = idle normal, walk/run = anims normales
+   *
+   * Llamado por combat_hooks.js al entrar/salir de combate. Para armas que
+   * tienen anim de draw (1h_sword, 2h_sword) `playDraw()` lo activa solo.
+   * Para herramientas (axe/pickaxe) y bow/staff, hay que llamar este método
+   * manualmente porque no hay anim de draw.
+   *
+   * @param {boolean} on
+   */
   setCombatStance(on) {
     this.combatStance = !!on;
   }
 
+  /**
+   * Reproduce la anim de desenvainar espada + activa combatStance al terminar.
+   * Solo para weapon_type '1h_sword' o '2h_sword'. Para otras armas usar
+   * `setCombatStance(true)` directamente.
+   *
+   * Duración escalada a DRAW_MS (~600ms).
+   * No-op si está muerto, no cargado, o ya en transición.
+   */
   playDraw() {
     if (!this.loaded || this.isDead) return;
     const action = this.actions.draw;
@@ -715,17 +759,31 @@ export class Character {
   }
 
   /**
-   * Sesión 26 — playAttack(stanceKey, weaponType, cooldownMs)
+   * Reproduce una animación de ataque. Llamado por combat.js cada tick (600ms)
+   * vía `window.__playerPlayAttack`.
    *
    * Decide qué anim usar según el ARMA equipada, no solo el stance:
-   *   - 1H sword     → Punching.fbx siempre (con escudo+espada se ve bien)
-   *   - 2H sword     → Sword_Attack_N según stance:
-   *                      chop=1, slash=2, smash=3, block=4
-   *   - Staff / Bow  → cycle automático sword_attack_1..4
-   *   - Unarmed      → Punching.fbx
+   *   - 1H sword / unarmed → `Punching.fbx` siempre (con escudo+espada se ve bien)
+   *   - 2H sword           → `Sword_Attack_N` según stance: chop=1, slash=2, smash=3, block=4
+   *   - Staff / Bow        → cycle automático attack_1..4
    *
-   * cooldownMs: cuánto tiene que durar la anim (escala a ese tiempo).
-   * Si no se pasa, usa ATTACK_TICK_MS por defecto.
+   * Escala la anim a `cooldownMs` con `setEffectiveTimeScale`. Si la anim
+   * natural es más larga que el cooldown, se acelera; si es más corta, se
+   * deja en velocidad natural (no se ralentiza para no verse fake).
+   *
+   * Setea `isAttacking = true` durante la duración. world.js no llama play()
+   * mientras eso es true → la anim corre completa sin interrupción.
+   *
+   * No-op si está muerto, atacando ya, o en transición.
+   *
+   * @param {'chop'|'slash'|'smash'|'block'|undefined} stanceKey   Solo se usa para 2h_sword.
+   * @param {'1h_sword'|'2h_sword'|'bow'|'staff'|'axe'|'pickaxe'|'unarmed'} weaponType
+   * @param {number} [cooldownMs=ATTACK_TICK_MS]    Duración objetivo (default 600ms).
+   *
+   * @example
+   *   // Desde combat.js:
+   *   window.__playerPlayAttack('slash', '2h_sword', 600);
+   *   //   → reproduce Sword_Attack_2.fbx escalada a 600ms
    */
   playAttack(stanceKey, weaponType, cooldownMs) {
     if (!this.loaded || this.isDead) return;
@@ -802,6 +860,22 @@ export class Character {
     this.isInTransition = false;
   }
 
+  /**
+   * Restaura al char desde el estado `isDead = true` a idle limpio.
+   * Llamado por combat_hooks.js en `window.__playerRevive()` después de
+   * respawnear.
+   *
+   * Pasos críticos (no cambiar el orden — ver INVARIANTS 2.5):
+   *   1. Reset de flags (isDead, isAttacking, isInTransition, combatStance).
+   *   2. Desactivar `clampWhenFinished` de las death anims (sino se queda en
+   *      pose de muerte aunque cambiemos a idle).
+   *   3. `stop() + reset()` explícitos de las death anims.
+   *   4. `mixer.stopAllAction() + setTime(0)` — limpia poses residuales.
+   *   5. Arrancar idle desde cero con `reset() + play()` y `setEffectiveTimeScale(1)`.
+   *
+   * Sin estos 5 pasos, el char puede quedar visualmente "muerto pero moviéndose"
+   * o en T-pose. Es el mismo patrón que usa playGather (el mixer hard reset).
+   */
   revive() {
     this.isDead = false;
     this.isAttacking = false;
@@ -846,30 +920,49 @@ export class Character {
   }
 
   /**
-   * Sesión 30 — playGather(animKey, durationMs)
+   * Reproduce una animación one-shot de gathering (tala, encender fuego, minar
+   * futuro). Patrón estándar para skills que arrodillan/agachan al char.
    *
-   * One-shot para anims de gathering (woodcut, kneel, mining futuro).
-   * animKey debe existir en ANIM_FILES (ej: 'woodcut', 'kneel').
-   * durationMs: cuánto dura el ciclo visual. Si es null/0/undefined, usa
-   *             la duración NATURAL del clip (recomendado — la anim se ve
-   *             completa a velocidad normal). Si pasás un número, la anim
-   *             se acelera (no se ralentiza) para entrar en ese tiempo.
+   * `animKey` debe existir en `ANIM_FILES` (ej: 'punching', 'kneel', 'mining').
    *
-   * Marca isInTransition durante la anim para que el player no pueda
-   * caminar visualmente mientras tala/enciende (la lógica de movement
-   * en world.js respeta isInTransition vía character.play()).
+   * Comportamiento clave:
+   *   - Marca `_gatheringActive = true` y `_gatherAnimName = animKey` para que
+   *     world.js (updatePlayer) aplique el Y offset por anim
+   *     (`window.__gatherY = { kneel: -0.6 }` etc).
+   *   - Suspende combatStance durante la anim → entre swings no vuelve a
+   *     sword_idle (que muestra la espada).
+   *   - Marca `isInTransition` → el player no puede cambiar a walk/idle
+   *     visualmente mientras dura.
    *
-   * Devuelve la duración real (ms) de la anim, para que el llamador
-   * sincronice el próximo tick. Devuelve 0 si no pudo arrancar.
+   * Al terminar la anim hace **un cleanup duro** (S31 fix del kneel hundido):
+   *   1. Reset de flags (`_gatheringActive = false`, `combatStance` restaurado).
+   *   2. `action.setEffectiveTimeScale(1)` — sin esto idle hereda timeScale
+   *      corrupto y corre a la mitad de velocidad por 5s (bug fixed S31).
+   *   3. `mixer.stopAllAction() + setTime(0)` — limpia pose residual del
+   *      gather, sin esto el char queda "hundido visualmente" hasta que el
+   *      ciclo de idle complete (bug fixed S31).
+   *   4. `play('idle')` — vuelve a estado normal.
    *
-   * Sesión 30 fix:
-   *   - Suspende temporalmente combatStance durante la anim para que
-   *     entre tick y tick NO vuelva a sword_idle (que muestra la espada).
-   *     Restauramos el estado original al terminar.
-   *   - clampWhenFinished=false al terminar — fuerza salir del último
-   *     frame (que dejaba al char "hundido" en pose final). Llamamos
-   *     play('idle') al final para volver limpio.
-   *   - Si durationMs es null/0, usa la duración natural del clip.
+   * Ver INVARIANTS sección 3.2 para los 5 pasos del cleanup.
+   *
+   * @param {'punching'|'kneel'|'mining'|string} animKey  clip name en ANIM_FILES
+   * @param {number} [durationMs]
+   *   - `0` / `undefined` / `null` → usa duración natural del clip.
+   *     **Recomendado** para anims que se ven mejor a velocidad normal (woodcut).
+   *   - `> 0` → escala el clip a esa duración. Si la anim natural es más larga,
+   *     se acelera. Si es más corta, se deja natural (no se ralentiza).
+   *     Usado en kneel con 1800ms.
+   *
+   * @returns {number} Duración real (ms) de la anim. 0 si no pudo arrancar
+   *   (char muerto, atacando, en transición, o anim no existe).
+   *
+   * @example
+   *   // Encender fuego (firemaking.js):
+   *   const dur = character.playGather('kneel', 1800);
+   *   setTimeout(() => spawnFireSprite(), dur);
+   *
+   *   // Tala (woodcutting.js):
+   *   character.playGather('punching', 0);  // natural duration
    */
   playGather(animKey, durationMs) {
     if (!this.loaded || this.isDead) return 0;

@@ -52,6 +52,25 @@ const WEAPON_TYPE_TO_COMBAT = {
 // API pública
 // ============================================================
 
+/**
+ * Inicializa el módulo de equipment. Idempotente.
+ *
+ * Side effects:
+ *   - Inyecta CSS del panel en `<head>`
+ *   - Inyecta el DOM del panel
+ *   - Fetcha el estado actual del server vía `refresh()`
+ *
+ * @param {object} opts
+ * @param {string} opts.apiBase   Base URL del worker (ej 'https://x.workers.dev').
+ * @param {() => string|null} opts.getToken  Getter del JWT actual del player.
+ * @returns {Promise<void>}
+ *
+ * @example
+ *   await equipment.init({
+ *     apiBase: 'https://sebaspresent.srmrpapitas.workers.dev',
+ *     getToken: () => localStorage.getItem('token'),
+ *   });
+ */
 export async function init(opts) {
   if (initialized) return;
   apiBase = opts.apiBase;
@@ -64,6 +83,19 @@ export async function init(opts) {
   initialized = true;
 }
 
+/**
+ * Re-fetcha el estado de equipamiento desde el server y actualiza el panel.
+ * Llamado automáticamente después de equipar/desequipar.
+ *
+ * Side effects:
+ *   - Actualiza `equipped` (mapa interno slot → item).
+ *   - Re-renderiza el panel.
+ *   - Notifica a los listeners de `onChange`.
+ *
+ * No-op si no hay token (player no logueado).
+ *
+ * @returns {Promise<void>}
+ */
 export async function refresh() {
   const token = getToken?.();
   if (!token) return;
@@ -84,20 +116,64 @@ export async function refresh() {
   }
 }
 
+/**
+ * Devuelve el item equipado en un slot, o `null` si el slot está vacío.
+ *
+ * @param {'helm'|'cape'|'amulet'|'weapon'|'body'|'shield'|'legs'|'ring'|'boots'} slotId
+ * @returns {EquippedItem|null}
+ *
+ * @typedef {object} EquippedItem
+ * @property {string} item_id        Ej 'axe', 'iron_sword', 'leather_helm'.
+ * @property {string} name           Nombre display (ej 'Hacha de bronce').
+ * @property {string} [icon]         Path al icono SVG (o emoji fallback).
+ * @property {string} [weapon_type]  Solo en slot weapon: 'axe'|'1h_sword'|...
+ * @property {number} [attack_bonus]
+ * @property {number} [defense_bonus]
+ */
 export function getEquipped(slotId) {
   return equipped[slotId] || null;
 }
 
+/**
+ * Devuelve una copia del mapa entero de slots equipados.
+ * Útil para el debug panel y health check.
+ *
+ * @returns {Record<string, EquippedItem>}
+ */
 export function getAll() {
   return { ...equipped };
 }
 
+/**
+ * Devuelve el weapon_type efectivo para combate, mapeado al de las anims.
+ *
+ * Mapping:
+ *   - Sin arma equipada o slot vacío → 'unarmed'
+ *   - axe / pickaxe → 'axe' / 'pickaxe' (herramientas, anim de attack = punching)
+ *   - dagger → mapeado a '1h_sword' (usan mismas anims)
+ *   - 1h_sword, 2h_sword, bow, staff → tal cual
+ *
+ * Combat.js usa este valor para decidir qué animación de attack reproducir.
+ *
+ * @returns {'unarmed'|'1h_sword'|'2h_sword'|'bow'|'staff'|'axe'|'pickaxe'}
+ *
+ * @example
+ *   const wt = equipment.getWeaponType();
+ *   if (wt === '1h_sword' || wt === '2h_sword') character.playDraw();
+ *   else if (wt === 'axe' || wt === 'pickaxe') character.setCombatStance(true);
+ */
 export function getWeaponType() {
   const w = equipped.weapon;
   if (!w || !w.weapon_type) return 'unarmed';
   return WEAPON_TYPE_TO_COMBAT[w.weapon_type] || 'unarmed';
 }
 
+/**
+ * Devuelve `{ item_id, weapon_type }` del arma equipada, o `null`.
+ * weapon_type ya viene mapeado para combat (ver `getWeaponType()`).
+ *
+ * @returns {{ item_id: string, weapon_type: string }|null}
+ */
 export function getEquippedWeaponItem() {
   const w = equipped.weapon;
   if (!w) return null;
@@ -107,6 +183,20 @@ export function getEquippedWeaponItem() {
   };
 }
 
+/**
+ * Subscribe a cambios en el equipment. El callback se llama cada vez
+ * que se equipa/desequipa algo (después de `refresh()`).
+ *
+ * @param {(slots: Record<string, EquippedItem>) => void} cb
+ * @returns {() => void}  Función para desuscribirse.
+ *
+ * @example
+ *   const unsub = equipment.onChange((slots) => {
+ *     console.log('Nueva weapon:', slots.weapon?.item_id);
+ *   });
+ *   // más tarde:
+ *   unsub();
+ */
 export function onChange(cb) {
   listeners.push(cb);
   return () => {
@@ -115,6 +205,19 @@ export function onChange(cb) {
   };
 }
 
+/**
+ * Equipa el item que está en el slot del inventario indicado.
+ * El server determina automáticamente el slot de equipo correcto según
+ * `items.equip_slot` del catálogo. Si el slot estaba ocupado, el viejo
+ * vuelve al inv.
+ *
+ * @param {number} slotIndex   Slot del inventario (0-27).
+ * @returns {Promise<{ok?: boolean, error?: string, message?: string}>}
+ *
+ * @example
+ *   const res = await equipment.equipFromInventory(3);
+ *   if (res.error === 'level_too_low') alert(res.message);
+ */
 export async function equipFromInventory(slotIndex) {
   const token = getToken?.();
   if (!token) return { error: 'no_token' };
@@ -134,6 +237,13 @@ export async function equipFromInventory(slotIndex) {
   }
 }
 
+/**
+ * Desequipa el item del slot indicado. Vuelve al inventario en un slot libre.
+ * Si el inv está lleno, el server devuelve `{ error: 'inventory_full' }`.
+ *
+ * @param {'helm'|'cape'|'amulet'|'weapon'|'body'|'shield'|'legs'|'ring'|'boots'} slotId
+ * @returns {Promise<{ok?: boolean, error?: string}>}
+ */
 export async function unequip(slotId) {
   const token = getToken?.();
   if (!token) return { error: 'no_token' };
