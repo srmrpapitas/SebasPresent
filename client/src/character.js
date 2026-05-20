@@ -927,6 +927,23 @@ export class Character {
         const idleAction = this.actions.idle;
         if (idleAction) idleAction.setEffectiveTimeScale(1);
       } catch {}
+      // Sesión 31 fix kneel #2 — el kneel deja escrita en los bones la
+      // pose "arrodillado" (rodillas dobladas, pies hacia adentro). Three.js
+      // no resetea esos valores aunque empecemos el idle. Crossfade gradual
+      // mantiene 50% de la pose vieja durante el primer ciclo del idle (5s)
+      // → char hundido visualmente aunque pos.y sea correcto.
+      // Fix: stopAllAction + setTime(0) limpia los valores residuales del
+      // mixer ANTES de arrancar idle fresh.
+      try {
+        if (this.mixer) {
+          this.mixer.stopAllAction();
+          this.mixer.setTime(0);
+        }
+        if (action) {
+          action.stop();
+          action.reset();
+        }
+      } catch {}
       try { this.play('idle'); } catch {}
     }, dur + 20);
 
