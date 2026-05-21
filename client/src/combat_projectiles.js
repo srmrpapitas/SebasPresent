@@ -85,15 +85,28 @@ const ARROW_COLORS = {
 const DEFAULT_ARROW_COLOR = ARROW_COLORS.arrow_bronze;
 
 // Tunables de visual. Si la flecha se ve muy chica/grande/torcida, tocar acá.
-//   ARROW_BASE_SCALE: scale uniforme del clone. Empezamos en 1.0 — si el
-//     GLB exporta en metros razonables debería estar bien.
-//   ARROW_YAW_OFFSET: corrección de rotación si el GLB no apunta a -Z local
-//     (que es lo que asume lookAt). Si la flecha vuela "de costado" en vez
-//     de "de frente", probar PI/2, -PI/2 o PI.
-//   ARROW_ARC_HEIGHT: altura del arc parabólico en metros. 0 = recto.
-const ARROW_BASE_SCALE  = 1.0;
-const ARROW_YAW_OFFSET  = 0;
-const ARROW_ARC_HEIGHT  = 0.6;
+//
+//   ARROW_BASE_SCALE: scale uniforme del clone. Si el GLB exporta en metros
+//     razonables, 1.0 está bien.
+//
+//   ARROW_ROT_OFFSET_{X,Y,Z}: corrección post-lookAt. Necesaria porque
+//     lookAt() asume que -Z local apunta al target, y casi ningún GLB
+//     respeta esa convención. arrow.glb fue exportado con la flecha
+//     apuntando hacia +Y (típico de Blender), por eso por default
+//     aplicamos rotX = -PI/2 (tumba 90° hacia adelante).
+//
+//     Si tu flecha sigue mal después de subir, prueba:
+//        - flecha vuela vertical / "parada"   → rotX = -PI/2 (default actual)
+//        - flecha vuela "al revés"            → rotX = +PI/2 ó rotZ = PI
+//        - flecha vuela "de costado"          → rotY = PI/2 ó -PI/2
+//        - punta hacia el shooter, no target  → rotZ = PI
+//
+//   ARROW_ARC_HEIGHT: altura del arc parabólico en metros. 0 = vuelo recto.
+const ARROW_BASE_SCALE     = 1.0;
+const ARROW_ROT_OFFSET_X   = -Math.PI / 2;
+const ARROW_ROT_OFFSET_Y   = 0;
+const ARROW_ROT_OFFSET_Z   = 0;
+const ARROW_ARC_HEIGHT     = 0.6;
 
 // Offset vertical desde el suelo del shooter y del target. Mantiene el
 // "salir del pecho, llegar a la cabeza" del stub original — aproximación
@@ -235,15 +248,17 @@ export function update() {
     // Rotación: la flecha apunta "hacia donde va a estar 0.01 de t más
     // adelante". Esto sigue el arco naturalmente (sube cuando sube, baja
     // cuando baja), sin necesidad de calcular derivadas a mano.
-    // lookAt() orienta -Z local hacia el target. Si el GLB original no
-    // apunta a -Z, agregar offset con ARROW_YAW_OFFSET arriba.
+    // lookAt() orienta -Z local hacia el target. Los ARROW_ROT_OFFSET_*
+    // corrigen la orientación local del GLB después (ver arriba).
     const tNext = Math.min(1, t + 0.01);
     const nx = p.from.x + (p.to.x - p.from.x) * tNext;
     const nz = p.from.z + (p.to.z - p.from.z) * tNext;
     const nyLin = p.from.y + (p.to.y - p.from.y) * tNext;
     const nyArc = ARROW_ARC_HEIGHT * Math.sin(tNext * Math.PI);
     p.obj.lookAt(nx, nyLin + nyArc, nz);
-    if (ARROW_YAW_OFFSET !== 0) p.obj.rotateY(ARROW_YAW_OFFSET);
+    if (ARROW_ROT_OFFSET_X !== 0) p.obj.rotateX(ARROW_ROT_OFFSET_X);
+    if (ARROW_ROT_OFFSET_Y !== 0) p.obj.rotateY(ARROW_ROT_OFFSET_Y);
+    if (ARROW_ROT_OFFSET_Z !== 0) p.obj.rotateZ(ARROW_ROT_OFFSET_Z);
   }
 }
 
