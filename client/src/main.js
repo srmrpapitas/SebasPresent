@@ -15,6 +15,10 @@ import * as interiors from './interiors.js';
 // Idempotente, 100% observer, no toca world.js. Se inicia ANTES que cualquier
 // otra cosa para que atrape errores tempranos de boot.
 import { initDebugSystem } from './debug/index.js';
+// Sesión 33 día 3 — Book modal infraestructura. Side-effect import: registra
+// window.__demoBook y window.__closeBook en Eruda. No exporta funcionalidad
+// activa hoy (no se invoca solo), pero queda disponible para Bloque 5.
+import './ui/book_modal.js';
 
 async function boot() {
   // Sesión 31 — primero el debug system para captura de errores temprana.
