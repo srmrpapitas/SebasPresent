@@ -1025,7 +1025,7 @@ export class Character {
   /**
    * Activa/desactiva la pose de combate. Cambia qué anims se usan en `play()`:
    *
-   *   - true  → idle = sword_idle (o bow held si modo='bow'), walk/run = sword_*/bow_*
+   *   - true  → idle = sword_idle (o bow held si modo='bow'), walk/run = sword_* o bow_*
    *   - false → idle = idle normal, walk/run = anims normales
    *
    * Llamado por combat_hooks.js al entrar/salir de combate. Para armas que
