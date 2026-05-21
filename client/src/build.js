@@ -14,7 +14,12 @@
  *   M:  iteración dentro de la sesión
  *   pre: 'dev' antes del cierre, vacío al cerrar la sesión
  */
-export const BUILD = '33.5-dev';
+// S34 (2026-05-21) — cierre formal Bloque 1 + arranque Bloque 2.
+//   Convención: 'beta X.Y' al cerrar bloques del plan de 50 días.
+//   - beta 0.1 = cierre Bloque 0 (S32)
+//   - beta 0.2 = cierre Bloque 1 / arranque Bloque 2 (S34) ← acá
+//   - beta 0.3 = cierre Bloque 2 (Combate ranged + magic)
+export const BUILD = 'beta 0.2';
 
 /** Fecha del último cambio mayor — informativa, no se compara con server. */
 export const BUILD_DATE = '2026-05-21';
