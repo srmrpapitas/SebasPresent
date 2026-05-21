@@ -228,6 +228,23 @@ export async function placeOrder(db, userId, { itemId, side, price, qty }) {
      ORDER BY id DESC LIMIT 1`,
     [userId, now, itemId, side]
   );
+
+  // Sesión 35 — Match attempt INMEDIATO tras crear la orden. Sin esto, las
+  // órdenes quedaban OPEN hasta el siguiente cron tick (hasta 60s después),
+  // generando la sensación de "el GE está roto, puse sell y no se ejecuta
+  // nada aunque haya buy compatible". El cron sigue corriendo como safety
+  // net por si algún edge case dejara orders sin matchear.
+  // Race-condition: dos placeOrder concurrentes del mismo item podrían
+  // intentar matchear el mismo par. En tráfico actual (tech demo, pocas
+  // cuentas) es improbable; si en el futuro vemos doble-fill en logs, mover
+  // el matchItem a una queue serializada por item_id.
+  try {
+    await matchItem(db, itemId);
+  } catch (err) {
+    console.error('[ge] matchItem after placeOrder failed:', err);
+    // No re-throw: la orden ya quedó creada bien, el cron la levantará.
+  }
+
   return { orderId: row.id, escrowMoved: side === SIDE_BUY ? coinEscrow : itemEscrow };
 }
 
