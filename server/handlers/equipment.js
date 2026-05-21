@@ -36,7 +36,7 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
-const INVENTORY_SLOTS = 28;
+const INVENTORY_SLOTS = 20;
 const VALID_EQUIP_SLOTS = ['weapon', 'shield', 'helm', 'body', 'legs', 'boots', 'cape', 'amulet', 'ring'];
 
 // ============================================================

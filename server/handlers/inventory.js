@@ -9,7 +9,7 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
-export const INVENTORY_SLOTS = 28;
+export const INVENTORY_SLOTS = 20;
 
 export async function handleGetInventory(request, env) {
   const session = await requireSession(request, env);

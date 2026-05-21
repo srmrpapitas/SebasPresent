@@ -28,7 +28,7 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
-const INVENTORY_SLOTS = 28;
+const INVENTORY_SLOTS = 20;
 const COINS_ITEM_ID = 'coins';
 
 // Precio que el NPC paga por items genéricos (no en su lista) cuando el
