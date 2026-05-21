@@ -205,14 +205,17 @@ export async function startWorld(loggedInUser, token) {
     // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
     // Sesión 36 (B-019 parcial) — gate de distancia. Antes el tap entraba al
     // interior desde cualquier punto del mapa (raycast→callback sin validar
-    // proximidad). Ahora pedimos que el player esté a ≤1m (≈3 feet) del anchor
-    // del edificio. Si no, feedLog "acércate" y no entra.
-    // Nota: 1m del ANCHOR del edificio — si el modelo tiene anchor en el centro
-    // y el edificio mide 5m de ancho, "1m del anchor" implica que el player
-    // está prácticamente pisando el footprint. Si resulta demasiado estricto
-    // visualmente, subir BUILDING_ENTRY_RANGE_M (ver constante abajo).
+    // proximidad). Ahora pedimos que el player esté a ≤BUILDING_ENTRY_RANGE_M
+    // del anchor del edificio. Si no, feedLog "acércate" y no entra.
+    // Iter 1: 1.0m → muy estricto, no entraba parado en la puerta (el anchor
+    // del edificio queda en el centro del footprint, la puerta está a ~2-3m
+    // del centro, queda fuera del radio).
+    // Iter 2: 7.0m → suficiente para entrar parado en la puerta, sigue
+    // bloqueando entradas "desde lejos en el medio del mapa". Si se siente
+    // demasiado generoso (entrás desde afuera del footprint visual), bajar
+    // a 4-5m.
     showWorldLoading('Cargando edificios…');
-    const BUILDING_ENTRY_RANGE_M = 1.0;
+    const BUILDING_ENTRY_RANGE_M = 7.0;
     await buildings.start({
       scene, camera, canvas,
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
