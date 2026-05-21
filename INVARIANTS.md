@@ -475,4 +475,67 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
 
 ---
 
+## 14. Sesión 33 — B-002: smoothness post-combat + combat_styles
+
+### 14.1 B-002 — playDraw / playSheath robustez
+- `_drawSheathTimeoutId` en Character guarda el id del setTimeout pendiente
+  de playDraw o playSheath. Cuando se llama uno de los dos, primero
+  cancela el timeout del anterior. Sin esto: race condition donde el
+  setTimeout de playDraw se ejecuta DESPUÉS de playSheath y pisa
+  combatStance=false con true (pose residual permanente).
+- `playSheath` ya NO aborta por `isInTransition`. Si está en transición,
+  igual setea `combatStance=false`, salta la anim de envainar, y llama
+  `_forceIdleReset()` para limpiar el mixer.
+- `__playerExitCombat` cubre TODOS los branches (incluyendo `unarmed` y
+  weaponType desconocido): siempre setea combatStance=false, limpia
+  isInTransition, y llama _forceIdleReset.
+- `_forceIdleReset()` es el nuevo helper estilo kneel-fix: `mixer.stopAllAction
+  + setTime(0) + idle.play()`. Garantiza que el mixer arranque limpio.
+  Solo llamar con combatStance=false (sino rompe la pose de combate).
+
+### 14.2 combat_styles.js — interfaz unificada (Bloque 1 día 1)
+- Archivo creado en `client/src/combat_styles.js`. Exporta `MeleeStyle`,
+  `RangedStyle`, `MagicStyle`, `getActiveStyle()`, `styleForWeaponType(wt)`.
+- HOY (S33 día 1) está creado pero **no se usa todavía** — combat.js,
+  character.js y combat_hooks.js siguen con su lógica original. La
+  migración es trabajo de día 2.
+- Contrato que cada style implementa:
+  - `id`: 'melee' | 'ranged' | 'magic'
+  - `matchesWeaponType(wt)` → boolean. EXCLUSIVO: cada wt matchea 1 solo.
+  - `getRange()` → metros. Para validación cliente.
+  - `onEnterCombat(character)` → void. Anim de "entrar" + setCombatStance.
+  - `onExitCombat(character)` → void. SIEMPRE garantiza combatStance=false.
+  - `playAttackAnim(character, stance, cooldownMs)` → void.
+  - `canAttack()` → `{ok:true}` o `{ok:false, message}`. Para ammo/runas.
+- `MeleeStyle` cubre: 1h_sword, 2h_sword, axe, pickaxe, unarmed.
+  Implementado y delega a las funciones existentes en character.js.
+- `RangedStyle` cubre: bow. STUB con TODOs marcados para Bloque 2 días 4-7.
+- `MagicStyle` cubre: staff. STUB con TODOs marcados para Bloque 2 días 8-11.
+- Selector `getActiveStyle()` lee `equipment.getWeaponType()` y devuelve el
+  style que matchea. Fallback a MeleeStyle si nada matchea (safe).
+- Debug: `window.__combatStyles.getActive()` / `.styleFor('bow')` en Eruda.
+
+### 14.3 Reglas para mañana (día 2 — migración)
+- ANTES de tocar combat_hooks.js / combat.js / character.js, leer
+  combat_styles.js entero para entender el contrato.
+- Reemplazar los `if (weaponType === '1h_sword' || ...)` por
+  `getActiveStyle().onEnterCombat(ch)` etc. NO cambiar lógica, solo
+  redirigir las llamadas al style.
+- Validar que tras la migración: tala con hacha, combate con espada,
+  death/revive, y todos los casos de B-002 siguen funcionando idénticos.
+  Si algo cambia, el style NO está delegando correctamente.
+
+### 14.4 Reglas para Bloque 2 (arquero/mago)
+- NO agregar if/else por weapon_type en combat.js o combat_hooks.js.
+  Toda lógica nueva debe vivir en el style correspondiente.
+- Si necesitás un método nuevo en el contrato (ej. `playReloadAnim`),
+  agregarlo a los 3 styles aunque sea no-op en los que no aplican.
+  Mantiene la interfaz consistente.
+- Range del server (hoy ~2m hardcoded melee) tiene que actualizarse
+  también: ranged necesita ~8m, magic ~6m. El style declara el range
+  del cliente pero el server tiene que matchear o el out_of_range
+  falla diferente entre cliente y server.
+
+---
+
 *Para Claude / IA: si un bug futuro coincide con un patrón en esta doc, probable que la causa esté acá descrita. No reescribas la solución, leé primero.*
