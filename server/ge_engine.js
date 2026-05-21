@@ -86,7 +86,7 @@ export const STATUS_COMPLETED = 1;
 export const STATUS_CANCELLED = 2;
 export const COIN_ITEM_ID = 'coins';
 export const MAX_ORDER_SLOTS_PER_USER = 8;
-export const INVENTORY_SLOT_COUNT = 28;
+export const INVENTORY_SLOT_COUNT = 20;
 
 // Targets validos para claimAll
 export const CLAIM_TARGET_INVENTORY = 'inventory';

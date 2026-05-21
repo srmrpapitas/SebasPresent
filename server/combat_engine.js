@@ -1600,7 +1600,7 @@ async function closeDuelById(db, duelId, now) {
 
 // Helper PVP: inserta en el primer slot libre o preferido del inventario.
 async function safeInsertInvSlot(db, userId, itemId, qty, preferredSlot) {
-  const MAX_SLOTS = 28;
+  const MAX_SLOTS = 20;
   const used = await db.all(
     `SELECT slot_index FROM user_inventory WHERE user_id = ?`,
     [userId]
