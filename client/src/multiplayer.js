@@ -45,6 +45,9 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as worldSnapshot from './world_snapshot.js';
 import * as party from './party.js';   // Sesión 27 Bloque 3 — colorear según party
 import * as duel from './duel.js';     // Sesión 28 — Retar a duelo desde action menu
+// Sesión 34 — B-001b: peers ven el arma REAL que tiene cada uno equipada,
+// no la del local player heredada por SkeletonUtils.clone.
+import { attachWeaponMeshToBone, resolveWeaponHand } from './character.js';
 
 // ============================================================
 // Constantes
@@ -734,6 +737,24 @@ function upsertPeer(p) {
     peer = createPeer(p);
     mpLastPeerMap.set(p.user_id, peer);
   }
+
+  // Sesión 34 — B-001b: sincronizar arma del peer con lo que dice el snapshot.
+  //
+  //   - Si no había arma y ahora hay (o cambió de item_id) → re-attach.
+  //   - Si tenía arma y ahora p.weapon_item_id == null → detach.
+  //   - Si es el mismo item_id que antes → no-op.
+  //
+  // El attach es async pero NO esperamos — el mesh aparece unos cientos de
+  // ms después (primer cargado) o instantáneo (cache hit).
+  if (peer.handBones && p.weapon_item_id !== peer._peerWeaponItemId) {
+    if (peer._peerWeaponItemId) {
+      detachPeerWeapon(peer);
+    }
+    if (p.weapon_item_id) {
+      attachPeerWeapon(peer, p.weapon_item_id, p.weapon_type || null, peer.handBones);
+    }
+  }
+
   // Nueva interpolación: from = posición visual actual, to = la del server
   peer.fromX = peer.group.position.x;
   peer.fromZ = peer.group.position.z;
@@ -776,6 +797,25 @@ function upsertPeer(p) {
       triggerPeerAttackAnim(peer);
     }
   }
+
+  // Sesión 34 — B-001b extra: detectar cuando el peer RECIBE damage.
+  // Mismo patrón que last_attack_at de arriba: si last_hit_at del server
+  // es nuevo Y reciente (<1.5s), disparamos un hitsplat numeric sobre la
+  // cabeza del peer + flash visual. Funciona tanto en PvE (NPC pegándole
+  // a tu papá) como en PvP (otro player atacándolo) — el server actualiza
+  // last_hit_at en ambos casos.
+  if (typeof p.last_hit_at === 'number' && p.last_hit_at > 0) {
+    const lastHitSeen = peer._lastHitAtSeen || 0;
+    const hitAge = Date.now() - p.last_hit_at;
+    if (p.last_hit_at > lastHitSeen && hitAge < 1500) {
+      peer._lastHitAtSeen = p.last_hit_at;
+      const dmg = typeof p.last_hit_damage === 'number' ? p.last_hit_damage : 0;
+      try { spawnHitsplatOnPeer(p.user_id, dmg); } catch {}
+      if (dmg > 0) {
+        try { flashPeerHit(p.user_id); } catch {}
+      }
+    }
+  }
 }
 
 /**
@@ -809,6 +849,109 @@ function triggerPeerAttackAnim(peer) {
   peer._attackingUntil = Date.now() + 600;  // bloquea idle override por 600ms
 }
 
+// ============================================================
+// Sesión 34 — B-001b: armas reales en peers
+// ============================================================
+//
+// SkeletonUtils.clone(characterRef.mesh) replica el esqueleto del local
+// player INCLUYENDO los meshes attached a los hand bones (su arma actual).
+// Resultado: cada peer "hereda" el arma del local player.
+//
+// Fix:
+//   1. Encontrar los hand bones del clone.
+//   2. Remover los children no-skeleton (las armas heredadas).
+//   3. Si el peer tiene una weapon equipped (snapshot.weapon_item_id), cargar
+//      su GLB real y attacharlo al bone correcto del peer.
+//
+// El paso 2 SOLO debe quitar meshes "extra" — NO los SkinnedMesh ni Bones
+// del char, que también cuelgan del root del clone.
+
+const PEER_HAND_BONE_NAMES_RIGHT = ['mixamorig:RightHand', 'mixamorigRightHand', 'RightHand'];
+const PEER_HAND_BONE_NAMES_LEFT  = ['mixamorig:LeftHand',  'mixamorigLeftHand',  'LeftHand'];
+
+function findHandBoneByNames(clonedMesh, candidateNames) {
+  let found = null;
+  clonedMesh.traverse(obj => {
+    if (found) return;
+    if (obj.isBone && candidateNames.includes(obj.name)) found = obj;
+  });
+  return found;
+}
+
+/**
+ * Remueve children de los hand bones del clone que NO son Bone ni SkinnedMesh.
+ * Esos children son las armas "heredadas" del local player vía SkeletonUtils.clone.
+ *
+ * Retorna { left, right } con los hand bones encontrados (para reusar después
+ * cuando attachemos el arma real).
+ */
+function cleanupInheritedWeapons(clonedMesh) {
+  const rightHand = findHandBoneByNames(clonedMesh, PEER_HAND_BONE_NAMES_RIGHT);
+  const leftHand  = findHandBoneByNames(clonedMesh, PEER_HAND_BONE_NAMES_LEFT);
+
+  for (const bone of [rightHand, leftHand]) {
+    if (!bone) continue;
+    const toRemove = bone.children.filter(c => !c.isBone && !c.isSkinnedMesh);
+    for (const c of toRemove) {
+      bone.remove(c);
+      // Dispose para evitar leak. Los meshes del clone ya tienen materials
+      // tinteados (clonados del original), así que disponerlos no afecta
+      // al local player.
+      c.traverse(o => {
+        if (o.geometry) o.geometry.dispose?.();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(m => m.dispose?.());
+        }
+      });
+    }
+  }
+  return { left: leftHand, right: rightHand };
+}
+
+/**
+ * Si el peer tiene weapon equipada (según snapshot), carga su GLB real y la
+ * attachea al hand bone correcto. Side effect: guarda peer._peerWeaponMesh
+ * y peer._peerWeaponItemId para poder detectar cambios y limpiar después.
+ */
+async function attachPeerWeapon(peer, weaponItemId, weaponType, handBones) {
+  if (!weaponItemId || !handBones) return;
+  try {
+    const handName = resolveWeaponHand(weaponItemId, weaponType);
+    const bone = handName === 'left' ? handBones.left : handBones.right;
+    if (!bone) {
+      console.warn(`[multiplayer] peer ${peer.userId} no tiene ${handName} hand bone`);
+      return;
+    }
+    const mesh = await attachWeaponMeshToBone(bone, weaponItemId, weaponType);
+    if (mesh) {
+      peer._peerWeaponMesh = mesh;
+      peer._peerWeaponBone = bone;
+      peer._peerWeaponItemId = weaponItemId;
+      peer._peerWeaponType = weaponType;
+    }
+  } catch (err) {
+    console.warn(`[multiplayer] attachPeerWeapon failed for ${weaponItemId}:`, err.message);
+  }
+}
+
+/** Quita el arma actualmente attached al peer (para swap o cleanup). */
+function detachPeerWeapon(peer) {
+  if (!peer._peerWeaponMesh || !peer._peerWeaponBone) return;
+  peer._peerWeaponBone.remove(peer._peerWeaponMesh);
+  peer._peerWeaponMesh.traverse(o => {
+    if (o.geometry) o.geometry.dispose?.();
+    if (o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m => m.dispose?.());
+    }
+  });
+  peer._peerWeaponMesh = null;
+  peer._peerWeaponBone = null;
+  peer._peerWeaponItemId = null;
+  peer._peerWeaponType = null;
+}
+
 function createPeer(p) {
   const group = new THREE.Group();
   group.position.set(p.x, 0, p.z);
@@ -817,6 +960,9 @@ function createPeer(p) {
   let peerMixer = null;
   let peerActions = {};
   let usedNico = false;
+  // S34 — cache de los hand bones del clone para attachear armas reales
+  // y para swaps posteriores (cuando el peer cambia de arma en runtime).
+  let peerHandBonesCache = null;
 
   // Slice 5c.5 — Nico clonado: si el character principal está cargado,
   // clonamos su skeleton/mesh con SkeletonUtils para que cada peer se vea
@@ -850,6 +996,17 @@ function createPeer(p) {
       });
 
       group.add(clonedMesh);
+
+      // Sesión 34 — B-001b: el SkeletonUtils.clone copió las armas que
+      // tenía el local player attacheadas a sus hand bones. Las quitamos
+      // y attacheamos en su lugar el arma REAL que el peer tiene equipada.
+      try {
+        const handBones = cleanupInheritedWeapons(clonedMesh);
+        // Cache de handBones en el peer para futuros swaps (sin re-traverse).
+        peerHandBonesCache = handBones;
+      } catch (err) {
+        console.warn('[multiplayer] cleanupInheritedWeapons failed:', err.message);
+      }
 
       peerMixer = new THREE.AnimationMixer(clonedMesh);
       for (const name of Object.keys(characterRef.clips)) {
@@ -944,6 +1101,8 @@ function createPeer(p) {
     interpStart: performance.now(),
     lastUpdate: Date.now(),
     username: p.username,
+    userId:  p.user_id,                   // S34 — útil para logs / detach
+    handBones: peerHandBonesCache,        // S34 — para swap de weapon en runtime
     // HP por defecto al 100% hasta que el server lo mande.
     hp:    typeof p.hp_current === 'number' ? p.hp_current : 10,
     hpMax: typeof p.hp_max     === 'number' ? p.hp_max     : 10,
