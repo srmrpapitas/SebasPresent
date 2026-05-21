@@ -198,45 +198,6 @@ export async function startWorld(loggedInUser, token) {
       fogFar:  FOG_FAR,
     }));
     ocean = sceneSetup.setupOcean({ scene, palette: PALETTE, worldHalf: WORLD_HALF });
-
-    // Sesión 37 — Expose perf hooks para diagnóstico de FPS. Antes había que
-    // adivinar globals; ahora `__perfStats()` da los números que importan
-    // (draw calls, triángulos, geometría, texturas) desde Eruda/Web Inspector.
-    // Lectura: 60fps requiere typically <500 draw calls + <1M tris + GPU
-    // razonable. Si vemos >1500 draw calls = problema de batching. Si vemos
-    // pixel_ratio>=2 + canvas_pixels>5M = problema de fillrate (típico Mac
-    // Retina con integrada Intel).
-    window.__perfStats = () => {
-      if (!renderer || !scene) return { error: 'no renderer/scene yet' };
-      let meshCount = 0, triCount = 0;
-      scene.traverse(o => {
-        if (o.isMesh) {
-          meshCount++;
-          const g = o.geometry;
-          if (g?.index) triCount += g.index.count / 3;
-          else if (g?.attributes?.position) triCount += g.attributes.position.count / 3;
-        }
-      });
-      const c = renderer.domElement;
-      const gl = c.getContext('webgl2') || c.getContext('webgl');
-      const dbg = gl?.getExtension('WEBGL_debug_renderer_info');
-      return {
-        draw_calls: renderer.info.render.calls,
-        triangles_drawn: renderer.info.render.triangles,
-        geometries: renderer.info.memory.geometries,
-        textures: renderer.info.memory.textures,
-        meshes_in_scene: meshCount,
-        total_tris_scene: Math.round(triCount),
-        pixel_ratio: renderer.getPixelRatio(),
-        canvas_w: c.width,
-        canvas_h: c.height,
-        canvas_pixels: c.width * c.height,
-        is_webgl2: !!c.getContext('webgl2'),
-        gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
-        vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : 'unknown',
-      };
-    };
-
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -629,15 +590,6 @@ export async function startWorld(loggedInUser, token) {
       // disparar SFX sin import circular (world_snapshot, multiplayer, etc).
       window.__playSfx = (name, opts) => {
         try { audio.sfx(name, opts); } catch {}
-      };
-      // Sesión 37 — exponer showDeathOverlay para que world_snapshot dispare
-      // el overlay de muerte cuando detecta you_died_recently=true vía snapshot
-      // (caso PvP donde te mata otro sin que vos ataques). combat.js no
-      // exporta showDeathOverlay (es local del módulo); por eso es vía
-      // wrapper acá. Si combat.showDeathOverlay no existe (versión vieja),
-      // el call es no-op silencioso.
-      window.__showDeathOverlay = () => {
-        try { combat.showDeathOverlay?.(); } catch {}
       };
       // Level up banner también vía skills.onLevelUp (cubre grants vía API directa)
       skills.onLevelUp((evt) => {
@@ -2319,7 +2271,16 @@ function setupInput() {
     // chat, etc.). Q/E retirados en Sesión 29 — se sustituyeron por
     // flechas izq/der.
     onKey: (key) => {
-      // (vacío por ahora — espacio para hotkeys futuras)
+      // Sesión 37 — ESC: cancela target de combate + cancela auto-engage
+      // pendiente. NO toca panel del sidebar (decisión: el sidebar es
+      // always-visible OSRS-style, no se cierra con ESC).
+      if (key === 'Escape') {
+        try { combat.disengage?.(); } catch {}
+        try { npcRenderer.cancelAutoEngage?.(); } catch {}
+        try { multiplayer.cancelAutoEngage?.(); } catch {}
+        playerTarget = null;
+        if (marker) marker.visible = false;
+      }
     },
   });
 
