@@ -170,6 +170,122 @@ const WEAPON_TRANSFORMS = {
   },
 };
 
+// ============================================================
+// Sesión 34 — Override por item_id (Bloque 2)
+// ============================================================
+// WEAPON_TRANSFORMS está indexado por weapon_type (ej. 'bow'), pero algunos
+// items del mismo tipo tienen geometría/escala distinta y necesitan su propia
+// calibración. Ejemplo: bow_normal (madera básica) y bow_oak (roble) son
+// ambos weapon_type='bow' pero los GLB son modelos distintos.
+//
+// Para resolver eso, WEAPON_TRANSFORMS_BY_ITEM_ID guarda overrides por
+// item_id específico. Si un item_id tiene entrada acá, gana sobre la
+// entrada por weapon_type. Si no, fallback al lookup por weapon_type.
+//
+// CÓMO CALIBRAR UN ARMA NUEVA:
+//   1. Equipala en el juego con __weaponDebug()
+//   2. Ajustá scale/position/rotation con los sliders
+//   3. Tap COPIAR
+//   4. Pegá la entrada acá usando el item_id (no el weapon_type)
+//
+// Hoy (S34) está vacío — la primera entrada va a ser 'bow_oak' cuando
+// Nico la calibre in-game.
+const WEAPON_TRANSFORMS_BY_ITEM_ID = {
+  // 'bow_oak': { scale: ..., position: [..], rotation: [..], hand: 'left' },
+};
+
+/**
+ * Resuelve el transform para un arma. Prioridad:
+ *   1. WEAPON_TRANSFORMS_BY_ITEM_ID[itemId]  — override específico
+ *   2. WEAPON_TRANSFORMS[weaponType]         — fallback por tipo
+ *   3. WEAPON_TRANSFORMS.default             — último recurso
+ */
+function resolveWeaponTransform(itemId, weaponType) {
+  return (
+    WEAPON_TRANSFORMS_BY_ITEM_ID[itemId] ||
+    WEAPON_TRANSFORMS[weaponType] ||
+    WEAPON_TRANSFORMS.default
+  );
+}
+
+// ============================================================
+// Sesión 34 — Standalone loaders/attachers (Bloque 2, B-001b)
+// ============================================================
+// Estos exports permiten que multiplayer.js attachee armas REALES a los
+// peers (cada peer ve el arma que tiene equipada el otro player, no la
+// del local player heredada por SkeletonUtils.clone).
+//
+// Notar que duplican un poco a Character._loadWeaponMesh y _doAttachWeapon:
+// es intencional. Las methods de instance manejan side effects del local
+// player (_equippedWeaponMesh, _equippedWeaponHand, etc) que NO existen
+// para peers. Las funciones standalone son puras → no tocan estado.
+// Próxima sesión polish: deduplicar (los methods delegan a las funciones).
+
+/**
+ * Carga el GLB del arma desde R2 con cache. Devuelve un mesh CLON listo
+ * para ser attached a algún bone. No modifica el cache original.
+ *
+ * @param {string} weaponId — item_id (ej. 'bow_oak', 'sword_bronze')
+ * @returns {Promise<THREE.Object3D>}
+ */
+export async function loadWeaponMeshFromR2(weaponId) {
+  if (_weaponMeshCache.has(weaponId)) {
+    return _weaponMeshCache.get(weaponId).clone(true);
+  }
+  const url = `${WEAPONS_BASE}/${weaponId}.glb`;
+  const gltf = await _gltfLoader.loadAsync(url);
+  const base = gltf.scene;
+  base.traverse(o => {
+    if (o.isMesh) {
+      o.frustumCulled = false;
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (m.side !== undefined) m.side = THREE.FrontSide;
+        }
+      }
+    }
+  });
+  _weaponMeshCache.set(weaponId, base);
+  return base.clone(true);
+}
+
+/**
+ * Carga el GLB del weapon, aplica el transform (override por item_id o
+ * fallback por weapon_type) y lo agrega al bone provisto. Devuelve el
+ * mesh attached (para que el caller pueda guardarlo y removerlo después).
+ *
+ * Usado por:
+ *   - Character._doAttachWeapon (vía similar logic — TODO dedup)
+ *   - multiplayer.js createPeer (peers)
+ *
+ * @returns {Promise<THREE.Object3D|null>} el mesh attached, o null si falló.
+ */
+export async function attachWeaponMeshToBone(bone, weaponId, weaponType) {
+  if (!bone || !weaponId) return null;
+  const tf = resolveWeaponTransform(weaponId, weaponType);
+  try {
+    const mesh = await loadWeaponMeshFromR2(weaponId);
+    mesh.scale.setScalar(tf.scale);
+    mesh.position.set(tf.position[0], tf.position[1], tf.position[2]);
+    mesh.rotation.set(tf.rotation[0], tf.rotation[1], tf.rotation[2]);
+    bone.add(mesh);
+    return mesh;
+  } catch (err) {
+    console.warn(`[character] attachWeaponMeshToBone failed (${weaponId}):`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Devuelve la mano ('left' | 'right') donde un arma específica debería ir.
+ * Útil para que multiplayer.js encuentre el bone correcto del peer.
+ */
+export function resolveWeaponHand(weaponId, weaponType) {
+  const tf = resolveWeaponTransform(weaponId, weaponType);
+  return tf.hand || 'right';
+}
+
 // Cache global de GLBs de armas para no descargar cada vez
 const _weaponMeshCache = new Map();
 const _gltfLoader = new GLTFLoader();
@@ -454,8 +570,9 @@ export class Character {
    */
   async _doAttachWeapon(weaponId, weaponType) {
     if (!this.loaded) return;
-    // Determinar mano según el tipo (default 'right')
-    const tf = WEAPON_TRANSFORMS[weaponType] || WEAPON_TRANSFORMS.default;
+    // S34 — lookup que prioriza override por item_id sobre la entrada por
+    // weapon_type. Ver WEAPON_TRANSFORMS_BY_ITEM_ID arriba.
+    const tf = resolveWeaponTransform(weaponId, weaponType);
     const handName = tf.hand || 'right';
     const bone = handName === 'left' ? this._leftHandBone : this._rightHandBone;
     if (!bone) {
@@ -1715,7 +1832,20 @@ window.__weaponDebug = function () {
   copyBtn.style.cssText = 'margin-top: 4px; width: 100%; padding: 5px; background: #8a6230; color: #fff; border: 1px solid #e8c560; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 10px; font-weight: bold;';
   copyBtn.textContent = '📋 COPIAR';
   copyBtn.addEventListener('click', () => {
-    const out = `'${guessTypeKey(weaponId)}': {
+    // Sesión 34 — Output formateado para pegar en WEAPON_TRANSFORMS_BY_ITEM_ID
+    // (override por item_id). Mantenemos también el bloque legacy por
+    // weapon_type comentado abajo por si querés actualizar la entrada genérica.
+    const typeKey = guessTypeKey(weaponId);
+    const out = `// → Pegar en WEAPON_TRANSFORMS_BY_ITEM_ID (recomendado para items específicos):
+'${weaponId}': {
+  scale: ${mesh.scale.x.toFixed(1)},
+  position: [${mesh.position.x.toFixed(1)}, ${mesh.position.y.toFixed(1)}, ${mesh.position.z.toFixed(1)}],
+  rotation: [${mesh.rotation.x.toFixed(3)}, ${mesh.rotation.y.toFixed(3)}, ${mesh.rotation.z.toFixed(3)}],
+  hand: '${ch._equippedWeaponHand}',
+},
+
+// → O en WEAPON_TRANSFORMS (afecta TODOS los items del mismo weapon_type):
+'${typeKey}': {
   scale: ${mesh.scale.x.toFixed(1)},
   position: [${mesh.position.x.toFixed(1)}, ${mesh.position.y.toFixed(1)}, ${mesh.position.z.toFixed(1)}],
   rotation: [${mesh.rotation.x.toFixed(3)}, ${mesh.rotation.y.toFixed(3)}, ${mesh.rotation.z.toFixed(3)}],
