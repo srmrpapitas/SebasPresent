@@ -191,7 +191,15 @@ const WEAPON_TRANSFORMS = {
 // Hoy (S34) está vacío — la primera entrada va a ser 'bow_oak' cuando
 // Nico la calibre in-game.
 const WEAPON_TRANSFORMS_BY_ITEM_ID = {
-  // 'bow_oak': { scale: ..., position: [..], rotation: [..], hand: 'left' },
+  // Sesión 35 — bow_oak: calibración base (punto de partida).
+  // Nico ajustó in-game con __weaponDebug() hasta dejarlo "medio bien".
+  // TODO S35: refinar el fit a la mano con otra ronda de debug.
+  'bow_oak': {
+    scale: 179.0,
+    position: [-17.0, 30.0, -22.5],
+    rotation: [-0.192, -2.492, 1.658],
+    hand: 'left',
+  },
 };
 
 /**
@@ -1792,20 +1800,30 @@ window.__weaponDebug = function () {
   `;
   panel.appendChild(title);
 
-  body.appendChild(row('Scl', 1, 600, 1, mesh.scale.x, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
+  // Sesión 35 — Rangos de sliders CENTRADOS en el valor actual del mesh.
+  // Antes: rangos fijos (-30/+30 pos, 1/600 scale). Problema: si la base
+  // calibrada es Y=30, el slider arranca PEGADO al max y no podés subir más.
+  // Ahora: cada slider se construye con halfWidth alrededor del valor
+  // actual, así siempre arrancás centrado con margen simétrico.
+  const sclCur = mesh.scale.x;
+  const sclHalf = Math.max(100, sclCur * 0.7);
+  body.appendChild(row('Scl', Math.max(1, sclCur - sclHalf), sclCur + sclHalf, 1, sclCur, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
 
   const sepP = document.createElement('div');
   sepP.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
   sepP.textContent = '─ POSITION';
   body.appendChild(sepP);
-  body.appendChild(row('X', -30, 30, 0.5, mesh.position.x, v => { mesh.position.x = v; }));
-  body.appendChild(row('Y', -30, 30, 0.5, mesh.position.y, v => { mesh.position.y = v; }));
-  body.appendChild(row('Z', -30, 30, 0.5, mesh.position.z, v => { mesh.position.z = v; }));
+  const posHalf = 20;
+  const pxCur = mesh.position.x, pyCur = mesh.position.y, pzCur = mesh.position.z;
+  body.appendChild(row('X', pxCur - posHalf, pxCur + posHalf, 0.25, pxCur, v => { mesh.position.x = v; }));
+  body.appendChild(row('Y', pyCur - posHalf, pyCur + posHalf, 0.25, pyCur, v => { mesh.position.y = v; }));
+  body.appendChild(row('Z', pzCur - posHalf, pzCur + posHalf, 0.25, pzCur, v => { mesh.position.z = v; }));
 
   const sepR = document.createElement('div');
   sepR.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
   sepR.textContent = '─ ROTATION';
   body.appendChild(sepR);
+  // Rotación queda ±PI (circular, no tiene sentido restringir).
   const PI = Math.PI;
   body.appendChild(row('rX', -PI, PI, 0.05, mesh.rotation.x, v => { mesh.rotation.x = v; }, v => `${Math.round(v*180/PI)}°`));
   body.appendChild(row('rY', -PI, PI, 0.05, mesh.rotation.y, v => { mesh.rotation.y = v; }, v => `${Math.round(v*180/PI)}°`));
@@ -1963,15 +1981,20 @@ window.__armorDebug = function (slotId) {
   `;
   panel.appendChild(title);
 
-  body.appendChild(row('Scl', 1, 600, 1, mesh.scale.x, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
+  // Sesión 35 — Mismo cambio que en weaponDebug: rangos centrados en valor actual.
+  const sclCur = mesh.scale.x;
+  const sclHalf = Math.max(100, sclCur * 0.7);
+  body.appendChild(row('Scl', Math.max(1, sclCur - sclHalf), sclCur + sclHalf, 1, sclCur, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
 
   const sepP = document.createElement('div');
   sepP.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
   sepP.textContent = '─ POSITION';
   body.appendChild(sepP);
-  body.appendChild(row('X', -30, 30, 0.5, mesh.position.x, v => { mesh.position.x = v; }));
-  body.appendChild(row('Y', -30, 30, 0.5, mesh.position.y, v => { mesh.position.y = v; }));
-  body.appendChild(row('Z', -30, 30, 0.5, mesh.position.z, v => { mesh.position.z = v; }));
+  const posHalf = 20;
+  const pxCur = mesh.position.x, pyCur = mesh.position.y, pzCur = mesh.position.z;
+  body.appendChild(row('X', pxCur - posHalf, pxCur + posHalf, 0.25, pxCur, v => { mesh.position.x = v; }));
+  body.appendChild(row('Y', pyCur - posHalf, pyCur + posHalf, 0.25, pyCur, v => { mesh.position.y = v; }));
+  body.appendChild(row('Z', pzCur - posHalf, pzCur + posHalf, 0.25, pzCur, v => { mesh.position.z = v; }));
 
   const sepR = document.createElement('div');
   sepR.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
