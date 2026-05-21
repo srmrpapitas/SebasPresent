@@ -591,6 +591,15 @@ export async function startWorld(loggedInUser, token) {
       window.__playSfx = (name, opts) => {
         try { audio.sfx(name, opts); } catch {}
       };
+      // Sesión 37 — exponer showDeathOverlay para que world_snapshot dispare
+      // el overlay de muerte cuando detecta you_died_recently=true vía snapshot
+      // (caso PvP donde te mata otro sin que vos ataques). combat.js no
+      // exporta showDeathOverlay (es local del módulo); por eso es vía
+      // wrapper acá. Si combat.showDeathOverlay no existe (versión vieja),
+      // el call es no-op silencioso.
+      window.__showDeathOverlay = () => {
+        try { combat.showDeathOverlay?.(); } catch {}
+      };
       // Level up banner también vía skills.onLevelUp (cubre grants vía API directa)
       skills.onLevelUp((evt) => {
         try { damageSplat.spawnLevelUpBanner(evt.skillId, evt.newLevel); } catch {}

@@ -72,6 +72,11 @@ let listeners = [];
 let panelEl = null;
 let feedEl = null;
 
+// Sesión 37 — Guard para que el detector de muerte en refresh() no dispare
+// __playerDeath dos veces. Se setea true cuando vemos hp<=0 por primera
+// vez, se resetea cuando vemos hp>0 (server respawneó). Ver refresh().
+let _localDeathHandled = false;
+
 // ============================================================
 // LIFECYCLE
 // ============================================================
@@ -124,6 +129,27 @@ export function onClose() {
 export async function refresh() {
   try {
     state = await api.getCombatState();
+    // Sesión 37 — Safety net death detection. El path PRIMARIO de "te
+    // mataron" es server-driven vía world_snapshot (me.you_died_recently
+    // del snapshot cada ~250ms). Este chequeo extra es para el caso edge
+    // donde world_snapshot está down/desfasado: si /combat/state nos llega
+    // con hp_current<=0 y no se procesó muerte aún, disparamos
+    // __playerDeath igual. Latencia: hasta 3s (POLL_INTERVAL_MS) vs
+    // ~250ms del server-driven path.
+    try {
+      const hp = state?.stats?.hp_current;
+      if (typeof hp === 'number' && hp <= 0 && !_localDeathHandled) {
+        _localDeathHandled = true;
+        if (typeof window !== 'undefined' && typeof window.__playerDeath === 'function') {
+          try { window.__playerDeath(); } catch {}
+        }
+        showDeathOverlay();
+        disengage();
+      } else if (typeof hp === 'number' && hp > 0 && _localDeathHandled) {
+        // Server respawneó. Reset.
+        _localDeathHandled = false;
+      }
+    } catch (e) { console.warn('[combat] death-safety-net check failed:', e); }
     updateHpHud();
     if (isTabOpen) render();
     notify();
@@ -1359,7 +1385,7 @@ function escapeHtml(s) {
  * (el resto del juego sigue corriendo pero el user no puede jugar
  * porque __playerDeath ya bloqueó el input vía character.isDead).
  */
-function showDeathOverlay() {
+export function showDeathOverlay() {
   // No duplicar
   if (document.getElementById('deathOverlay')) return;
 

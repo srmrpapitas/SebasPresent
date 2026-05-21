@@ -70,6 +70,13 @@ let lastError = null;
 // al start/stop del polling.
 let _lastProcessedHitAt = 0;
 
+// Sesión 37 — tracking de la última muerte procesada. Mismo patrón que
+// _lastProcessedHitAt: last_died_at funciona como ID único. Si llega uno
+// nuevo (timestamp distinto al ya procesado), disparamos __playerDeath.
+// Si llega el mismo (snapshot polled de nuevo sin nueva muerte), ignora.
+// Se resetea al start/stop.
+let _lastProcessedDeathAt = 0;
+
 // ============================================================
 // API pública
 // ============================================================
@@ -88,6 +95,7 @@ export function start(opts) {
   lastError     = null;
   started       = true;
   _lastProcessedHitAt = 0;  // Sesión 32 — reset al arrancar el mundo
+  _lastProcessedDeathAt = 0;  // Sesión 37
 
   // Hooks de debug en window (Eruda)
   if (typeof window !== 'undefined') {
@@ -114,6 +122,7 @@ export function stop() {
   lastSnapshot = null;
   lastError    = null;
   _lastProcessedHitAt = 0;  // Sesión 32
+  _lastProcessedDeathAt = 0;  // Sesión 37
   if (typeof window !== 'undefined' && window.__snapshotDebug) {
     delete window.__snapshotDebug;
   }
@@ -272,6 +281,22 @@ async function fetchSnapshot() {
     } catch (err) {
       console.warn('[world_snapshot] handleIncomingHit error:', err?.message);
     }
+
+    // Sesión 37 — Detectar muerte server-driven. Si el snapshot dice
+    // you_died_recently=true (server marcó last_died_at y hp_current<=0),
+    // dispara __playerDeath localmente. Por qué acá y no en combat.refresh:
+    //   1. Latencia. El snapshot llega cada ~250ms (más rápido que el
+    //      polling de combat cada 3s). En PvP donde mata=lobby es central,
+    //      sub-segundo es la meta.
+    //   2. Server es la única fuente de verdad. Antes el cliente del muerto
+    //      no se enteraba si la muerte no venía como respuesta a SU /attack
+    //      → limbo. Ahora cualquier path de muerte server-side (PvE, PvP,
+    //      duelo, futuro: NPC agro, traps) es notificado vía este snapshot.
+    try {
+      handleIncomingDeath(lastSnapshot.me);
+    } catch (err) {
+      console.warn('[world_snapshot] handleIncomingDeath error:', err?.message);
+    }
   } catch (err) {
     lastError = { reason: 'fetch_failed', message: err?.message, ts: Date.now() };
   } finally {
@@ -340,6 +365,59 @@ function handleIncomingHit(me) {
         ? `⚡ ¡${attackerName} te hace un CRÍTICO! ${damage} HP.`
         : `${attackerName} te pega ${damage} HP.`;
       window.__feedLog('player-hit', msg);
+    }
+  } catch {}
+}
+
+// ============================================================
+// Sesión 37 — Procesamiento de muerte recibida vía snapshot
+// ============================================================
+//
+// Server pushea me.you_died_recently=true cuando hp_current<=0 Y last_died_at
+// es reciente (<30s). Mismo patrón que handleIncomingHit: last_died_at funciona
+// como ID único — si llega uno distinto al ya procesado, dispara __playerDeath
+// localmente. Si llega el mismo (snapshot polled de nuevo), ignora.
+//
+// Por qué importa: PvP es central al juego (Bloque 3 entero). Antes el cliente
+// del muerto solo se enteraba si la muerte venía como respuesta a SU /attack
+// o /attack_player. Si el peer atacante lo mataba primero (sin que él atacara),
+// quedaba en limbo eterno: hp=0 pero sin Respawn overlay, podía moverse, server
+// rechazaba targetearlo, nadie le podía pegar.
+//
+// Edge cases cubiertos:
+//   - Re-login con muerte vieja (>30s): server flag = false, no dispara.
+//   - Refresh duplicado (mismo last_died_at): ignora.
+//   - Server respawnea entre snapshots: server flag = false (hp>0),
+//     no dispara. Reset del _lastProcessedDeathAt sucede vía la siguiente
+//     muerte (no necesitamos resetear acá explícitamente).
+function handleIncomingDeath(me) {
+  if (!me) return;
+  if (!me.you_died_recently) return;
+  const diedAt = me.last_died_at;
+  if (!diedAt || typeof diedAt !== 'number') return;
+  if (diedAt <= _lastProcessedDeathAt) return;  // ya procesado
+
+  _lastProcessedDeathAt = diedAt;
+
+  // Disparar __playerDeath (death anim + isDead flag + skills cancel) y
+  // showDeathOverlay (botón Respawn). Ambos son hooks globales (no
+  // necesitan import desde combat.js que crearía ciclo módulo).
+  try {
+    if (typeof window.__playerDeath === 'function') {
+      window.__playerDeath();
+    }
+  } catch (e) { console.warn('[world_snapshot] __playerDeath failed:', e); }
+
+  try {
+    if (typeof window.__showDeathOverlay === 'function') {
+      window.__showDeathOverlay();
+    }
+  } catch (e) { console.warn('[world_snapshot] __showDeathOverlay failed:', e); }
+
+  // Feed log informativo.
+  try {
+    if (typeof window.__feedLog === 'function') {
+      window.__feedLog('death', 'Has muerto. Toca el botón para volver al spawn.');
     }
   } catch {}
 }
