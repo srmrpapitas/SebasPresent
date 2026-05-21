@@ -233,7 +233,15 @@ export function tryHandleTap(clientX, clientY) {
   const buildingId = node?.userData?.buildingId || '?';
   // Si hay callback de entrar, llamarlo. Si no, mostrar placeholder feedLog.
   if (typeof onTapBuilding === 'function') {
-    try { onTapBuilding(buildingId); }
+    try {
+      // Sesión 36 — pasamos la posición world del edificio para que el caller
+      // (world.js) pueda gatear la entrada por distancia. Antes, este callback
+      // recibía solo el id → world.js no tenía forma de validar proximidad
+      // → tap desde cualquier punto del mapa entraba al interior (bug UX).
+      const buildingWorldPos = new THREE.Vector3();
+      node.getWorldPosition(buildingWorldPos);
+      onTapBuilding(buildingId, buildingWorldPos);
+    }
     catch (e) { console.warn('[buildings] onTapBuilding error:', e); }
   } else {
     feedLog('info', `Edificio (${buildingId}). Próximamente podrás entrar.`);

@@ -203,11 +203,34 @@ export async function startWorld(loggedInUser, token) {
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
     // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
     // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
+    // Sesión 36 (B-019 parcial) — gate de distancia. Antes el tap entraba al
+    // interior desde cualquier punto del mapa (raycast→callback sin validar
+    // proximidad). Ahora pedimos que el player esté a ≤1m (≈3 feet) del anchor
+    // del edificio. Si no, feedLog "acércate" y no entra.
+    // Nota: 1m del ANCHOR del edificio — si el modelo tiene anchor en el centro
+    // y el edificio mide 5m de ancho, "1m del anchor" implica que el player
+    // está prácticamente pisando el footprint. Si resulta demasiado estricto
+    // visualmente, subir BUILDING_ENTRY_RANGE_M (ver constante abajo).
     showWorldLoading('Cargando edificios…');
+    const BUILDING_ENTRY_RANGE_M = 1.0;
     await buildings.start({
       scene, camera, canvas,
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
-      onTapBuilding: (id) => interiors.enter(id),
+      onTapBuilding: (id, buildingPos) => {
+        // Gate de distancia. Si buildingPos no llegó (versión vieja del
+        // buildings.js o caso raro), fail-open y entra igual — preserva
+        // comportamiento pre-S36 antes que romper.
+        if (buildingPos) {
+          const dx = player.position.x - buildingPos.x;
+          const dz = player.position.z - buildingPos.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist > BUILDING_ENTRY_RANGE_M) {
+            try { combat.feedLog?.('warning', 'Acércate al edificio para entrar.'); } catch {}
+            return;
+          }
+        }
+        interiors.enter(id);
+      },
     });
     // Sesión 11c-1 — interiors (switch exterior↔interior)
     // Sesión 11c-2 — añadidos camera/canvas + callbacks Banco/GE para NPC menú
@@ -246,11 +269,13 @@ export async function startWorld(loggedInUser, token) {
         // que quepan en la sala. Sesión 31 — delegado a core/camera.js.
         // Sesión 36 — ajuste de ángulo: antes era { dist: 5, pitch: 0.55 } que
         // daba ángulo cinematográfico de lado (sin(0.55)*5 = 2.6m sobre player).
-        // Nuevo { dist: 7, pitch: 0.95 } → Y=5.7m (margen 2.3m bajo el techo de
-        // 8m), ángulo ~54° = top-down estilo OSRS, matchea la exterior visual.
-        // Como bonus, el efecto "mundo de gigantes" se aliviana porque desde
-        // arriba los muebles dejan de parecer torres.
-        cameraOrbital.pushInteriorOverrides({ dist: 7, pitch: 0.95 });
+        // Iter 1 (rechazada por Nico): dist=7, pitch=0.95 — quedó MUY cerca.
+        // Iter 2: dist=10, pitch=0.95 → Y=sin(0.95)*10 = 8.1m. Eso pisa el techo
+        // de 8m por 0.1m. Compensamos bajando pitch a 0.85 → Y=sin(0.85)*10=7.5m,
+        // margen 0.5m al techo. Ángulo ~49° = top-down OSRS, char más chico
+        // en frame. Si sigue cerca, probar dist=12 (vamos a tener que bajar
+        // pitch a 0.75 → Y=8.2m, JUSTO en el techo — riesgoso).
+        cameraOrbital.pushInteriorOverrides({ dist: 10, pitch: 0.85 });
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
