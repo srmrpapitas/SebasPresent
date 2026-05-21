@@ -41,6 +41,12 @@
 // o muerte.
 import * as skills from '../skills/index.js';
 
+// Sesión 33 día 2 (combat_styles migración) — En lugar de tener un switch
+// por weaponType acá, delegamos a getActiveStyle().onEnterCombat(ch) y
+// .onExitCombat(ch). Cuando se implemente arquero/mago en Bloque 2, no
+// hay que tocar este archivo — el nuevo style se encarga.
+import * as combatStyles from '../combat_styles.js';
+
 // ============================================================
 // Estado interno
 // ============================================================
@@ -98,29 +104,21 @@ export function register(opts) {
   // la espada se haría sobre el hacha y queda inconsistente.
   window.__playerEnterCombat = (npcId) => {
     // Cancel cualquier gather activo + restore weapon ANTES del draw.
-    // Idempotente: si no había gather activo, es noop.
+    // Idempotente: si no había gather activo, es noop. (B-001)
     try { skills.cancelAll('combat'); } catch (e) { console.warn('[combat_hooks] cancelAll:', e); }
 
     const wasEngaged = _combatTargetNpcId !== null;
     _combatTargetNpcId = npcId;
     if (wasEngaged) return;
 
+    // Sesión 33 día 2 — antes había un switch isMelee/isToolMelee/etc.
+    // Ahora delegamos al style activo. MeleeStyle preserva el comportamiento
+    // viejo exacto (playDraw para espadas, setCombatStance para tools, noop
+    // para unarmed). Cuando se agregue arquero/mago, sus styles lo manejan.
     const ch = _getCharacter();
-    let weaponType = 'unarmed';
-    try { weaponType = _getWeaponType() || 'unarmed'; } catch {}
-    const isMelee     = weaponType === '1h_sword' || weaponType === '2h_sword';
-    const isToolMelee = weaponType === 'axe' || weaponType === 'pickaxe';
-    if (isMelee) {
-      try { ch?.playDraw?.(); }
-      catch (e) { console.warn('[combat_hooks] playDraw:', e); }
-    } else if (isToolMelee) {
-      // Herramientas: combatStance pero sin draw. Anim de attack = punching.
-      try { ch?.setCombatStance?.(true); } catch {}
-    } else if (weaponType !== 'unarmed') {
-      // Bow/staff: activar combatStance manualmente (sin draw anim) para que
-      // las anims de attack_1..4 se usen en lugar de punch.
-      try { ch?.setCombatStance?.(true); } catch {}
-    }
+    if (!ch) return;
+    try { combatStyles.getActiveStyle().onEnterCombat(ch); }
+    catch (e) { console.warn('[combat_hooks] onEnterCombat:', e); }
   };
 
   window.__playerExitCombat = () => {
@@ -128,30 +126,12 @@ export function register(opts) {
     const ch = _getCharacter();
     if (!ch) return;
 
-    let weaponType = 'unarmed';
-    try { weaponType = _getWeaponType() || 'unarmed'; } catch {}
-    const isMelee     = weaponType === '1h_sword' || weaponType === '2h_sword';
-    const isToolMelee = weaponType === 'axe' || weaponType === 'pickaxe';
-
-    if (isMelee) {
-      // Espadas: playSheath maneja la anim de envainar + setea combatStance=false
-      // al terminar. Sesión 33 (B-002) — playSheath ahora es robusto: aunque
-      // isInTransition esté pegado, igual desactiva el flag.
-      try { ch.playSheath?.(); }
-      catch (e) { console.warn('[combat_hooks] playSheath:', e); }
-    } else {
-      // Tools (axe/pickaxe), ranged (bow/staff), Y unarmed: no hay anim de
-      // sheath. Sesión 33 (B-002) — TODOS los caminos ponen combatStance=false
-      // explícitamente. Antes el branch 'unarmed' no hacía nada y el flag
-      // quedaba pegado en true desde el draw anterior (pose residual).
-      try { ch.setCombatStance?.(false); } catch {}
-      // Limpiar flags que podrían estar pegados de un attack reciente y
-      // bloquear el próximo play() de world.js (idle/run normales).
-      ch.isInTransition = false;
-      // Forzar reset del mixer para evitar pose residual estilo "sword_idle"
-      // cuando ya no estamos en combate.
-      try { ch._forceIdleReset?.(); } catch {}
-    }
+    // Sesión 33 día 2 — antes había un if(isMelee) playSheath / else
+    // setCombatStance(false) + cleanup + _forceIdleReset. Ahora el style
+    // se encarga. MeleeStyle.onExitCombat preserva el comportamiento
+    // exacto post-B-002.
+    try { combatStyles.getActiveStyle().onExitCombat(ch); }
+    catch (e) { console.warn('[combat_hooks] onExitCombat:', e); }
   };
 
   window.__playerDeath = () => {
