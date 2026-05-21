@@ -244,7 +244,13 @@ export async function startWorld(loggedInUser, token) {
         // exterior (typical 7-10m con pitch hasta 1.3) se sitúa a sin(1.3)*10=9.6m
         // sobre el player — POR ENCIMA del techo de 8m. Fix: ajustar a valores
         // que quepan en la sala. Sesión 31 — delegado a core/camera.js.
-        cameraOrbital.pushInteriorOverrides({ dist: 5, pitch: 0.55 });
+        // Sesión 36 — ajuste de ángulo: antes era { dist: 5, pitch: 0.55 } que
+        // daba ángulo cinematográfico de lado (sin(0.55)*5 = 2.6m sobre player).
+        // Nuevo { dist: 7, pitch: 0.95 } → Y=5.7m (margen 2.3m bajo el techo de
+        // 8m), ángulo ~54° = top-down estilo OSRS, matchea la exterior visual.
+        // Como bonus, el efecto "mundo de gigantes" se aliviana porque desde
+        // arriba los muebles dejan de parecer torres.
+        cameraOrbital.pushInteriorOverrides({ dist: 7, pitch: 0.95 });
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
@@ -259,11 +265,19 @@ export async function startWorld(loggedInUser, token) {
         lastRegionName = '';
         playerTarget = null;
         if (marker) marker.visible = false;
-        // Sesión 13 — SFX puerta cierre + restaurar música del bioma actual
+        // Sesión 13 — SFX puerta cierre + restaurar música del bioma actual.
+        // Sesión 36 — Si el user muteó la música (botón 🔇), NO la re-arrancamos
+        // al salir. Antes musicForBiome creaba un Audio nuevo y lo reproducía
+        // (a volumen 0 por prefs, pero en iOS el efecto puede ser jittery
+        // y/o un re-load de la mp3). Si el user quiere música, que toque el
+        // botón de unmute — al desmutear, audio.js hace musicAudio.play()
+        // resumiendo desde donde estaba.
         try {
           audio.sfx('door_close');
-          const biome = terrain.biomeAt(player.position.x, player.position.z);
-          audio.musicForBiome(biome.id);
+          if (!audio.isMuted?.()) {
+            const biome = terrain.biomeAt(player.position.x, player.position.z);
+            audio.musicForBiome(biome.id);
+          }
         } catch {}
       },
     });
