@@ -14,7 +14,7 @@
  *   M:  iteración dentro de la sesión
  *   pre: 'dev' antes del cierre, vacío al cerrar la sesión
  */
-export const BUILD = '33.0-dev';
+export const BUILD = '33.1-dev';
 
 /** Fecha del último cambio mayor — informativa, no se compara con server. */
 export const BUILD_DATE = '2026-05-21';

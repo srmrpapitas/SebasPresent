@@ -259,6 +259,14 @@ export class Character {
     this._savedWeaponId = null;
     this._savedWeaponType = null;
 
+    // Sesión 33 (B-002) — Cleanup pendiente de draw/sheath.
+    // Cuando playDraw/playSheath arrancan, agendan un setTimeout para
+    // setear combatStance y limpiar isInTransition. Si en el medio se llama
+    // a la operación opuesta (ej. draw seguido inmediatamente de sheath),
+    // el setTimeout pendiente pisa el flag con el valor incorrecto.
+    // Guardamos el id acá para poder cancelarlo desde la nueva llamada.
+    this._drawSheathTimeoutId = null;
+
     // Sesión 26 — Armor attach state (body, shield, helm, cape)
     this._spineBone = null;
     this._headBone = null;
@@ -819,46 +827,129 @@ export class Character {
    * Duración escalada a DRAW_MS (~600ms).
    * No-op si está muerto, no cargado, o ya en transición.
    */
+  /**
+   * Reproduce la anim de desenvainar espada + activa combatStance al terminar.
+   * Solo para weapon_type '1h_sword' o '2h_sword'. Para otras armas usar
+   * `setCombatStance(true)` directamente.
+   *
+   * Duración escalada a DRAW_MS (~600ms).
+   * No-op si está muerto o no cargado.
+   *
+   * Sesión 33 (B-002):
+   * - Cancela cualquier setTimeout pendiente de draw/sheath previo, así el
+   *   flag combatStance no queda pisado por un timer viejo.
+   * - Si `isInTransition` estaba pegado, igual procede (no abortamos — eso
+   *   dejaba combatStance pegado en true si playSheath se llamaba antes de
+   *   que terminara playDraw).
+   */
   playDraw() {
     if (!this.loaded || this.isDead) return;
+
+    // Sesión 33 (B-002) — cancelar timeout pendiente de draw/sheath anterior
+    if (this._drawSheathTimeoutId !== null) {
+      clearTimeout(this._drawSheathTimeoutId);
+      this._drawSheathTimeoutId = null;
+    }
+
     const action = this.actions.draw;
     if (!action) {
       this.combatStance = true;
+      this.isInTransition = false;
       return;
     }
-    if (this.isInTransition) return;
 
     this._scaleOneShot(action, DRAW_MS);
     this._crossFadeTo(action, 0.08);
     this.isInTransition = true;
 
     const dur = Math.max(120, action.getClip().duration * 1000 / action.timeScale);
-    setTimeout(() => {
+    this._drawSheathTimeoutId = setTimeout(() => {
+      this._drawSheathTimeoutId = null;
       this.combatStance = true;
       this.isInTransition = false;
       this.current = null;
     }, dur + 20);
   }
 
+  /**
+   * Reproduce la anim de envainar espada + desactiva combatStance al terminar.
+   * Solo para weapon_type '1h_sword' o '2h_sword'. Para otras armas usar
+   * `setCombatStance(false)` directamente.
+   *
+   * Sesión 33 (B-002) — Fix de pose residual:
+   * - SIEMPRE setea `combatStance=false` y limpia `isInTransition`,
+   *   independiente de si la anim de sheath se reproduce o no. Antes hacíamos
+   *   `if (isInTransition) return;` y eso dejaba el flag pegado en true para
+   *   siempre si el usuario mataba al NPC rápido (mientras la anim de draw
+   *   todavía estaba corriendo).
+   * - Cancela cualquier setTimeout pendiente del playDraw previo, para que su
+   *   timer no pise el `combatStance=false` con `combatStance=true` después.
+   * - Al terminar el sheath (o si lo saltamos), resetea el mixer y vuelve a
+   *   `idle` explícitamente — estilo kneel-fix de S31 (mixer.stopAllAction +
+   *   setTime(0)) para que no quede residuo de la anim de combate.
+   */
   playSheath() {
     if (!this.loaded || this.isDead) return;
+
+    // Sesión 33 (B-002) — cancelar timeout pendiente de draw/sheath anterior
+    if (this._drawSheathTimeoutId !== null) {
+      clearTimeout(this._drawSheathTimeoutId);
+      this._drawSheathTimeoutId = null;
+    }
+
     const action = this.actions.sheath;
-    if (!action) {
+
+    // Caso 1: no hay action de sheath, o veníamos en transición → saltamos
+    // la anim de envainar y reseteamos el mixer a idle directo.
+    if (!action || this.isInTransition) {
       this.combatStance = false;
+      this.isInTransition = false;
+      this._forceIdleReset();
       return;
     }
-    if (this.isInTransition) return;
 
+    // Caso 2: anim normal de sheath. Reproducirla y al terminar resetear.
     this._scaleOneShot(action, SHEATH_MS);
     this._crossFadeTo(action, 0.08);
     this.isInTransition = true;
 
     const dur = Math.max(120, action.getClip().duration * 1000 / action.timeScale);
-    setTimeout(() => {
+    this._drawSheathTimeoutId = setTimeout(() => {
+      this._drawSheathTimeoutId = null;
       this.combatStance = false;
       this.isInTransition = false;
       this.current = null;
+      // Forzar reset del mixer para que no quede el sword_idle/sword_run
+      // como current. El próximo play('idle') de world.js hará el crossfade
+      // limpio desde idle, no desde una pose de combate stale.
+      this._forceIdleReset();
     }, dur + 20);
+  }
+
+  /**
+   * Sesión 33 (B-002) — Helper para forzar reset del mixer a idle limpio.
+   * Inspirado en el kneel-fix de S31. Limpia cualquier action residual del
+   * mixer y arranca idle desde t=0. Usar SOLO cuando combatStance ya está
+   * en false (sino vas a romper la pose de combate).
+   *
+   * Idempotente y safe — si el mixer no está listo o no hay idle, no-op.
+   */
+  _forceIdleReset() {
+    if (!this.mixer) return;
+    const idle = this.actions.idle;
+    if (!idle) return;
+    try {
+      this.mixer.stopAllAction();
+      this.mixer.setTime(0);
+      idle.reset();
+      idle.setEffectiveTimeScale(1);
+      idle.setEffectiveWeight(1);
+      idle.enabled = true;
+      idle.play();
+      this.current = idle;
+    } catch (err) {
+      console.warn('[character] _forceIdleReset failed:', err?.message);
+    }
   }
 
   /**
