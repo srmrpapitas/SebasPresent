@@ -45,6 +45,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as worldSnapshot from './world_snapshot.js';
 import * as party from './party.js';   // Sesión 27 Bloque 3 — colorear según party
 import * as duel from './duel.js';     // Sesión 28 — Retar a duelo desde action menu
+import * as equipment from './equipment.js';  // Sesión 37 — engage range dinámico (mismo pattern que npc_renderer S35)
 // Sesión 34 — B-001b: peers ven el arma REAL que tiene cada uno equipada,
 // no la del local player heredada por SkeletonUtils.clone.
 import { attachWeaponMeshToBone, resolveWeaponHand } from './character.js';
@@ -303,7 +304,24 @@ export function getPeersForTap() {
 // world.js no siga propagando a NPC, ground items, etc.
 //
 const PEER_TAP_SCREEN_PX = 90;       // hit-box generosa móvil
-const PEER_ENGAGE_RANGE  = 2.0;      // distancia para auto-engage (igual que NPCs)
+// Sesión 37 — engage range dinámico según arma equipada. Mismo bug que S35
+// fixeó para NPCs (con bow te obligaba a melee range antes de la 1ra flecha),
+// pero quedó pendiente en este módulo. Sin esto: tap a un peer con bow y el
+// auto-walk te lleva hasta 2m, derrota el propósito del bow en PvP.
+//   - Melee: 2m (matchea NPC + el server PVP_PLAYER_BASE_RANGE+TOLERANCE=3.3m
+//             dejando buffer para lerp/movimiento del target).
+//   - Bow:   8m (server permite hasta 10, dejamos ~2m de buffer).
+const PEER_MELEE_ENGAGE_RANGE  = 2.0;
+const PEER_RANGED_ENGAGE_RANGE = 8.0;
+
+function getPeerEngageRange() {
+  try {
+    const wt = equipment.getWeaponType?.();
+    if (wt === 'bow') return PEER_RANGED_ENGAGE_RANGE;
+    // Cuando llegue 'staff' (Bloque 2 días 8-11), va acá.
+  } catch {}
+  return PEER_MELEE_ENGAGE_RANGE;
+}
 
 let pendingEngagePlayerId = null;    // user_id pendiente de auto-walk → engage
 let pvpActionMenuEl = null;
@@ -420,7 +438,7 @@ export function closeActionMenu() {
 /**
  * Si tapeas un peer lejos, te marca como "pendiente de engagear". Cada
  * frame, world.js llama tickAutoEngage(playerX, playerZ) y si llegamos
- * cerca del peer (NPC_ENGAGE_RANGE), engagePlayer dispara.
+ * cerca del peer (getPeerEngageRange — varía según arma), engagePlayer dispara.
  *
  * Devuelve: null | { reached: true } | { chasing: true, targetX, targetZ }
  */
@@ -434,7 +452,7 @@ export function tickAutoEngage(playerX, playerZ) {
   const tx = peer.group.position.x;
   const tz = peer.group.position.z;
   const dx = tx - playerX, dz = tz - playerZ;
-  if (Math.hypot(dx, dz) <= PEER_ENGAGE_RANGE) {
+  if (Math.hypot(dx, dz) <= getPeerEngageRange()) {
     const id = pendingEngagePlayerId;
     pendingEngagePlayerId = null;
     if (_combatModuleRef?.engagePlayer) {
@@ -542,7 +560,7 @@ function triggerPeerTap(userId) {
   const dz = tz - playerRef.position.z;
   const dist = Math.hypot(dx, dz);
   pendingEngagePlayerId = userId;
-  if (dist <= PEER_ENGAGE_RANGE) {
+  if (dist <= getPeerEngageRange()) {
     pendingEngagePlayerId = null;
     if (_combatModuleRef?.engagePlayer) {
       _combatModuleRef.engagePlayer(userId);
