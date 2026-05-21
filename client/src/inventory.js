@@ -97,6 +97,39 @@ export function getState() {
   return slots.slice();
 }
 
+/**
+ * Sesión 35 — Decrementa la cantidad de un item_id del inv local.
+ * Usado por combat.js cuando el server consume una flecha (source='inventory'):
+ * el server es source-of-truth en DB, pero el cliente necesita reflejar el
+ * cambio en la UI sin hacer un refresh() completo (que sería 1 fetch por
+ * cada ataque ranged — caro y lento).
+ *
+ * Estrategia: encuentra el primer slot (slot_index ASC) con ese item_id y
+ * quantity>0, mismo orden que el server usa para consumir, así inv local y
+ * server quedan en sync. Si quantity llega a 0, vacía el slot.
+ *
+ * @param {string} itemId - ej. 'arrow_bronze'
+ * @param {number} qty    - default 1
+ * @returns {boolean} true si se decrementó algo, false si no había stock
+ */
+export function decrementItem(itemId, qty = 1) {
+  if (!itemId || qty <= 0) return false;
+  for (let i = 0; i < SLOTS; i++) {
+    const s = slots[i];
+    if (s && s.item_id === itemId && s.quantity > 0) {
+      const newQty = s.quantity - qty;
+      if (newQty <= 0) {
+        slots[i] = null;
+      } else {
+        slots[i] = { ...s, quantity: newQty };
+      }
+      renderAll();
+      return true;
+    }
+  }
+  return false;
+}
+
 // ---------- Internal: state mutation ----------
 
 function applyServerSlots(serverSlots) {

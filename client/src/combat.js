@@ -34,6 +34,7 @@
 
 import * as api from './api.js';
 import * as equipment from './equipment.js';
+import * as inventory from './inventory.js';        // Sesión 35 — sync local de arrows
 import * as skills from './skills.js';
 import * as multiplayer from './multiplayer.js';   // Sesión 27 Bloque 3 — PVP
 import * as worldSnapshot from './world_snapshot.js'; // Sesión 27 Bloque 3 — auto-retaliate
@@ -348,6 +349,17 @@ async function doAttackTickNpc() {
         );
       }
     } catch {}
+  }
+
+  // Sesión 35 — Sync del inv local cuando el server consume una flecha.
+  // Server es source-of-truth en DB, pero el cliente necesita reflejar el
+  // cambio visualmente sin un refresh() completo del inv. Si source es
+  // 'inventory', restamos 1 al stack local. Si es 'quiver', no hay UI de
+  // quiver todavía (Bloque 8 polish), así que es no-op.
+  // Sin esto, el contador del inv quedaba "pegado" en su valor inicial y
+  // las flechas solo "desaparecían" al re-login (bug visto en S35 smoke test).
+  if (result.arrow_consumed && result.arrow_consumed.source === 'inventory') {
+    try { inventory.decrementItem(result.arrow_consumed.item_id, 1); } catch {}
   }
 
   if (result.your_hit) {
