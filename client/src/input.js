@@ -232,13 +232,20 @@ export function setup(opts) {
     const dx = e.clientX - pointer.lastX;
     const dy = e.clientY - pointer.lastY;
 
-    // Sesión 29 OSRS-PC: en PC con ratón, SOLO el click derecho mantenido
-    // mueve la cámara. El drag con click izquierdo no hace nada (evita el
-    // bug "quería atacar pero moví el ratón sin querer y rotó la cámara").
-    // En móvil/touch, cualquier drag con dedo rota la cámara igual que antes.
-    if (!pointer.isMouse || pointer.isRight) {
-      onCameraDrag(dx * CAMERA_DRAG_YAW_SENS, dy * CAMERA_DRAG_PITCH_SENS);
-    }
+    // Sesión 29 OSRS-PC: en PC con ratón, originalmente SOLO el click derecho
+    // mantenido movía la cámara. El drag con click izquierdo no hacía nada
+    // (decisión defensiva contra el bug "quería atacar pero moví el ratón sin
+    // querer y rotó la cámara").
+    //
+    // Sesión 37 — Nico pidió click izq + drag también rote cámara (estilo
+    // OSRS-PC moderno). El bug original que prevenía esto ya está cubierto
+    // por TAP_DRAG_THRESHOLD: si el mouse se mueve >umbral durante el down,
+    // pointer.isDrag=true y NO se dispara onTap al soltar (ver onPointerUp).
+    // Así que "drag para rotar cámara" y "click para atacar" son mutuamente
+    // exclusivos por el threshold — no hay conflicto real.
+    //
+    // Resultado: cualquier drag (touch, mouse-izq, mouse-der) rota cámara.
+    onCameraDrag(dx * CAMERA_DRAG_YAW_SENS, dy * CAMERA_DRAG_PITCH_SENS);
 
     pointer.lastX = e.clientX;
     pointer.lastY = e.clientY;
