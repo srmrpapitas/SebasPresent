@@ -191,13 +191,12 @@ const WEAPON_TRANSFORMS = {
 // Hoy (S34) está vacío — la primera entrada va a ser 'bow_oak' cuando
 // Nico la calibre in-game.
 const WEAPON_TRANSFORMS_BY_ITEM_ID = {
-  // Sesión 35 — bow_oak: calibración base (punto de partida).
-  // Nico ajustó in-game con __weaponDebug() hasta dejarlo "medio bien".
-  // TODO S35: refinar el fit a la mano con otra ronda de debug.
+  // Sesión 35 — bow_oak: calibración FINAL (refinada in-game con sliders
+  // re-centrados sobre la base + micro-ajustes encadenados al fit a la mano).
   'bow_oak': {
     scale: 179.0,
-    position: [-17.0, 30.0, -22.5],
-    rotation: [-0.192, -2.492, 1.658],
+    position: [-82.5, 1.0, 70.5],
+    rotation: [-0.192, -2.492, 1.158],
     hand: 'left',
   },
 };
@@ -1764,8 +1763,17 @@ window.__weaponDebug = function () {
     backdrop-filter: blur(3px);
   `;
 
-  function row(label, min, max, step, value, onChange, fmt) {
+  function row(label, min, max, step, value, onChange, fmt, opts) {
     fmt = fmt || (v => v.toFixed(2));
+    opts = opts || {};
+    // Sesión 35 — Re-center on release: cuando soltás el slider, el rango se
+    // recentra alrededor del nuevo valor (manteniendo el mismo halfWidth).
+    // Permite mover del extremo, soltar, y volver a arrastrar del extremo sin
+    // cerrar/reabrir el panel. Para rotation (circular) pasamos recenter:false.
+    const recenter = opts.recenter !== false;
+    const absMin = opts.absMin != null ? opts.absMin : -Infinity;
+    const halfWidth = (max - min) / 2;
+
     const wrap = document.createElement('div');
     wrap.style.cssText = 'margin: 3px 0; display: flex; align-items: center; gap: 4px;';
     wrap.innerHTML = `
@@ -1781,6 +1789,14 @@ window.__weaponDebug = function () {
       valEl.textContent = fmt(v);
       onChange(v);
     });
+    if (recenter) {
+      range.addEventListener('change', () => {
+        const v = parseFloat(range.value);
+        range.min = Math.max(absMin, v - halfWidth);
+        range.max = v + halfWidth;
+        range.value = v;
+      });
+    }
     return wrap;
   }
 
@@ -1800,34 +1816,35 @@ window.__weaponDebug = function () {
   `;
   panel.appendChild(title);
 
-  // Sesión 35 — Rangos de sliders CENTRADOS en el valor actual del mesh.
-  // Antes: rangos fijos (-30/+30 pos, 1/600 scale). Problema: si la base
-  // calibrada es Y=30, el slider arranca PEGADO al max y no podés subir más.
-  // Ahora: cada slider se construye con halfWidth alrededor del valor
-  // actual, así siempre arrancás centrado con margen simétrico.
+  // Sesión 35 — Rangos de sliders CENTRADOS en el valor actual del mesh,
+  // con re-center on release (ver row() arriba).
+  //   - Position: ±50 desde current, step 0.5 (movimiento ágil + re-center
+  //     permite "encadenar" arrastres del extremo sin reabrir el panel).
+  //   - Scale:    ±max(100, current*0.7) desde current, step 1.
+  //   - Rotation: ±PI siempre (sin recenter, es circular).
   const sclCur = mesh.scale.x;
   const sclHalf = Math.max(100, sclCur * 0.7);
-  body.appendChild(row('Scl', Math.max(1, sclCur - sclHalf), sclCur + sclHalf, 1, sclCur, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
+  body.appendChild(row('Scl', Math.max(1, sclCur - sclHalf), sclCur + sclHalf, 1, sclCur, v => mesh.scale.setScalar(v), v => v.toFixed(0), { absMin: 1 }));
 
   const sepP = document.createElement('div');
   sepP.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
   sepP.textContent = '─ POSITION';
   body.appendChild(sepP);
-  const posHalf = 20;
+  const posHalf = 50;
   const pxCur = mesh.position.x, pyCur = mesh.position.y, pzCur = mesh.position.z;
-  body.appendChild(row('X', pxCur - posHalf, pxCur + posHalf, 0.25, pxCur, v => { mesh.position.x = v; }));
-  body.appendChild(row('Y', pyCur - posHalf, pyCur + posHalf, 0.25, pyCur, v => { mesh.position.y = v; }));
-  body.appendChild(row('Z', pzCur - posHalf, pzCur + posHalf, 0.25, pzCur, v => { mesh.position.z = v; }));
+  body.appendChild(row('X', pxCur - posHalf, pxCur + posHalf, 0.5, pxCur, v => { mesh.position.x = v; }));
+  body.appendChild(row('Y', pyCur - posHalf, pyCur + posHalf, 0.5, pyCur, v => { mesh.position.y = v; }));
+  body.appendChild(row('Z', pzCur - posHalf, pzCur + posHalf, 0.5, pzCur, v => { mesh.position.z = v; }));
 
   const sepR = document.createElement('div');
   sepR.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
   sepR.textContent = '─ ROTATION';
   body.appendChild(sepR);
-  // Rotación queda ±PI (circular, no tiene sentido restringir).
+  // Rotación queda ±PI sin re-center (es circular, no tiene sentido extender).
   const PI = Math.PI;
-  body.appendChild(row('rX', -PI, PI, 0.05, mesh.rotation.x, v => { mesh.rotation.x = v; }, v => `${Math.round(v*180/PI)}°`));
-  body.appendChild(row('rY', -PI, PI, 0.05, mesh.rotation.y, v => { mesh.rotation.y = v; }, v => `${Math.round(v*180/PI)}°`));
-  body.appendChild(row('rZ', -PI, PI, 0.05, mesh.rotation.z, v => { mesh.rotation.z = v; }, v => `${Math.round(v*180/PI)}°`));
+  body.appendChild(row('rX', -PI, PI, 0.05, mesh.rotation.x, v => { mesh.rotation.x = v; }, v => `${Math.round(v*180/PI)}°`, { recenter: false }));
+  body.appendChild(row('rY', -PI, PI, 0.05, mesh.rotation.y, v => { mesh.rotation.y = v; }, v => `${Math.round(v*180/PI)}°`, { recenter: false }));
+  body.appendChild(row('rZ', -PI, PI, 0.05, mesh.rotation.z, v => { mesh.rotation.z = v; }, v => `${Math.round(v*180/PI)}°`, { recenter: false }));
 
   // Switch hand button
   const handBtn = document.createElement('button');
@@ -1947,8 +1964,14 @@ window.__armorDebug = function (slotId) {
     backdrop-filter: blur(3px);
   `;
 
-  function row(label, min, max, step, value, onChange, fmt) {
+  function row(label, min, max, step, value, onChange, fmt, opts) {
     fmt = fmt || (v => v.toFixed(2));
+    opts = opts || {};
+    // Sesión 35 — Re-center on release (mismo patrón que weaponDebug).
+    const recenter = opts.recenter !== false;
+    const absMin = opts.absMin != null ? opts.absMin : -Infinity;
+    const halfWidth = (max - min) / 2;
+
     const wrap = document.createElement('div');
     wrap.style.cssText = 'margin: 3px 0; display: flex; align-items: center; gap: 4px;';
     wrap.innerHTML = `
@@ -1964,6 +1987,14 @@ window.__armorDebug = function (slotId) {
       val.textContent = fmt(v);
       onChange(v);
     });
+    if (recenter) {
+      inp.addEventListener('change', () => {
+        const v = parseFloat(inp.value);
+        inp.min = Math.max(absMin, v - halfWidth);
+        inp.max = v + halfWidth;
+        inp.value = v;
+      });
+    }
     return wrap;
   }
 
@@ -1981,29 +2012,29 @@ window.__armorDebug = function (slotId) {
   `;
   panel.appendChild(title);
 
-  // Sesión 35 — Mismo cambio que en weaponDebug: rangos centrados en valor actual.
+  // Sesión 35 — Mismo patrón que weaponDebug (rangos centrados + step grueso + re-center).
   const sclCur = mesh.scale.x;
   const sclHalf = Math.max(100, sclCur * 0.7);
-  body.appendChild(row('Scl', Math.max(1, sclCur - sclHalf), sclCur + sclHalf, 1, sclCur, v => mesh.scale.setScalar(v), v => v.toFixed(0)));
+  body.appendChild(row('Scl', Math.max(1, sclCur - sclHalf), sclCur + sclHalf, 1, sclCur, v => mesh.scale.setScalar(v), v => v.toFixed(0), { absMin: 1 }));
 
   const sepP = document.createElement('div');
   sepP.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
   sepP.textContent = '─ POSITION';
   body.appendChild(sepP);
-  const posHalf = 20;
+  const posHalf = 50;
   const pxCur = mesh.position.x, pyCur = mesh.position.y, pzCur = mesh.position.z;
-  body.appendChild(row('X', pxCur - posHalf, pxCur + posHalf, 0.25, pxCur, v => { mesh.position.x = v; }));
-  body.appendChild(row('Y', pyCur - posHalf, pyCur + posHalf, 0.25, pyCur, v => { mesh.position.y = v; }));
-  body.appendChild(row('Z', pzCur - posHalf, pzCur + posHalf, 0.25, pzCur, v => { mesh.position.z = v; }));
+  body.appendChild(row('X', pxCur - posHalf, pxCur + posHalf, 0.5, pxCur, v => { mesh.position.x = v; }));
+  body.appendChild(row('Y', pyCur - posHalf, pyCur + posHalf, 0.5, pyCur, v => { mesh.position.y = v; }));
+  body.appendChild(row('Z', pzCur - posHalf, pzCur + posHalf, 0.5, pzCur, v => { mesh.position.z = v; }));
 
   const sepR = document.createElement('div');
   sepR.style.cssText = 'margin: 4px 0 1px; color: #c8a043; font-size: 9px;';
   sepR.textContent = '─ ROTATION';
   body.appendChild(sepR);
   const PI = Math.PI;
-  body.appendChild(row('rX', -PI, PI, 0.05, mesh.rotation.x, v => { mesh.rotation.x = v; }, v => `${Math.round(v*180/PI)}°`));
-  body.appendChild(row('rY', -PI, PI, 0.05, mesh.rotation.y, v => { mesh.rotation.y = v; }, v => `${Math.round(v*180/PI)}°`));
-  body.appendChild(row('rZ', -PI, PI, 0.05, mesh.rotation.z, v => { mesh.rotation.z = v; }, v => `${Math.round(v*180/PI)}°`));
+  body.appendChild(row('rX', -PI, PI, 0.05, mesh.rotation.x, v => { mesh.rotation.x = v; }, v => `${Math.round(v*180/PI)}°`, { recenter: false }));
+  body.appendChild(row('rY', -PI, PI, 0.05, mesh.rotation.y, v => { mesh.rotation.y = v; }, v => `${Math.round(v*180/PI)}°`, { recenter: false }));
+  body.appendChild(row('rZ', -PI, PI, 0.05, mesh.rotation.z, v => { mesh.rotation.z = v; }, v => `${Math.round(v*180/PI)}°`, { recenter: false }));
 
   // Copy button
   const copyBtn = document.createElement('button');
