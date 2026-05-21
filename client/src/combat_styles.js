@@ -27,19 +27,19 @@
  * `getActiveStyle()` en lugar de hacer su propio if por weapon_type.
  *
  * ============================================================
- * ESTADO ACTUAL (S33 día 1)
+ * ESTADO ACTUAL (S34 día 4)
  * ============================================================
  *
- * Este archivo está CREADO pero NO SE USA todavía. combat.js, character.js
- * y combat_hooks.js siguen con su lógica original (que funciona). La
- * migración a este módulo es trabajo de S33 día 2 (mañana).
- *
  * MeleeStyle    → IMPLEMENTADO (delega a las funciones existentes)
- * RangedStyle   → STUB (TODOs marcados, implementación real en Bloque 2)
- * MagicStyle    → STUB (TODOs marcados, implementación real en Bloque 2)
+ * RangedStyle   → IMPLEMENTADO parcial (canAttack real, anim sigue siendo
+ *                  attack_N genérica hasta que carguemos Bow_Overdraw/Recoil
+ *                  como clips del char — próxima sesión)
+ * MagicStyle    → STUB (implementación real en Bloque 2 días 8-11)
  *
- * Importarlo HOY no rompe nada porque ningún consumer lo llama. El
- * archivo es preparación.
+ * S33: combat_hooks.js y combat.js migrados a usar getActiveStyle().
+ * S34: RangedStyle.canAttack consulta inv + quiver equipado. El servidor
+ *      sigue siendo source-of-truth (rechaza con 'no_ammo' si está vacío);
+ *      el chequeo del cliente solo evita ataques que el server va a fallar.
  *
  * ============================================================
  * INTERFAZ — qué implementa cada style
@@ -107,6 +107,7 @@
  */
 
 import * as equipment from './equipment.js';
+import * as inventory from './inventory.js';
 
 // ============================================================
 // MeleeStyle — IMPLEMENTADO
@@ -190,27 +191,28 @@ export const MeleeStyle = {
 };
 
 // ============================================================
-// RangedStyle — STUB (implementar en Bloque 2 días 4-7)
+// RangedStyle — IMPLEMENTADO parcial (Sesión 34, Bloque 2 día 4)
 // ============================================================
 //
-// Maneja arcos. Para implementar:
-//   1. R2: subir mesh GLB del arco (bow_shortbow.glb) + flecha (arrow.glb).
-//   2. character.js: WEAPON_TRANSFORMS para 'bow' (escala + posición en mano
-//      izquierda? — los arcos en OSRS se llevan en la mano "off-hand").
-//   3. server/handlers/combat.js: distinguir ranged en attackNpc (consumir
-//      1 arrow del inventario por hit, range >2m, damage usa Ranged stat).
-//   4. server: agregar columna stats.ranged_xp + ranged_level (mirror).
-//   5. Cliente: anim de tiro (Bow_Attack.fbx en R2) + proyectil 3D que
-//      vuela desde player hacia target con arc parabólico.
+// Maneja arcos (weapon_type='bow'). Server-side completo (consume_arrow,
+// awardXp a ranged, range 8m, ranged_bonus de arco + flecha sumados).
+// Cliente-side parcial:
+//   - canAttack chequea inv + quiver equipado (✓)
+//   - getRange devuelve 8m matcheando el server (✓)
+//   - onEnterCombat/onExitCombat usan setCombatStance básico (✓ funcional
+//     pero feo — falta integrar Bow_Draw_Arrow.fbx como anim del char,
+//     próxima sesión)
+//   - playAttackAnim usa attack_N genérico — falta Bow_Overdraw.fbx +
+//     Bow_Recoil.fbx integradas, próxima sesión
+//   - fireProjectile (visualizar la flecha volando) — stub en
+//     core/combat_hooks.js, próxima sesión integra el proyectil real
+//     usando arrow.glb (ya está en R2)
 
-const RANGED_RANGE_M = 8.0;  // estimado OSRS: ~7-8 squares
+const RANGED_RANGE_M = 8.0;  // matchea con el server (combat_engine: 8m)
 
-// Items que cuentan como ammo para arquero. Se chequea inventory.getState()
-// y se busca cualquiera de estos item_ids con quantity > 0.
-const RANGED_AMMO_ITEMS = [
-  'arrow_bronze',   // futuro
-  // 'arrow_iron', 'arrow_steel', ...
-];
+// Items que cuentan como ammo. canAttack matchea por prefijo 'arrow_*'.
+// Si en el futuro hay items con prefijo 'arrow_' que NO sean ammo (raro),
+// pasar a un Set explícito acá.
 
 export const RangedStyle = {
   id: 'ranged',
@@ -223,9 +225,9 @@ export const RangedStyle = {
     return RANGED_RANGE_M;
   },
 
-  // TODO Bloque 2 día 5: cuando exista anim 'bow_draw' en character.js,
-  // reemplazar por character.playBowDraw() o similar. Por ahora el stance
-  // directo evita que el char quede con anim equivocada.
+  // TODO próxima sesión: cuando carguemos Bow_Draw_Arrow.fbx como clip del
+  // char (al lado de las otras anims base), reemplazar setCombatStance(true)
+  // por character.playBowDraw() o equivalente.
   onEnterCombat(character) {
     if (!character) return;
     try { character.setCombatStance?.(true); } catch {}
@@ -238,34 +240,43 @@ export const RangedStyle = {
     try { character._forceIdleReset?.(); } catch {}
   },
 
-  // TODO Bloque 2 día 6: implementar disparo real:
-  //   1. character.playBowShoot(stance, cooldownMs) — anim de tirar.
-  //   2. spawnProjectile({ from: playerPos, to: targetPos, type: 'arrow' })
-  //      en world.js o un módulo nuevo `client/src/projectiles.js`.
-  //   3. El proyectil debe volar ~0.3-0.5s con arc parabólico, y hacer
-  //      "hit" visual cuando llega (spark/damage_splat — reusar el sistema
-  //      de hitsplats).
+  // TODO próxima sesión: reemplazar attack_N genérico por la secuencia real:
+  //   1. Bow_Overdraw.fbx (windup, ~200ms)
+  //   2. Bow_Recoil.fbx (release, ~150ms)
+  //   3. fireProjectile() llamada durante el frame de release
+  // Por ahora usa attack_N (igual que melee) para que algo se vea.
   playAttackAnim(character, stance, cooldownMs) {
     if (!character) return;
-    // Fallback HOY: usa la anim de attack genérica (punching/sword) para que
-    // al menos algo se vea si alguien testea con un bow falso. Cuando
-    // implementemos arquero real, esto reemplaza a la anim de tiro.
     try { character.playAttack?.(stance, 'bow', cooldownMs); }
     catch (e) { console.warn('[combat_styles] RangedStyle.playAttackAnim:', e); }
   },
 
-  // TODO Bloque 2 día 4: cuando exista inventory con arrows reales, leer
-  // inventory.getState() y chequear que haya al menos 1 de los items en
-  // RANGED_AMMO_ITEMS. Por ahora siempre OK (no se va a llamar hasta que
-  // el style se active con un bow equipado, lo cual no pasa hoy).
+  // Sesión 34 — canAttack real.
+  //
+  // Reglas:
+  //   - Si hay flechas en INV (cualquier item_id 'arrow_*' con qty>0) → ok.
+  //   - Si no hay en inv PERO el quiver está equipado → ok (asumimos que
+  //     tal vez tiene flechas adentro; dejamos que el server confirme).
+  //   - Si no hay flechas en inv NI quiver equipado → fail.
+  //
+  // El server es source-of-truth y va a rechazar con 'no_ammo' si el
+  // quiver está vacío. Acá solo evitamos el round-trip cuando es obvio.
   canAttack() {
-    return { ok: true };
-    // Pseudocódigo de mañana:
-    //
-    //   const slots = inventory.getState();
-    //   const hasAmmo = slots.some(s => s && RANGED_AMMO_ITEMS.includes(s.item_id) && s.quantity > 0);
-    //   if (!hasAmmo) return { ok: false, message: 'Necesitas flechas para disparar.' };
-    //   return { ok: true };
+    try {
+      const slots = inventory.getState?.() || [];
+      const hasArrowInInv = slots.some(s => s && typeof s.item_id === 'string' &&
+                                            s.item_id.startsWith('arrow_') &&
+                                            s.quantity > 0);
+      if (hasArrowInInv) return { ok: true };
+
+      const quiverEquipped = !!equipment.getEquipped?.('quiver');
+      if (quiverEquipped) return { ok: true };
+
+      return { ok: false, message: 'Necesitas flechas para disparar.' };
+    } catch (e) {
+      console.warn('[combat_styles] RangedStyle.canAttack check failed, allowing:', e);
+      return { ok: true };  // fail-open: el server decide
+    }
   },
 };
 
