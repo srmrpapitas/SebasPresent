@@ -93,3 +93,24 @@ export function cancelAllOnMove() {
     }
   }
 }
+
+/**
+ * Sesión 33 (B-001) — Cancela cualquier actividad activa de todas las skills
+ * por un evento externo. Lo usan los combat hooks cuando entrás en combate
+ * o morís, para asegurar que el gather se corte y el arma se restaure.
+ *
+ * Por skill, busca primero `cancel(reason)`; si no existe, cae a
+ * `cancelOnMove()` para retro-compat con skills viejas.
+ *
+ * @param {string} reason  Etiqueta para logging (ej. 'combat', 'death').
+ */
+export function cancelAll(reason = 'external') {
+  for (const { name, mod } of SKILL_MODULES) {
+    const fn = typeof mod.cancel === 'function' ? mod.cancel : mod.cancelOnMove;
+    if (typeof fn === 'function') {
+      try { fn(reason); } catch (err) {
+        console.warn('[skills] cancel de ' + name + ':', err);
+      }
+    }
+  }
+}

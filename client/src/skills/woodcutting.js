@@ -42,6 +42,8 @@
 
 import * as api from '../api.js';
 import * as skills from '../skills.js';
+import * as equipment from '../equipment.js';
+import * as inventory from '../inventory.js';
 import * as THREE from 'three';
 
 // ============================================================
@@ -165,6 +167,24 @@ export function startChopAt(treeType, tx, tz) {
     setPlayerTargetCb(goX, goZ);
   }
 
+  // Sesión 33 (B-001) — Tool override: si el jugador no tiene un hacha en
+  // mano pero sí tiene una en el inventario, hacemos el swap visual estilo
+  // OSRS desde YA (mientras camina hacia el árbol). Si no hay hacha, el
+  // server rechazará con no_axe y stopChop('no_axe') restaurará lo que sea.
+  // Si ya tiene hacha equipada (alreadyEquipped=true), no hace falta swap.
+  try {
+    const bestAxe = equipment.getBestAxeAvailable(inventory.getState());
+    if (bestAxe && !bestAxe.alreadyEquipped) {
+      const character = getCharacter?.();
+      // Fire-and-forget: el GLB típicamente está en cache. Si no, demora
+      // ~100-300ms y para entonces el char ya empezó a caminar — el swap
+      // se ve cuando llega al frame siguiente.
+      character?.attachToolForGather?.(bestAxe.item_id, bestAxe.weapon_type);
+    }
+  } catch (err) {
+    console.warn('[woodcutting] tool swap failed:', err?.message);
+  }
+
   // Activar estado pendiente — el update() arrancará el chop loop cuando
   // estemos en rango.
   activeChop = {
@@ -184,6 +204,25 @@ export function stopChop(reason = 'user') {
     console.log('[woodcutting] stopChop:', reason);
   }
   activeChop = null;
+
+  // Sesión 33 (B-001) — Restaurar el arma original si hicimos swap.
+  // Idempotente: si no hay override activo, restoreWeapon es no-op.
+  // Fire-and-forget porque restoreWeapon es async pero el callsite no necesita esperar.
+  try {
+    const character = getCharacter?.();
+    character?.restoreWeapon?.();
+  } catch (err) {
+    console.warn('[woodcutting] restoreWeapon failed:', err?.message);
+  }
+}
+
+/**
+ * Cancela la actividad activa por un evento externo (combate, muerte, etc).
+ * Punto de entrada usado por skills.cancelAll(reason).
+ * Es seguro de llamar aunque no esté talando — stopChop es idempotente.
+ */
+export function cancel(reason = 'external') {
+  stopChop(reason);
 }
 
 /**
