@@ -34,6 +34,13 @@
  * Side effect: registra los window.__player* hooks. Idempotente.
  */
 
+// Sesión 33 (B-001) — Necesitamos cancelar cualquier skill activa (tala,
+// firemaking) al entrar combate o morir. Sin esto, el loop de chop seguiría
+// corriendo mientras el char hace draw/death anims, y el restoreWeapon
+// nunca se dispararía → el char queda con el hacha en mano durante combat
+// o muerte.
+import * as skills from '../skills/index.js';
+
 // ============================================================
 // Estado interno
 // ============================================================
@@ -85,7 +92,15 @@ export function register(opts) {
   // no tiene sentido el sword_draw.
   //
   // Sesión 30 — axe/pickaxe son herramientas: melee pero sin draw.
+  //
+  // Sesión 33 (B-001) — Si el jugador estaba talando con tool override,
+  // primero cancelamos para restaurar el arma original. Sino el draw de
+  // la espada se haría sobre el hacha y queda inconsistente.
   window.__playerEnterCombat = (npcId) => {
+    // Cancel cualquier gather activo + restore weapon ANTES del draw.
+    // Idempotente: si no había gather activo, es noop.
+    try { skills.cancelAll('combat'); } catch (e) { console.warn('[combat_hooks] cancelAll:', e); }
+
     const wasEngaged = _combatTargetNpcId !== null;
     _combatTargetNpcId = npcId;
     if (wasEngaged) return;
@@ -124,6 +139,11 @@ export function register(opts) {
   };
 
   window.__playerDeath = () => {
+    // Sesión 33 (B-001) — Cancel skills + restore weapon antes del death anim.
+    // Sin esto: si moriste talando, el char hace anim de muerte con el hacha
+    // en mano (raro). Idempotente: noop si no había gather.
+    try { skills.cancelAll('death'); } catch (e) { console.warn('[combat_hooks] cancelAll:', e); }
+
     _combatTargetNpcId = null;
     const ch = _getCharacter();
     try { ch?.playDeath?.(); }
