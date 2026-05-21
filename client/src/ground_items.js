@@ -366,13 +366,23 @@ async function pickupItem(itemDropId) {
   const token = getAuthToken();
   if (!token) return;
   try {
+    // Sesión 35 — Incluimos pos actual del player en el body. El server la
+    // usa para el check de distancia (validación anti-cheat lado server).
+    // Sin esto, los items dropeados de NPCs muertos no se recogían porque
+    // el server miraba una pos vieja (POSITION_SAVE_INTERVAL = 10s fuera
+    // de combate), rechazando con `too_far` silencioso.
+    const player = typeof getPlayer === 'function' ? getPlayer() : null;
+    const body = { ids: [itemDropId] };
+    if (player && player.position) {
+      body.userPos = { x: player.position.x, z: player.position.z };
+    }
     const r = await fetch(`${apiBase}/api/ground_items/pickup`, {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + token,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ ids: [itemDropId] }),
+      body: JSON.stringify(body),
     });
     if (!r.ok) return;
     const data = await r.json();
