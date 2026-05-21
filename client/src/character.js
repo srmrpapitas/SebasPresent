@@ -1046,6 +1046,11 @@ export class Character {
     this.combatStance = !!on;
     if (!on) {
       this._combatStanceMode = 'sword';
+      // Sesión 36 — Si el player sale de combate mid-attack (NPC muere
+      // durante un Overdraw, disengage, switch de arma, etc.), liberamos
+      // isAttacking acá para que el siguiente combate / acción no quede
+      // bloqueado hasta que la setTimeout que estaba pendiente se cancele.
+      this.isAttacking = false;
       if (this._bowAttackTimeoutId !== null) {
         clearTimeout(this._bowAttackTimeoutId);
         this._bowAttackTimeoutId = null;
@@ -1379,21 +1384,34 @@ export class Character {
    *                           mismo instante, combat.js dispara el proyectil
    *                           visual con opts.windupMs=BOW_OVERDRAW_MS, así
    *                           la flecha sale visualmente al soltar.
-   *   t=200+150:              _holdBowDrawnPose() vuelve al held pose
-   *                           (último frame de bow_draw_arrow) para los
-   *                           ataques siguientes y para idle entre disparos.
-   *   t=cooldownMs:           isAttacking=false, próximo ataque desbloqueado.
+   *   t=200+150:              _holdBowDrawnPose() vuelve al held pose Y
+   *                           isAttacking=false. A partir de acá, si el
+   *                           player se está moviendo, world.js crossfadea
+   *                           a bow_walk_* (kiting OSRS-style: te alejás
+   *                           del NPC mientras seguís disparando). Si no se
+   *                           mueve, el held pose se mantiene hasta el
+   *                           próximo attack tick del server.
+   *   t=cooldownMs:           combat.js manda el próximo __playerPlayAttack
+   *                           y arranca otra secuencia.
    *
-   * Si el cooldown del server es menor a 350ms (no debería con bow=900ms),
-   * el cooldown gana — el proyectil sigue saliendo a t=200 pero los siguientes
-   * disparos pueden encimarse visualmente. No es nuestro caso hoy.
+   * Por qué libero isAttacking a los 350ms y no al cooldown completo
+   * (~900ms para bow): las anims de Bow_Overdraw/Recoil son SOLO upper-body
+   * (el char tensa y suelta, las piernas no se animan). Si bloqueamos
+   * locomoción durante todo el cooldown, las piernas quedan estáticas y el
+   * char "patina" al moverse. Liberando a los 350ms, los 550ms restantes
+   * del cooldown quedan disponibles para bow_walk_* o el held pose.
    *
    * Cancelación: si el player sale de combate / muere / pierde el target
    * mientras la secuencia está en curso, setCombatStance(false) cancela
-   * _bowAttackTimeoutId. Las setTimeouts internas tienen guard por
-   * combatStance/isDead así no operan sobre mixer reseteado.
+   * _bowAttackTimeoutId Y limpia isAttacking. Los guards internos cubren
+   * el caso por las dudas.
    */
   _playBowAttack(cooldownMs) {
+    // cooldownMs llega por compat de signature pero no se usa — el lockout
+    // visual de bow es la duración de la anim (350ms), no el cooldown del
+    // server (~900ms). Ver doc arriba.
+    void cooldownMs;
+
     const overdraw = this.actions.bow_overdraw;
     const recoil   = this.actions.bow_recoil;
 
@@ -1410,28 +1428,28 @@ export class Character {
     // Fase 2: al terminar el windup, disparar Bow_Recoil.
     this._bowAttackTimeoutId = setTimeout(() => {
       this._bowAttackTimeoutId = null;
-      if (this.isDead) return;
-      // Guard defensivo: si el player salió de combat / cambió de arma mid-attack.
-      if (!this.combatStance || this._combatStanceMode !== 'bow') return;
+      if (this.isDead) { this.isAttacking = false; return; }
+      // Guard: player salió de combat / cambió de arma mid-attack.
+      if (!this.combatStance || this._combatStanceMode !== 'bow') {
+        this.isAttacking = false;
+        return;
+      }
 
       this._scaleOneShot(recoil, BOW_RECOIL_MS);
       this._crossFadeTo(recoil, 0.06);
 
-      // Fase 3: al terminar Recoil, volver al held pose.
+      // Fase 3: al terminar Recoil, volver al held pose Y liberar isAttacking.
+      // El orden importa: held pose primero (define current), después
+      // isAttacking=false (permite que world.js tome el control si hay movimiento).
       this._bowAttackTimeoutId = setTimeout(() => {
         this._bowAttackTimeoutId = null;
-        if (this.isDead) return;
-        if (!this.combatStance || this._combatStanceMode !== 'bow') return;
-        this._holdBowDrawnPose();
+        if (this.isDead) { this.isAttacking = false; return; }
+        if (this.combatStance && this._combatStanceMode === 'bow') {
+          this._holdBowDrawnPose();
+        }
+        this.isAttacking = false;
       }, BOW_RECOIL_MS + 20);
     }, BOW_OVERDRAW_MS);
-
-    // isAttacking se libera al cooldown completo (no al final de la anim).
-    // Así combat.js no manda el siguiente tick antes de tiempo, y el held
-    // pose se mantiene durante el "rearmar" entre disparos.
-    setTimeout(() => {
-      this.isAttacking = false;
-    }, cooldownMs + 20);
   }
 
   playDeath() {
