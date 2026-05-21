@@ -729,6 +729,19 @@ button { font-family: inherit; cursor: pointer; }
     bottom: 16px;
     right: 16px;
   }
+
+  /* Sesión 37 — Nico pidió HUD +20% en desktop para que equipment/combat
+   * no necesite scroll. Base mobile: 190/36/280. Desktop +20%: 228/43/336.
+   * Solo escalamos el contenedor — los slots de inventario son aspect-ratio
+   * fija, escalan automáticamente con el ancho del panel. */
+  :root {
+    --sb-panel-w: 228px;
+    --sb-tabs-w:  43px;
+    --sb-panel-h: 336px;
+  }
+  .osrs-sidebar-tab {
+    font-size: 17px;
+  }
 }
 
 @media (max-width: 380px) {
