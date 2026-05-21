@@ -63,8 +63,28 @@ export function init(opts) {
     opts.fogFar + 50,
   );
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // Sesión 37 — Performance fix. Antes: antialias=true + pixelRatio cap=2.
+  // En MacBook Retina 16" (3584×2240 = 8M píxeles), eso significaba renderizar
+  // 8M píxeles/frame con AA → fillrate-bound a ~15fps (medido en Nico's M-series).
+  //
+  // Fix: bajar pixelRatio cap a 1.25 + desactivar AA en pantallas HiDPI.
+  //   - 1.25 cap → renderiza 5M píxeles vs 8M (37% menos trabajo).
+  //   - AA off en Retina → el browser ya hace upscaling con filtering. AA de
+  //     three.js (MSAA) es caro y casi imperceptible en Retina porque el
+  //     downsampling natural ya suaviza edges.
+  //   - En pantallas no-Retina (devicePixelRatio=1), mantenemos AA on porque
+  //     ahí sí se nota.
+  //
+  // Espera salto de 15→35-50fps en MacBook. Trade-off: leve pérdida de
+  // nitidez en texto HUD chiquito (imperceptible en gameplay 3D).
+  // Si la nitidez molesta, subir cap a 1.5 (compromise).
+  const isHiDPI = (window.devicePixelRatio || 1) > 1;
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: !isHiDPI,  // off en Retina, on en monitores normales
+    powerPreference: 'high-performance',  // hint para que use GPU dedicada si hay
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 
   const raycaster = new THREE.Raycaster();
