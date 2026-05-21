@@ -8,7 +8,7 @@
  *
  * Responsibilities:
  * - Fetch inventory from server on init
- * - Render a 4×7 grid (28 slots) inside the OSRS sidebar's Inventory tab
+ * - Render a 4×5 grid (20 slots) inside the OSRS sidebar's Inventory tab
  * - Two interaction modes (both supported, OSRS Mobile style):
  *     1. DRAG & DROP using pointer events (works on iPhone/touch)
  *     2. TAP-TO-TAP: tap source slot (selects it), tap destination (swaps)
@@ -27,12 +27,15 @@ import * as equipment from './equipment.js';
 import { renderItemIcon, getItemIconHtml } from './item_icons.js';
 
 // ---------- Constants ----------
-const SLOTS = 28; // 4 columns × 7 rows, OSRS-style
+// Sesión 33 — Reducido de 28 → 20 (4×5) para que entre sin scroll en mobile.
+// Items que existían en slots ≥20 fueron borrados por migración SQL (no se
+// consolidaron — decisión de Nico, ver INVARIANTS sección 15).
+const SLOTS = 20; // 4 columns × 5 rows
 const LONG_PRESS_MS = 450;
 
 // ---------- State ----------
 /**
- * `slots` is a sparse array of length 28.
+ * `slots` is a sparse array of length 20.
  * Each entry is either null (empty) or { item_id, quantity, name, icon, stackable, equip_slot }.
  */
 let slots = new Array(SLOTS).fill(null);
@@ -58,14 +61,14 @@ export async function init() {
   pane.innerHTML = `
     <div class="inv-header">
       <span class="inv-title">Mochila</span>
-      <span class="inv-count" id="invCount">0/28</span>
+      <span class="inv-count" id="invCount">0/20</span>
     </div>
     <div class="inv-grid" id="invGrid"></div>
     <div class="inv-error" id="invError"></div>
   `;
   gridEl = document.getElementById('invGrid');
 
-  // Build 28 empty slot elements (we'll fill them once data arrives)
+  // Build 20 empty slot elements (we'll fill them once data arrives)
   for (let i = 0; i < SLOTS; i++) {
     const slotEl = document.createElement('div');
     slotEl.className = 'inv-slot';

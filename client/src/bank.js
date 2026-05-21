@@ -9,7 +9,7 @@
  * - El pane del banco contiene DOS grids visuales:
  *     - Arriba: el banco (slots dinamicos, scroll vertical, crece segun
  *       items que tengas)
- *     - Abajo: una replica del inventario (28 slots, mismo layout que
+ *     - Abajo: una replica del inventario (20 slots desde S33, mismo layout que
  *       el inventory tab, pero aqui es una vista paralela)
  * - Drag & drop entre los dos grids + dentro del banco (reordenar).
  * - Tap simple = depositar/retirar segun de donde venga (con la cantidad
@@ -67,7 +67,9 @@ import { renderItemIcon } from './item_icons.js';
   document.head.appendChild(style);
 })();
 
-const INV_SLOTS = 28;
+// Sesión 33 — Reducido de 28 → 20 para matchear el inventory principal.
+// El mirror del inv DENTRO del banco también es 4×5 ahora.
+const INV_SLOTS = 20;
 const DRAG_THRESHOLD_PX = 6;
 
 let bankSlots = [];       // array dinamico de {slot, item_id, quantity, name, icon, stackable} | null
@@ -126,7 +128,7 @@ export async function init() {
   invMirrorEl = document.getElementById('bankInvGrid');
   qtyButtonsEl = document.getElementById('bankQtyBar');
 
-  // Pre-crear los 28 slots del inv mirror (estaticos)
+  // Pre-crear los 20 slots del inv mirror (estaticos)
   for (let i = 0; i < INV_SLOTS; i++) {
     const slotEl = document.createElement('div');
     slotEl.className = 'bank-slot bank-slot-inv';

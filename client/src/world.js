@@ -1254,11 +1254,10 @@ function hideHubTabsInSidebar() {
       'Si los iconos siguen visibles, pásame el HTML actual del sidebar.');
   }
 
-  // Sesión 11c-2 — Mochila estilo OSRS: 4 columnas × 7 filas = 28 slots
-  // sin scroll. CSS defensivo: cubre varios selectores posibles que pueda
-  // usar inventory.js (no lo tengo en mano). Si tu inventory.js usa otro
-  // class name, pásamelo y ajusto. Mientras tanto, esto evita el scroll
-  // mostrando todos los 28 slots a la vez.
+  // Sesión 11c-2 — Mochila estilo OSRS: 4 columnas, slots 42×42px sin scroll.
+  // Sesión 33 — Reducido de 28 (4×7) → 20 (4×5) para que entre sin scroll
+  // en mobile aún con la barra de navegación del browser. El grid-auto-rows
+  // del CSS hace que con 20 items se rendericen 5 filas naturalmente.
   injectInventoryGridCss();
 }
 
@@ -1268,9 +1267,11 @@ function injectInventoryGridCss() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    /* Sesión 11c-2 v3: mochila estilo OSRS — slots 42×42px en grid 4×7
+    /* Sesión 11c-2 v3: mochila estilo OSRS — slots 42×42px en grid 4 cols
        centrado. CRÍTICO: scope a .active para no romper el toggle de tabs.
-       Si aplico display:flex siempre, la mochila se ve encima de stats/magic. */
+       Si aplico display:flex siempre, la mochila se ve encima de stats/magic.
+       Sesión 33: ahora 4×5 (20 slots) en lugar de 4×7. grid-auto-rows hace
+       que se ajuste solo, no hay que cambiar nada del CSS. */
     .osrs-tab-pane[data-tab="inventory"].active {
       overflow: hidden !important;
       padding: 8px !important;
