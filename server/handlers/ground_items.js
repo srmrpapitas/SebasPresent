@@ -110,14 +110,46 @@ export async function handleGroundItemsPickup(request, env) {
   const db = makeDbAdapter(env);
 
   try {
-    // Posición del player
+    // Posición del player.
+    //
+    // Sesión 35 — Mismo patrón anti-desfase que combat_engine.attackNpc
+    // (S27): si el cliente envía su posición actual en body.userPos, la
+    // usamos directamente. Sin esto, los items dropeados por NPCs muertos
+    // generaban auto-pickup que el server rechazaba como `too_far`
+    // SILENCIOSAMENTE — porque la posición del player solo se persiste
+    // cada 10s fuera de combate (POSITION_SAVE_INTERVAL), y el server
+    // miraba una pos vieja de cuando estabas atacando (5-10m del loot).
+    //
+    // Anti-cheat: validamos que la pos enviada NO esté absurdamente lejos
+    // de la persistida (>50m = ~5s de run boost). Si lo está, usamos la
+    // persistida (asumimos cliente malicioso o desync extremo).
     const userRow = await db.first(
       'SELECT last_x, last_z FROM users WHERE id = ?',
       [userId]
     );
     if (!userRow) return json({ error: 'user_not_found' }, 404);
-    const userX = userRow.last_x ?? 0;
-    const userZ = userRow.last_z ?? 0;
+    const persistedX = userRow.last_x ?? 0;
+    const persistedZ = userRow.last_z ?? 0;
+
+    let userX, userZ;
+    const cliPos = body?.userPos;
+    if (cliPos && Number.isFinite(cliPos.x) && Number.isFinite(cliPos.z)) {
+      const dpx = cliPos.x - persistedX;
+      const dpz = cliPos.z - persistedZ;
+      const MAX_DESYNC_M = 50;
+      if (dpx * dpx + dpz * dpz > MAX_DESYNC_M * MAX_DESYNC_M) {
+        // Desync absurdo — desconfía del cliente, usa persistida.
+        userX = persistedX;
+        userZ = persistedZ;
+      } else {
+        userX = cliPos.x;
+        userZ = cliPos.z;
+      }
+    } else {
+      // Cliente antiguo / sin pos en el body — fallback al comportamiento previo.
+      userX = persistedX;
+      userZ = persistedZ;
+    }
 
     // Cargar las filas pedidas, ya ORDENADAS por valor unitario DESC.
     // Sesión 27 Bloque 3 — el pickup procesa primero los items más
