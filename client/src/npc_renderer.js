@@ -77,6 +77,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as combat from './combat.js';
+import * as equipment from './equipment.js';   // Sesión 35 — engage range dinámico por weapon_type
 import * as worldSnapshot from './world_snapshot.js';
 import { bakeGlbModel } from './terrain.js';
 
@@ -122,9 +123,25 @@ const NPC_REACT_DURATION_S = 0.18;
 const NPC_REACT_KICK_DIST  = 0.35;
 
 // Distancia para engage automático: si tapeas un NPC y ya estás a esta
-// distancia, engage directo sin caminar. Coincide con el rango melee
-// efectivo del server (npc.attack_range + RANGE_TOLERANCE).
-const NPC_ENGAGE_RANGE     = 2.0;
+// distancia, engage directo sin caminar. Coincide con el rango efectivo
+// del server (que ahora bifurca por weapon_type).
+//   - Melee: ≈2m (npc.attack_range + RANGE_TOLERANCE en server).
+//   - Bow:   ≈8m (server permite hasta 10, dejamos ~2m de buffer).
+// Sesión 35 — Antes era constante 2.0 fija, lo cual hacía que con bow
+// igual te acercaras a melee antes de tirar la primera flecha (defeated
+// el propósito del bow). Ahora getNpcEngageRange() lo calcula on-demand
+// según el arma equipada.
+const NPC_MELEE_ENGAGE_RANGE  = 2.0;
+const NPC_RANGED_ENGAGE_RANGE = 8.0;
+
+function getNpcEngageRange() {
+  try {
+    const wt = equipment.getWeaponType?.();
+    if (wt === 'bow') return NPC_RANGED_ENGAGE_RANGE;
+    // Cuando agreguemos 'staff' (Bloque 2 días 8-11), va acá también.
+  } catch {}
+  return NPC_MELEE_ENGAGE_RANGE;
+}
 
 // Hit-box generosa en screen-space para dedos en móvil.
 const NPC_TAP_SCREEN_PX    = 90;
@@ -384,7 +401,7 @@ export function tickAutoEngage(playerX, playerZ) {
   const tz = mesh ? mesh.position.z : npc.z;
   const dx = tx - playerX;
   const dz = tz - playerZ;
-  if (Math.hypot(dx, dz) <= NPC_ENGAGE_RANGE) {
+  if (Math.hypot(dx, dz) <= getNpcEngageRange()) {
     const id = pendingEngageNpcId;
     pendingEngageNpcId = null;
     combat.engageNpc(id);
@@ -781,7 +798,7 @@ function triggerNpcTap(npcId) {
   const dz = targetZ - player.position.z;
   const dist = Math.hypot(dx, dz);
   pendingEngageNpcId = npcId;
-  if (dist <= NPC_ENGAGE_RANGE) {
+  if (dist <= getNpcEngageRange()) {
     pendingEngageNpcId = null;
     combat.engageNpc(npcId);
   } else {
