@@ -126,15 +126,31 @@ export function register(opts) {
   window.__playerExitCombat = () => {
     _combatTargetNpcId = null;
     const ch = _getCharacter();
+    if (!ch) return;
+
     let weaponType = 'unarmed';
     try { weaponType = _getWeaponType() || 'unarmed'; } catch {}
     const isMelee     = weaponType === '1h_sword' || weaponType === '2h_sword';
     const isToolMelee = weaponType === 'axe' || weaponType === 'pickaxe';
+
     if (isMelee) {
-      try { ch?.playSheath?.(); }
+      // Espadas: playSheath maneja la anim de envainar + setea combatStance=false
+      // al terminar. Sesión 33 (B-002) — playSheath ahora es robusto: aunque
+      // isInTransition esté pegado, igual desactiva el flag.
+      try { ch.playSheath?.(); }
       catch (e) { console.warn('[combat_hooks] playSheath:', e); }
-    } else if (isToolMelee || weaponType !== 'unarmed') {
-      try { ch?.setCombatStance?.(false); } catch {}
+    } else {
+      // Tools (axe/pickaxe), ranged (bow/staff), Y unarmed: no hay anim de
+      // sheath. Sesión 33 (B-002) — TODOS los caminos ponen combatStance=false
+      // explícitamente. Antes el branch 'unarmed' no hacía nada y el flag
+      // quedaba pegado en true desde el draw anterior (pose residual).
+      try { ch.setCombatStance?.(false); } catch {}
+      // Limpiar flags que podrían estar pegados de un attack reciente y
+      // bloquear el próximo play() de world.js (idle/run normales).
+      ch.isInTransition = false;
+      // Forzar reset del mixer para evitar pose residual estilo "sword_idle"
+      // cuando ya no estamos en combate.
+      try { ch._forceIdleReset?.(); } catch {}
     }
   };
 
