@@ -424,4 +424,55 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
 
 ---
 
+## 13. Sesión 33 — B-001: tool override durante gathering
+
+### 13.1 attachToolForGather / restoreWeapon (Character)
+- `character.attachToolForGather(toolItemId, toolWeaponType)`: swappea
+  visualmente al hacha/pico para la actividad. Guarda el arma original en
+  `_savedWeaponId / _savedWeaponType` y setea `_toolOverrideActive=true`.
+  Es **idempotente**: si la tool ya está equipada (`alreadyEquipped`), no
+  hace nada y NO activa el saved state — no hay restore que hacer.
+- `character.restoreWeapon()`: si hay override activo, vuelve al arma
+  original (`attachWeapon(saved.id, saved.type)`). Si el saved era "ninguna",
+  detacha. Limpia los flags. Safe de llamar múltiples veces.
+- `character.attachWeapon()` (público): si hay override activo y se pide
+  un arma DISTINTA a la tool actual, **invalida el saved state** —
+  interpretamos que el jugador/menú cambió el arma a propósito.
+- Lógica interna refactorizada a `_doAttachWeapon()` para que tool-override
+  y attach normal no se pisen. **No llamar `_doAttachWeapon` desde afuera**
+  excepto desde el propio override.
+
+### 13.2 Selección de tool — equipment.getBestAxeAvailable()
+- `equipment.findBestToolInInventory(weaponType, slots)` busca:
+  1. Si el weapon equipado es del tipo pedido → lo devuelve con `alreadyEquipped: true`.
+  2. Si no, busca en `slots` (típicamente `inventory.getState()`) la de
+     mayor ranking según `TOOL_RANKINGS`.
+- `TOOL_RANKINGS` está hardcodeado en `equipment.js`. Cuando agregues
+  `axe_iron`, `axe_steel`, `pickaxe_iron`, etc, **añadirlo al array en
+  orden ASCENDENTE de calidad**. Sin esto, el swap usa la primera del
+  inventario, no la mejor.
+
+### 13.3 Cancel de skills al entrar combate / morir
+- `skills.cancelAll(reason)` (en `skills/index.js`) cancela cualquier
+  skill activa. Cada skill debe exportar `cancel(reason)` o el viejo
+  `cancelOnMove()` (compat).
+- `core/combat_hooks.js` llama `skills.cancelAll('combat')` al inicio de
+  `__playerEnterCombat`, y `skills.cancelAll('death')` al inicio de
+  `__playerDeath`. Sin esto, el restoreWeapon no se dispara al recibir
+  attack o morir → char queda con el hacha durante el draw/death anim.
+- **Si agregás una skill nueva con loop activo (mining, fishing, etc),
+  asegurate de que exporte `cancel(reason)` que detenga el loop Y haga
+  cualquier cleanup visual (restore tool, etc).**
+
+### 13.4 Bugs preexistentes que B-001 NO arregla (TODOs)
+- **Peers no ven el swap.** Hoy peers no tienen weapon attached. Cuando
+  se haga peer-equipment-sync (probablemente para bow/arrows en bloque 2),
+  agregar `equipped_weapon` + `gather_tool` al snapshot por peer y
+  attachear/detachear en multiplayer.js. Es B-001b en el backlog.
+- **Joystick no llama explícitamente stopChop.** Hoy se cancela "por
+  accidente" porque el server rechaza por out_of_range tras alejarse.
+  Funciona pero es frágil. Pendiente conectar explícitamente.
+
+---
+
 *Para Claude / IA: si un bug futuro coincide con un patrón en esta doc, probable que la causa esté acá descrita. No reescribas la solución, leé primero.*
