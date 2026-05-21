@@ -299,6 +299,13 @@ async function doAttackTickNpc() {
       disengage();
       return;
     }
+    // Sesión 34 — Bow sin flechas: el server devuelve 'no_ammo' antes de
+    // procesar el ataque. Feedback inmediato y disengage para evitar spam.
+    if (result.error === 'no_ammo') {
+      feedLog('warning', 'Sin flechas. Equipa o consigue munición.');
+      disengage();
+      return;
+    }
     if (result.error === 'npc_dead' || result.error === 'npc_not_found') {
       disengage();
       await refresh();
@@ -323,6 +330,23 @@ async function doAttackTickNpc() {
         result.weapon_type,
         result.cooldown_ms
       );
+    } catch {}
+  }
+
+  // Sesión 34 — Si fue un ataque ranged (server consumió una flecha), disparar
+  // el proyectil visual del player → NPC. HOY es una línea verde stub; próxima
+  // sesión queda como mesh de flecha real volando con el color del arrow_item_id.
+  if (result.arrow_consumed && npc && typeof window !== 'undefined' &&
+      typeof window.__worldFireProjectile === 'function') {
+    try {
+      const playerPos = window.__getPlayerPosition?.();
+      if (playerPos) {
+        window.__worldFireProjectile(
+          { x: playerPos.x, y: 0, z: playerPos.z },
+          { x: npc.x, y: 0, z: npc.z },
+          { type: 'arrow', arrowItemId: result.arrow_consumed.item_id }
+        );
+      }
     } catch {}
   }
 
@@ -821,6 +845,12 @@ function render() {
 
   const weaponKey = detectEquippedWeapon();
   const weapon = WEAPON_STANCES[weaponKey];
+  // Sesión 34 — Display name dinámico. Si hay un arma equipada, mostrar
+  // el name real del item (ej. "Arco de roble", "Sword of bronze").
+  // Si no hay arma o el item no tiene name, fallback al name hardcoded
+  // del WEAPON_STANCES (que es típicamente "Unarmed" para puños vacíos).
+  const equippedWeaponItem = equipment.getEquipped?.('weapon');
+  const weaponDisplayName = equippedWeaponItem?.name || weapon.name;
   const serverStance = state.combat_style || 'accurate';
   // Sincronizar uiSelectedStance con server stance si no hay selección local
   if (!uiSelectedStance || !weapon.stances.find(s => s.id === uiSelectedStance)) {
@@ -831,7 +861,7 @@ function render() {
   panelEl.innerHTML = `
     <div class="combat-osrs">
       <div class="combat-osrs-header">
-        <div class="combat-osrs-weapon">${escapeHtml(weapon.name)}</div>
+        <div class="combat-osrs-weapon">${escapeHtml(weaponDisplayName)}</div>
         <div class="combat-osrs-cb-level">Combat Lvl: <b>${combatLvl}</b></div>
       </div>
 
