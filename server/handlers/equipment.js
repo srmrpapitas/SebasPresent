@@ -42,6 +42,14 @@ const INVENTORY_SLOTS = 20;
 // equipado (user_quiver table), en lugar de ocupar slot del inv.
 const VALID_EQUIP_SLOTS = ['weapon', 'shield', 'helm', 'body', 'legs', 'boots', 'cape', 'amulet', 'ring', 'quiver'];
 
+// Sesión 35 — Tipos de arma que ocupan ambas manos. Equipar cualquiera de
+// estos cuando hay escudo equipado fuerza al escudo al inv (y viceversa).
+// Antes solo se chequeaba '2h_sword' literal, lo cual dejaba al `bow`
+// fuera del conflict check: te dejaba equipar escudo encima del arco
+// (bug visto en S35 smoke test del path ranged).
+// Cuando agreguemos 'staff' (Bloque 2 días 8-11), va acá también.
+const TWO_HANDED_WEAPON_TYPES = new Set(['2h_sword', 'bow']);
+
 // ============================================================
 // GET /api/equipment
 // ============================================================
@@ -122,7 +130,9 @@ export async function handleEquip(request, env) {
   //   conflictItem = el escudo, va al inventario.
   // Si lo que estoy equipando es un escudo, y tengo 2H equipada →
   //   conflictItem = el arma 2H, va al inventario.
-  const isEquipping2H = (targetSlot === 'weapon' && invItem.weapon_type === '2h_sword');
+  // Sesión 35 — Set TWO_HANDED_WEAPON_TYPES en vez de igualdad a '2h_sword'
+  // para que `bow` (y futuros tipos) entren en el chequeo.
+  const isEquipping2H = (targetSlot === 'weapon' && TWO_HANDED_WEAPON_TYPES.has(invItem.weapon_type));
   const isEquippingShield = (targetSlot === 'shield');
 
   let conflictItem = null;   // { slot_id, item_id } del item a desequipar por conflicto
@@ -132,12 +142,17 @@ export async function handleEquip(request, env) {
     ).bind(session.user_id).first();
     if (sh) conflictItem = { slot_id: 'shield', item_id: sh.item_id };
   } else if (isEquippingShield) {
+    // Sesión 35 — Antes filtraba por `i.weapon_type = '2h_sword'`. Ahora
+    // usa IN (...) construido desde TWO_HANDED_WEAPON_TYPES para detectar
+    // también `bow` (y cualquier 2H futuro registrado en el set).
+    const twoHandedList = Array.from(TWO_HANDED_WEAPON_TYPES);
+    const placeholders = twoHandedList.map(() => '?').join(',');
     const w = await env.DB.prepare(
       `SELECT eq.item_id
        FROM user_equipment eq
        JOIN items i ON i.id = eq.item_id
-       WHERE eq.user_id = ? AND eq.slot_id = 'weapon' AND i.weapon_type = '2h_sword'`
-    ).bind(session.user_id).first();
+       WHERE eq.user_id = ? AND eq.slot_id = 'weapon' AND i.weapon_type IN (${placeholders})`
+    ).bind(session.user_id, ...twoHandedList).first();
     if (w) conflictItem = { slot_id: 'weapon', item_id: w.item_id };
   }
 
