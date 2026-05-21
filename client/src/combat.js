@@ -38,6 +38,7 @@ import * as skills from './skills.js';
 import * as multiplayer from './multiplayer.js';   // Sesión 27 Bloque 3 — PVP
 import * as worldSnapshot from './world_snapshot.js'; // Sesión 27 Bloque 3 — auto-retaliate
 import * as audio from './audio.js';               // Sesión 32 — SFX de combat
+import * as combatStyles from './combat_styles.js'; // Sesión 33 día 2 — selector de estilo
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -254,6 +255,20 @@ async function doAttackTick() {
 
 async function doAttackTickNpc() {
   if (currentTargetNpcId === null) return;
+
+  // Sesión 33 día 2 — el style decide si podemos atacar (ammo/runas/etc).
+  // Para melee siempre devuelve {ok:true}. Cuando se implemente ranged/magic,
+  // esto chequea recursos antes de mandar el request al server. Envuelto
+  // en try/catch para que un fallo del style NO bloquee combate.
+  let canAttackResult = { ok: true };
+  try { canAttackResult = combatStyles.getActiveStyle().canAttack(); }
+  catch (e) { console.warn('[combat] canAttack threw, defaulting to ok:', e); }
+  if (!canAttackResult.ok) {
+    feedLog('warning', canAttackResult.message || 'No puedes atacar ahora.');
+    disengage();
+    return;
+  }
+
   const npcId = currentTargetNpcId;
   let result;
   try {
@@ -411,6 +426,17 @@ async function doAttackTickNpc() {
 // ============================================================
 async function doAttackTickPlayer() {
   if (currentTargetPlayerId === null) return;
+
+  // Sesión 33 día 2 — mismo canAttack check que en doAttackTickNpc.
+  let canAttackResult = { ok: true };
+  try { canAttackResult = combatStyles.getActiveStyle().canAttack(); }
+  catch (e) { console.warn('[combat] canAttack threw, defaulting to ok:', e); }
+  if (!canAttackResult.ok) {
+    feedLog('warning', canAttackResult.message || 'No puedes atacar ahora.');
+    disengage();
+    return;
+  }
+
   const targetId = currentTargetPlayerId;
   let result;
   try {
