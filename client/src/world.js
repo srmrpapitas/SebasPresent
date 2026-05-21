@@ -211,11 +211,12 @@ export async function startWorld(loggedInUser, token) {
     // del edificio queda en el centro del footprint, la puerta está a ~2-3m
     // del centro, queda fuera del radio).
     // Iter 2: 7.0m → suficiente para entrar parado en la puerta, sigue
-    // bloqueando entradas "desde lejos en el medio del mapa". Si se siente
-    // demasiado generoso (entrás desde afuera del footprint visual), bajar
-    // a 4-5m.
+    // bloqueando entradas "desde lejos en el medio del mapa".
+    // Iter 3: 10.0m (Nico pidió +3m al iter 2) → margen cómodo para entrar
+    // sin tener que estar pegado a la puerta exacta. Si se siente demasiado
+    // generoso (entrás desde afuera del footprint visual), bajar.
     showWorldLoading('Cargando edificios…');
-    const BUILDING_ENTRY_RANGE_M = 7.0;
+    const BUILDING_ENTRY_RANGE_M = 10.0;
     await buildings.start({
       scene, camera, canvas,
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
