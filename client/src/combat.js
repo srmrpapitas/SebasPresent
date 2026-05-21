@@ -46,12 +46,14 @@ const TICK_MS = 900;
 const POLL_INTERVAL_MS = 3000;
 const FEED_MAX_LINES = 50;
 
-// Sesión 17 — mapping skill_id interno → skill_id del catálogo nuevo
+// Sesión 17 — mapping skill_id interno → skill_id del catálogo nuevo.
+// Sesión 35 — agregado ranged (para el banner de level-up).
 const SKILL_ID_MAP = {
   attack: 'attack',
   strength: 'strength',
   defence: 'defence',
   hp: 'hitpoints',
+  ranged: 'ranged',
 };
 
 let isInitialized = false;
@@ -411,7 +413,15 @@ async function doAttackTickNpc() {
     result.xp_gained.attack > 0 ||
     result.xp_gained.strength > 0 ||
     result.xp_gained.defence > 0 ||
-    result.xp_gained.hp > 0
+    result.xp_gained.hp > 0 ||
+    // Sesión 35 — Agregadas las 3 nuevas skills de combate. Sin esto, un
+    // ataque ranged puro (solo ranged_xp > 0, todos los otros 0) hacía que
+    // gotXp diera false y skills.reload() no se llamara, dejando el panel
+    // del cliente "pegado" al valor cacheado. Magic y prayer se incluyen
+    // ahora para no tener el mismo bug cuando lleguen en días 8-12.
+    result.xp_gained.ranged > 0 ||
+    result.xp_gained.magic > 0 ||
+    result.xp_gained.prayer > 0
   );
   if (gotXp) {
     skills.reload().catch(e => console.warn('[combat] skills reload:', e));
@@ -611,7 +621,12 @@ async function doAttackTickPlayer() {
     result.xp_gained.attack > 0 ||
     result.xp_gained.strength > 0 ||
     result.xp_gained.defence > 0 ||
-    result.xp_gained.hp > 0
+    result.xp_gained.hp > 0 ||
+    // Sesión 35 — Mismo fix que en el path NPC (ver arriba). Aplica acá
+    // también para cuando hagamos PvP ranged (hoy B-012 — diferido a Bloque 3).
+    result.xp_gained.ranged > 0 ||
+    result.xp_gained.magic > 0 ||
+    result.xp_gained.prayer > 0
   );
   if (gotXp) {
     skills.reload().catch(e => console.warn('[combat] skills reload:', e));
@@ -1312,7 +1327,7 @@ function ensureStyles() {
 // ============================================================
 
 function pctFill(cur, max) { return max > 0 ? Math.max(0, Math.min(100, Math.round((cur / max) * 100))) : 0; }
-function skillLabel(key) { return { attack: 'Ataque', strength: 'Fuerza', defence: 'Defensa', hp: 'Vitalidad' }[key] || key; }
+function skillLabel(key) { return { attack: 'Ataque', strength: 'Fuerza', defence: 'Defensa', hp: 'Vitalidad', ranged: 'Distancia', magic: 'Magia', prayer: 'Oración' }[key] || key; }
 function formatXp(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';

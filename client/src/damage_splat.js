@@ -86,13 +86,16 @@ export function spawnXpDrop(skillId, amount) {
  */
 export function spawnXpDrops(xpMap) {
   if (!xpMap) return;
-  // xp_gained del server viene como { attack, strength, defence, hp }
-  // mapeo a skill_ids reales.
+  // xp_gained del server viene como { attack, strength, defence, hp, ranged }
+  // mapeo a skill_ids reales. Sesión 35 — agregado ranged (S34 lo dejó fuera
+  // de este map: el server acreditaba XP a ranged_xp pero el cliente no
+  // generaba el splat flotante "+X XP" porque ranged no estaba en el map).
   const map = {
     attack: 'attack',
     strength: 'strength',
     defence: 'defence',
     hp: 'hitpoints',
+    ranged: 'ranged',
   };
   for (const [key, amount] of Object.entries(xpMap)) {
     if (!amount || amount <= 0) continue;
