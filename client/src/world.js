@@ -272,13 +272,19 @@ export async function startWorld(loggedInUser, token) {
         // que quepan en la sala. Sesión 31 — delegado a core/camera.js.
         // Sesión 36 — ajuste de ángulo: antes era { dist: 5, pitch: 0.55 } que
         // daba ángulo cinematográfico de lado (sin(0.55)*5 = 2.6m sobre player).
-        // Iter 1 (rechazada por Nico): dist=7, pitch=0.95 — quedó MUY cerca.
-        // Iter 2: dist=10, pitch=0.95 → Y=sin(0.95)*10 = 8.1m. Eso pisa el techo
-        // de 8m por 0.1m. Compensamos bajando pitch a 0.85 → Y=sin(0.85)*10=7.5m,
-        // margen 0.5m al techo. Ángulo ~49° = top-down OSRS, char más chico
-        // en frame. Si sigue cerca, probar dist=12 (vamos a tener que bajar
-        // pitch a 0.75 → Y=8.2m, JUSTO en el techo — riesgoso).
-        cameraOrbital.pushInteriorOverrides({ dist: 10, pitch: 0.85 });
+        // Iter 1 (rechazada por Nico): dist=7, pitch=0.95 — quedó muy cerca.
+        // Iter 2 (rechazada por Nico): dist=10, pitch=0.85 — sigue cerca y muy
+        // top-down. La foto que Nico pidió matchear se ve con la cámara MUCHO
+        // más atrás y con pitch más shallow (se ven las caras frontales de
+        // mesas/sillas, no solo el techo de las cosas).
+        // Iter 3: dist=14, pitch=0.55 — EXACTAMENTE los valores default de la
+        // cámara exterior. Ventaja: el user mantiene la misma perspectiva
+        // OSRS-style al entrar a un interior. Y=sin(0.55)*14=7.3m (margen
+        // 0.7m bajo el techo de 8m). Si Nico arrastra la cámara mucho hacia
+        // arriba (pitch→1.3), va a clipar el techo, pero la geometría
+        // probablemente es one-sided (visible desde dentro, invisible desde
+        // afuera/arriba), así que no debería verse "agujereado".
+        cameraOrbital.pushInteriorOverrides({ dist: 14, pitch: 0.55 });
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
@@ -1500,6 +1506,18 @@ function injectAudioSettingsPanel() {
       const nowMuted = audio.toggleMute();
       muteBtn.classList.toggle('muted', nowMuted);
       muteBtn.textContent = nowMuted ? '🔇 Música silenciada · Tap para activar' : '🔊 Silenciar música';
+      // Sesión 36 — Si el user DESmutea, forzar el restart de la música del
+      // bioma actual. Antes esto no era necesario porque toggleMute() resumía
+      // el `musicAudio` existente, pero ahora musicForBiome se skipea cuando
+      // está muteado → no hay musicAudio para resumir. Sin este call, después
+      // de mutear+entrar a edificio+salir+desmutear, no se escuchaba música
+      // hasta cambiar de bioma manualmente.
+      if (!nowMuted && !interiors.isActive?.() && player) {
+        try {
+          const biome = terrain.biomeAt(player.position.x, player.position.z);
+          audio.musicForBiome(biome.id);
+        } catch (e) { console.warn('[world] resume music on unmute:', e); }
+      }
     });
   }
 

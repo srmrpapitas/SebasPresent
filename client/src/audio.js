@@ -235,8 +235,26 @@ export function music(name) {
   }
 }
 
-/** Conveniencia: música según bioma actual. */
+/** Conveniencia: música según bioma actual.
+ *
+ * Sesión 36 — Guard de mute. Si el user muteó (botón 🔇 → prefs.muted=true)
+ * O bajó manualmente el volumen a 0 (setMusicVolume(0) o setMasterVolume(0)),
+ * NO arrancamos música nueva. Antes esta función cargaba el Audio element y
+ * lo reproducía igual (a volumen 0 técnicamente silencioso), pero:
+ *   1. En iOS, crear/play/destroy de Audio elements repetidos causa hiccups
+ *      audibles aún a volumen 0 (lo que Nico reportó como "vuelve la música").
+ *   2. Hay 3 call sites de esta función en world.js (init, region-change,
+ *      exit-interior). Garantizar el guard acá los cubre todos sin
+ *      duplicar la chequera de mute en cada call site.
+ *
+ * Caveat: si el user toggle-mutea OFF mientras NO hay música cargada
+ * (porque se la skipeamos antes), la música no resume sola. El handler del
+ * botón 🔇 en world.js llama musicForBiome explícitamente al desmutear para
+ * cubrir ese caso.
+ */
 export function musicForBiome(biomeId) {
+  if (prefs.muted) return;
+  if ((prefs.music ?? 0) * (prefs.master ?? 0) === 0) return;
   const themeName = BIOME_MUSIC[biomeId];
   if (themeName) music(themeName);
 }
