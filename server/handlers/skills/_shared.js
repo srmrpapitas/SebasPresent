@@ -16,7 +16,7 @@
  *   - NO loguean errores excepto que sea genuinamente inesperado.
  */
 
-const INVENTORY_SLOTS = 28;
+const INVENTORY_SLOTS = 20;
 
 /**
  * Verifica si una tabla D1 existe. Helper genérico.
