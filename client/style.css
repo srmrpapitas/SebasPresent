@@ -751,26 +751,34 @@ button { font-family: inherit; cursor: pointer; }
    ============================================================ */
 @media (min-width: 901px) {
   :root {
-    --sb-panel-w: 240px;   /* +50px (190 → 240) para que el inv quepa cómodo */
-    --sb-tabs-w:  44px;    /* +8px tabs más cómodas con mouse */
-    --sb-panel-h: 360px;   /* +80px (280 → 360) para que combat/equipment NO scrollee */
+    /* Sesión 37 — Nico pidió "+20% más grande" para no scrollear en equipment/
+     * combat panes. Aplicado sobre los valores desktop que ya teníamos:
+     *   --sb-panel-w: 240 → 288 (+20%)
+     *   --sb-tabs-w:  44  → 53  (+20%)
+     *   --sb-panel-h: 360 → 432 (+20%)
+     * También escalamos el contenido proporcional (slots, fonts, tab height)
+     * para que el aumento sea visual real, no más espacio vacío.
+     */
+    --sb-panel-w: 288px;   /* +48 (240 → 288) */
+    --sb-tabs-w:  53px;    /* +9  (44 → 53) */
+    --sb-panel-h: 432px;   /* +72 (360 → 432) */
   }
 
   /* Tabs del sidebar más grandes para click cómodo */
   .osrs-sidebar-tab {
-    font-size: 18px;
-    height: 38px;
+    font-size: 22px;       /* Sesión 37: +20% (18 → 22) */
+    height: 46px;          /* Sesión 37: +20% (38 → 46) */
   }
 
-  /* Inventario desktop: slots 46×46 (vs 42 mobile), gap 5 (vs 4) */
+  /* Inventario desktop: slots 55×55 (Sesión 37: +20% sobre 46), gap 6 (+20% sobre 5) */
   .osrs-tab-pane[data-tab="inventory"] .inventory-grid,
   .osrs-tab-pane[data-tab="inventory"] .inv-grid,
   .osrs-tab-pane[data-tab="inventory"] .osrs-inv-grid,
   .osrs-tab-pane[data-tab="inventory"] [class*="inventory-grid"],
   .osrs-tab-pane[data-tab="inventory"] [class*="inv-grid"] {
-    grid-template-columns: repeat(4, 46px) !important;
-    grid-auto-rows: 46px !important;
-    gap: 5px !important;
+    grid-template-columns: repeat(4, 55px) !important;
+    grid-auto-rows: 55px !important;
+    gap: 6px !important;
     justify-content: center !important;  /* fix B-031: centra el grid en el ancho del pane */
   }
   .osrs-tab-pane[data-tab="inventory"] .inventory-slot,
@@ -778,42 +786,43 @@ button { font-family: inherit; cursor: pointer; }
   .osrs-tab-pane[data-tab="inventory"] .osrs-inv-slot,
   .osrs-tab-pane[data-tab="inventory"] [class*="inventory-slot"],
   .osrs-tab-pane[data-tab="inventory"] [class*="inv-slot"] {
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    min-height: 46px !important;
-    max-width: 46px !important;
-    max-height: 46px !important;
+    width: 55px !important;        /* Sesión 37: +20% (46 → 55) */
+    height: 55px !important;
+    min-width: 55px !important;
+    min-height: 55px !important;
+    max-width: 55px !important;
+    max-height: 55px !important;
   }
 
-  /* Skills panel desktop: cells más altos + icon/font más grandes (B-032) */
+  /* Skills panel desktop: cells más altos + icon/font más grandes (B-032)
+   * Sesión 37: +20% global sobre los valores que ya teníamos. */
   .skill-slot {
-    height: 50px !important;
+    height: 60px !important;       /* 50 → 60 */
   }
   .skill-slot-icon {
-    width: 28px !important;
-    height: 28px !important;
-    font-size: 24px !important;
-    top: 6px !important;
-    left: 8px !important;
+    width: 34px !important;        /* 28 → 34 */
+    height: 34px !important;
+    font-size: 29px !important;    /* 24 → 29 */
+    top: 7px !important;
+    left: 10px !important;
   }
   .skill-slot-current {
-    font-size: 16px !important;
-    top: 4px !important;
-    right: 7px !important;
+    font-size: 19px !important;    /* 16 → 19 */
+    top: 5px !important;
+    right: 8px !important;
   }
   .skill-slot-max {
-    font-size: 14px !important;
-    bottom: 5px !important;
-    right: 7px !important;
+    font-size: 17px !important;    /* 14 → 17 */
+    bottom: 6px !important;
+    right: 8px !important;
   }
   .skill-slot-name {
-    font-size: 11px !important;
-    bottom: 5px !important;
-    left: 8px !important;
+    font-size: 13px !important;    /* 11 → 13 */
+    bottom: 6px !important;
+    left: 10px !important;
   }
   .skills-panel-grid {
-    gap: 6px !important;
+    gap: 7px !important;           /* 6 → 7 */
   }
 }
 
@@ -2592,4 +2601,55 @@ body:has(#worldScreen:not(.hidden)) #splash {
 @media (max-width: 380px) {
   .magic-spell-icon { font-size: 16px; }
   .magic-spell-name { font-size: 7px; }
+}
+
+/* ============================================================
+   SESIÓN 37 — Desktop UX overrides (B-030/B-031/B-032/B-033/B-034)
+   ============================================================
+   Activo solo en viewports >= 1024px (PC/laptop). Mobile no se toca.
+   
+   Cambios:
+   1. HUD lateral +20% (B-034). Las 3 variables --sb-* controlan
+      panel + tabs proporcionalmente, así font-size de iconos también
+      escala (los tabs son flex con altura proporcional al panel-h).
+      Esto resuelve también B-032 (iconos skills muy pequeños) porque
+      el panel más grande deja más espacio para los iconos internos.
+   2. Chat parte inferior (B-033). En mobile el chat va arriba-izq
+      para no tapar el joystick; en desktop no hay joystick, así que
+      lo movemos abajo donde no compite con minimap/HP/HUD lateral.
+   3. Iconos de skills explícitamente más grandes — fallback por si
+      el escalado proporcional de #1 no es suficiente.
+   
+   B-031 (mochila iconos cortados): se resuelve probablemente vía #1
+   (panel más ancho → grid no se aprieta contra el sidebar). Si tras
+   este cambio sigue cortado, ajustar padding del grid de inventory.
+*/
+
+@media (min-width: 1024px) {
+  :root {
+    --sb-panel-w: 228px;     /* 190 * 1.2 = 228 */
+    --sb-tabs-w:  44px;      /* 36 * 1.2 = 43.2 → 44 */
+    --sb-panel-h: 336px;     /* 280 * 1.2 = 336 */
+  }
+  
+  /* Iconos de tabs más grandes (escala junto con el panel) */
+  .osrs-sidebar-tab {
+    font-size: 17px;          /* base 14 * 1.2 = 16.8 → 17 */
+  }
+  
+  /* Iconos del grid de skills más grandes (B-032 explícito) */
+  .skill-icon,
+  .skills-grid .skill-item,
+  .skills-grid img {
+    transform: scale(1.2);
+    transform-origin: center;
+  }
+  
+  /* Chat parte inferior (B-033). En mobile va arriba-izq por encima
+     del joystick; en desktop lo movemos abajo. */
+  .chat-root {
+    top: auto !important;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    left: 8px;
+  }
 }
