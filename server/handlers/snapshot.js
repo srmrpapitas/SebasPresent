@@ -102,16 +102,28 @@ export async function handleWorldSnapshot(request, env) {
     //
     // Defensa: si party_members no existe (migración no corrida), la query
     // con JOIN falla. Probamos con JOIN primero; si falla, fallback sin.
+    // Sesión 34 — B-001b: para que los peers se vean con el arma REAL
+    // que cada uno tiene equipada (en lugar del SkeletonUtils.clone copiando
+    // la del local player), traemos también weapon_item_id + weapon_type por
+    // peer. El cliente attachea la mesh correcta al bone del peer.
+    //
+    // Nota: si el peer no tiene nada equipado, weapon_item_id viene NULL y
+    // el cliente sabe que es unarmed.
     let playerRows;
     try {
       playerRows = await env.DB.prepare(
         `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
                 c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
                 c.last_attack_at,
-                pm.party_id
+                c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit,
+                pm.party_id,
+                ueq.item_id AS weapon_item_id,
+                wi.weapon_type AS weapon_type
          FROM online_users o
          LEFT JOIN combat_stats c ON c.user_id = o.user_id
          LEFT JOIN party_members pm ON pm.user_id = o.user_id
+         LEFT JOIN user_equipment ueq ON ueq.user_id = o.user_id AND ueq.slot_id = 'weapon'
+         LEFT JOIN items wi ON wi.id = ueq.item_id
          WHERE o.last_seen > ?
            AND o.user_id != ?
            AND o.x BETWEEN ? AND ?
@@ -126,9 +138,14 @@ export async function handleWorldSnapshot(request, env) {
       playerRows = await env.DB.prepare(
         `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
                 c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
-                c.last_attack_at
+                c.last_attack_at,
+                c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit,
+                ueq.item_id AS weapon_item_id,
+                wi.weapon_type AS weapon_type
          FROM online_users o
          LEFT JOIN combat_stats c ON c.user_id = o.user_id
+         LEFT JOIN user_equipment ueq ON ueq.user_id = o.user_id AND ueq.slot_id = 'weapon'
+         LEFT JOIN items wi ON wi.id = ueq.item_id
          WHERE o.last_seen > ?
            AND o.user_id != ?
            AND o.x BETWEEN ? AND ?
@@ -181,6 +198,18 @@ export async function handleWorldSnapshot(request, env) {
           last_attack_at: r.last_attack_at,
           last_seen:  r.last_seen,
           party_id:   r.party_id != null ? r.party_id : null,   // Sesión 27 Bloque 3
+          // Sesión 34 — B-001b: arma equipada por el peer (item_id real +
+          // weapon_type). Cliente la usa para attachear el GLB correcto al
+          // bone del peer en vez de clonar la del local player.
+          // Si no tiene nada equipado, ambos NULL → cliente lo renderiza unarmed.
+          weapon_item_id: r.weapon_item_id || null,
+          weapon_type:    r.weapon_type    || null,
+          // Sesión 34 — B-001b extra: cuando un peer recibe damage, el cliente
+          // dispara un hitsplat numeric sobre su cabeza. Se detecta por cambio
+          // en last_hit_at (igual patrón que last_attack_at de S32).
+          last_hit_damage:  typeof r.last_hit_damage === 'number' ? r.last_hit_damage : null,
+          last_hit_at:      typeof r.last_hit_at === 'number'     ? r.last_hit_at     : null,
+          last_hit_is_crit: r.last_hit_is_crit === 1,
         };
       });
 
