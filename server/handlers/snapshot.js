@@ -282,6 +282,27 @@ export async function handleWorldSnapshot(request, env) {
       last_hit_damage: null,
       last_hit_at: null,
       last_hit_is_crit: null,
+      // Sesión 37 — Death notify server-driven. Antes el cliente del muerto
+      // solo se enteraba de su muerte si la muerte venía como respuesta a
+      // SU propio /attack o /attack_player. Si te mataba un peer o NPC sin
+      // que vos atacaras, server marcaba hp=0 pero nadie te avisaba → quedabas
+      // en limbo (te movías, sin barra, sin Respawn).
+      //
+      // Fix: exponemos las dos cosas que ya están en combat_stats.
+      //   - last_died_at: timestamp ms de la última muerte (server lo setea
+      //     en cualquier path de muerte: PvE, PvP, duelo).
+      //   - you_died_recently: true si last_died_at es reciente (< 30s) Y
+      //     hp_current <= 0 (no respawneó todavía). El cliente lo lee en
+      //     cada refresh (cada 3s sin combate, cada tick con combate) y
+      //     dispara __playerDeath inmediatamente.
+      //
+      // Diseño: el flag combina las 2 condiciones server-side así el cliente
+      // no tiene que pensar. Si last_died_at>0 pero hp_current>0, ya
+      // respawneó → flag=false. Si hp_current<=0 pero last_died_at viejo (raro,
+      // edge case), no disparamos (probable estado inconsistente, que sane
+      // por el side path).
+      last_died_at: null,
+      you_died_recently: false,
     };
     // Sesión 32 — fetch last_hit_* del combat_stats. Defensivo: si las
     // columnas no existen, los campos quedan null (cliente maneja como
@@ -299,6 +320,26 @@ export async function handleWorldSnapshot(request, env) {
       }
     } catch {
       // columnas no existen → me.last_hit_* quedan null. OK.
+    }
+    // Sesión 37 — fetch last_died_at + hp_current para death notify.
+    // Defensivo: si la columna no existe (combat_stats schema sin migrar),
+    // el flag queda false y caemos al safety net del cliente (polling +
+    // detección hp<=0 sin ack de server).
+    try {
+      const deathRow = await env.DB.prepare(
+        `SELECT last_died_at, hp_current FROM combat_stats WHERE user_id = ?`
+      ).bind(session.user_id).first();
+      if (deathRow) {
+        me.last_died_at = deathRow.last_died_at;
+        const DEATH_NOTIFY_WINDOW_MS = 30_000;
+        const recent = deathRow.last_died_at != null &&
+                       (now - deathRow.last_died_at) < DEATH_NOTIFY_WINDOW_MS;
+        const stillDead = typeof deathRow.hp_current === 'number' &&
+                          deathRow.hp_current <= 0;
+        me.you_died_recently = !!(recent && stillDead);
+      }
+    } catch {
+      // columna no existe → me.last_died_at queda null, flag queda false.
     }
     try {
       const lastAtk = await env.DB.prepare(
