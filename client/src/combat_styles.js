@@ -225,12 +225,23 @@ export const RangedStyle = {
     return RANGED_RANGE_M;
   },
 
-  // TODO próxima sesión: cuando carguemos Bow_Draw_Arrow.fbx como clip del
-  // char (al lado de las otras anims base), reemplazar setCombatStance(true)
-  // por character.playBowDraw() o equivalente.
+  // Sesión 36 — Bow_Draw_Arrow.fbx integrada como anim del char.
+  // playBowDraw reproduce la anim de "sacar la flecha" + setea combatStance
+  // + _combatStanceMode='bow' (para que play()/locomoción enruten a bow_walk_*
+  // y al held pose entre disparos). Fallback al setCombatStance básico si la
+  // anim no cargó (warning del FBX validator) — al menos el stance funciona.
   onEnterCombat(character) {
     if (!character) return;
-    try { character.setCombatStance?.(true); } catch {}
+    try {
+      if (typeof character.playBowDraw === 'function') {
+        character.playBowDraw();
+      } else {
+        character.setCombatStance?.(true);
+      }
+    } catch (e) {
+      console.warn('[combat_styles] RangedStyle.onEnterCombat:', e);
+      try { character.setCombatStance?.(true); } catch {}
+    }
   },
 
   onExitCombat(character) {
@@ -240,11 +251,14 @@ export const RangedStyle = {
     try { character._forceIdleReset?.(); } catch {}
   },
 
-  // TODO próxima sesión: reemplazar attack_N genérico por la secuencia real:
-  //   1. Bow_Overdraw.fbx (windup, ~200ms)
-  //   2. Bow_Recoil.fbx (release, ~150ms)
-  //   3. fireProjectile() llamada durante el frame de release
-  // Por ahora usa attack_N (igual que melee) para que algo se vea.
+  // Sesión 36 — Bow attack es ahora una secuencia real (Overdraw 200ms →
+  // Recoil 150ms → held pose) que character.playAttack maneja internamente
+  // cuando weaponType==='bow' y los clips bow_overdraw/bow_recoil cargaron.
+  // Si los clips no cargaron, degrade gracefully al cycle de sword (mismo
+  // comportamiento que pre-S36 — funcional, visualmente raro).
+  //
+  // El proyectil visual se sincroniza con el frame de release vía
+  // opts.windupMs=200 en el call a __worldFireProjectile (combat.js).
   playAttackAnim(character, stance, cooldownMs) {
     if (!character) return;
     try { character.playAttack?.(stance, 'bow', cooldownMs); }

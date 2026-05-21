@@ -61,6 +61,22 @@ const ANIM_FILES = {
 
   // Sesión 32 — Hit reaction (cuando recibes un hit de peer/NPC)
   react:    'Reaction.fbx',
+
+  // Sesión 36 — Bow anims (Bloque 2 día 6). Las 7 que están en R2:
+  //   - bow_draw_arrow: anim ONE-SHOT al entrar combate (char saca y prepara
+  //     la flecha). Clamp al último frame → pose "drawn" para idle.
+  //   - bow_overdraw:   ONE-SHOT windup del ataque (~200ms). Antes del release.
+  //   - bow_recoil:     ONE-SHOT release del ataque (~150ms). Tras el recoil
+  //     volvemos al held pose de bow_draw_arrow vía _holdBowDrawnPose().
+  //   - bow_walk_*:     LOOP 4-direccional para locomoción en combate ranged.
+  //     No hay bow_run_* todavía — corriendo cae a run_* normal (polish S37).
+  bow_draw_arrow:    'Bow_Draw_Arrow.fbx',
+  bow_overdraw:      'Bow_Overdraw.fbx',
+  bow_recoil:        'Bow_Recoil.fbx',
+  bow_walk_forward:  'Bow_Walk_Forward.fbx',
+  bow_walk_back:     'Bow_Walk_Back.fbx',
+  bow_walk_left:     'Bow_Walk_Left.fbx',
+  bow_walk_right:    'Bow_Walk_Right.fbx',
 };
 
 const CRITICAL_ANIMS = ['idle', 'walk_forward', 'run_forward'];
@@ -81,6 +97,11 @@ const CLIPS_TO_STRIP_ROOT = new Set([
   // Sesión 30 — gathering anims también tienen root motion
   'woodcut',
   'kneel',
+  // Sesión 36 — bow anims también traen drift (regla de oro: si no está
+  // en la lista "in-place" del comment de INVARIANTS sección 2.3, asumimos
+  // que tiene root motion y la incluimos acá).
+  'bow_draw_arrow', 'bow_overdraw', 'bow_recoil',
+  'bow_walk_forward', 'bow_walk_back', 'bow_walk_left', 'bow_walk_right',
 ]);
 
 const CHARACTER_SCALE = 0.01;
@@ -90,6 +111,19 @@ const CROSSFADE = 0.22;
 const ATTACK_TICK_MS = 900;
 const DRAW_MS = 700;
 const SHEATH_MS = 700;
+
+// Sesión 36 — Bow attack es una secuencia (no una anim sola). El cooldown
+// total sigue siendo el del server (cooldown_ms del response, típ. 900ms
+// para bow). Estas dos partes son fijas — el char termina la anim antes
+// del cooldown total y se queda en held pose el resto del tiempo.
+//   - BOW_OVERDRAW_MS: tiempo del windup antes de soltar la flecha.
+//   - BOW_RECOIL_MS:   tiempo del release después de soltar.
+//   - BOW_DRAW_MS:     duración del Bow_Draw_Arrow al entrar combate.
+// El proyectil visual se sincroniza con BOW_OVERDRAW_MS vía opts.windupMs
+// en combat.js (ver __worldFireProjectile call).
+const BOW_OVERDRAW_MS = 200;
+const BOW_RECOIL_MS = 150;
+const BOW_DRAW_MS = 500;
 
 // ============================================================
 // Sesión 24 — Weapon attach config
@@ -390,6 +424,22 @@ export class Character {
     // Guardamos el id acá para poder cancelarlo desde la nueva llamada.
     this._drawSheathTimeoutId = null;
 
+    // Sesión 36 — Bow combat state.
+    //
+    // _combatStanceMode distingue qué anim set usa play()/_resolveLocomotion
+    // mientras combatStance=true:
+    //   - 'sword': sword_idle, sword_run_* (default histórico — sirve para
+    //              espadas Y herramientas Y unarmed-in-combat).
+    //   - 'bow':   bow_draw_arrow (held), bow_walk_*, fallback run_* para correr.
+    //   - 'staff': reservado para Bloque 2 días 8-11. Hoy se trata como 'sword'.
+    // setCombatStance(false) lo resetea a 'sword'. playBowDraw lo setea a 'bow'.
+    //
+    // _bowAttackTimeoutId guarda el id de la secuencia Overdraw→Recoil en
+    // curso para poder cancelarla si el player sale de combate / muere /
+    // cambia de arma a mitad de un attack tick.
+    this._combatStanceMode = 'sword';
+    this._bowAttackTimeoutId = null;
+
     // Sesión 26 — Armor attach state (body, shield, helm, cape)
     this._spineBone = null;
     this._headBone = null;
@@ -527,6 +577,20 @@ export class Character {
       a.clampWhenFinished = false;
     }
     for (const name of ['death','sword_death']) {
+      const a = this.actions[name];
+      if (!a) continue;
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+    }
+    // Sesión 36 — Bow one-shots: LoopOnce + clampWhenFinished=true.
+    // Diferencia con sword: las anims de sword tienen su Sheath dedicada que
+    // limpia el mixer al salir de combate, por eso clamp=false. Las de bow
+    // NO tienen sheath — al terminar Bow_Draw_Arrow / Bow_Recoil, el char
+    // queda en pose drawn (clamped) y la siguiente acción (otro attack o
+    // setCombatStance(false)) decide qué hacer. Sin clamp=true vuelve a
+    // bind pose por 1-2 frames (mismo bug de S26 que llevó a clamp=true en
+    // _scaleOneShot).
+    for (const name of ['bow_draw_arrow', 'bow_overdraw', 'bow_recoil']) {
       const a = this.actions[name];
       if (!a) continue;
       a.setLoop(THREE.LoopOnce, 1);
@@ -901,6 +965,20 @@ export class Character {
     if (!this.loaded) return;
     if (this.isAttacking || this.isInTransition || this.isDead) return;
 
+    // Sesión 36 — Bow idle: NO usar crossFade normal porque reseteamos el
+    // tiempo de bow_draw_arrow y replayearíamos la anim de "sacar la flecha"
+    // cada vez que el player se detiene. _holdBowDrawnPose() posiciona la
+    // action en su último frame sin re-disparar el clip.
+    if (state === 'idle'
+        && this.combatStance
+        && this._combatStanceMode === 'bow'
+        && this.actions.bow_draw_arrow) {
+      if (this.current !== this.actions.bow_draw_arrow) {
+        this._holdBowDrawnPose();
+      }
+      return;
+    }
+
     const name = this._resolveLocomotion(state, direction);
     const next = this.actions[name] || this.actions[this._fallbackLocomotion(state)];
     if (!next || next === this.current) return;
@@ -909,9 +987,27 @@ export class Character {
 
   _resolveLocomotion(state, direction) {
     if (state === 'idle') {
-      return this.combatStance ? 'sword_idle' : 'idle';
+      if (!this.combatStance) return 'idle';
+      // Bow idle ya se maneja en play() arriba (early return). Si llegamos
+      // acá con bow + idle es porque bow_draw_arrow no cargó — fallback safe.
+      return 'sword_idle';
     }
     if (this.combatStance) {
+      // Sesión 36 — bow stance: locomoción con anims de bow (4-dir walk).
+      // Running con bow cae a run_* normal (no hay bow_run_*).
+      if (this._combatStanceMode === 'bow') {
+        if (state === 'walk') {
+          const key = `bow_walk_${direction}`;
+          if (this.actions[key]) return key;
+          if (this.actions.bow_walk_forward) return 'bow_walk_forward';
+          return 'walk_forward';  // fallback final
+        }
+        // 'run' — sin bow_run_*, usamos run_* genérico.
+        const rkey = `run_${direction}`;
+        if (this.actions[rkey]) return rkey;
+        return 'run_forward';
+      }
+      // Sword stance (default histórico — sword/axe/pickaxe/unarmed).
       const key = `sword_run_${direction}`;
       if (this.actions[key]) return key;
       return 'sword_run_forward';
@@ -929,18 +1025,32 @@ export class Character {
   /**
    * Activa/desactiva la pose de combate. Cambia qué anims se usan en `play()`:
    *
-   *   - true  → idle = sword_idle, walk/run = sword_*
+   *   - true  → idle = sword_idle (o bow held si modo='bow'), walk/run = sword_*/bow_*
    *   - false → idle = idle normal, walk/run = anims normales
    *
    * Llamado por combat_hooks.js al entrar/salir de combate. Para armas que
    * tienen anim de draw (1h_sword, 2h_sword) `playDraw()` lo activa solo.
-   * Para herramientas (axe/pickaxe) y bow/staff, hay que llamar este método
+   * Para bow: `playBowDraw()` lo activa + setea _combatStanceMode='bow'.
+   * Para herramientas (axe/pickaxe) y staff, hay que llamar este método
    * manualmente porque no hay anim de draw.
+   *
+   * Sesión 36 — al salir de combate (on=false):
+   *   - Reseteamos _combatStanceMode a 'sword' (default).
+   *   - Cancelamos cualquier secuencia de bow attack pendiente (sino el
+   *     setTimeout dispararía Recoil/holdPose después de que el char ya
+   *     no esté en combate ranged → pose inconsistente).
    *
    * @param {boolean} on
    */
   setCombatStance(on) {
     this.combatStance = !!on;
+    if (!on) {
+      this._combatStanceMode = 'sword';
+      if (this._bowAttackTimeoutId !== null) {
+        clearTimeout(this._bowAttackTimeoutId);
+        this._bowAttackTimeoutId = null;
+      }
+    }
   }
 
   /**
@@ -1051,6 +1161,97 @@ export class Character {
   }
 
   /**
+   * Sesión 36 — Equivalente a playDraw() pero para weapon_type='bow'.
+   *
+   * Reproduce Bow_Draw_Arrow una vez (clampWhenFinished=true) — el char
+   * saca y prepara la flecha — y deja el último frame como held pose.
+   * Setea combatStance=true Y _combatStanceMode='bow' para que play()/
+   * _resolveLocomotion enruten a las anims correctas mientras dure combate.
+   *
+   * Diferencia clave vs playDraw (sword):
+   *   - NO hay anim de "guardar el arco" (no existe Bow_Sheath.fbx). Al
+   *     salir de combate, RangedStyle.onExitCombat llama setCombatStance(false)
+   *     + _forceIdleReset directo, sin transición animada. OSRS-style.
+   *
+   * Si bow_draw_arrow no cargó (warning del FBX validator, R2 falló, etc.),
+   * cae a setCombatStance(true) básico — el char queda en pose sword_idle
+   * con arco equipado, visualmente raro pero funcional.
+   */
+  playBowDraw() {
+    if (!this.loaded || this.isDead) return;
+
+    // Cancelar timeout pendiente de draw/sheath anterior (B-002 pattern).
+    if (this._drawSheathTimeoutId !== null) {
+      clearTimeout(this._drawSheathTimeoutId);
+      this._drawSheathTimeoutId = null;
+    }
+
+    const action = this.actions.bow_draw_arrow;
+    if (!action) {
+      // Fallback: solo setea stance, sin anim.
+      this.combatStance = true;
+      this._combatStanceMode = 'bow';
+      this.isInTransition = false;
+      return;
+    }
+
+    this._scaleOneShot(action, BOW_DRAW_MS);
+    this._crossFadeTo(action, 0.1);
+    this.combatStance = true;
+    this._combatStanceMode = 'bow';
+    this.isInTransition = true;
+
+    const dur = Math.max(120, action.getClip().duration * 1000 / action.timeScale);
+    this._drawSheathTimeoutId = setTimeout(() => {
+      this._drawSheathTimeoutId = null;
+      this.isInTransition = false;
+      // action queda clampeada en último frame (clampWhenFinished=true).
+      // play('idle') siguiente verá _combatStanceMode='bow' y enrutará por
+      // _holdBowDrawnPose, que detectará current === bow_draw_arrow y será no-op.
+    }, dur + 20);
+  }
+
+  /**
+   * Sesión 36 — Helper para "saltar" a la pose drawn del bow sin replayear
+   * la anim de sacar la flecha desde frame 0.
+   *
+   * Por qué existe: bow_draw_arrow es una anim ONE-SHOT (LoopOnce + clamp).
+   * Si la crossfadeamos con _crossFadeTo, este hace `action.reset()` que
+   * pone time=0 → el char vuelve a hacer toda la anim de sacar la flecha
+   * cada vez que vuelve a idle (después de caminar, después de un attack).
+   *
+   * Lo que hacemos acá: posicionamos la action en su último frame (con un
+   * epsilon antes de duration para que clampWhenFinished agarre el frame
+   * final, no quede flotando en el "after" del LoopOnce), la marcamos como
+   * current, y dejamos que el mixer congele esa pose.
+   *
+   * Llamado desde:
+   *   - play('idle') cuando bow stance + bow_draw_arrow existe + current !== bow_draw_arrow.
+   *   - _playBowAttack() al terminar la secuencia Overdraw→Recoil para
+   *     volver al held pose entre disparos.
+   */
+  _holdBowDrawnPose() {
+    const action = this.actions.bow_draw_arrow;
+    if (!action) return;
+    const clip = action.getClip();
+    action.enabled = true;
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.setEffectiveTimeScale(1);
+    action.setEffectiveWeight(1);
+    // Epsilon antes de duration: garantiza que estemos DENTRO del rango del
+    // clip (no en el "after-end" donde el LoopOnce puede comportarse raro).
+    action.time = Math.max(0, clip.duration - 0.01);
+    action.play();
+    if (this.current && this.current !== action) {
+      action.crossFadeFrom(this.current, 0.1, true);
+    }
+    this.current = action;
+    // Forzar evaluación del sample para evitar 1 frame de bind pose (S26 pattern).
+    if (this.mixer) this.mixer.update(0);
+  }
+
+  /**
    * Sesión 33 (B-002) — Helper para forzar reset del mixer a idle limpio.
    * Inspirado en el kneel-fix de S31. Limpia cualquier action residual del
    * mixer y arranca idle desde t=0. Usar SOLO cuando combatStance ya está
@@ -1111,6 +1312,19 @@ export class Character {
       ? cooldownMs
       : ATTACK_TICK_MS;
 
+    // Sesión 36 — Bow es una SECUENCIA (Overdraw windup → Recoil release),
+    // no una anim sola. Si tenemos los clips cargados, delegamos al helper.
+    // Si no cargaron (warning del FBX validator), caemos al cycle de sword
+    // (degrade gracefully: el char ataca con anim de espada mientras dispara
+    // flechas — funcional aunque visualmente raro, mismo comportamiento que
+    // pre-S36).
+    if (weaponType === 'bow'
+        && this.actions.bow_overdraw
+        && this.actions.bow_recoil) {
+      this._playBowAttack(animMs);
+      return;
+    }
+
     let action = null;
 
     // 1H sword o unarmed → SIEMPRE punching
@@ -1129,7 +1343,7 @@ export class Character {
         action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
       }
     }
-    // Staff o bow → cycle automático sword_attack (no hay anim específica)
+    // Staff o bow (fallback si los clips de bow no cargaron) → cycle sword
     else if (weaponType === 'staff' || weaponType === 'bow') {
       this.attackCycle = (this.attackCycle % 4) + 1;
       action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
@@ -1154,6 +1368,70 @@ export class Character {
     setTimeout(() => {
       this.isAttacking = false;
     }, animMs + 20);
+  }
+
+  /**
+   * Sesión 36 — Secuencia de ataque del bow.
+   *
+   * Timing fijo (no escalado al cooldown del server):
+   *   t=0:                    Bow_Overdraw arranca (windup, 200ms).
+   *   t=BOW_OVERDRAW_MS:      Bow_Recoil arranca (release, 150ms). En este
+   *                           mismo instante, combat.js dispara el proyectil
+   *                           visual con opts.windupMs=BOW_OVERDRAW_MS, así
+   *                           la flecha sale visualmente al soltar.
+   *   t=200+150:              _holdBowDrawnPose() vuelve al held pose
+   *                           (último frame de bow_draw_arrow) para los
+   *                           ataques siguientes y para idle entre disparos.
+   *   t=cooldownMs:           isAttacking=false, próximo ataque desbloqueado.
+   *
+   * Si el cooldown del server es menor a 350ms (no debería con bow=900ms),
+   * el cooldown gana — el proyectil sigue saliendo a t=200 pero los siguientes
+   * disparos pueden encimarse visualmente. No es nuestro caso hoy.
+   *
+   * Cancelación: si el player sale de combate / muere / pierde el target
+   * mientras la secuencia está en curso, setCombatStance(false) cancela
+   * _bowAttackTimeoutId. Las setTimeouts internas tienen guard por
+   * combatStance/isDead así no operan sobre mixer reseteado.
+   */
+  _playBowAttack(cooldownMs) {
+    const overdraw = this.actions.bow_overdraw;
+    const recoil   = this.actions.bow_recoil;
+
+    // Cancelar secuencia previa si quedó algún timeout vivo.
+    if (this._bowAttackTimeoutId !== null) {
+      clearTimeout(this._bowAttackTimeoutId);
+      this._bowAttackTimeoutId = null;
+    }
+
+    this._scaleOneShot(overdraw, BOW_OVERDRAW_MS);
+    this._crossFadeTo(overdraw, 0.06);
+    this.isAttacking = true;
+
+    // Fase 2: al terminar el windup, disparar Bow_Recoil.
+    this._bowAttackTimeoutId = setTimeout(() => {
+      this._bowAttackTimeoutId = null;
+      if (this.isDead) return;
+      // Guard defensivo: si el player salió de combat / cambió de arma mid-attack.
+      if (!this.combatStance || this._combatStanceMode !== 'bow') return;
+
+      this._scaleOneShot(recoil, BOW_RECOIL_MS);
+      this._crossFadeTo(recoil, 0.06);
+
+      // Fase 3: al terminar Recoil, volver al held pose.
+      this._bowAttackTimeoutId = setTimeout(() => {
+        this._bowAttackTimeoutId = null;
+        if (this.isDead) return;
+        if (!this.combatStance || this._combatStanceMode !== 'bow') return;
+        this._holdBowDrawnPose();
+      }, BOW_RECOIL_MS + 20);
+    }, BOW_OVERDRAW_MS);
+
+    // isAttacking se libera al cooldown completo (no al final de la anim).
+    // Así combat.js no manda el siguiente tick antes de tiempo, y el held
+    // pose se mantiene durante el "rearmar" entre disparos.
+    setTimeout(() => {
+      this.isAttacking = false;
+    }, cooldownMs + 20);
   }
 
   playDeath() {
@@ -1470,6 +1748,18 @@ export class Character {
     this.isInTransition = false;
     this.isDead = false;
     this.combatStance = false;
+
+    // Sesión 33 / 36 — cancelar timeouts pendientes para que no operen sobre
+    // un mixer ya descartado.
+    if (this._drawSheathTimeoutId !== null) {
+      clearTimeout(this._drawSheathTimeoutId);
+      this._drawSheathTimeoutId = null;
+    }
+    if (this._bowAttackTimeoutId !== null) {
+      clearTimeout(this._bowAttackTimeoutId);
+      this._bowAttackTimeoutId = null;
+    }
+    this._combatStanceMode = 'sword';
 
     // Sesión 24 — limpiar arma equipada
     this.detachWeapon();

@@ -337,8 +337,12 @@ async function doAttackTickNpc() {
   }
 
   // Sesión 34 — Si fue un ataque ranged (server consumió una flecha), disparar
-  // el proyectil visual del player → NPC. HOY es una línea verde stub; próxima
-  // sesión queda como mesh de flecha real volando con el color del arrow_item_id.
+  // el proyectil visual del player → NPC.
+  // Sesión 35 — Stub reemplazado por mesh real de flecha (arrow.glb).
+  // Sesión 36 — windupMs=200ms sincroniza la flecha con el frame de release
+  // de Bow_Recoil. Sin esto, la flecha aparecía al inicio de Bow_Overdraw
+  // (visualmente: salía ANTES de que el char la soltara). El valor 200 matchea
+  // BOW_OVERDRAW_MS en character.js — si cambia uno cambian los dos.
   if (result.arrow_consumed && npc && typeof window !== 'undefined' &&
       typeof window.__worldFireProjectile === 'function') {
     try {
@@ -347,7 +351,7 @@ async function doAttackTickNpc() {
         window.__worldFireProjectile(
           { x: playerPos.x, y: 0, z: playerPos.z },
           { x: npc.x, y: 0, z: npc.z },
-          { type: 'arrow', arrowItemId: result.arrow_consumed.item_id }
+          { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 }
         );
       }
     } catch {}

@@ -52,11 +52,11 @@
  *    'bow_release' y 'arrow_impact' a R2 (B-009 backlog), agregarlos en
  *    fireProjectile() y en el cleanup del update() respectivamente.
  *
- *  - Anims de bow (S36): cuando metamos Bow_Overdraw + Bow_Recoil, vamos
- *    a querer delay el spawn del proyectil ~200ms para que coincida con
- *    el frame de release de la anim. Plan: agregar opts.windupMs que mete
- *    un setTimeout antes del spawn. Hoy lo dejamos sin eso (el call site
- *    en combat.js dispara instantáneo).
+ *  - Anims de bow (S36): Bow_Overdraw + Bow_Recoil integradas en character.js.
+ *    opts.windupMs implementado — combat.js lo pasa con BOW_OVERDRAW_MS (200ms)
+ *    para que la flecha aparezca en el frame de release del char, no al inicio.
+ *    Si calibrás BOW_OVERDRAW_MS en character.js, actualizá también el call site
+ *    en combat.js (hoy 200, hardcoded).
  *
  *  - Calibración: si la flecha vuela "de costado" o muy chica/grande,
  *    ajustar ARROW_BASE_SCALE y/o ARROW_YAW_OFFSET abajo. Si el GLB
@@ -181,6 +181,27 @@ export function stop() {
 export function fireProjectile(fromVec3, toVec3, opts = {}) {
   if (!started || !scene) return;
   if (!fromVec3 || !toVec3) return;
+
+  // Sesión 36 — opts.windupMs: delay antes del spawn visual del proyectil.
+  // Lo usa el path ranged (combat.js) para sincronizar la aparición de la
+  // flecha con el frame de release de Bow_Recoil (200ms después del start
+  // del attack tick). Sin esto, la flecha aparecía al inicio del windup,
+  // como si saliera del arco antes de que el char la soltara.
+  //
+  // Implementación: re-llamar fireProjectile con windupMs=0 tras el setTimeout.
+  // Es simple y deja la lógica del spawn intacta abajo. NO recursa al infinito
+  // porque la 2da llamada tiene windupMs=0 → cae directo al spawn.
+  const windupMs = (typeof opts.windupMs === 'number' && opts.windupMs > 0)
+    ? opts.windupMs
+    : 0;
+  if (windupMs > 0) {
+    const optsNoWindup = { ...opts, windupMs: 0 };
+    setTimeout(() => {
+      try { fireProjectile(fromVec3, toVec3, optsNoWindup); }
+      catch (e) { console.warn('[combat_projectiles] delayed fire failed:', e?.message); }
+    }, windupMs);
+    return;
+  }
 
   const durationMs  = opts.durationMs || 350;
   const arrowItemId = opts.arrowItemId || 'arrow_bronze';
