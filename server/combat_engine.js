@@ -172,11 +172,18 @@ const HP_REGEN_COMBAT_LOCKOUT_MS = 8_000;
 
 // Sesión 16 — Mapping de skills internos (combat_engine) → skill_ids en
 // la tabla user_skills (catálogo de 13 skills).
+//
+// Sesión 34 — Bloque 2: agregado ranged_xp. Las columnas magic_xp y
+// prayer_xp ya existen en combat_stats (migración S34) pero NO están
+// mapeadas todavía porque ningún path en combat_engine.js genera XP
+// para ellas. Se agregan acá cuando hagamos los días 8-11 (mago) y
+// día 12 (prayer).
 const COMBAT_SKILL_MAP = {
   attack_xp:   'attack',
   strength_xp: 'strength',
   defence_xp:  'defence',
   hp_xp:       'hitpoints',
+  ranged_xp:   'ranged',
 };
 
 export {
@@ -235,6 +242,46 @@ function calcMaxHit(strengthLvl) {
   return Math.floor((effectiveLevel(strengthLvl) + 5) / 10);
 }
 
+// ============================================================
+// FORMULAS RANGED (Sesión 34 — Bloque 2)
+// ============================================================
+//
+// Análogas a las de melee pero usan ranged_level + ranged_bonus en lugar
+// de attack/strength. Simplificación vs OSRS: en OSRS la fórmula divide
+// los bonuses entre "ranged attack" (hit chance) y "ranged strength" (max
+// hit). Acá usamos UN solo `ranged_bonus` que contribuye a ambos, decidido
+// con Nico en S34 — menos columnas, suficiente para tech demo.
+//
+// `rangedBonus` = bow.ranged_bonus + arrow.ranged_bonus (sumados por el
+// caller en attackNpc).
+
+function calcMaxHitRanged(rangedLvl, rangedBonus) {
+  const eff = effectiveLevel(rangedLvl);
+  return Math.floor((eff + rangedBonus + 5) / 10);
+}
+
+function calcHitChanceRanged(rangedLvl, defenderDefLvl, rangedBonus) {
+  const attackRoll  = effectiveLevel(rangedLvl) * 64 + rangedBonus * 4;
+  const defenceRoll = effectiveLevel(defenderDefLvl) * 64;
+  if (attackRoll > defenceRoll) {
+    return 1 - (defenceRoll + 2) / (2 * (attackRoll + 1));
+  }
+  return attackRoll / (2 * (defenceRoll + 1));
+}
+
+function rollHitRanged(rng, rangedLvl, defenderDefLvl, rangedBonus, maxHit) {
+  const chance = calcHitChanceRanged(rangedLvl, defenderDefLvl, rangedBonus);
+  const r1 = rng();
+  if (r1 >= chance) return { hit: false, damage: 0 };
+  const r2 = rng();
+  const damage = Math.floor(r2 * (maxHit + 1));
+  return { hit: true, damage };
+}
+
+// ============================================================
+// (rollHit melee continúa)
+// ============================================================
+
 function rollHit(rng, attackerAtkLvl, defenderDefLvl, maxHit) {
   const chance = calcHitChance(attackerAtkLvl, defenderDefLvl);
   const r1 = rng();
@@ -248,51 +295,92 @@ function rollHit(rng, attackerAtkLvl, defenderDefLvl, maxHit) {
 // XP
 // ============================================================
 
-function awardXp(stats, damage, style) {
-  if (damage <= 0) return { attack: 0, strength: 0, defence: 0, hp: 0 };
+/**
+ * Distribuye XP tras un ataque exitoso.
+ *
+ * Sesión 34 — Acepta `weaponType` opcional. Si es 'bow', la XP va a Ranged
+ * en vez de Attack/Strength. Mapping de styles ranged:
+ *   - accurate (accurate_bow): 4×dmg a ranged
+ *   - aggressive (rapid):      4×dmg a ranged
+ *   - defensive (longrange):   shared entre ranged y defence (4/3 cada uno)
+ * HP XP sigue siendo 4/3 del damage en todos los casos (melee y ranged).
+ *
+ * Magic/prayer no están acá todavía — se agregan en días 8-12 del Bloque 2.
+ */
+function awardXp(stats, damage, style, weaponType = null) {
+  if (damage <= 0) return { attack: 0, strength: 0, defence: 0, hp: 0, ranged: 0 };
   const shared  = Math.floor(damage * 4 / 3);
   const focused = damage * 4;
-  let aXp = 0, sXp = 0, dXp = 0;
+  let aXp = 0, sXp = 0, dXp = 0, rXp = 0;
   const hXp = shared;
-  switch (style) {
-    case 'accurate':
-      aXp = focused;
-      break;
-    case 'aggressive':
-      sXp = focused;
-      break;
-    case 'defensive':
-      dXp = focused;
-      break;
-    case 'controlled':
-    default:
-      aXp = shared;
-      sXp = shared;
-      dXp = shared;
-      break;
+
+  const isRanged = (weaponType === 'bow');
+
+  if (isRanged) {
+    switch (style) {
+      case 'accurate':   // accurate_bow
+      case 'aggressive': // rapid (más velocidad, misma XP)
+        rXp = focused;
+        break;
+      case 'defensive':  // longrange
+        rXp = shared;
+        dXp = shared;
+        break;
+      default:
+        rXp = focused;
+        break;
+    }
+  } else {
+    // Melee — comportamiento original (intacto).
+    switch (style) {
+      case 'accurate':
+        aXp = focused;
+        break;
+      case 'aggressive':
+        sXp = focused;
+        break;
+      case 'defensive':
+        dXp = focused;
+        break;
+      case 'controlled':
+      default:
+        aXp = shared;
+        sXp = shared;
+        dXp = shared;
+        break;
+    }
   }
+
   stats.attack_xp   += aXp;
   stats.strength_xp += sXp;
   stats.defence_xp  += dXp;
   stats.hp_xp       += hXp;
-  return { attack: aXp, strength: sXp, defence: dXp, hp: hXp };
+  // S34 — backward-compat: si la fila no tiene ranged_xp todavía (pre-migración),
+  // arrancamos desde 0.
+  stats.ranged_xp = (stats.ranged_xp || 0) + rXp;
+
+  return { attack: aXp, strength: sXp, defence: dXp, hp: hXp, ranged: rXp };
 }
 
 function levelsOf(stats) {
   return {
-    attack: levelFromXp(stats.attack_xp),
+    attack:   levelFromXp(stats.attack_xp),
     strength: levelFromXp(stats.strength_xp),
-    defence: levelFromXp(stats.defence_xp),
-    hp: levelFromXp(stats.hp_xp),
+    defence:  levelFromXp(stats.defence_xp),
+    hp:       levelFromXp(stats.hp_xp),
+    // S34 — backward-compat: si la cuenta tiene combat_stats anterior a
+    // la migración de Bloque 2, ranged_xp puede ser undefined. Default 0.
+    ranged:   levelFromXp(stats.ranged_xp || 0),
   };
 }
 
 function detectLevelUps(before, after) {
   const ups = [];
-  if (after.attack > before.attack) ups.push('attack');
+  if (after.attack   > before.attack)   ups.push('attack');
   if (after.strength > before.strength) ups.push('strength');
-  if (after.defence > before.defence) ups.push('defence');
-  if (after.hp > before.hp) ups.push('hp');
+  if (after.defence  > before.defence)  ups.push('defence');
+  if (after.hp       > before.hp)       ups.push('hp');
+  if (after.ranged   > before.ranged)   ups.push('ranged');
   return ups;
 }
 
@@ -378,6 +466,126 @@ async function getUserWeaponType(db, userId) {
   } catch (err) {
     console.warn('[combat] getUserWeaponType fallback unarmed:', err.message);
     return 'unarmed';
+  }
+}
+
+/**
+ * Sesión 34 — Lee el ranged_bonus del arco equipado.
+ * Si no hay arma (o no es bow), devuelve 0.
+ * El bonus total al disparar = este valor + ranged_bonus de la flecha consumida.
+ */
+async function getUserBowRangedBonus(db, userId) {
+  try {
+    const row = await db.first(
+      `SELECT i.ranged_bonus
+       FROM user_equipment ue
+       JOIN items i ON i.id = ue.item_id
+       WHERE ue.user_id = ? AND ue.slot_id = 'weapon' AND i.weapon_type = 'bow'`,
+      [userId]
+    );
+    return row?.ranged_bonus || 0;
+  } catch (err) {
+    console.warn('[combat] getUserBowRangedBonus fallback 0:', err.message);
+    return 0;
+  }
+}
+
+/**
+ * Sesión 34 — Consume 1 flecha del jugador al disparar con arco.
+ *
+ * Orden de búsqueda:
+ *   1. Quiver equipado (slot 'quiver' en user_equipment) — si tiene
+ *      arrow_quantity > 0 en user_quiver, consume de ahí.
+ *   2. Inventory normal — primer stack de `arrow_*` (slot_index asc) que
+ *      tenga quantity >= 1.
+ *
+ * Retorna:
+ *   { ok: true, arrow_item_id: 'arrow_bronze', source: 'quiver'|'inventory' }
+ *   { ok: false, error: 'no_ammo' } si no hay flechas en ningún lado.
+ *
+ * Side-effects: decrement de quiver o inv. Si el stack llega a 0 en inv,
+ * borra la row (mantiene la convención de inv-no-empties). Si llega a 0
+ * en quiver, deja el slot con item_id=NULL y qty=0 (el quiver sigue
+ * equipado pero vacío).
+ */
+async function consumeArrow(db, userId, now) {
+  const ts = now || Date.now();
+
+  // 1) Quiver equipado
+  try {
+    const quiverEquipped = await db.first(
+      `SELECT 1 FROM user_equipment WHERE user_id = ? AND slot_id = 'quiver'`,
+      [userId]
+    );
+    if (quiverEquipped) {
+      const q = await db.first(
+        `SELECT arrow_item_id, arrow_quantity FROM user_quiver WHERE user_id = ?`,
+        [userId]
+      );
+      if (q && q.arrow_item_id && q.arrow_quantity > 0) {
+        const newQty = q.arrow_quantity - 1;
+        if (newQty === 0) {
+          await db.run(
+            `UPDATE user_quiver
+               SET arrow_item_id = NULL, arrow_quantity = 0, updated_at = ?
+             WHERE user_id = ?`,
+            [ts, userId]
+          );
+        } else {
+          await db.run(
+            `UPDATE user_quiver
+               SET arrow_quantity = ?, updated_at = ?
+             WHERE user_id = ?`,
+            [newQty, ts, userId]
+          );
+        }
+        return { ok: true, arrow_item_id: q.arrow_item_id, source: 'quiver' };
+      }
+    }
+  } catch (err) {
+    console.warn('[combat] consumeArrow quiver branch failed, falling back to inv:', err.message);
+  }
+
+  // 2) Inventory normal — primer stack arrow_*
+  const invRow = await db.first(
+    `SELECT slot_index, item_id, quantity
+       FROM user_inventory
+      WHERE user_id = ? AND item_id LIKE 'arrow_%' AND quantity > 0
+      ORDER BY slot_index ASC
+      LIMIT 1`,
+    [userId]
+  );
+  if (!invRow) return { ok: false, error: 'no_ammo' };
+
+  const newQty = invRow.quantity - 1;
+  if (newQty === 0) {
+    await db.run(
+      `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?`,
+      [userId, invRow.slot_index]
+    );
+  } else {
+    await db.run(
+      `UPDATE user_inventory SET quantity = ? WHERE user_id = ? AND slot_index = ?`,
+      [newQty, userId, invRow.slot_index]
+    );
+  }
+  return { ok: true, arrow_item_id: invRow.item_id, source: 'inventory' };
+}
+
+/**
+ * Sesión 34 — Lee el ranged_bonus de una flecha específica.
+ * Usado por attackNpc tras consumeArrow para sumar al bonus del arco.
+ */
+async function getArrowRangedBonus(db, arrowItemId) {
+  try {
+    const row = await db.first(
+      `SELECT ranged_bonus FROM items WHERE id = ?`,
+      [arrowItemId]
+    );
+    return row?.ranged_bonus || 0;
+  } catch (err) {
+    console.warn('[combat] getArrowRangedBonus fallback 0:', err.message);
+    return 0;
   }
 }
 
@@ -638,9 +846,42 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   if (stats.hp_current <= 0) return { error: 'user_dead' };
 
+  // Sesión 34 — Si el ataque es ranged, consumir 1 flecha ANTES del roll.
+  // OSRS-faithful: la flecha se gasta incluso si fallás el roll (el shot
+  // ya salió). Si no hay flechas en quiver ni inv, retorna error 'no_ammo'
+  // sin consumir cooldown (el ataque ni siquiera arranca).
+  //
+  // El ranged_bonus total = bow.ranged_bonus + arrow.ranged_bonus, usado
+  // por la fórmula de damage abajo.
+  let totalRangedBonus = 0;
+  let arrowConsumed = null;
+  if (isRanged) {
+    const bowBonus = await getUserBowRangedBonus(db, userId);
+    arrowConsumed = await consumeArrow(db, userId, now);
+    if (!arrowConsumed.ok) {
+      return {
+        error: 'no_ammo',
+        weapon_type: weaponType,
+      };
+    }
+    const arrowBonus = await getArrowRangedBonus(db, arrowConsumed.arrow_item_id);
+    totalRangedBonus = bowBonus + arrowBonus;
+  }
+
   // ---- User hit ----
   const userLvls = levelsOf(stats);
-  const userHit = rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength));
+  // Sesión 34 — Bifurcación ranged vs melee.
+  //   Ranged: usa userLvls.ranged + totalRangedBonus (arco + flecha).
+  //   Melee:  usa userLvls.attack para hit chance, userLvls.strength para max hit (original).
+  const userHit = isRanged
+    ? rollHitRanged(
+        rng,
+        userLvls.ranged,
+        npc.defence_lvl,
+        totalRangedBonus,
+        calcMaxHitRanged(userLvls.ranged, totalRangedBonus)
+      )
+    : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength));
 
   // Sesión 26 — Aplicar damage multipliers:
   //   1. Weapon base mult (1.5× para 2H)
@@ -669,7 +910,9 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   // ---- XP ----
   const xpBefore = levelsOf(stats);
-  const xpGained = awardXp(stats, dmgToNpc, style);
+  // Sesión 34 — Pasar weaponType para que awardXp distinga entre melee
+  // y ranged. Para bow, la XP va a Ranged (no Attack/Strength).
+  const xpGained = awardXp(stats, dmgToNpc, style, weaponType);
   const xpAfter = levelsOf(stats);
   const levelUps = detectLevelUps(xpBefore, xpAfter);
 
@@ -739,13 +982,17 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   }
 
   // ---- Persist user ----
+  // Sesión 34 — Agregado ranged_xp. Usar (stats.ranged_xp || 0) defensivamente
+  // por si la cuenta es pre-migración y el SELECT no devolvió la columna.
   await db.run(
     `UPDATE combat_stats
      SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+         ranged_xp = ?,
          hp_current = ?, last_attack_at = ?, last_died_at = ?
      WHERE user_id = ?`,
     [
       stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
+      stats.ranged_xp || 0,
       stats.hp_current, stats.last_attack_at, stats.last_died_at,
       userId,
     ]
@@ -781,6 +1028,11 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     cooldown_ms: cooldownMs,          // Sesión 26 — cuánto esperar al siguiente ataque
     weapon_type: weaponType,          // Sesión 26 — para que el cliente sepa qué anim usar
     stance: stanceKey,                // Sesión 26 — chop|slash|smash|block
+    // Sesión 34 — info del proyectil ranged (null si no fue bow).
+    // El cliente lo usa para animar la flecha del color correcto.
+    arrow_consumed: arrowConsumed
+      ? { item_id: arrowConsumed.arrow_item_id, source: arrowConsumed.source }
+      : null,
     npc_killed: npcKilled,
     npc_hp: npcKilled ? 0 : npcHpAfter,
     npc_max_hp: npc.max_hp,
