@@ -183,6 +183,73 @@ export function getEquippedWeaponItem() {
   };
 }
 
+// ============================================================
+// Sesión 33 (B-001) — Selección de tool disponible para gathering
+// ============================================================
+
+// Ranking de tools por tipo. Mayor índice = mejor.
+// HOY (S33) solo existe axe_bronze. Cuando agreguemos axe_iron / axe_steel /
+// axe_mithril / etc., añadirlos acá EN ORDEN ASCENDENTE de calidad.
+// Mantener en sync con D1 `items` y con `WEAPON_TRANSFORMS` en character.js.
+const TOOL_RANKINGS = {
+  axe:     ['axe_bronze' /* , 'axe_iron', 'axe_steel', 'axe_mithril', ... */],
+  pickaxe: ['pickaxe_bronze' /* , 'pickaxe_iron', ... */],
+};
+
+/**
+ * Busca en `inventorySlots` (típicamente `inventory.getState()`) la MEJOR
+ * tool del weaponType pedido (axe/pickaxe), o detecta si ya está equipada.
+ *
+ * Orden de preferencia:
+ *   1. Si la weapon equipada ES del tipo pedido → la devuelve (no hace falta swap).
+ *   2. Si NO, busca en inventario la de mayor ranking → la devuelve.
+ *   3. Si no hay ninguna → null.
+ *
+ * @param {string} toolWeaponType  'axe' | 'pickaxe'
+ * @param {Array<{item_id, weapon_type}|null>} inventorySlots  Estado del inv.
+ * @returns {{ item_id: string, weapon_type: string, alreadyEquipped: boolean }|null}
+ */
+export function findBestToolInInventory(toolWeaponType, inventorySlots) {
+  const ranking = TOOL_RANKINGS[toolWeaponType];
+  if (!ranking || ranking.length === 0) return null;
+
+  // 1) ¿Ya está equipada una tool del tipo pedido?
+  const w = equipped.weapon;
+  if (w && w.weapon_type === toolWeaponType && ranking.includes(w.item_id)) {
+    return { item_id: w.item_id, weapon_type: toolWeaponType, alreadyEquipped: true };
+  }
+
+  // 2) Buscar en inventario la de MAYOR ranking presente.
+  if (!Array.isArray(inventorySlots)) return null;
+  let bestIdx = -1;
+  let bestItemId = null;
+  for (const slot of inventorySlots) {
+    if (!slot) continue;
+    if (slot.weapon_type !== toolWeaponType) continue;
+    const idx = ranking.indexOf(slot.item_id);
+    if (idx > bestIdx) {
+      bestIdx = idx;
+      bestItemId = slot.item_id;
+    }
+  }
+  if (bestItemId) {
+    return { item_id: bestItemId, weapon_type: toolWeaponType, alreadyEquipped: false };
+  }
+
+  return null;
+}
+
+/**
+ * Atajo para el caso más común: el mejor hacha disponible para tala.
+ * Equivale a `findBestToolInInventory('axe', inventorySlots)`.
+ *
+ * @param {Array} inventorySlots  Estado del inv (inventory.getState()).
+ * @returns {{ item_id: string, weapon_type: 'axe', alreadyEquipped: boolean }|null}
+ */
+export function getBestAxeAvailable(inventorySlots) {
+  return findBestToolInInventory('axe', inventorySlots);
+}
+
 /**
  * Subscribe a cambios en el equipment. El callback se llama cada vez
  * que se equipa/desequipa algo (después de `refresh()`).

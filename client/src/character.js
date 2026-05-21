@@ -244,6 +244,20 @@ export class Character {
     this._equippedWeaponMesh = null;
     this._equippedWeaponId = null;
     this._equippedWeaponHand = null;  // 'right' | 'left' para saber de qué bone removerla
+    // Sesión 33 — guardamos también el weaponType para poder restaurar tras
+    // un override por tool (B-001). attachWeapon() lo setea, detachWeapon() lo limpia.
+    this._equippedWeaponType = null;
+
+    // Sesión 33 (B-001) — Tool override durante gathering.
+    // Cuando empieza la tala, swappeamos visualmente al hacha y guardamos
+    // el arma original acá. Al terminar (depleted/cancel/death/etc) o cuando
+    // entra combate, restoreWeapon() vuelve al arma original.
+    // Invalidación: si attachWeapon() externo se llama con un arma distinta
+    // mientras el override está activo (jugador equipa otra cosa desde el
+    // menú), se considera intencional y se descarta el saved state.
+    this._toolOverrideActive = false;
+    this._savedWeaponId = null;
+    this._savedWeaponType = null;
 
     // Sesión 26 — Armor attach state (body, shield, helm, cape)
     this._spineBone = null;
@@ -397,16 +411,40 @@ export class Character {
 
   // ============================================================
   // Sesión 24 — Weapon attach/detach API
+  // (Sesión 33 — refactor: público invalida tool override; _doAttachWeapon
+  //  es el internal que también usan attachToolForGather/restoreWeapon
+  //  sin tocar el saved state. Ver B-001 INVARIANTS 3.x.)
   // ============================================================
   /**
-   * Equipa un arma 3D en la mano derecha del personaje.
+   * Equipa un arma 3D en la mano del personaje.
+   *
+   * Punto de entrada PÚBLICO. Si hay un tool override activo (por gathering)
+   * y la llamada pide un arma DISTINTA a la actual, descarta el saved state
+   * — interpretamos que el jugador o el equipment menu cambió el arma a
+   * propósito, así que ya no queremos restaurar la anterior.
    *
    * @param {string} weaponId - id del item (ej. 'sword_bronze'). Se usa
    *   para cargar el GLB desde R2/weapons/{weaponId}.glb.
-   * @param {string} weaponType - tipo (1h_sword|2h_sword|bow|staff) para
+   * @param {string} weaponType - tipo (1h_sword|2h_sword|bow|staff|axe|...) para
    *   elegir las transformaciones de la tabla WEAPON_TRANSFORMS.
    */
   async attachWeapon(weaponId, weaponType) {
+    // Sesión 33 (B-001) — Invalidación del tool override.
+    // Si el override está activo y nos piden cambiar a algo que NO es la
+    // tool actual, asumimos cambio intencional y descartamos el saved.
+    if (this._toolOverrideActive && weaponId !== this._equippedWeaponId) {
+      this._toolOverrideActive = false;
+      this._savedWeaponId = null;
+      this._savedWeaponType = null;
+    }
+    return this._doAttachWeapon(weaponId, weaponType);
+  }
+
+  /**
+   * Internal: ejecuta el attach sin tocar el saved state del tool override.
+   * Usado por attachWeapon (público) y por attachToolForGather/restoreWeapon.
+   */
+  async _doAttachWeapon(weaponId, weaponType) {
     if (!this.loaded) return;
     // Determinar mano según el tipo (default 'right')
     const tf = WEAPON_TRANSFORMS[weaponType] || WEAPON_TRANSFORMS.default;
@@ -433,6 +471,7 @@ export class Character {
       this._equippedWeaponMesh = mesh;
       this._equippedWeaponId = weaponId;
       this._equippedWeaponHand = handName;
+      this._equippedWeaponType = weaponType;  // S33 — necesario para restoreWeapon
 
       // Exponer globalmente para que window.__weaponDebug() pueda acceder.
       window.__character = this;
@@ -451,6 +490,64 @@ export class Character {
     this._equippedWeaponMesh = null;
     this._equippedWeaponId = null;
     this._equippedWeaponHand = null;
+    this._equippedWeaponType = null;
+  }
+
+  // ============================================================
+  // Sesión 33 (B-001) — Tool override durante gathering
+  // ============================================================
+  /**
+   * Swappea visualmente al hacha/pico para una actividad de gathering (tala/
+   * minería), guardando el arma original. Cuando termine el gather, restoreWeapon()
+   * vuelve al arma original.
+   *
+   * - Idempotente: si la tool pedida ya está equipada, no hace nada (caso "ya
+   *   tenés el hacha equipada"). Tampoco activa el saved state — así no hay
+   *   restore que hacer.
+   * - Si ya hay un override activo (no debería pasar — startChop es serial),
+   *   no pisa el saved state para no perder el arma "real".
+   * - Si attachWeapon() externo se llama durante el override con un arma
+   *   distinta a la tool, invalida el saved (ver attachWeapon).
+   *
+   * @param {string} toolItemId    - ej. 'axe_bronze', 'pickaxe_bronze'
+   * @param {string} toolWeaponType - ej. 'axe', 'pickaxe'
+   */
+  async attachToolForGather(toolItemId, toolWeaponType) {
+    if (!this.loaded) return;
+    if (!toolItemId) return;
+    // Idempotente: la tool ya está en mano → no hay nada que swappear ni guardar
+    if (this._equippedWeaponId === toolItemId) return;
+    if (!this._toolOverrideActive) {
+      this._savedWeaponId = this._equippedWeaponId;
+      this._savedWeaponType = this._equippedWeaponType;
+      this._toolOverrideActive = true;
+    }
+    await this._doAttachWeapon(toolItemId, toolWeaponType);
+  }
+
+  /**
+   * Restaura el arma original si hay un override activo. Noop si no hay.
+   * Si el saved era "ninguna" (mano vacía), detacha la tool.
+   *
+   * Safe de llamar múltiples veces: el flag se limpia tras el primer call.
+   */
+  async restoreWeapon() {
+    if (!this._toolOverrideActive) return;
+    const savedId = this._savedWeaponId;
+    const savedType = this._savedWeaponType;
+    this._toolOverrideActive = false;
+    this._savedWeaponId = null;
+    this._savedWeaponType = null;
+    if (savedId) {
+      await this._doAttachWeapon(savedId, savedType);
+    } else {
+      this.detachWeapon();
+    }
+  }
+
+  /** True si hay un tool override activo (debug / tests). */
+  isToolOverrideActive() {
+    return this._toolOverrideActive;
   }
 
   /**

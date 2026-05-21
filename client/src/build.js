@@ -14,10 +14,10 @@
  *   M:  iteración dentro de la sesión
  *   pre: 'dev' antes del cierre, vacío al cerrar la sesión
  */
-export const BUILD = '31.0-dev';
+export const BUILD = '33.0-dev';
 
 /** Fecha del último cambio mayor — informativa, no se compara con server. */
-export const BUILD_DATE = '2026-05-20';
+export const BUILD_DATE = '2026-05-21';
 
 /** Versión del schema mínimo del cliente. Si el server expone una más alta
  *  estamos sirviendo cliente viejo. Bump cuando cambien contratos. */
