@@ -141,14 +141,19 @@ export const MeleeStyle = {
     if (!character) return;
     let weaponType = 'unarmed';
     try { weaponType = equipment.getWeaponType?.() || 'unarmed'; } catch {}
-    // Solo las espadas (1h/2h) tienen anim de desenvainar. El resto (axe,
-    // pickaxe, unarmed) activa el stance directo, sin anim.
+    // Comportamiento idéntico al viejo combat_hooks.js (pre-migración día 2):
+    //   - Espadas (1h/2h): playDraw — anim de desenvainar.
+    //   - Herramientas (axe/pickaxe): setCombatStance(true) directo.
+    //   - Unarmed: NO se setea stance — preservado del viejo. Si llegamos a
+    //     darnos cuenta que unarmed debería setear stance al entrar combate,
+    //     es un fix de B-002 followup separado, NO cambiarlo en migración.
     if (weaponType === '1h_sword' || weaponType === '2h_sword') {
       try { character.playDraw?.(); }
       catch (e) { console.warn('[combat_styles] MeleeStyle.onEnterCombat playDraw:', e); }
-    } else {
+    } else if (weaponType === 'axe' || weaponType === 'pickaxe') {
       try { character.setCombatStance?.(true); } catch {}
     }
+    // unarmed: no-op (igual que antes)
   },
 
   onExitCombat(character) {
