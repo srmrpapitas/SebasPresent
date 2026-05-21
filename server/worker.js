@@ -46,6 +46,7 @@ import * as homeTele from './handlers/home_teleport.js';
 import * as groundItems from './handlers/ground_items.js';
 import * as skills from './handlers/skills.js';
 import * as equipment from './handlers/equipment.js';
+import * as quiver from './handlers/quiver.js';      // Sesión 34 — Bloque 2 ranged
 import * as shop from './handlers/shop.js';
 import * as party from './handlers/party.js';        // Sesión 27 Bloque 3 — Party
 import * as duel from './handlers/duel.js';          // Sesión 28 — Duelos PVP no-wild
@@ -202,6 +203,14 @@ export default {
         response = await equipment.handleEquip(request, env);
       } else if (path === '/api/equipment/unequip' && method === 'POST') {
         response = await equipment.handleUnequip(request, env);
+
+      // ----- Quiver (Sesión 34, Bloque 2 ranged) -----
+      } else if (path === '/api/quiver' && method === 'GET') {
+        response = await quiver.handleGetQuiver(request, env);
+      } else if (path === '/api/quiver/deposit' && method === 'POST') {
+        response = await quiver.handleDepositToQuiver(request, env);
+      } else if (path === '/api/quiver/withdraw' && method === 'POST') {
+        response = await quiver.handleWithdrawFromQuiver(request, env);
 
       // ----- Shop (Sesión 23) -----
       } else if (path === '/api/shop' && method === 'GET') {
