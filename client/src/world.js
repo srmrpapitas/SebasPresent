@@ -35,6 +35,7 @@ import * as equipment from './equipment.js';
 import * as inventory from './inventory.js';
 import * as shop from './shop.js';
 import * as damageSplat from './damage_splat.js';
+import * as combatProjectiles from './combat_projectiles.js';  // Sesión 34
 import * as npcRenderer from './npc_renderer.js';
 import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
 // Sesión 31 — skills movidas a client/src/skills/. Mismo API, paths nuevos.
@@ -546,6 +547,16 @@ export async function startWorld(loggedInUser, token) {
         try { damageSplat.spawnLevelUpBanner(evt.skillId, evt.newLevel); } catch {}
       });
     } catch (e) { console.warn('[world] damage_splat start:', e); }
+
+    // Sesión 34 — Combat projectiles (stub ranged hoy, real próxima sesión).
+    // Expone window.__worldFireProjectile(fromVec3, toVec3, opts) para que
+    // combat.js lo dispare tras recibir respuesta del server con arrow_consumed.
+    try {
+      combatProjectiles.start({ scene });
+      window.__worldFireProjectile = (from, to, opts) => {
+        try { combatProjectiles.fireProjectile(from, to, opts); } catch {}
+      };
+    } catch (e) { console.warn('[world] combat_projectiles start:', e); }
 
     // Sesión 27 Bloque 1 — arrancar polling del snapshot server-authoritative.
     // Vive en paralelo con multiplayer.js y npc_renderer.js. En Bloque 2 esos
@@ -2325,6 +2336,8 @@ function animate() {
   // Sesión 31 — cámara delegada a core/camera.js
   cameraOrbital.update();
   updateMarker();
+  // Sesión 34 — proyectiles ranged (stub líneas + futuro arrow mesh)
+  try { combatProjectiles.update(); } catch {}
   if (character) {
     character.update(dt);
     // Y del player: -1.03 tras recalibración (era -1.10, el personaje
