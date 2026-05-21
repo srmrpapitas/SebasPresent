@@ -37,7 +37,10 @@ import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
 const INVENTORY_SLOTS = 20;
-const VALID_EQUIP_SLOTS = ['weapon', 'shield', 'helm', 'body', 'legs', 'boots', 'cape', 'amulet', 'ring'];
+// Sesión 34 — Agregado slot 'quiver' (Bloque 2). Container especial para
+// flechas: las flechas se almacenan dentro del quiver mientras está
+// equipado (user_quiver table), en lugar de ocupar slot del inv.
+const VALID_EQUIP_SLOTS = ['weapon', 'shield', 'helm', 'body', 'legs', 'boots', 'cape', 'amulet', 'ring', 'quiver'];
 
 // ============================================================
 // GET /api/equipment
@@ -242,16 +245,92 @@ export async function handleUnequip(request, env) {
   ).bind(session.user_id, slotId).first();
   if (!equipped) return json({ error: 'slot_empty' }, 400);
 
-  // 2. Buscar primer slot libre del inventario
-  const occupied = await env.DB.prepare(
-    `SELECT slot_index FROM user_inventory WHERE user_id = ?`
+  // 2. Inventario actual para calcular espacio disponible
+  const invRows = await env.DB.prepare(
+    `SELECT slot_index, item_id, quantity FROM user_inventory WHERE user_id = ?`
   ).bind(session.user_id).all();
-  const taken = new Set((occupied.results || []).map(r => r.slot_index));
+  const occupied = invRows.results || [];
+  const taken = new Set(occupied.map(r => r.slot_index));
 
-  let freeSlot = null;
-  for (let i = 0; i < INVENTORY_SLOTS; i++) {
-    if (!taken.has(i)) { freeSlot = i; break; }
+  function firstFreeSlot(excluding = new Set()) {
+    for (let i = 0; i < INVENTORY_SLOTS; i++) {
+      if (!taken.has(i) && !excluding.has(i)) return i;
+    }
+    return null;
   }
+
+  // ============================================================
+  // Sesión 34 — Caso especial: desequipar quiver con flechas adentro.
+  // ============================================================
+  // El quiver, al estar equipado, almacena flechas en user_quiver.
+  // Al desequiparse, ese contenido vuelve al inventario:
+  //   - Si ya hay un stack del mismo arrow_item_id → suma quantity ahí (no
+  //     ocupa slot nuevo).
+  //   - Si no → necesita un slot libre extra (además del que ocupa el quiver).
+  // Si la mochila no tiene espacio para ambos → error 'inventory_full'
+  // y NO se modifica nada (atómico).
+  if (slotId === 'quiver') {
+    const q = await env.DB.prepare(
+      `SELECT arrow_item_id, arrow_quantity FROM user_quiver WHERE user_id = ?`
+    ).bind(session.user_id).first();
+
+    const hasArrows = q && q.arrow_item_id && q.arrow_quantity > 0;
+
+    // Slot para el quiver mismo
+    const quiverDestSlot = firstFreeSlot();
+    if (quiverDestSlot === null) {
+      return json({ error: 'inventory_full', message: 'Mochila llena' }, 400);
+    }
+
+    const now = Date.now();
+    const stmts = [
+      env.DB.prepare(
+        `DELETE FROM user_equipment WHERE user_id = ? AND slot_id = 'quiver'`
+      ).bind(session.user_id),
+      env.DB.prepare(
+        `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
+         VALUES (?, ?, ?, 1, ?)`
+      ).bind(session.user_id, quiverDestSlot, equipped.item_id, now),
+    ];
+
+    if (hasArrows) {
+      // ¿Ya hay stack del mismo tipo de flecha en inv?
+      const existingArrowStack = occupied.find(r => r.item_id === q.arrow_item_id);
+      if (existingArrowStack) {
+        stmts.push(env.DB.prepare(
+          `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
+           WHERE user_id = ? AND slot_index = ?`
+        ).bind(q.arrow_quantity, now, session.user_id, existingArrowStack.slot_index));
+      } else {
+        // Slot extra para las flechas (no puede ser el mismo que usamos para el quiver)
+        const arrowDestSlot = firstFreeSlot(new Set([quiverDestSlot]));
+        if (arrowDestSlot === null) {
+          return json({ error: 'inventory_full', message: 'Mochila llena (flechas del carcaj no caben)' }, 400);
+        }
+        stmts.push(env.DB.prepare(
+          `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(session.user_id, arrowDestSlot, q.arrow_item_id, q.arrow_quantity, now));
+      }
+      // Vaciar el quiver storage
+      stmts.push(env.DB.prepare(
+        `UPDATE user_quiver SET arrow_item_id = NULL, arrow_quantity = 0, updated_at = ?
+         WHERE user_id = ?`
+      ).bind(now, session.user_id));
+    }
+
+    await env.DB.batch(stmts);
+    return json({
+      ok: true,
+      unequipped: { slot_id: slotId, item_id: equipped.item_id, to_inventory_slot: quiverDestSlot },
+      arrows_returned: hasArrows ? { item_id: q.arrow_item_id, quantity: q.arrow_quantity } : null,
+    });
+  }
+
+  // ============================================================
+  // Caso normal (todos los demás slots): mover 1 item al primer slot libre
+  // ============================================================
+  const freeSlot = firstFreeSlot();
   if (freeSlot === null) {
     return json({ error: 'inventory_full', message: 'Mochila llena' }, 400);
   }
