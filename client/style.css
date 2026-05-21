@@ -731,6 +731,92 @@ button { font-family: inherit; cursor: pointer; }
   }
 }
 
+/* ============================================================
+   Sesión 37 — DESKTOP UX OVERHAUL (B-030 a B-034)
+   ============================================================
+   Una sola media query que escala el hub +25-30% en desktop:
+     - sidebar más ancho/alto (B-034 hub +20%)
+     - inventario 4×42 → 4×46 con padding correcto (B-031 cortados)
+     - skills cells más altos + iconos/fuentes más grandes (B-032)
+     - tabs del sidebar más cómodas para click de mouse
+
+   Mobile (< 901px) NO toca nada — los valores siguen siendo los originales.
+   El breakpoint 901px es intencional: cubre todo desktop (la mayoría de
+   monitores son ≥1024px) sin pisar tablets en landscape (típicas 768-900px).
+
+   Iteración: si algo se ve mal, lo más probable es que un selector necesite
+   más especificidad (los inv slots tienen muchos !important encadenados
+   en world.js — la media query gana porque viene después en orden de
+   cascada cuando ambos tienen igual especificidad).
+   ============================================================ */
+@media (min-width: 901px) {
+  :root {
+    --sb-panel-w: 240px;   /* +50px (190 → 240) para que el inv quepa cómodo */
+    --sb-tabs-w:  44px;    /* +8px tabs más cómodas con mouse */
+    --sb-panel-h: 360px;   /* +80px (280 → 360) para que combat/equipment NO scrollee */
+  }
+
+  /* Tabs del sidebar más grandes para click cómodo */
+  .osrs-sidebar-tab {
+    font-size: 18px;
+    height: 38px;
+  }
+
+  /* Inventario desktop: slots 46×46 (vs 42 mobile), gap 5 (vs 4) */
+  .osrs-tab-pane[data-tab="inventory"] .inventory-grid,
+  .osrs-tab-pane[data-tab="inventory"] .inv-grid,
+  .osrs-tab-pane[data-tab="inventory"] .osrs-inv-grid,
+  .osrs-tab-pane[data-tab="inventory"] [class*="inventory-grid"],
+  .osrs-tab-pane[data-tab="inventory"] [class*="inv-grid"] {
+    grid-template-columns: repeat(4, 46px) !important;
+    grid-auto-rows: 46px !important;
+    gap: 5px !important;
+    justify-content: center !important;  /* fix B-031: centra el grid en el ancho del pane */
+  }
+  .osrs-tab-pane[data-tab="inventory"] .inventory-slot,
+  .osrs-tab-pane[data-tab="inventory"] .inv-slot,
+  .osrs-tab-pane[data-tab="inventory"] .osrs-inv-slot,
+  .osrs-tab-pane[data-tab="inventory"] [class*="inventory-slot"],
+  .osrs-tab-pane[data-tab="inventory"] [class*="inv-slot"] {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+    max-width: 46px !important;
+    max-height: 46px !important;
+  }
+
+  /* Skills panel desktop: cells más altos + icon/font más grandes (B-032) */
+  .skill-slot {
+    height: 50px !important;
+  }
+  .skill-slot-icon {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 24px !important;
+    top: 6px !important;
+    left: 8px !important;
+  }
+  .skill-slot-current {
+    font-size: 16px !important;
+    top: 4px !important;
+    right: 7px !important;
+  }
+  .skill-slot-max {
+    font-size: 14px !important;
+    bottom: 5px !important;
+    right: 7px !important;
+  }
+  .skill-slot-name {
+    font-size: 11px !important;
+    bottom: 5px !important;
+    left: 8px !important;
+  }
+  .skills-panel-grid {
+    gap: 6px !important;
+  }
+}
+
 @media (max-width: 380px) {
   :root {
     --sb-panel-w: 170px;
