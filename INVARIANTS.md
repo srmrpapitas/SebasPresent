@@ -538,4 +538,42 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
 
 ---
 
+## 15. Sesión 33 — Inventory reducido a 20 slots (de 28)
+
+### 15.1 Decisión
+- Reducido de 28 (4×7) → 20 (4×5) para evitar scroll vertical en mobile.
+- Items que existían en slots ≥20 se BORRARON con migración SQL. NO se
+  consolidaron en slots libres. Decisión consciente de Nico (S33).
+- No tocar este número sin actualizar TODOS los puntos hardcoded (sección 15.2).
+
+### 15.2 Hardcoded en 9 lugares — mantener en sync
+Cliente:
+- `client/src/inventory.js` → `const SLOTS = 20`
+- `client/src/bank.js` → `const INV_SLOTS = 20` (mirror del inv en el banco)
+- `client/src/world.js` → comentario del CSS injector (el CSS usa grid-auto-rows,
+  no necesita cambio)
+
+Server:
+- `server/handlers/inventory.js` → `export const INVENTORY_SLOTS = 20`
+- `server/handlers/equipment.js` → `const INVENTORY_SLOTS = 20`
+- `server/handlers/shop.js` → `const INVENTORY_SLOTS = 20`
+- `server/handlers/skills/_shared.js` → `const INVENTORY_SLOTS = 20`
+- `server/ge_engine.js` → `export const INVENTORY_SLOT_COUNT = 20`
+- `server/combat_engine.js` → `const MAX_SLOTS = 20`
+
+### 15.3 Migración SQL ejecutada
+```sql
+DELETE FROM inventory WHERE slot_index >= 20;
+```
+Corrida una sola vez por Nico en D1 console al deployar S33.5. NO ejecutar
+de nuevo a menos que se vuelva a reducir el tamaño del inventario.
+
+### 15.4 Si en el futuro se quiere expandir (subir a 24, 28, etc)
+- Cambiar los 9 puntos en sync. Buscar con `grep -rn "= 20\|= INVENTORY_SLOTS"`.
+- NO hace falta migración SQL para EXPANDIR (los slots nuevos arrancan vacíos).
+- Si va a expandir, considerá si tiene sentido extender el CSS grid_auto_rows
+  o si conviene volver a un layout con scroll.
+
+---
+
 *Para Claude / IA: si un bug futuro coincide con un patrón en esta doc, probable que la causa esté acá descrita. No reescribas la solución, leé primero.*
