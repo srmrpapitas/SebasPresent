@@ -725,25 +725,15 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 @media (min-width: 801px) {
+  /* Sesión 38 (fix v3) — Escalado del HUD en PC por ZOOM uniforme: agranda
+   * marco + slots + iconos + texto en la misma proporción que mobile (que ya
+   * está bien), así nada queda desproporcionado. Factor 1.6 (~20% menos que la
+   * versión anterior). También se inyecta desde world.js por si style.css no
+   * se refresca en el deploy. */
   .osrs-sidebar {
-    bottom: 16px;
-    right: 16px;
-  }
-
-  /* Sesión 38 (fix) — La VENTANA (panel) tiene que ser grande de verdad para
-   * que el tab de combate entre completo (hasta special attack + auto retaliate)
-   * y el de equipamiento muestre todos los slots sin scroll. El intento anterior
-   * agrandó el contenido pero dejó la ventana chica → todo se desbordaba.
-   * Ahora: ventana grande + contenido a un tamaño MODERADO (ver combat.js /
-   * equipment.js / bloque final de este archivo) calculado para caber dentro.
-   * Altura con min(...) para no salirse en laptops de pantalla baja. */
-  :root {
-    --sb-panel-w: 380px;
-    --sb-tabs-w:  64px;
-    --sb-panel-h: min(620px, 80vh);
-  }
-  .osrs-sidebar-tab {
-    font-size: 22px;
+    zoom: 1.6;
+    bottom: 10px;
+    right: 10px;
   }
 }
 
@@ -788,9 +778,7 @@ button { font-family: inherit; cursor: pointer; }
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 3px;
-  /* Sesión 38 — pequeño respiro lateral para que los slots de la 1ª y última
-   * columna no queden pegados al borde del panel (ni a un scrollbar desktop). */
-  padding: 1px 2px;
+  padding: 0;
 }
 
 .inv-slot {
@@ -834,14 +822,6 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .inv-icon {
-  /* Sesión 38 — tamaño explícito (84% del slot) para que el SVG nunca se
-   * salga del slot ni lo recorte el borde del panel. Antes el SVG (width:100%)
-   * sin contenedor de tamaño definido se renderizaba más grande que el slot y
-   * los items de la primera y última columna se veían cortados en desktop.
-   * 84% deja un margen de seguridad sin achicar visiblemente el icono. */
-  width: 84%;
-  height: 84%;
-  aspect-ratio: 1 / 1;
   font-size: 20px;
   line-height: 1;
   filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7));
@@ -2534,26 +2514,6 @@ body:has(#worldScreen:not(.hidden)) #splash {
   .magic-spell-name { font-size: 7px; }
 }
 
-/* ============================================================
-   Sesión 38 — DESKTOP: escalar contenido interno del sidebar.
-   El panel se agranda con las variables --sb-* (ver bloque min-width:801px
-   de arriba), pero las fuentes/iconos internos usaban px fijos pensados para
-   mobile y en PC se veían muy pequeños. Este bloque va AL FINAL del archivo a
-   propósito: por orden de fuente gana sobre las reglas base de más arriba.
-   (combat.js y equipment.js tienen su propio bloque desktop inyectado, porque
-   sus estilos se inyectan en runtime y ganarían a este archivo.)
-   ============================================================ */
-@media (min-width: 801px) {
-  /* Desktop tiene scrollbars que ocupan layout (a diferencia de los overlay de
-   * mobile). Reservar gutter simétrico evita que, si aparece scroll en algún
-   * tab, el contenido de la derecha quede comprimido contra el borde. */
-  .osrs-sidebar-panel { scrollbar-gutter: stable both-edges; }
-
-  /* Mochila */
-  .inv-title  { font-size: 16px; }
-  .inv-count  { font-size: 13px; }
-  .inv-icon   { font-size: 28px; }   /* sólo afecta al emoji fallback */
-  .inv-qty    { font-size: 12px; top: 2px; left: 3px; }
-  .inv-grid   { gap: 5px; }
-  .inv-header { padding-bottom: 8px; margin-bottom: 8px; }
-}
+/* Sesión 38 (fix v3) — El escalado desktop del sidebar se hace con zoom
+   uniforme (ver bloque .osrs-sidebar @media min-width:801px de arriba +
+   world.js). Por eso ya NO hay bumps de fuente/icono por elemento acá. */
