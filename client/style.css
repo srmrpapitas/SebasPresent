@@ -730,17 +730,18 @@ button { font-family: inherit; cursor: pointer; }
     right: 16px;
   }
 
-  /* Sesión 37 — Nico pidió HUD +20% en desktop para que equipment/combat
-   * no necesite scroll. Base mobile: 190/36/280. Desktop +20%: 228/43/336.
-   * Solo escalamos el contenedor — los slots de inventario son aspect-ratio
-   * fija, escalan automáticamente con el ancho del panel. */
+  /* Sesión 37 — Nico pidió HUD más grande en desktop para que equipment/combat
+   * no necesite scroll. Sesión 38 — el +20% seguía viéndose chico en monitores
+   * grandes, subido a ~+55% sobre la base mobile (190/36/280 → 296/56/470).
+   * El contenido interno (fuentes/iconos) se escala en el bloque desktop al
+   * final de este archivo + en los estilos inyectados de combat.js/equipment.js. */
   :root {
-    --sb-panel-w: 228px;
-    --sb-tabs-w:  43px;
-    --sb-panel-h: 336px;
+    --sb-panel-w: 296px;
+    --sb-tabs-w:  56px;
+    --sb-panel-h: 470px;
   }
   .osrs-sidebar-tab {
-    font-size: 17px;
+    font-size: 20px;
   }
 }
 
@@ -785,7 +786,9 @@ button { font-family: inherit; cursor: pointer; }
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 3px;
-  padding: 0;
+  /* Sesión 38 — pequeño respiro lateral para que los slots de la 1ª y última
+   * columna no queden pegados al borde del panel (ni a un scrollbar desktop). */
+  padding: 1px 2px;
 }
 
 .inv-slot {
@@ -829,6 +832,14 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .inv-icon {
+  /* Sesión 38 — tamaño explícito (84% del slot) para que el SVG nunca se
+   * salga del slot ni lo recorte el borde del panel. Antes el SVG (width:100%)
+   * sin contenedor de tamaño definido se renderizaba más grande que el slot y
+   * los items de la primera y última columna se veían cortados en desktop.
+   * 84% deja un margen de seguridad sin achicar visiblemente el icono. */
+  width: 84%;
+  height: 84%;
+  aspect-ratio: 1 / 1;
   font-size: 20px;
   line-height: 1;
   filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7));
@@ -2519,4 +2530,44 @@ body:has(#worldScreen:not(.hidden)) #splash {
 @media (max-width: 380px) {
   .magic-spell-icon { font-size: 16px; }
   .magic-spell-name { font-size: 7px; }
+}
+
+/* ============================================================
+   Sesión 38 — DESKTOP: escalar contenido interno del sidebar.
+   El panel se agranda con las variables --sb-* (ver bloque min-width:801px
+   de arriba), pero las fuentes/iconos internos usaban px fijos pensados para
+   mobile y en PC se veían muy pequeños. Este bloque va AL FINAL del archivo a
+   propósito: por orden de fuente gana sobre las reglas base de más arriba.
+   (combat.js y equipment.js tienen su propio bloque desktop inyectado, porque
+   sus estilos se inyectan en runtime y ganarían a este archivo.)
+   ============================================================ */
+@media (min-width: 801px) {
+  /* Desktop tiene scrollbars que ocupan layout (a diferencia de los overlay de
+   * mobile). Reservar gutter simétrico evita que, si aparece scroll en algún
+   * tab, el contenido de la derecha quede comprimido contra el borde. */
+  .osrs-sidebar-panel { scrollbar-gutter: stable both-edges; }
+
+  /* Mochila */
+  .inv-title  { font-size: 16px; }
+  .inv-count  { font-size: 13px; }
+  .inv-icon   { font-size: 28px; }   /* sólo afecta al emoji fallback */
+  .inv-qty    { font-size: 12px; top: 2px; left: 3px; }
+  .inv-grid   { gap: 5px; }
+  .inv-header { padding-bottom: 8px; margin-bottom: 8px; }
+
+  /* Tab Combate antiguo (.combat-*) — por si alguna build lo usa todavía */
+  .combat-title       { font-size: 16px; }
+  .combat-hp-label    { font-size: 14px; }
+  .combat-hp-bar      { height: 18px; }
+  .combat-hp-text     { font-size: 13px; }
+  .combat-skill-icon  { font-size: 24px; min-width: 30px; }
+  .combat-skill-name  { font-size: 13px; }
+  .combat-skill-level { font-size: 17px; }
+  .combat-skill-bar   { height: 6px; }
+  .combat-skill-xp    { font-size: 12px; }
+  .combat-npcs-label  { font-size: 12px; }
+  .combat-npc-name    { font-size: 14px; }
+  .combat-npc-meta    { font-size: 12px; }
+  .combat-npc-hp-bar  { height: 6px; }
+  .combat-npc-attack  { width: 36px; height: 36px; font-size: 17px; }
 }
