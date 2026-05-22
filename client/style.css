@@ -738,12 +738,12 @@ button { font-family: inherit; cursor: pointer; }
    * equipment.js / bloque final de este archivo) calculado para caber dentro.
    * Altura con min(...) para no salirse en laptops de pantalla baja. */
   :root {
-    --sb-panel-w: 340px;
-    --sb-tabs-w:  62px;
-    --sb-panel-h: min(560px, 78vh);
+    --sb-panel-w: 380px;
+    --sb-tabs-w:  64px;
+    --sb-panel-h: min(620px, 80vh);
   }
   .osrs-sidebar-tab {
-    font-size: 20px;
+    font-size: 22px;
   }
 }
 
