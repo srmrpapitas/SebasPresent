@@ -730,15 +730,17 @@ button { font-family: inherit; cursor: pointer; }
     right: 16px;
   }
 
-  /* Sesión 37 — Nico pidió HUD más grande en desktop para que equipment/combat
-   * no necesite scroll. Sesión 38 — el +20% seguía viéndose chico en monitores
-   * grandes, subido a ~+55% sobre la base mobile (190/36/280 → 296/56/470).
-   * El contenido interno (fuentes/iconos) se escala en el bloque desktop al
-   * final de este archivo + en los estilos inyectados de combat.js/equipment.js. */
+  /* Sesión 38 (fix) — La VENTANA (panel) tiene que ser grande de verdad para
+   * que el tab de combate entre completo (hasta special attack + auto retaliate)
+   * y el de equipamiento muestre todos los slots sin scroll. El intento anterior
+   * agrandó el contenido pero dejó la ventana chica → todo se desbordaba.
+   * Ahora: ventana grande + contenido a un tamaño MODERADO (ver combat.js /
+   * equipment.js / bloque final de este archivo) calculado para caber dentro.
+   * Altura con min(...) para no salirse en laptops de pantalla baja. */
   :root {
-    --sb-panel-w: 296px;
-    --sb-tabs-w:  56px;
-    --sb-panel-h: 470px;
+    --sb-panel-w: 340px;
+    --sb-tabs-w:  62px;
+    --sb-panel-h: min(560px, 78vh);
   }
   .osrs-sidebar-tab {
     font-size: 20px;
@@ -2554,20 +2556,4 @@ body:has(#worldScreen:not(.hidden)) #splash {
   .inv-qty    { font-size: 12px; top: 2px; left: 3px; }
   .inv-grid   { gap: 5px; }
   .inv-header { padding-bottom: 8px; margin-bottom: 8px; }
-
-  /* Tab Combate antiguo (.combat-*) — por si alguna build lo usa todavía */
-  .combat-title       { font-size: 16px; }
-  .combat-hp-label    { font-size: 14px; }
-  .combat-hp-bar      { height: 18px; }
-  .combat-hp-text     { font-size: 13px; }
-  .combat-skill-icon  { font-size: 24px; min-width: 30px; }
-  .combat-skill-name  { font-size: 13px; }
-  .combat-skill-level { font-size: 17px; }
-  .combat-skill-bar   { height: 6px; }
-  .combat-skill-xp    { font-size: 12px; }
-  .combat-npcs-label  { font-size: 12px; }
-  .combat-npc-name    { font-size: 14px; }
-  .combat-npc-meta    { font-size: 12px; }
-  .combat-npc-hp-bar  { height: 6px; }
-  .combat-npc-attack  { width: 36px; height: 36px; font-size: 17px; }
 }
