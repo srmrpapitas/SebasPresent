@@ -77,6 +77,11 @@ export async function init() {
     gridEl.appendChild(slotEl);
   }
 
+  // Sesión 38 — Desktop: suprimir el menú contextual nativo del navegador
+  // dentro de la mochila. El click derecho lo gestiona onSlotPointerDown
+  // (abre nuestro menú Equipar/Examinar/Cancelar).
+  gridEl.addEventListener('contextmenu', (e) => e.preventDefault());
+
   await refresh();
   isInitialized = true;
 }
@@ -214,12 +219,24 @@ function clearError() {
 const DRAG_THRESHOLD_PX = 6; // movement below this = treat as tap
 
 function onSlotPointerDown(ev) {
-  // Ignore non-primary buttons (right-click etc.)
-  if (ev.button !== undefined && ev.button !== 0) return;
+  const isMouse = ev.pointerType === 'mouse';
+  const isRight = isMouse && ev.button === 2;
 
   const slotEl = ev.currentTarget;
   const slotIdx = parseInt(slotEl.dataset.slot, 10);
   const data = slots[slotIdx];
+
+  // Sesión 38 — Desktop: CLICK DERECHO = equivalente al long-press de móvil.
+  // Abre el mismo menú contextual (Equipar / Examinar / Cancelar). El menú
+  // nativo del navegador se suprime con el listener 'contextmenu' (ver init()).
+  if (isRight) {
+    ev.preventDefault();
+    if (data) showItemContextMenu(slotIdx, ev.clientX, ev.clientY);
+    return;
+  }
+
+  // Ignore non-primary buttons (botón central, etc.)
+  if (ev.button !== undefined && ev.button !== 0) return;
 
   // Tapping an empty slot:
   //  - if we have a selectedSlot, that's a tap-to-tap destination → swap
@@ -249,6 +266,7 @@ function onSlotPointerDown(ev) {
     ghostEl: null,
     hoverSlot: null,
     longPressed: false,
+    isMouse,
   };
 
   // Long-press: tras LONG_PRESS_MS sin moverse, abrir menú contextual
@@ -298,7 +316,7 @@ function onPointerUp(ev) {
     return;
   }
 
-  const { fromSlot, moved, hoverSlot, longPressed } = dragState;
+  const { fromSlot, moved, hoverSlot, longPressed, isMouse } = dragState;
   destroyGhost();
 
   if (longPressed) {
@@ -314,8 +332,14 @@ function onPointerUp(ev) {
     }
     selectedSlot = null;
   } else {
-    // Tap: toggle selection (tap-to-tap mode)
-    if (selectedSlot === null) {
+    // Sesión 38 — Desktop: un CLICK NORMAL (botón izq del ratón) sobre un item
+    // EQUIPABLE lo equipa directo (estilo OSRS-PC). En móvil (touch) y para
+    // items NO equipables se mantiene el tap-to-tap para mover/intercambiar.
+    const data = slots[fromSlot];
+    if (isMouse && isEquipableItem(data)) {
+      selectedSlot = null;
+      doEquip(fromSlot);
+    } else if (selectedSlot === null) {
       // First tap — select this slot
       selectedSlot = fromSlot;
     } else if (selectedSlot === fromSlot) {
@@ -420,14 +444,10 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   menu.className = 'inv-context-menu';
 
   let html = `<div class="inv-context-menu-header"><span class="inv-context-menu-icon">${getItemIconHtml(item.item_id, item.icon)}</span> ${escapeHtml(item.name)}</div>`;
-  // S33 — Triple failsafe para mostrar "Equipar":
-  //   1) equip_slot está poblado (lógica vieja)
-  //   2) weapon_type está poblado (failsafe nivel 2)
-  //   3) item_id matchea pattern de weapon conocida (failsafe nivel 3)
+  // S33 — Triple failsafe para mostrar "Equipar" (ver isEquipableItem()).
   // El server valida el equip de todas formas; si el item NO es equipable
   // por más que el menú lo muestre, el server rechaza y el cliente avisa.
-  const isWeaponByName = /^(axe|pickaxe|sword|bow|staff|dagger|hammer|spear|shield)(_|$)/i.test(item.item_id || '');
-  const isEquipable = item.equip_slot || item.weapon_type || isWeaponByName;
+  const isEquipable = isEquipableItem(item);
   if (isEquipable) {
     html += `<div class="inv-context-row" data-act="equip">⚔ Equipar</div>`;
   }
@@ -484,6 +504,19 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
     }
   };
   setTimeout(() => document.addEventListener('pointerdown', outsideClose, true), 100);
+}
+
+// ============================================================
+// Sesión 38 — ¿el item es equipable? Triple failsafe compartido por el
+// menú contextual (Equipar) y el click-izq-equipa de desktop.
+//   1) equip_slot poblado (lógica vieja)
+//   2) weapon_type poblado (failsafe nivel 2)
+//   3) item_id matchea pattern de weapon conocida (failsafe nivel 3)
+// ============================================================
+function isEquipableItem(item) {
+  if (!item) return false;
+  const isWeaponByName = /^(axe|pickaxe|sword|bow|staff|dagger|hammer|spear|shield)(_|$)/i.test(item.item_id || '');
+  return !!(item.equip_slot || item.weapon_type || isWeaponByName);
 }
 
 async function doEquip(slotIdx) {

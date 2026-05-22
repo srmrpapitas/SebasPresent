@@ -2248,7 +2248,10 @@ function setupInput() {
       // Sesión 27 Bloque 3 — long-press primero intenta peer (PVP);
       // si no impactó un peer, intenta NPC.
       if (multiplayer.openActionMenuAt(cx, cy)) return;
-      npcRenderer.openActionMenuAt(cx, cy);
+      if (npcRenderer.openActionMenuAt(cx, cy)) return;
+      // Sesión 38 — si no cae sobre peer ni NPC, intentar examinar árbol
+      // (mismo gesto: long-press móvil = click derecho desktop).
+      tryExamineTreeAt(cx, cy);
     },
 
     // Drag del dedo en canvas O rotación con dos dedos → rotar cámara
@@ -2367,6 +2370,26 @@ function doCanvasTap(clientX, clientY) {
   }
 }
 
+
+// Sesión 38 — Examinar árbol (long-press móvil / click derecho desktop).
+// Raycast contra los árboles; si impacta uno, muestra su tooltip (nombre +
+// nivel de tala + XP) SIN arrancar la tala. Devuelve true si examinó algo.
+function tryExamineTreeAt(clientX, clientY) {
+  if (interiors.isActive()) return false;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera({ x: nx, y: ny }, camera);
+  const treeHits = raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
+  if (treeHits.length > 0) {
+    const treeType = treeHits[0].object.userData?.treeType;
+    if (treeType) {
+      showTreeTooltip(treeType, clientX, clientY);
+      return true;
+    }
+  }
+  return false;
+}
 
 function setPlayerTarget(x, z) {
   // Sesión 11c-1 — skip clamp si interior activo (coords 10000,10000 exceden WORLD_HALF)

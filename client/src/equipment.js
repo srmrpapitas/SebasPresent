@@ -519,6 +519,23 @@ function injectStyles() {
       color: #c8a043;
     }
     .equip-tooltip-btn:active { transform: scale(0.95); }
+
+    /* Sesión 38 — DESKTOP: el tab de equipamiento se veía chico en PC.
+       Escalamos fuentes/iconos sólo en viewports anchos. Mantenemos el ancho
+       del grid acotado (max-width 280) para que los slots (aspect-ratio 1) no
+       se vuelvan tan altos que reaparezca el scroll. */
+    @media (min-width: 801px) {
+      .equip-panel          { padding: 14px 12px; gap: 12px; }
+      .equip-panel-title    { font-size: 19px; }
+      .equip-grid           { gap: 7px; max-width: 280px; }
+      .equip-slot           { min-height: 54px; }
+      .equip-slot-icon      { font-size: 30px; }
+      .equip-slot-icon-wrap { width: 42px; height: 42px; }
+      .equip-slot-empty-svg { width: 36px; height: 36px; }
+      .equip-slot-label     { font-size: 10px; bottom: -15px; }
+      .equip-footer         { font-size: 14px; }
+      .equip-footer-row     { padding: 3px 8px; }
+    }
   `;
   document.head.appendChild(style);
 }

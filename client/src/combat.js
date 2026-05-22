@@ -1348,6 +1348,35 @@ function ensureStyles() {
       font-family: 'IM Fell English', serif;
       font-size: 12px;
     }
+
+    /* Sesión 38 — DESKTOP: el tab de combate se veía muy chico en PC.
+       Escalamos fuentes/iconos/espaciados (~+35%) sólo en viewports anchos.
+       Va al final del bloque para ganar por orden de fuente a las reglas base
+       de arriba. Mobile (<=800px) queda igual. */
+    @media (min-width: 801px) {
+      .combat-osrs            { padding: 12px 10px; gap: 11px; }
+      .combat-osrs-weapon     { font-size: 20px; }
+      .combat-osrs-cb-level   { font-size: 15px; }
+      .combat-osrs-hp-bar     { height: 20px; }
+      .combat-osrs-hp-text    { font-size: 14px; }
+      .combat-osrs-stances    { gap: 9px; }
+      .combat-osrs-stance     { padding: 13px 6px; min-height: 86px; gap: 6px; }
+      .combat-osrs-stance-icon  { font-size: 32px; }
+      .combat-osrs-stance-label { font-size: 14px; }
+      .combat-osrs-retaliate    { padding: 13px 14px; font-size: 16px; }
+      .combat-osrs-retaliate-icon { font-size: 21px; }
+      .combat-osrs-special-label  { font-size: 14px; }
+      .combat-osrs-special-bar    { height: 13px; }
+      .combat-osrs-category   { font-size: 14px; }
+      .combat-osrs-npcs-label { font-size: 15px; }
+      .combat-osrs-npcs       { max-height: 300px; }
+      .combat-npc             { padding: 7px 8px; gap: 8px; }
+      .combat-npc-name        { font-size: 15px; }
+      .combat-npc-hp-bar      { height: 6px; }
+      .combat-npc-meta        { font-size: 12px; }
+      .combat-npc-attack      { width: 38px; height: 38px; font-size: 18px; }
+      .combat-respawn         { padding: 11px 22px; font-size: 16px; }
+    }
   `;
   document.head.appendChild(style);
 }
