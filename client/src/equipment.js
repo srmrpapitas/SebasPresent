@@ -520,23 +520,9 @@ function injectStyles() {
     }
     .equip-tooltip-btn:active { transform: scale(0.95); }
 
-    /* Sesión 38 (fix) — DESKTOP: ventana grande (ver --sb-panel-* en
-       style.css). Acotamos el ancho del grid (max-width 260) para que los
-       slots (aspect-ratio 1) no se vuelvan tan altos que tape el footer de
-       estadísticas; así entran las 5 filas + Bonus Ataque/Defensa sin scroll.
-       Iconos/fuentes a tamaño legible. Mobile queda igual. */
-    @media (min-width: 801px) {
-      .equip-panel          { padding: 12px 14px; gap: 10px; }
-      .equip-panel-title    { font-size: 19px; }
-      .equip-grid           { gap: 8px; max-width: 270px; }
-      .equip-slot           { min-height: 56px; }
-      .equip-slot-icon      { font-size: 30px; }
-      .equip-slot-icon-wrap { width: 44px; height: 44px; }
-      .equip-slot-empty-svg { width: 36px; height: 36px; }
-      .equip-slot-label     { font-size: 10px; bottom: -15px; }
-      .equip-footer         { font-size: 15px; margin-top: 12px; }
-      .equip-footer-row     { padding: 4px 8px; }
-    }
+    /* Sesión 38 (fix v3) — Sin overrides desktop por elemento: el escalado en
+       PC se hace con zoom uniforme del sidebar (world.js / style.css), que
+       mantiene la proporción de mobile. */
   `;
   document.head.appendChild(style);
 }

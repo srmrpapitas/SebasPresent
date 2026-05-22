@@ -1349,36 +1349,10 @@ function ensureStyles() {
       font-size: 12px;
     }
 
-    /* Sesión 38 (fix) — DESKTOP: el tab de combate se veía chico, pero el
-       intento anterior lo agrandó tanto que ya no entraba en la ventana.
-       Ahora la ventana es grande (ver --sb-panel-* en style.css) y aquí
-       escalamos el contenido a un tamaño MODERADO y legible, calculado para
-       que TODO (stances + special + auto retaliate) entre sin scroll.
-       Mobile (<=800px) queda igual. */
-    @media (min-width: 801px) {
-      .combat-osrs            { padding: 12px 12px; gap: 10px; }
-      .combat-osrs-weapon     { font-size: 19px; }
-      .combat-osrs-cb-level   { font-size: 14px; }
-      .combat-osrs-hp-bar     { height: 19px; }
-      .combat-osrs-hp-text    { font-size: 14px; }
-      .combat-osrs-stances    { gap: 8px; }
-      .combat-osrs-stance     { padding: 12px 6px; min-height: 88px; gap: 6px; }
-      .combat-osrs-stance-icon  { font-size: 33px; }
-      .combat-osrs-stance-label { font-size: 15px; }
-      .combat-osrs-retaliate    { padding: 12px 14px; font-size: 16px; }
-      .combat-osrs-retaliate-icon { font-size: 20px; }
-      .combat-osrs-special-label  { font-size: 14px; }
-      .combat-osrs-special-bar    { height: 13px; }
-      .combat-osrs-category   { font-size: 14px; }
-      .combat-osrs-npcs-label { font-size: 15px; }
-      .combat-osrs-npcs       { max-height: 220px; }
-      .combat-npc             { padding: 7px 8px; gap: 8px; }
-      .combat-npc-name        { font-size: 15px; }
-      .combat-npc-hp-bar      { height: 6px; }
-      .combat-npc-meta        { font-size: 12px; }
-      .combat-npc-attack      { width: 36px; height: 36px; font-size: 17px; }
-      .combat-respawn         { padding: 11px 22px; font-size: 16px; }
-    }
+    /* Sesión 38 (fix v3) — El escalado desktop NO se hace por elemento (eso
+       desproporcionaba los iconos). Ahora se hace con zoom uniforme sobre todo
+       el sidebar (ver world.js / style.css), que escala marco + iconos + texto
+       en la MISMA proporción que mobile. Por eso aquí no hay overrides. */
   `;
   document.head.appendChild(style);
 }

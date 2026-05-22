@@ -54,16 +54,19 @@ import {
 import { NPC_MINIMAP_RADIUS } from './npc_renderer.js';
 
 // ============================================================
-// Sesión 38 (fix) — Tamaño del HUD lateral (sidebar) en DESKTOP.
+// Sesión 38 (fix v3) — Tamaño del HUD lateral (sidebar) en DESKTOP.
 // ============================================================
-// Se inyecta desde JS — NO sólo desde style.css — a propósito: el deploy del
-// cliente venía aplicando los módulos JS (el contenido se agrandaba) pero NO
-// el style.css (la ventana quedaba chica). Inyectando el tamaño acá, el panel
-// se agranda igual aunque style.css no se haya refrescado.
+// Se inyecta desde JS — NO sólo desde style.css — porque el deploy venía
+// aplicando los módulos JS pero a veces no el style.css.
 //
-// Estilo OSRS para PC: panel grande, slots/stats legibles, todo el tab de
-// combate visible (stances + special + auto retaliate) sin scroll. Mobile
-// (<=800px) NO se toca — Nico confirmó que en móvil está bien.
+// CLAVE: en vez de tocar tamaños elemento por elemento (lo que desproporcionaba
+// los iconos respecto al marco), usamos ZOOM uniforme sobre TODO el sidebar.
+// El layout mobile ya tiene buenas proporciones; el zoom lo agranda entero
+// (marco + slots + iconos + texto) en la MISMA proporción. Resultado: se ve
+// igual que en mobile pero más grande, sin nada desproporcionado.
+//
+// Factor 1.6 ≈ 20% menos que la versión anterior (que era ~2.0). Mobile
+// (<=800px) NO se toca.
 (function injectDesktopHubSizing() {
   if (typeof document === 'undefined') return;
   if (document.getElementById('desktop-hub-sizing')) return;
@@ -71,21 +74,11 @@ import { NPC_MINIMAP_RADIUS } from './npc_renderer.js';
   style.id = 'desktop-hub-sizing';
   style.textContent = `
     @media (min-width: 801px) {
-      :root {
-        --sb-panel-w: 380px;
-        --sb-tabs-w:  64px;
-        --sb-panel-h: min(620px, 80vh);
+      #osrsSidebar.osrs-sidebar {
+        zoom: 1.6;
+        bottom: 10px !important;
+        right: 10px !important;
       }
-      /* id + clase + !important = imposible de pisar por reglas más débiles */
-      #osrsSidebarPanel.osrs-sidebar-panel {
-        width: 380px !important;
-        height: min(620px, 80vh) !important;
-      }
-      #osrsSidebar .osrs-sidebar-tabs {
-        width: 64px !important;
-        height: min(620px, 80vh) !important;
-      }
-      #osrsSidebar .osrs-sidebar-tab { font-size: 22px !important; }
     }
   `;
   document.head.appendChild(style);
