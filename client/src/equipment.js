@@ -526,16 +526,16 @@ function injectStyles() {
        estadísticas; así entran las 5 filas + Bonus Ataque/Defensa sin scroll.
        Iconos/fuentes a tamaño legible. Mobile queda igual. */
     @media (min-width: 801px) {
-      .equip-panel          { padding: 12px 12px; gap: 10px; }
-      .equip-panel-title    { font-size: 18px; }
-      .equip-grid           { gap: 6px; max-width: 240px; }
-      .equip-slot           { min-height: 48px; }
-      .equip-slot-icon      { font-size: 26px; }
-      .equip-slot-icon-wrap { width: 36px; height: 36px; }
-      .equip-slot-empty-svg { width: 30px; height: 30px; }
-      .equip-slot-label     { font-size: 9px; bottom: -14px; }
-      .equip-footer         { font-size: 14px; margin-top: 10px; }
-      .equip-footer-row     { padding: 3px 8px; }
+      .equip-panel          { padding: 12px 14px; gap: 10px; }
+      .equip-panel-title    { font-size: 19px; }
+      .equip-grid           { gap: 8px; max-width: 270px; }
+      .equip-slot           { min-height: 56px; }
+      .equip-slot-icon      { font-size: 30px; }
+      .equip-slot-icon-wrap { width: 44px; height: 44px; }
+      .equip-slot-empty-svg { width: 36px; height: 36px; }
+      .equip-slot-label     { font-size: 10px; bottom: -15px; }
+      .equip-footer         { font-size: 15px; margin-top: 12px; }
+      .equip-footer-row     { padding: 4px 8px; }
     }
   `;
   document.head.appendChild(style);

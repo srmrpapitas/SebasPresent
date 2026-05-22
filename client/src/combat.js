@@ -1356,28 +1356,28 @@ function ensureStyles() {
        que TODO (stances + special + auto retaliate) entre sin scroll.
        Mobile (<=800px) queda igual. */
     @media (min-width: 801px) {
-      .combat-osrs            { padding: 12px 12px; gap: 9px; }
-      .combat-osrs-weapon     { font-size: 18px; }
+      .combat-osrs            { padding: 12px 12px; gap: 10px; }
+      .combat-osrs-weapon     { font-size: 19px; }
       .combat-osrs-cb-level   { font-size: 14px; }
-      .combat-osrs-hp-bar     { height: 18px; }
-      .combat-osrs-hp-text    { font-size: 13px; }
+      .combat-osrs-hp-bar     { height: 19px; }
+      .combat-osrs-hp-text    { font-size: 14px; }
       .combat-osrs-stances    { gap: 8px; }
-      .combat-osrs-stance     { padding: 10px 6px; min-height: 74px; gap: 5px; }
-      .combat-osrs-stance-icon  { font-size: 30px; }
-      .combat-osrs-stance-label { font-size: 14px; }
-      .combat-osrs-retaliate    { padding: 11px 14px; font-size: 15px; }
-      .combat-osrs-retaliate-icon { font-size: 19px; }
-      .combat-osrs-special-label  { font-size: 13px; }
-      .combat-osrs-special-bar    { height: 12px; }
-      .combat-osrs-category   { font-size: 13px; }
-      .combat-osrs-npcs-label { font-size: 14px; }
-      .combat-osrs-npcs       { max-height: 200px; }
-      .combat-npc             { padding: 6px 8px; gap: 8px; }
-      .combat-npc-name        { font-size: 14px; }
-      .combat-npc-hp-bar      { height: 5px; }
-      .combat-npc-meta        { font-size: 11px; }
-      .combat-npc-attack      { width: 34px; height: 34px; font-size: 16px; }
-      .combat-respawn         { padding: 10px 20px; font-size: 15px; }
+      .combat-osrs-stance     { padding: 12px 6px; min-height: 88px; gap: 6px; }
+      .combat-osrs-stance-icon  { font-size: 33px; }
+      .combat-osrs-stance-label { font-size: 15px; }
+      .combat-osrs-retaliate    { padding: 12px 14px; font-size: 16px; }
+      .combat-osrs-retaliate-icon { font-size: 20px; }
+      .combat-osrs-special-label  { font-size: 14px; }
+      .combat-osrs-special-bar    { height: 13px; }
+      .combat-osrs-category   { font-size: 14px; }
+      .combat-osrs-npcs-label { font-size: 15px; }
+      .combat-osrs-npcs       { max-height: 220px; }
+      .combat-npc             { padding: 7px 8px; gap: 8px; }
+      .combat-npc-name        { font-size: 15px; }
+      .combat-npc-hp-bar      { height: 6px; }
+      .combat-npc-meta        { font-size: 12px; }
+      .combat-npc-attack      { width: 36px; height: 36px; font-size: 17px; }
+      .combat-respawn         { padding: 11px 22px; font-size: 16px; }
     }
   `;
   document.head.appendChild(style);

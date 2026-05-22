@@ -232,15 +232,13 @@ export function setup(opts) {
     const dx = e.clientX - pointer.lastX;
     const dy = e.clientY - pointer.lastY;
 
-    // Sesión 37 — Nico pidió: click izq + drag también rota cámara (estilo
-    // OSRS-PC moderno). El bug original que prevenía esto (click izq se
-    // confundía con rotación accidental) ya está cubierto por TAP_DRAG_THRESHOLD:
-    // si el mouse se mueve >umbral durante el down, pointer.isDrag=true y NO
-    // se dispara onTap al soltar (ver onPointerUp). Drag para rotar y click
-    // para atacar son mutuamente exclusivos por el threshold.
-    //
-    // Resultado: cualquier drag (touch, mouse-izq, mouse-der) rota cámara.
-    onCameraDrag(dx * CAMERA_DRAG_YAW_SENS, dy * CAMERA_DRAG_PITCH_SENS);
+    // Sesión 38 (fix) — SOLO el botón izquierdo (o touch) rota cámara con drag.
+    // El botón DERECHO nunca rota cámara: está reservado para "Examinar"
+    // (se dispara en pointerup). Nico: "click derecho hace drag en cámara cosa
+    // que no debería porque ya lo hace click izquierdo".
+    if (!pointer.isRight) {
+      onCameraDrag(dx * CAMERA_DRAG_YAW_SENS, dy * CAMERA_DRAG_PITCH_SENS);
+    }
 
     pointer.lastX = e.clientX;
     pointer.lastY = e.clientY;
@@ -263,17 +261,20 @@ export function setup(opts) {
     const clientY = e.clientY;
     pointer = null;
 
+    // Sesión 38 (fix) — Botón DERECHO (PC) = SIEMPRE "Examinar". Como el botón
+    // derecho no rota cámara (ver onPointerMove), se dispara aunque el mouse se
+    // haya movido un poco — no se trata como drag. Esto va ANTES del guard de
+    // wasDrag para que un pequeño temblor no cancele el examinar.
+    if (wasMouse && wasRight) {
+      if (!longPressFired) onLongPress(clientX, clientY);
+      return;
+    }
+
     if (wasDrag) return;
     if (longPressFired) return;
 
-    // Sesión 29 OSRS-PC:
-    // - Click derecho sin drag (PC) → action menu (Examinar/Atacar/etc).
-    // - Click izquierdo sin drag (cualquier dispositivo) → tap (walk/atacar).
-    if (wasMouse && wasRight) {
-      onLongPress(clientX, clientY);
-    } else {
-      onTap(clientX, clientY);
-    }
+    // Click izquierdo sin drag (cualquier dispositivo) → tap (walk/atacar).
+    onTap(clientX, clientY);
   }
 
   // CRÍTICO: capture:true. Si en el proyecto hay overlays absolutos que

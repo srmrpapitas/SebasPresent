@@ -53,6 +53,44 @@ import {
 } from './terrain.js';
 import { NPC_MINIMAP_RADIUS } from './npc_renderer.js';
 
+// ============================================================
+// Sesión 38 (fix) — Tamaño del HUD lateral (sidebar) en DESKTOP.
+// ============================================================
+// Se inyecta desde JS — NO sólo desde style.css — a propósito: el deploy del
+// cliente venía aplicando los módulos JS (el contenido se agrandaba) pero NO
+// el style.css (la ventana quedaba chica). Inyectando el tamaño acá, el panel
+// se agranda igual aunque style.css no se haya refrescado.
+//
+// Estilo OSRS para PC: panel grande, slots/stats legibles, todo el tab de
+// combate visible (stances + special + auto retaliate) sin scroll. Mobile
+// (<=800px) NO se toca — Nico confirmó que en móvil está bien.
+(function injectDesktopHubSizing() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('desktop-hub-sizing')) return;
+  const style = document.createElement('style');
+  style.id = 'desktop-hub-sizing';
+  style.textContent = `
+    @media (min-width: 801px) {
+      :root {
+        --sb-panel-w: 380px;
+        --sb-tabs-w:  64px;
+        --sb-panel-h: min(620px, 80vh);
+      }
+      /* id + clase + !important = imposible de pisar por reglas más débiles */
+      #osrsSidebarPanel.osrs-sidebar-panel {
+        width: 380px !important;
+        height: min(620px, 80vh) !important;
+      }
+      #osrsSidebar .osrs-sidebar-tabs {
+        width: 64px !important;
+        height: min(620px, 80vh) !important;
+      }
+      #osrsSidebar .osrs-sidebar-tab { font-size: 22px !important; }
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
 // Constantes que se quedan en world (NO en terrain ni npc_renderer):
 const PLAYER_RUN = 7.0;
 const PLAYER_RUN_BOOST = 1.6;
