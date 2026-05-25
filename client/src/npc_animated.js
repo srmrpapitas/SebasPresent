@@ -79,10 +79,21 @@ export function isReady() { return _ready; }
 // ============================================================
 
 /**
- * Normaliza los nombres de track para que liguen al rig clonado.
- * FBXLoader a veces prefija con el nombre del armature ("Armature|mixamorig:Hips").
- * Three liga por nombre de nodo, así que recortamos todo lo previo a "mixamorig:".
+ * Sesión 39 FIX v3 (definitivo) — El goblin flotaba SOLO durante el React.
+ * Diagnóstico real (medido sobre los FBX): cada clip Mixamo tiene las caderas
+ * (Hips) a una Y distinta — walk=200.45, react=191.60 (unidades Mixamo). El
+ * grounding del modelo se calibra contra UNA altura; cuando el React mueve las
+ * caderas a OTRA Y, el goblin salta verticalmente (flota o se hunde).
+ *
+ * Solución: fijamos el track de posición de caderas de TODOS los clips a una
+ * misma posición de referencia (X,Y,Z) — la del primer frame del clip de
+ * locomoción base (_refHipsPos). Así ninguna animación traslada las caderas:
+ *   - X/Z fijos  → no hay deriva horizontal (sin desync; la pos la manda el server).
+ *   - Y fija      → todos los clips a la MISMA altura → cero salto entre
+ *                   walk / idle / react. Solo rotan los huesos (flinch, piernas).
  */
+let _refHipsPos = null;   // [x,y,z] de referencia (del primer clip que la trae)
+
 function normalizeTrackNames(clip) {
   for (const track of clip.tracks) {
     const idx = track.name.indexOf('mixamorig:');
@@ -91,35 +102,21 @@ function normalizeTrackNames(clip) {
   return clip;
 }
 
-/**
- * Elimina el track de POSICIÓN de las caderas (root motion horizontal).
- * El goblin anima en el sitio; su posición la controla el server.
- * Mantiene Y para no hundirlo si la anim tuviera offset vertical de bind.
- */
-/**
- * Elimina SOLO el movimiento HORIZONTAL (X,Z) del track de posición de las
- * caderas (root motion), conservando la Y. Así:
- *   - El goblin no "se va caminando" en X/Z (su posición la manda el server) →
- *     sin desync.
- *   - PERO mantiene la Y del hueso de caderas que cada clip necesita para
- *     quedar a la altura correcta. Sesión 39 FIX: antes quitábamos el track
- *     ENTERO (incluida Y), y al terminar el React las caderas saltaban a una
- *     altura distinta → el goblin "flotaba" y luego caía a T. Conservar la Y
- *     (igual que hace character.js con stripHipsPositionTrack modo 'horizontal'
- *     para el jugador) lo deja siempre a ras de suelo.
- */
-function stripRootMotion(clip) {
+function stripRootMotion(clip, isReference = false) {
   for (const t of clip.tracks) {
     if (/mixamorig:Hips\.position$/i.test(t.name) && t.values && t.values.length >= 3) {
-      // VectorKeyframeTrack: values = [x0,y0,z0, x1,y1,z1, ...]. Fijamos X y Z
-      // al valor del PRIMER frame (neutraliza el desplazamiento horizontal),
-      // dejando la Y intacta (grounding por-clip).
-      const x0 = t.values[0];
-      const z0 = t.values[2];
+      // Capturar la posición de referencia desde el clip EMBEBIDO (run), que
+      // está en el espacio nativo del esqueleto del GLB (mismo que el bind pose
+      // usado para el grounding). Los FBX sueltos vienen en otra escala y se
+      // re-anclan a esta referencia.
+      if (isReference || !_refHipsPos) {
+        _refHipsPos = [t.values[0], t.values[1], t.values[2]];
+      }
+      const [rx, ry, rz] = _refHipsPos;
       for (let i = 0; i < t.values.length; i += 3) {
-        t.values[i] = x0;       // X fijo
-        t.values[i + 2] = z0;   // Z fijo
-        // t.values[i+1] (Y) se conserva
+        t.values[i] = rx;
+        t.values[i + 1] = ry;
+        t.values[i + 2] = rz;
       }
     }
   }
@@ -130,7 +127,9 @@ function prepClip(clip, name, cfg) {
   clip = clip.clone();
   clip.name = name;
   normalizeTrackNames(clip);
-  if (cfg.stripRoot) stripRootMotion(clip);
+  // El clip embebido (run) define la posición de caderas de referencia, porque
+  // está en el espacio nativo del esqueleto del GLB.
+  if (cfg.stripRoot) stripRootMotion(clip, cfg.kind === 'embedded');
   return clip;
 }
 
