@@ -34,6 +34,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { measureSkinnedBbox } from './terrain.js';   // Sesión 39 fix flotar
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const ANIM_BASE = `${R2_BASE}/animations`;
@@ -43,6 +44,11 @@ export const ANIMATED_NPC_TYPES = new Set(['goblin']);
 
 // Altura objetivo (debe coincidir con NPC_TARGET_HEIGHTS de npc_renderer).
 const GOBLIN_TARGET_HEIGHT = 1.6;
+
+// Sesión 39 — AJUSTE MANUAL del grounding. Si tras el cálculo automático el
+// goblin queda un poco flotando (subir = negativo) o hundido (subir = positivo),
+// cambiá SOLO este número. En metros. 0 = solo cálculo automático.
+const GOBLIN_Y_TWEAK = 0;
 
 // Fuentes de clips. 'embedded' = viene dentro del GLB. Lo demás = FBX en R2.
 // loop:true  → locomoción (se repite). loop:false → one-shot (react).
@@ -107,6 +113,40 @@ function prepClip(clip, name, cfg) {
   return clip;
 }
 
+/**
+ * Mide dimensiones X/Y/Z robustas (corners de geometry.boundingBox aplicando
+ * matrixWorld), para detectar orientación Z-up sin depender de setFromObject.
+ */
+function measureDims(root) {
+  let min = [Infinity, Infinity, Infinity];
+  let max = [-Infinity, -Infinity, -Infinity];
+  let found = false;
+  const v = new THREE.Vector3();
+  root.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry) return;
+    if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+    const bb = obj.geometry.boundingBox;
+    if (!bb) return;
+    const corners = [
+      [bb.min.x, bb.min.y, bb.min.z], [bb.min.x, bb.min.y, bb.max.z],
+      [bb.min.x, bb.max.y, bb.min.z], [bb.min.x, bb.max.y, bb.max.z],
+      [bb.max.x, bb.min.y, bb.min.z], [bb.max.x, bb.min.y, bb.max.z],
+      [bb.max.x, bb.max.y, bb.min.z], [bb.max.x, bb.max.y, bb.max.z],
+    ];
+    for (const c of corners) {
+      v.set(c[0], c[1], c[2]).applyMatrix4(obj.matrixWorld);
+      for (let i = 0; i < 3; i++) {
+        const val = v.getComponent(i);
+        if (val < min[i]) min[i] = val;
+        if (val > max[i]) max[i] = val;
+      }
+    }
+    found = true;
+  });
+  if (!found) return null;
+  return { szX: max[0] - min[0], szY: max[1] - min[1], szZ: max[2] - min[2] };
+}
+
 // ============================================================
 // Carga (una sola vez)
 // ============================================================
@@ -129,45 +169,43 @@ export async function loadAnimatedTemplate(goblinGlbUrl) {
     const mesh = gltf.scene;
 
     // ----------------------------------------------------------------
-    // Sesión 39 FIX (goblin flotando/acostado): replicamos lo que hace
-    // bakeGlbModel con los NPCs horneados, que mi pipeline animado se
-    // había saltado:
-    //   (a) corregir orientación si el modelo viene Z-up (acostado),
-    //   (b) escalar a la altura objetivo,
-    //   (c) GROUNDING: bajar el modelo para que los pies queden en Y=0
-    //       (sin esto FLOTA, que es justo el bug del screenshot).
-    // Lo importante: en el pipeline animado NO horneamos geometría (la malla
-    // está viva con su esqueleto), así que estos ajustes van al transform del
-    // objeto root y se guardan para aplicarlos a CADA clon de instancia.
+    // Sesión 39 FIX v2 (goblin flotaba a la altura del cuello):
+    // El fix anterior usaba THREE.Box3().setFromObject() que para SkinnedMesh
+    // devuelve una caja ERRÓNEA (no tiene en cuenta el esqueleto) → calculaba
+    // mal el grounding y lo empujaba para arriba. Ahora medimos con el método
+    // robusto measureSkinnedBbox() (el mismo que usa terrain.js para los NPCs
+    // horneados, que SÍ se plantan bien): recorre cada mesh y aplica su
+    // matrixWorld a la bounding box de la geometría.
     // ----------------------------------------------------------------
 
-    // (a) Orientación: si la dimensión vertical real no es Y (viene acostado
-    // en Z, típico de FBX Z-up mal convertidos), rotamos -90° en X.
+    // Asegurar matrices y bounding boxes de geometría calculadas.
+    mesh.traverse(o => {
+      if (o.isSkinnedMesh && o.skeleton) o.skeleton.update?.();
+      if (o.isMesh && o.geometry && !o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      o.updateMatrix?.();
+    });
     mesh.updateMatrixWorld(true);
-    let probe = new THREE.Box3().setFromObject(mesh);
-    let szX = probe.max.x - probe.min.x;
-    let szY = probe.max.y - probe.min.y;
-    let szZ = probe.max.z - probe.min.z;
+
+    // (a) Orientación: medir ejes con el método robusto para detectar Z-up.
+    let m = measureSkinnedBbox(mesh);
+    // Medimos también X y Z robustos para el chequeo de orientación.
+    let dims = measureDims(mesh);
     let rotX = 0;
-    if (szZ > szY && szZ > szX * 0.6) {
-      // El eje "largo" es Z → está acostado boca arriba/abajo. Lo paramos.
+    if (dims && dims.szZ > dims.szY && dims.szZ > dims.szX * 0.6) {
       rotX = -Math.PI / 2;
       mesh.rotation.x = rotX;
       mesh.updateMatrixWorld(true);
-      probe = new THREE.Box3().setFromObject(mesh);
+      m = measureSkinnedBbox(mesh);
     }
 
-    // (b) Escala a la altura objetivo, medida sobre el eje vertical ya correcto.
-    const sizeY = probe.max.y - probe.min.y;
+    // (b) Escala a la altura objetivo (sobre el eje vertical ya correcto).
+    const sizeY = m ? m.sizeY : 0;
     let scaleFactor = sizeY > 0.001 ? GOBLIN_TARGET_HEIGHT / sizeY : 1.0;
-    // Clamp defensivo (Mixamo a veces viene en cm → escalas minúsculas).
     if (!(scaleFactor > 0) || scaleFactor > 1000 || scaleFactor < 0.00001) scaleFactor = 1.0;
-    mesh.scale.setScalar(scaleFactor);
-    mesh.updateMatrixWorld(true);
 
-    // (c) Grounding: tras escalar, medir de nuevo y bajar para que min.y = 0.
-    const groundedBox = new THREE.Box3().setFromObject(mesh);
-    const groundOffsetY = -groundedBox.min.y;
+    // (c) Grounding: el pie del modelo está en m.minY (en unidades sin escalar).
+    // Tras escalar, ese punto cae en minY*scaleFactor; lo subimos a 0.
+    const groundOffsetY = (m ? -m.minY * scaleFactor : 0) + GOBLIN_Y_TWEAK;
 
     mesh.traverse(o => {
       if (o.isMesh) {
@@ -176,9 +214,8 @@ export async function loadAnimatedTemplate(goblinGlbUrl) {
       }
     });
 
-    // Guardamos los transforms calculados para aplicarlos a cada instancia.
     _xform = { rotX, scaleFactor, groundOffsetY };
-    console.log(`[npc_animated] transform: rotX=${rotX.toFixed(2)} scale=${scaleFactor.toFixed(4)} groundY=${groundOffsetY.toFixed(3)}`);
+    console.log(`[npc_animated] transform: rotX=${rotX.toFixed(2)} scale=${scaleFactor.toFixed(4)} groundY=${groundOffsetY.toFixed(3)} (minY=${m?m.minY.toFixed(3):'?'} sizeY=${sizeY.toFixed(3)})`);
 
     const clips = {};
 
@@ -298,31 +335,34 @@ function fadeTo(inst, name, fade = 0.15) {
  */
 export function setLocomotion(inst, moving, speed = 0) {
   if (!inst || inst.isReacting) return; // react manda mientras dura
-  let want;
+
   if (moving) {
-    want = (speed > 0.12 && inst.actions.run) ? 'run' : 'walk';
+    let want = (speed > 0.12 && inst.actions.run) ? 'run' : 'walk';
     if (!inst.actions[want]) want = inst.actions.walk ? 'walk' : 'run';
-  } else {
-    // Sin idle real: usar idle si existe, si no, congelar locomoción en frame 0.
-    want = inst.actions.idle ? 'idle' : (inst.actions.walk ? 'walk' : 'run');
-  }
-  if (!want || !inst.actions[want]) return;
-
-  if (inst.state === (moving ? want : '__still')) return;
-
-  if (!moving && !inst.actions.idle) {
-    // Congelar: reproducir el clip de locomoción pero pausado en frame 0.
-    const a = inst.actions[want];
-    fadeTo(inst, want, 0.1);
-    a.paused = true;
-    a.time = 0;
-    inst.state = '__still';
-  } else {
+    if (!want || !inst.actions[want]) return;
+    if (inst.state === want) return;
     const a = inst.actions[want];
     a.paused = false;
     fadeTo(inst, want, 0.15);
-    inst.state = moving ? want : '__still';
+    inst.state = want;
+    return;
   }
+
+  // QUIETO. Si hay un idle real, reproducirlo. Si NO (caso actual), descansar
+  // en BIND POSE (T-pose, brazos a los lados). Sesión 39 FIX: antes congelaba
+  // el frame 0 del walk, que dejaba los BRAZOS HACIA ATRÁS (bug reportado).
+  // El bind pose es la pose neutra del rig (brazos a los lados / T-pose).
+  if (inst.state === '__still') return;
+  if (inst.actions.idle) {
+    const a = inst.actions.idle;
+    a.paused = false;
+    fadeTo(inst, 'idle', 0.2);
+  } else {
+    // Sin idle: parar todas las acciones → el SkinnedMesh vuelve a bind pose.
+    try { inst.mixer.stopAllAction(); } catch {}
+    inst._current = null;
+  }
+  inst.state = '__still';
 }
 
 /** Dispara la animación React como one-shot (cuando lo golpean). */
