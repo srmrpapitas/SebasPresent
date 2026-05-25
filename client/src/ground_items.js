@@ -68,6 +68,7 @@ let groundItemsMap = new Map();      // id → { id, item_id, qty, x, z, name, g
 let pollTimer = 0;
 let inFlight = false;
 let pendingPickupItemId = null;
+let pendingPickupAll = null;   // Sesión 39 — {x,z} destino para "Coger todo"
 
 // Raycaster propio del módulo (independiente del que usa world.js)
 let raycaster = null;
@@ -98,6 +99,7 @@ export function start(opts) {
   pollTimer = 0;
   inFlight = false;
   pendingPickupItemId = null;
+  pendingPickupAll = null;
   started = true;
 }
 
@@ -123,6 +125,7 @@ export function stop() {
   raycaster = null;
   pollTimer = 0;
   pendingPickupItemId = null;
+  pendingPickupAll = null;
   started = false;
 }
 
@@ -241,14 +244,39 @@ export function openLootMenuAt(clientX, clientY) {
   menu.style.top = top + 'px';
   lootMenuEl = menu;
 
+  // Sesión 39 fix — bloquear pointerdown/up A NIVEL DEL MENÚ para que el tap
+  // NO se propague al canvas de abajo (si no, tocar "Coger todo" también
+  // movía al personaje a ese punto, como un tap-to-move al mapa).
+  ['pointerdown', 'pointerup', 'click'].forEach(evt => {
+    menu.addEventListener(evt, e => e.stopPropagation());
+  });
+
   menu.querySelectorAll('[data-pick],[data-pickall],[data-cancel]').forEach(row => {
     row.addEventListener('pointerup', ev => {
       ev.preventDefault();
       ev.stopPropagation();
       if (row.dataset.cancel) { closeLootMenu(); return; }
       if (row.dataset.pickall) {
-        // Coger todo: caminar hacia el montón y recoger cada uno al llegar.
-        for (const it of pile) requestPickup(it);
+        // Coger todo. Recoger ya los que estén en rango; si alguno está lejos,
+        // caminar al centro del montón y recoger el resto al llegar.
+        const player = getPlayer();
+        let cx = 0, cz = 0, far = false;
+        for (const it of pile) {
+          cx += it.x; cz += it.z;
+          const dx = it.x - player.position.x, dz = it.z - player.position.z;
+          if (Math.hypot(dx, dz) <= PICKUP_RADIUS_M) {
+            if (!it.lastAttempt || Date.now() - it.lastAttempt > PICKUP_COOLDOWN_MS) {
+              it.lastAttempt = Date.now();
+              pickupItem(it.id);
+            }
+          } else {
+            far = true;
+          }
+        }
+        if (far) {
+          pendingPickupAll = { x: cx / pile.length, z: cz / pile.length };
+          setPlayerTargetCb(pendingPickupAll.x, pendingPickupAll.z);
+        }
         closeLootMenu();
         return;
       }
@@ -331,6 +359,26 @@ function updateImpl(dt, player) {
         }
         pendingPickupItemId = null;
       }
+    }
+  }
+
+  // 3b) Sesión 39 — "Coger todo": caminamos al montón; al llegar, recogemos
+  //     TODOS los ítems dentro del radio de pickup (no solo uno).
+  if (pendingPickupAll) {
+    const dx = pendingPickupAll.x - player.position.x;
+    const dz = pendingPickupAll.z - player.position.z;
+    if (Math.hypot(dx, dz) <= PICKUP_RADIUS_M) {
+      for (const it of groundItemsMap.values()) {
+        const idx = it.x - player.position.x;
+        const idz = it.z - player.position.z;
+        if (idx * idx + idz * idz <= PICKUP_RADIUS_M * PICKUP_RADIUS_M) {
+          if (!it.lastAttempt || now - it.lastAttempt > PICKUP_COOLDOWN_MS) {
+            it.lastAttempt = now;
+            pickupItem(it.id);
+          }
+        }
+      }
+      pendingPickupAll = null;
     }
   }
 

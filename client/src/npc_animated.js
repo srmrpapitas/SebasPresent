@@ -51,17 +51,20 @@ const GOBLIN_TARGET_HEIGHT = 1.6;
 const GOBLIN_Y_TWEAK = 0;
 
 // Fuentes de clips. 'embedded' = viene dentro del GLB. Lo demás = FBX en R2.
-// Sesión 39 FIX v5 (la solución de fondo): TODOS los clips vienen embebidos en
-// el MISMO goblin.glb (run+walk+react+idle), convertidos con el mismo pipeline
-// (assimp) que el mesh. Esto elimina el flote de raíz: antes mezclábamos el GLB
-// (assimp) con clips FBX sueltos (FBXLoader), cuyos esqueletos no encajaban
-// (escalas/estructuras distintas) → el goblin se inflaba/flotaba al caminar.
-// Ahora hay UN solo esqueleto y las animaciones ligan 1:1.
+// Sesión 39 FIX v6 (el correcto): aunque ahora todos los clips están en el
+// MISMO goblin.glb, la fusión copió las posiciones de hueso TAL CUAL del FBX
+// original — y walk/react/idle vienen en escala ~200 mientras el esqueleto
+// del goblin (= run) está en escala ~100. Por eso walk/react seguían flotando.
+// Como ahora comparten nombres de nodo exactos, el fix definitivo es:
+//   - run  → 'native': conserva posiciones (es la escala del esqueleto, 100).
+//   - resto → 'rot_only': se les quitan TODAS las posiciones de hueso; solo
+//             rotaciones. Las longitudes de hueso las pone el esqueleto (100).
+//             Así no se infla ni flota, sin importar la escala original del clip.
 const CLIP_SOURCES = {
-  run:   { kind: 'embedded', clip: 'run',   loop: true,  stripRoot: true },
-  walk:  { kind: 'embedded', clip: 'walk',  loop: true,  stripRoot: true },
-  react: { kind: 'embedded', clip: 'react', loop: false, stripRoot: true },
-  idle:  { kind: 'embedded', clip: 'idle',  loop: true,  stripRoot: true },
+  run:   { kind: 'embedded', clip: 'run',   loop: true,  strip: 'native'   },
+  walk:  { kind: 'embedded', clip: 'walk',  loop: true,  strip: 'rot_only' },
+  react: { kind: 'embedded', clip: 'react', loop: false, strip: 'rot_only' },
+  idle:  { kind: 'embedded', clip: 'idle',  loop: true,  strip: 'rot_only' },
 };
 
 const REACT_TARGET_MS = 400;   // igual que el player: react acelerado a ~400ms
@@ -107,8 +110,8 @@ function normalizeTrackNames(clip) {
   return clip;
 }
 
-function stripRootMotion(clip, native = false) {
-  if (native) {
+function stripRootMotion(clip, mode = 'rot_only') {
+  if (mode === 'native') {
     // Clip nativo (run): conservar posiciones; solo neutralizar X/Z de caderas.
     for (const t of clip.tracks) {
       if (/mixamorig:Hips\.position$/i.test(t.name) && t.values && t.values.length >= 3) {
@@ -121,7 +124,9 @@ function stripRootMotion(clip, native = false) {
       }
     }
   } else {
-    // Clip foráneo (FBX): QUITAR todos los tracks de posición. Solo rotaciones.
+    // 'rot_only': QUITAR todos los tracks de posición. Solo rotaciones. El
+    // esqueleto (escala nativa del run) define las longitudes de hueso → no
+    // importa la escala original del clip, no se infla ni flota.
     clip.tracks = clip.tracks.filter(t => !/\.position$/i.test(t.name));
   }
   return clip;
@@ -131,9 +136,8 @@ function prepClip(clip, name, cfg) {
   clip = clip.clone();
   clip.name = name;
   normalizeTrackNames(clip);
-  // 'embedded' (run) = nativo del GLB → conserva posiciones (escala correcta).
-  // 'fbx' (walk/react) = foráneo → solo rotaciones (evita el estiramiento/flote).
-  if (cfg.stripRoot) stripRootMotion(clip, cfg.kind === 'embedded');
+  // strip: 'native' (run, conserva posiciones) | 'rot_only' (resto, solo rota).
+  if (cfg.strip) stripRootMotion(clip, cfg.strip);
   return clip;
 }
 
