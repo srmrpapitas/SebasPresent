@@ -1876,3 +1876,188 @@ async function safeInsertInvSlot(db, userId, itemId, qty, preferredSlot) {
     [userId, slot, itemId, qty]
   );
 }
+// ============================================================
+// Sesión 39 — TICK DE IA DE NPC (agro + persecución + contraataque)
+// ============================================================
+//
+// Diseño "on-read": no hay loop de servidor (Workers son stateless). En su
+// lugar, el snapshot handler llama a tickNpcAggro() cada vez que un cliente
+// pollea (~250ms). Para cada NPC AGRESIVO cercano:
+//   1. AGRO: si hay un jugador dentro de aggro_radius y el NPC no tiene target
+//      (o el suyo se fue), lo marca (in_combat_with).
+//   2. PERSECUCIÓN: si tiene target fuera de attack_range pero dentro del
+//      leash, da un paso hacia él (velocidad * dt). Escribe x,z → el cliente
+//      lo interpola suave. Server-authoritative: cero desync.
+//   3. CONTRAATAQUE: si el target está en attack_range y el cooldown del NPC
+//      está listo, rollea daño (misma matemática que el contraataque normal)
+//      y se lo aplica al jugador + last_hit_* (la Pieza 1 hace que TODOS lo
+//      vean vía el hitsplat de peer).
+//   4. DE-AGGRO: si el target murió, se desconectó, o se alejó más del leash
+//      desde el spawn del NPC → suelta el target y (futuro) vuelve a casa.
+//
+// Determinismo / concurrencia: dos polls casi simultáneos podrían tickear el
+// mismo NPC. El movimiento usa last_attack_at/last_moved como gate temporal y
+// el paso es idempotente-ish (mover hacia el target converge). El daño está
+// gateado por last_attack_at del NPC (no puede pegar más rápido que su
+// cooldown aunque lleguen 10 polls). Esto también CIERRA el exploit de
+// multi-click server-side: el cooldown del NPC es autoritativo.
+//
+// Tuneable: NPC_MOVE_SPEED_MPS, NPC_LEASH_M.
+
+const NPC_MOVE_SPEED_MPS = 2.2;   // m/s de persecución (se afina jugando)
+const NPC_LEASH_M = 12.0;         // si el target se aleja > esto del SPAWN, de-aggro
+const NPC_AI_MAX_STEP_MS = 400;   // cap del dt por tick (evita saltos si un poll tardó)
+
+/**
+ * Avanza la IA de los NPCs agresivos cercanos al centro del snapshot.
+ * Devuelve un Map npcId -> {x, z, in_combat_with} con los cambios aplicados,
+ * para que el snapshot handler refleje las posiciones nuevas sin re-query.
+ *
+ * @param db          adapter D1 (makeDbAdapter)
+ * @param env         para env.DB.prepare (queries directas)
+ * @param viewer      { user_id, x, z } del jugador que pollea
+ * @param now         Date.now()
+ * @param opts        { rng } opcional para tests
+ */
+export async function tickNpcAggro(env, viewer, now, opts = {}) {
+  const rng = opts.rng || Math.random;
+  const changes = new Map();
+  if (!viewer || !Number.isFinite(viewer.x) || !Number.isFinite(viewer.z)) return changes;
+
+  // 1) NPCs agresivos vivos cerca del viewer (bounding box ~aggro+leash).
+  const R = 60; // margen generoso de búsqueda
+  let npcs;
+  try {
+    npcs = await env.DB.prepare(
+      `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
+              i.in_combat_with, i.last_attack_at, i.last_moved_at, i.spawn_x, i.spawn_z,
+              d.behavior, d.aggro_radius, d.attack_range, d.attack_speed_ticks,
+              d.attack_lvl, d.strength_lvl, d.max_hit
+       FROM npc_instances i
+       JOIN npc_defs d ON d.id = i.def_id
+       WHERE i.status = 0
+         AND d.behavior = 'aggressive'
+         AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`
+    ).bind(viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
+  } catch (err) {
+    // Si la migración no corrió (no existe columna behavior), no-op silencioso.
+    return changes;
+  }
+
+  const rows = (npcs && npcs.results) || [];
+  if (rows.length === 0) return changes;
+
+  // Stats del viewer (HP + defensa) para el contraataque.
+  let viewerStats;
+  try {
+    viewerStats = await env.DB.prepare(
+      `SELECT hp_current, defence_xp FROM combat_stats WHERE user_id = ?`
+    ).bind(viewer.user_id).first();
+  } catch { viewerStats = null; }
+  if (!viewerStats || viewerStats.hp_current <= 0) return changes; // muerto: no agro
+
+  const viewerDefLvl = viewerStats.defence_xp != null ? levelFromXp(viewerStats.defence_xp) : 1;
+  let viewerHp = viewerStats.hp_current;
+
+  for (const npc of rows) {
+    const dToViewer = dist(viewer.x, viewer.z, npc.x, npc.z);
+
+    // ---- DE-AGGRO por leash: si está lejísimos de su spawn, soltar y parar.
+    const homeX = npc.spawn_x != null ? npc.spawn_x : npc.x;
+    const homeZ = npc.spawn_z != null ? npc.spawn_z : npc.z;
+    const dFromHome = dist(homeX, homeZ, npc.x, npc.z);
+
+    // ---- AGRO: adquirir target si estoy en su radio y no tiene (o es el viewer).
+    let target = npc.in_combat_with;
+    if (!target && dToViewer <= npc.aggro_radius) {
+      target = viewer.user_id;
+    }
+    // Si su target es el viewer pero el viewer se fue del leash desde el spawn,
+    // de-aggro (volver a casa lo hace el paso de movimiento de abajo).
+    if (target === viewer.user_id && dFromHome > NPC_LEASH_M) {
+      target = null;
+    }
+
+    let newX = npc.x, newZ = npc.z;
+    let attacked = false;
+    let dmg = 0;
+
+    if (target === viewer.user_id) {
+      const attackRange = Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE);
+
+      // ---- PERSECUCIÓN: si fuera de rango, paso hacia el viewer.
+      if (dToViewer > attackRange) {
+        // dt real desde el último movimiento (gate de concurrencia: si dos
+        // polls llegan juntos, el segundo ve last_moved_at recién y mueve ~0).
+        const lastMoved = npc.last_moved_at || (now - 250);
+        const dtMs = Math.min(Math.max(0, now - lastMoved), NPC_AI_MAX_STEP_MS);
+        const step = NPC_MOVE_SPEED_MPS * (dtMs / 1000);
+        const ux = (viewer.x - npc.x) / (dToViewer || 1);
+        const uz = (viewer.z - npc.z) / (dToViewer || 1);
+        // No pasarse: como mucho, hasta dejar attackRange*0.9 de separación.
+        const move = Math.min(step, Math.max(0, dToViewer - attackRange * 0.9));
+        newX = npc.x + ux * move;
+        newZ = npc.z + uz * move;
+      } else {
+        // ---- CONTRAATAQUE: en rango y cooldown listo.
+        const cooldownMs = (npc.attack_speed_ticks || 4) * TICK_MS;
+        const ready = !npc.last_attack_at || (now - npc.last_attack_at) >= cooldownMs;
+        if (ready && viewerHp > 0) {
+          const roll = rollHit(rng, npc.attack_lvl, viewerDefLvl, npc.max_hit);
+          dmg = Math.min(roll.damage, viewerHp);
+          attacked = true;
+        }
+      }
+    }
+
+    // ---- Aplicar cambios a la DB ----
+    const moved = (newX !== npc.x || newZ !== npc.z);
+    const targetChanged = (target || null) !== (npc.in_combat_with || null);
+
+    if (attacked) {
+      viewerHp = Math.max(0, viewerHp - dmg);
+      // Daño al jugador + last_hit_* (la Pieza 1 lo muestra a todos).
+      try {
+        await env.DB.prepare(
+          `UPDATE combat_stats
+             SET hp_current = ?, last_hit_from_user_id = NULL,
+                 last_hit_damage = ?, last_hit_at = ?, last_hit_is_crit = 0
+           WHERE user_id = ?`
+        ).bind(viewerHp, dmg, now, viewer.user_id).run();
+      } catch {}
+      // combat_log: attacker_type=1 (npc), target_type=0 (player)
+      try {
+        await env.DB.prepare(
+          `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
+           VALUES (?, 1, ?, 0, ?, ?, ?, ?)`
+        ).bind(now, npc.id, viewer.user_id, dmg, dmg > 0 ? 1 : 0, viewerHp <= 0 ? 1 : 0).run();
+      } catch {}
+      if (viewerHp <= 0) {
+        try {
+          await env.DB.prepare(
+            `UPDATE combat_stats SET last_died_at = ? WHERE user_id = ?`
+          ).bind(now, viewer.user_id).run();
+        } catch {}
+      }
+    }
+
+    if (moved || targetChanged || attacked) {
+      try {
+        await env.DB.prepare(
+          `UPDATE npc_instances
+             SET x = ?, z = ?, in_combat_with = ?, last_attack_at = ?, last_moved_at = ?
+           WHERE id = ?`
+        ).bind(
+          newX, newZ,
+          target || null,
+          attacked ? now : npc.last_attack_at,
+          moved ? now : (npc.last_moved_at || null),
+          npc.id
+        ).run();
+      } catch {}
+      changes.set(npc.id, { x: newX, z: newZ, in_combat_with: target || null });
+    }
+  }
+
+  return changes;
+}
