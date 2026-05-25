@@ -458,6 +458,8 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
     html += `<div class="inv-context-row" data-act="light_fire">🔥 Encender fuego</div>`;
   }
   html += `<div class="inv-context-row" data-act="examine">🔍 Examinar</div>`;
+  // Sesión 39 — Soltar (drop) el ítem al suelo. Los demás jugadores lo ven.
+  html += `<div class="inv-context-row" data-act="drop">🗑 Soltar</div>`;
   html += `<div class="inv-context-row danger" data-act="cancel">✕ Cancelar</div>`;
   menu.innerHTML = html;
 
@@ -490,6 +492,24 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
           await window.__firemaking?.lightFireFromSlot?.(slotIdx);
         } catch (err) {
           console.warn('[inventory] light_fire err:', err);
+        }
+      } else if (act === 'drop') {
+        // Sesión 39 — Soltar el ítem al suelo (lo ven los demás jugadores).
+        try {
+          let pos = null;
+          try {
+            const p = window.__getPlayerPosition?.();
+            if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = { x: p.x, z: p.z };
+          } catch {}
+          const res = await api.dropItem(slotIdx, pos);
+          if (res && res.ok) {
+            await refresh();
+          } else {
+            showError('No se pudo soltar el ítem.');
+          }
+        } catch (err) {
+          console.warn('[inventory] drop err:', err);
+          showError('No se pudo soltar el ítem.');
         }
       }
       // 'cancel' o cualquier otra: nada

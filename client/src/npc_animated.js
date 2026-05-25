@@ -96,12 +96,33 @@ function normalizeTrackNames(clip) {
  * El goblin anima en el sitio; su posición la controla el server.
  * Mantiene Y para no hundirlo si la anim tuviera offset vertical de bind.
  */
+/**
+ * Elimina SOLO el movimiento HORIZONTAL (X,Z) del track de posición de las
+ * caderas (root motion), conservando la Y. Así:
+ *   - El goblin no "se va caminando" en X/Z (su posición la manda el server) →
+ *     sin desync.
+ *   - PERO mantiene la Y del hueso de caderas que cada clip necesita para
+ *     quedar a la altura correcta. Sesión 39 FIX: antes quitábamos el track
+ *     ENTERO (incluida Y), y al terminar el React las caderas saltaban a una
+ *     altura distinta → el goblin "flotaba" y luego caía a T. Conservar la Y
+ *     (igual que hace character.js con stripHipsPositionTrack modo 'horizontal'
+ *     para el jugador) lo deja siempre a ras de suelo.
+ */
 function stripRootMotion(clip) {
-  clip.tracks = clip.tracks.filter(t => {
-    // Quitar SOLO los tracks de position de Hips (root). Las rotaciones se
-    // conservan (son las que hacen el movimiento de piernas/brazos).
-    return !/mixamorig:Hips\.position$/i.test(t.name);
-  });
+  for (const t of clip.tracks) {
+    if (/mixamorig:Hips\.position$/i.test(t.name) && t.values && t.values.length >= 3) {
+      // VectorKeyframeTrack: values = [x0,y0,z0, x1,y1,z1, ...]. Fijamos X y Z
+      // al valor del PRIMER frame (neutraliza el desplazamiento horizontal),
+      // dejando la Y intacta (grounding por-clip).
+      const x0 = t.values[0];
+      const z0 = t.values[2];
+      for (let i = 0; i < t.values.length; i += 3) {
+        t.values[i] = x0;       // X fijo
+        t.values[i + 2] = z0;   // Z fijo
+        // t.values[i+1] (Y) se conserva
+      }
+    }
+  }
   return clip;
 }
 
@@ -402,9 +423,19 @@ export function updateAnimatedInstance(inst, dtSec) {
     if (inst._reactTimer <= 0) {
       inst.isReacting = false;
       inst._reactTimer = 0;
-      if (inst.actions.react) inst.actions.react.setEffectiveTimeScale(1);
-      // Forzar re-selección de locomoción en el próximo setLocomotion
-      inst.state = null;
+      // Sesión 39 FIX: al terminar el React, parar TODAS las acciones de
+      // forma explícita → el esqueleto vuelve a bind pose (T, a ras de suelo).
+      // Antes solo nuleábamos el estado y dependíamos de setLocomotion en el
+      // frame siguiente, lo que dejaba un instante con la pose del react
+      // "pegada" (se veía flotar y luego caer). Pararlo acá lo hace limpio.
+      try {
+        if (inst.actions.react) {
+          inst.actions.react.stop();
+          inst.actions.react.setEffectiveTimeScale(1);
+        }
+        inst.mixer.stopAllAction();
+      } catch {}
+      inst.state = '__still';   // ya en bind pose; setLocomotion no re-disparará
       inst._current = null;
     }
   }

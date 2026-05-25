@@ -103,6 +103,16 @@ export async function getInventory() {
   return apiFetch('/api/inventory', { auth: true });
 }
 
+// Sesión 39 — soltar (drop) un ítem del inventario al suelo. userPos opcional
+// (anti-desfase, igual que pickup): mandamos la pos actual del jugador.
+export async function dropItem(slot, userPos = null) {
+  return apiFetch('/api/ground_items/drop', {
+    method: 'POST',
+    auth: true,
+    body: { slot, userPos },
+  });
+}
+
 export async function swapInventorySlots(from, to) {
   return apiFetch('/api/inventory/swap', {
     method: 'POST',
