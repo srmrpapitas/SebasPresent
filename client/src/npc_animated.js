@@ -62,6 +62,7 @@ const REACT_TARGET_MS = 400;   // igual que el player: react acelerado a ~400ms
 // Estado del módulo (template compartido)
 // ============================================================
 let _template = null;     // { mesh, clips: {name: AnimationClip} }
+let _xform = null;        // { rotX, scaleFactor, groundOffsetY } — Sesión 39 fix flotar
 let _ready = false;
 let _loading = null;      // promesa en vuelo (evita doble carga)
 
@@ -127,20 +128,57 @@ export async function loadAnimatedTemplate(goblinGlbUrl) {
     const gltf = await gltfLoader.loadAsync(goblinGlbUrl);
     const mesh = gltf.scene;
 
-    // Autoescala a la altura objetivo (igual criterio que interiors.loadNpc)
+    // ----------------------------------------------------------------
+    // Sesión 39 FIX (goblin flotando/acostado): replicamos lo que hace
+    // bakeGlbModel con los NPCs horneados, que mi pipeline animado se
+    // había saltado:
+    //   (a) corregir orientación si el modelo viene Z-up (acostado),
+    //   (b) escalar a la altura objetivo,
+    //   (c) GROUNDING: bajar el modelo para que los pies queden en Y=0
+    //       (sin esto FLOTA, que es justo el bug del screenshot).
+    // Lo importante: en el pipeline animado NO horneamos geometría (la malla
+    // está viva con su esqueleto), así que estos ajustes van al transform del
+    // objeto root y se guardan para aplicarlos a CADA clon de instancia.
+    // ----------------------------------------------------------------
+
+    // (a) Orientación: si la dimensión vertical real no es Y (viene acostado
+    // en Z, típico de FBX Z-up mal convertidos), rotamos -90° en X.
     mesh.updateMatrixWorld(true);
-    const bbox = new THREE.Box3().setFromObject(mesh);
-    const sizeY = bbox.max.y - bbox.min.y;
-    if (sizeY > 0.001) {
-      const s = GOBLIN_TARGET_HEIGHT / sizeY;
-      mesh.scale.setScalar(s);
+    let probe = new THREE.Box3().setFromObject(mesh);
+    let szX = probe.max.x - probe.min.x;
+    let szY = probe.max.y - probe.min.y;
+    let szZ = probe.max.z - probe.min.z;
+    let rotX = 0;
+    if (szZ > szY && szZ > szX * 0.6) {
+      // El eje "largo" es Z → está acostado boca arriba/abajo. Lo paramos.
+      rotX = -Math.PI / 2;
+      mesh.rotation.x = rotX;
+      mesh.updateMatrixWorld(true);
+      probe = new THREE.Box3().setFromObject(mesh);
     }
+
+    // (b) Escala a la altura objetivo, medida sobre el eje vertical ya correcto.
+    const sizeY = probe.max.y - probe.min.y;
+    let scaleFactor = sizeY > 0.001 ? GOBLIN_TARGET_HEIGHT / sizeY : 1.0;
+    // Clamp defensivo (Mixamo a veces viene en cm → escalas minúsculas).
+    if (!(scaleFactor > 0) || scaleFactor > 1000 || scaleFactor < 0.00001) scaleFactor = 1.0;
+    mesh.scale.setScalar(scaleFactor);
+    mesh.updateMatrixWorld(true);
+
+    // (c) Grounding: tras escalar, medir de nuevo y bajar para que min.y = 0.
+    const groundedBox = new THREE.Box3().setFromObject(mesh);
+    const groundOffsetY = -groundedBox.min.y;
+
     mesh.traverse(o => {
       if (o.isMesh) {
         o.frustumCulled = false;
         o.castShadow = true;
       }
     });
+
+    // Guardamos los transforms calculados para aplicarlos a cada instancia.
+    _xform = { rotX, scaleFactor, groundOffsetY };
+    console.log(`[npc_animated] transform: rotX=${rotX.toFixed(2)} scale=${scaleFactor.toFixed(4)} groundY=${groundOffsetY.toFixed(3)}`);
 
     const clips = {};
 
@@ -202,7 +240,17 @@ export function createAnimatedInstance() {
   // SkeletonUtils.clone: esqueleto propio (no compartido) — clave para que
   // cada goblin se anime independiente. Igual que multiplayer.js con peers.
   const root = SkeletonUtils.clone(_template.mesh);
-  root.scale.copy(_template.mesh.scale);
+  // Sesión 39 FIX: aplicar EXPLÍCITAMENTE orientación + escala + grounding
+  // calculados en loadAnimatedTemplate. El clone copia transforms del template,
+  // pero el grounding (position.y) lo guardamos aparte para no contaminar la
+  // medición del bbox; lo aplicamos acá. Sin esto el goblin FLOTA.
+  if (_xform) {
+    root.rotation.x = _xform.rotX;
+    root.scale.setScalar(_xform.scaleFactor);
+    root.position.y = _xform.groundOffsetY;
+  } else {
+    root.scale.copy(_template.mesh.scale);
+  }
 
   // Materiales propios por instancia (para el flash sin afectar a los demás).
   const bodyMaterials = [];
