@@ -32,6 +32,8 @@
 
 import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
+// Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
+import { tickNpcAggro } from '../combat_engine.js';
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
 // Para 90 NPCs en un mundo de 4096m, 500m típicamente devuelve 30-50 NPCs.
@@ -214,6 +216,17 @@ export async function handleWorldSnapshot(request, env) {
       });
 
     // -------------------- NPCs --------------------
+    // Sesión 39 Pieza 2+3 — Antes de leer los NPCs, corremos el tick de IA
+    // "on-read": los agresivos cercanos adquieren target, persiguen y
+    // contraatacan al jugador que pollea. Escribe x/z/in_combat_with/HP en D1.
+    // El SELECT de abajo ya lee las posiciones nuevas. Envuelto en try/catch:
+    // si falla (migración no corrida, etc.), el snapshot sigue normal.
+    try {
+      await tickNpcAggro(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
+    } catch (err) {
+      console.error('[snapshot/npc-ai]', err);
+    }
+
     // Bloque 2: formato idéntico al de combat_engine.getCombatState para que
     // npc_renderer.js sea drop-in replacement. Solo vivos (status=0).
     // in_combat_with es directamente el user_id o NULL.
