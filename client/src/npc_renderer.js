@@ -80,6 +80,9 @@ import * as combat from './combat.js';
 import * as equipment from './equipment.js';   // Sesión 35 — engage range dinámico por weapon_type
 import * as worldSnapshot from './world_snapshot.js';
 import { bakeGlbModel } from './terrain.js';
+// Sesión 39 — pipeline esquelético (goblin animado). Forma A: malla del GLB +
+// clips FBX sueltos desde R2. Los NPCs no animados siguen por bakeGlbModel.
+import * as npcAnimated from './npc_animated.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -185,6 +188,22 @@ let NPC_GEOMS = null;
 const npcMeshes = new Map();
 let npcDataList = [];
 
+// Sesión 39 — Pieza 1: ventana de supresión por NPC. combat.js marca aquí
+// (markLocalHit) cuando el jugador local pega, para que el feedback derivado
+// del snapshot no le DUPLIQUE el hitsplat que ya mostró al instante.
+const _localHitSuppress = new Map();   // npcId -> performance.now() límite
+const LOCAL_HIT_SUPPRESS_MS = 600;     // > período de snapshot (250ms) con margen
+
+/**
+ * Llamado por combat.js cuando el jugador LOCAL acaba de pegarle a un NPC.
+ * Marca una ventana donde el feedback snapshot-driven se omite para este NPC
+ * (evita doble hitsplat: el local ya se mostró sin lag).
+ */
+export function markLocalHit(npcId) {
+  if (npcId == null) return;
+  _localHitSuppress.set(npcId, performance.now() + LOCAL_HIT_SUPPRESS_MS);
+}
+
 // Guard: solo procesamos syncMeshes cuando llega un snapshot con timestamp
 // distinto al último visto.
 let lastProcessedSnapshotNow = 0;
@@ -228,6 +247,9 @@ export async function start(opts) {
   if (typeof window !== 'undefined') {
     window.__worldFlashNpcHit = flashHit;
     window.__worldSpawnHitsplat = spawnHitsplat;
+    // Sesión 39 — Pieza 1: combat.js marca aquí su hit local para de-dup del
+    // feedback compartido (ver markLocalHit / _localHitSuppress).
+    window.__worldMarkLocalHit = markLocalHit;
     // Hook para que combat.js mande la pos actual del player en el body
     // del attack. Devuelve {x, z} o null si no hay player aún.
     window.__getPlayerPosition = () => {
@@ -281,7 +303,7 @@ export function stop() {
 export function update(dt) {
   if (!started) return;
   pollSnapshotForNpcs();
-  updateInterpolation();   // sustituye al antiguo updatePatrol
+  updateInterpolation(dt);   // sustituye al antiguo updatePatrol
   updateHpBars();
   // updateCombatFollow ELIMINADO: ya no hace falta perseguir un NPC que
   // orbita, porque ahora la mesh está donde el server dice. Si en el
@@ -442,6 +464,14 @@ async function loadGLBs() {
       console.warn(`NPC '${typeId}' load failed, will use placeholder:`, err.message);
     }
   }));
+
+  // Sesión 39 — además del horneado (fallback), arrancamos la carga del
+  // pipeline ANIMADO para los tipos que lo usan (goblin). Si falla, isReady()
+  // queda false y createMesh cae al horneado de arriba. No bloquea el resto.
+  for (const typeId of npcAnimated.ANIMATED_NPC_TYPES) {
+    const url = NPC_GLB_URLS[typeId];
+    if (url) npcAnimated.loadAnimatedTemplate(url).catch(() => {});
+  }
 }
 
 // ============================================================
@@ -496,12 +526,47 @@ function syncMeshes() {
       }
     }
     updateHpBar(mesh, npc.hp_current, npc.max_hp);
+
+    // ============================================================
+    // Sesión 39 — Pieza 1: FEEDBACK DE COMBATE COMPARTIDO
+    // ============================================================
+    // Antes, el flash/hitsplat/React del NPC se disparaba SOLO en la pantalla
+    // del que atacaba (combat.js, local). Resultado: si otro jugador pegaba al
+    // mismo goblin, vos no veías nada. Ahora lo derivamos del SNAPSHOT: si el
+    // hp_current del NPC bajó desde el snapshot anterior, hubo daño → mostramos
+    // hitsplat + flash + React para TODOS los que tengan al NPC a la vista.
+    //
+    // De-dup: el atacante LOCAL ya mostró su hitsplat al instante (mejor feel,
+    // sin esperar 250ms). Para no duplicárselo, combat.js marca el NPC vía
+    // markLocalHit(); dentro de esa ventana, ignoramos el daño que ya se mostró.
+    const prev = mesh.userData.npc;
+    if (prev && typeof prev.hp_current === 'number' && typeof npc.hp_current === 'number') {
+      const dmg = prev.hp_current - npc.hp_current;
+      if (dmg > 0) {
+        const supp = _localHitSuppress.get(npc.id) || 0;
+        const localCovered = nowMs < supp;
+        if (!localCovered) {
+          // Daño causado por OTRO jugador (o por el NPC contraatacando a otro):
+          // mostrarlo para que este cliente también lo vea.
+          try { spawnHitsplat(npc.id, dmg); } catch {}
+          try { flashHit(npc.id); } catch {}
+        }
+        // Sea local o remoto, limpiamos la marca tras consumirla.
+        if (localCovered) _localHitSuppress.delete(npc.id);
+      }
+    }
+
     mesh.userData.npc = npc;
   }
 
   for (const [id, mesh] of npcMeshes.entries()) {
     if (!aliveIds.has(id)) {
       scene.remove(mesh);
+      _localHitSuppress.delete(id);   // Sesión 39 — evitar leak del map de de-dup
+      // Sesión 39 — liberar mixer/clon del goblin animado si lo hubiera.
+      if (mesh.userData?.anim) {
+        try { npcAnimated.disposeAnimatedInstance(mesh.userData.anim); } catch {}
+      }
       mesh.traverse?.(obj => {
         if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
         if (obj.material && !obj.userData?.shared) {
@@ -544,7 +609,19 @@ function createMesh(npc) {
   };
 
   const glb = NPC_GEOMS && NPC_GEOMS[typeId];
-  if (glb && glb.glbParts) {
+  // Sesión 39 — intento ANIMADO primero (goblin). Si el template no está
+  // listo (assets fallaron o aún cargando), cae al horneado de abajo.
+  let animInst = null;
+  if (npcAnimated.ANIMATED_NPC_TYPES.has(typeId)) {
+    try { animInst = npcAnimated.createAnimatedInstance(); } catch (e) { animInst = null; }
+  }
+
+  if (animInst) {
+    group.add(animInst.root);
+    group.userData.anim = animInst;
+    // Reusar los materiales clonados de la instancia para el flash rojo.
+    group.userData.bodyMaterials = animInst.bodyMaterials || [];
+  } else if (glb && glb.glbParts) {
     for (const part of glb.glbParts) {
       const ownMat = part.material.clone();
       ownMat.userData = { baseColor: ownMat.color.clone() };
@@ -604,7 +681,7 @@ function createHpBar(cur, max, npcHeight) {
 //   4. Aplicar kick de hit reaction encima de la pos lerpeada.
 //   5. Actualizar emissive del flash.
 //
-function updateInterpolation() {
+function updateInterpolation(dt = 0) {
   if (!scene) return;
   const nowMs = performance.now();
   const nowS = nowMs / 1000;
@@ -647,10 +724,27 @@ function updateInterpolation() {
       group.rotation.y = I.lastFacingY;
     }
 
+    // ---- Sesión 39 — Animación esquelética (goblin) ----
+    // El goblin anima EN EL SITIO: la posición la sigue mandando el lerp de
+    // arriba (server-authoritative). Aquí solo elegimos walk/quieto según si
+    // hay desplazamiento en este intervalo de snapshot, y avanzamos el mixer.
+    if (ud.anim) {
+      // "moving" = el goblin se está desplazando entre snapshots Y el lerp aún
+      // no terminó (t<1). Cuando t llega a 1 y no hay nuevo target, queda quieto.
+      const moving = moveLen2 > 0.01 && t < 1;
+      const speed = moving ? Math.sqrt(moveLen2) : 0;
+      try {
+        npcAnimated.setLocomotion(ud.anim, moving, speed);
+        npcAnimated.updateAnimatedInstance(ud.anim, dt);
+      } catch {}
+    }
+
     // ---- Hit reaction kick ----
+    // Sesión 39 — Para NPCs animados, el "kick" posicional se desactiva: el
+    // flinch del React (animación) reemplaza el empujón. Mantenemos el flash.
     const r = ud.reaction;
     let kickX = 0, kickZ = 0;
-    if (r && r.until > nowS) {
+    if (!ud.anim && r && r.until > nowS) {
       const remaining = (r.until - nowS) / NPC_REACT_DURATION_S;
       kickX = r.kickX * remaining;
       kickZ = r.kickZ * remaining;
@@ -681,6 +775,17 @@ function flashHit(npcId) {
   if (!group || !group.userData) return;
   const player = getPlayer?.();
   if (!player) return;
+
+  // Sesión 39 — Si el NPC es animado, disparar la animación React (flinch).
+  // El flash rojo se mantiene (abajo, vía r.wasFlashing) pero el kick NO.
+  if (group.userData.anim) {
+    try { npcAnimated.triggerReact(group.userData.anim); } catch {}
+    const r = group.userData.reaction;
+    r.until = (performance.now() / 1000) + NPC_REACT_DURATION_S;
+    r.wasFlashing = true;
+    return;
+  }
+
   // Bloque 2.5: kick desde la pos visual actual (lerpeada) hacia donde el
   // player NO está — empuja al NPC en dirección opuesta al player.
   const cx = group.position.x;

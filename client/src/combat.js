@@ -412,6 +412,12 @@ async function doAttackTickNpc() {
   if (typeof window !== 'undefined' && typeof window.__worldSpawnHitsplat === 'function') {
     try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
   }
+  // Sesión 39 — Pieza 1: marcar este hit como LOCAL para que el feedback
+  // derivado del snapshot (que ven los demás jugadores) no se lo duplique a
+  // este cliente, que ya mostró el hitsplat al instante arriba.
+  if (typeof window !== 'undefined' && typeof window.__worldMarkLocalHit === 'function') {
+    try { window.__worldMarkLocalHit(npcId); } catch {}
+  }
 
   if (typeof window !== 'undefined' && typeof window.__spawnXpDrops === 'function' && result.xp_gained) {
     try { window.__spawnXpDrops(result.xp_gained); } catch {}
