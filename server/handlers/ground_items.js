@@ -229,3 +229,71 @@ export async function handleGroundItemsPickup(request, env) {
     return json({ error: 'internal_error', message: err.message }, 500);
   }
 }
+
+// ============================================================
+// Sesión 39 — DROP de un ítem del inventario al suelo
+// ============================================================
+//
+// POST /api/ground_items/drop  body: { slot, userPos:{x,z} }
+// Saca el ítem del slot del inventario y lo crea como ground_item en la
+// posición del jugador. dropped_by_user = el que dropea (privacidad 60s y
+// luego público, mismo modelo que el loot). Así los demás lo ven y lo pueden
+// recoger después de la ventana de privacidad.
+//
+// Anti-cheat: misma validación de posición que el pickup (si la pos del
+// cliente está absurdamente lejos de la persistida, usa la persistida).
+export async function handleGroundItemsDrop(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  const userId = session.user_id;
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+
+  const slot = parseInt(body?.slot, 10);
+  if (!Number.isFinite(slot) || slot < 0) return json({ error: 'invalid_slot' }, 400);
+
+  const now = Date.now();
+  const db = makeDbAdapter(env);
+
+  try {
+    // Ítem en el slot.
+    const inv = await db.first(
+      'SELECT item_id, quantity FROM user_inventory WHERE user_id = ? AND slot_index = ?',
+      [userId, slot]
+    );
+    if (!inv) return json({ error: 'empty_slot' }, 400);
+
+    // Posición del jugador (mismo patrón anti-desfase que el pickup).
+    const userRow = await db.first('SELECT last_x, last_z FROM users WHERE id = ?', [userId]);
+    if (!userRow) return json({ error: 'user_not_found' }, 404);
+    const persistedX = userRow.last_x ?? 0;
+    const persistedZ = userRow.last_z ?? 0;
+    let userX = persistedX, userZ = persistedZ;
+    const cliPos = body?.userPos;
+    if (cliPos && Number.isFinite(cliPos.x) && Number.isFinite(cliPos.z)) {
+      const dpx = cliPos.x - persistedX, dpz = cliPos.z - persistedZ;
+      const MAX_DESYNC_M = 50;
+      if (dpx * dpx + dpz * dpz <= MAX_DESYNC_M * MAX_DESYNC_M) {
+        userX = cliPos.x; userZ = cliPos.z;
+      }
+    }
+
+    // Sacar del inventario (la pila entera) y crear el ground item.
+    await db.run(
+      'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?',
+      [userId, slot]
+    );
+    const despawnAt = now + 120_000;  // mismo lifetime que el loot (2 min)
+    await db.run(
+      `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [inv.item_id, inv.quantity, userX, userZ, now, userId, despawnAt]
+    );
+
+    return json({ ok: true, item_id: inv.item_id, qty: inv.quantity, slot });
+  } catch (err) {
+    console.error('[ground_items/drop]', err);
+    return json({ error: 'drop_failed' }, 500);
+  }
+}
