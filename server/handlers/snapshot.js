@@ -33,7 +33,7 @@
 import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 // Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
-import { tickNpcAggro } from '../combat_engine.js';
+import { tickNpcAggro, tickNpcWander } from '../combat_engine.js';
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
 // Para 90 NPCs en un mundo de 4096m, 500m típicamente devuelve 30-50 NPCs.
@@ -225,6 +225,12 @@ export async function handleWorldSnapshot(request, env) {
       await tickNpcAggro(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
     } catch (err) {
       console.error('[snapshot/npc-ai]', err);
+    }
+    // Sesión 39 — wander de pasivos (pollos/vacas deambulan). Separado del agro.
+    try {
+      await tickNpcWander(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
+    } catch (err) {
+      console.error('[snapshot/npc-wander]', err);
     }
 
     // Bloque 2: formato idéntico al de combat_engine.getCombatState para que
