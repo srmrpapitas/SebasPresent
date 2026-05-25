@@ -19,7 +19,7 @@
 //   - beta 0.1 = cierre Bloque 0 (S32)
 //   - beta 0.2 = cierre Bloque 1 / arranque Bloque 2 (S34) ← acá
 //   - beta 0.3 = cierre Bloque 2 (Combate ranged + magic)
-export const BUILD = 'beta 0.2';
+export const BUILD = 'beta 0.2-dev';
 
 /** Fecha del último cambio mayor — informativa, no se compara con server. */
 export const BUILD_DATE = '2026-05-21';
