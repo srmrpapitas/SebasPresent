@@ -498,6 +498,31 @@ function syncMeshes() {
       scene.add(mesh);
       npcMeshes.set(npc.id, mesh);
     } else {
+      // Sesión 39 FIX (el bug real del T-pose): si este NPC es de tipo animado
+      // (goblin) pero su mesh se creó ANTES de que el template terminara de
+      // cargar, quedó HORNEADO (sin esqueleto) para siempre → se veía en T-pose
+      // y flotando, sin animar nunca. Ahora que el template está listo, lo
+      // UPGRADEAMOS: quitamos el mesh horneado y creamos el animado.
+      if (npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id)
+          && !mesh.userData.anim
+          && npcAnimated.isReady()) {
+        scene.remove(mesh);
+        if (mesh.userData?.anim) {
+          try { npcAnimated.disposeAnimatedInstance(mesh.userData.anim); } catch {}
+        }
+        mesh.traverse?.(obj => {
+          if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
+          if (obj.material && !obj.userData?.shared) {
+            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+            else obj.material.dispose();
+          }
+        });
+        mesh = createMesh(npc);
+        if (!mesh) continue;
+        scene.add(mesh);
+        npcMeshes.set(npc.id, mesh);
+        console.log('[npc_renderer] goblin upgradeado a animado (template ya listo)');
+      }
       // Mesh ya existía: arrancar un nuevo lerp desde la pos VISUAL actual
       // hacia la pos del nuevo snapshot. Si el delta es muy grande, snap
       // directo (probable respawn/teleport del server).
