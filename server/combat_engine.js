@@ -1904,7 +1904,7 @@ async function safeInsertInvSlot(db, userId, itemId, qty, preferredSlot) {
 //
 // Tuneable: NPC_MOVE_SPEED_MPS, NPC_LEASH_M.
 
-const NPC_MOVE_SPEED_MPS = 2.2;   // m/s de persecución (se afina jugando)
+const NPC_MOVE_SPEED_MPS = 2.55;  // m/s de persecución (Nico pidió subirlo un pelín)
 const NPC_LEASH_M = 12.0;         // si el target se aleja > esto del SPAWN, de-aggro
 const NPC_AI_MAX_STEP_MS = 400;   // cap del dt por tick (evita saltos si un poll tardó)
 

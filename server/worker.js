@@ -189,6 +189,8 @@ export default {
         response = await groundItems.handleGroundItemsList(request, env);
       } else if (path === '/api/ground_items/pickup' && method === 'POST') {
         response = await groundItems.handleGroundItemsPickup(request, env);
+      } else if (path === '/api/ground_items/drop' && method === 'POST') {
+        response = await groundItems.handleGroundItemsDrop(request, env);
 
       // ----- Skills (Sesión 14) -----
       } else if (path === '/api/skills' && method === 'GET') {
