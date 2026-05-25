@@ -654,9 +654,12 @@ async function reviveExpiredNpcs(db, opts = {}) {
          died_at = NULL,
          in_combat_with = NULL,
          last_attack_at = NULL,
-         x = (SELECT spawn_x FROM npc_defs WHERE id = npc_instances.def_id)
+         last_moved_at = NULL,
+         x = COALESCE(npc_instances.spawn_x,
+                      (SELECT spawn_x FROM npc_defs WHERE id = npc_instances.def_id))
              + (((ABS(RANDOM()) % 2000) - 1000) / 200.0),
-         z = (SELECT spawn_z FROM npc_defs WHERE id = npc_instances.def_id)
+         z = COALESCE(npc_instances.spawn_z,
+                      (SELECT spawn_z FROM npc_defs WHERE id = npc_instances.def_id))
              + (((ABS(RANDOM()) % 2000) - 1000) / 200.0)
      WHERE status = 1
        AND died_at IS NOT NULL
@@ -949,7 +952,15 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   if (!npcKilled) {
     const npcCooldownMs = npc.attack_speed_ticks * TICK_MS;
     const npcReady = !npc.last_attack_at || (now - npc.last_attack_at) >= npcCooldownMs;
-    if (npcReady) {
+    // Sesión 39 fix — El NPC SOLO contraataca si VOS estás dentro de SU rango
+    // de melé. Antes contraatacaba siempre que su cooldown estuviera listo, sin
+    // mirar distancia: por eso al pegarle con FLECHA desde lejos te devolvía el
+    // golpe al instante (imposible en OSRS). Si lo atacás a distancia, el goblin
+    // no te pega de vuelta acá — en su lugar te hace agro y te PERSIGUE (eso lo
+    // maneja tickNpcAggro), y recién te pega cuando te alcanza a melé.
+    const npcMeleeRange = Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE);
+    const userInNpcRange = d <= npcMeleeRange;
+    if (npcReady && userInNpcRange) {
       npcCounterHit = rollHit(rng, npc.attack_lvl, userLvls.defence, npc.max_hit);
       dmgToUser = Math.min(npcCounterHit.damage, stats.hp_current);
       const userHpAfter = stats.hp_current - dmgToUser;
@@ -1969,7 +1980,14 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
 
     // ---- AGRO: adquirir target si estoy en su radio y no tiene (o es el viewer).
     let target = npc.in_combat_with;
-    if (!target && dToViewer <= npc.aggro_radius) {
+    // Sesión 39 fix — Si el target guardado NO es el viewer pero el viewer SÍ
+    // está dentro del radio de agro, re-adquirimos al viewer. Esto evita que un
+    // "in_combat_with" viejo/fantasma (un jugador que se fue, o un lock que
+    // quedó de una sesión anterior) bloquee el agro para siempre. El NPC
+    // siempre puede re-enganchar a alguien que tiene al lado.
+    if (dToViewer <= npc.aggro_radius && target !== viewer.user_id) {
+      target = viewer.user_id;
+    } else if (!target && dToViewer <= npc.aggro_radius) {
       target = viewer.user_id;
     }
     // Si su target es el viewer pero el viewer se fue del leash desde el spawn,
