@@ -1918,6 +1918,10 @@ async function safeInsertInvSlot(db, userId, itemId, qty, preferredSlot) {
 const NPC_MOVE_SPEED_MPS = 2.55;  // m/s de persecución (Nico pidió subirlo un pelín)
 const NPC_LEASH_M = 12.0;         // si el target se aleja > esto del SPAWN, de-aggro
 const NPC_AI_MAX_STEP_MS = 400;   // cap del dt por tick (evita saltos si un poll tardó)
+// Sesión 39 — Wander (deambular) de NPCs pasivos (pollos/vacas).
+const WANDER_SPEED_MPS = 0.8;     // lento, tipo pastoreo
+const WANDER_RADIUS_M = 6.0;      // qué tan lejos del spawn deambula
+const WANDER_BUCKET_MS = 3000;    // cada ~3s elige un nuevo destino random
 
 /**
  * Avanza la IA de los NPCs agresivos cercanos al centro del snapshot.
@@ -2075,6 +2079,86 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
       } catch {}
       changes.set(npc.id, { x: newX, z: newZ, in_combat_with: target || null });
     }
+  }
+
+  return changes;
+}
+
+// ============================================================
+// Sesión 39 — WANDER (deambular) de NPCs PASIVOS (pollos/vacas)
+// ============================================================
+//
+// Los pasivos no persiguen ni atacan, pero deben MOVERSE solos para que el
+// mundo se sienta vivo. Mismo patrón "on-read" que tickNpcAggro: cuando un
+// cliente pollea, los pasivos cercanos dan un pasito hacia un destino random
+// cerca de su spawn. El destino se elige por BUCKET de tiempo determinista
+// (mismo id + bucket → mismo destino) para que polls concurrentes coincidan y
+// no haya saltos. Server-authoritative → el cliente lo interpola suave.
+//
+// Tuneable: WANDER_SPEED_MPS, WANDER_RADIUS_M, WANDER_BUCKET_MS.
+
+// PRNG determinista a partir de un entero (mulberry32-ish).
+function _seededRand(seed) {
+  let t = (seed + 0x6D2B79F5) | 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+export async function tickNpcWander(env, viewer, now, opts = {}) {
+  const changes = new Map();
+  if (!viewer || !Number.isFinite(viewer.x) || !Number.isFinite(viewer.z)) return changes;
+
+  const R = 60;
+  let npcs;
+  try {
+    npcs = await env.DB.prepare(
+      `SELECT i.id, i.x, i.z, i.spawn_x, i.spawn_z, i.last_moved_at, i.in_combat_with,
+              d.behavior
+       FROM npc_instances i
+       JOIN npc_defs d ON d.id = i.def_id
+       WHERE i.status = 0
+         AND d.behavior != 'aggressive'
+         AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`
+    ).bind(viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
+  } catch {
+    return changes;
+  }
+
+  const rows = (npcs && npcs.results) || [];
+  const bucket = Math.floor(now / WANDER_BUCKET_MS);
+
+  for (const npc of rows) {
+    // No mover si por alguna razón está en combate (defensivo).
+    if (npc.in_combat_with) continue;
+
+    const homeX = npc.spawn_x != null ? npc.spawn_x : npc.x;
+    const homeZ = npc.spawn_z != null ? npc.spawn_z : npc.z;
+
+    // Destino del bucket actual: punto random determinista cerca del spawn.
+    const seed = (npc.id * 73856093) ^ bucket;
+    const ang = _seededRand(seed) * Math.PI * 2;
+    const rad = _seededRand(seed + 1) * WANDER_RADIUS_M;
+    const targetX = homeX + Math.cos(ang) * rad;
+    const targetZ = homeZ + Math.sin(ang) * rad;
+
+    const dx = targetX - npc.x, dz = targetZ - npc.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.15) continue;  // ya llegó: quieto hasta el próximo bucket
+
+    const lastMoved = npc.last_moved_at || (now - 250);
+    const dtMs = Math.min(Math.max(0, now - lastMoved), NPC_AI_MAX_STEP_MS);
+    if (dtMs <= 0) continue;
+    const step = Math.min(WANDER_SPEED_MPS * (dtMs / 1000), d);
+    const newX = npc.x + (dx / d) * step;
+    const newZ = npc.z + (dz / d) * step;
+
+    try {
+      await env.DB.prepare(
+        `UPDATE npc_instances SET x = ?, z = ?, last_moved_at = ? WHERE id = ?`
+      ).bind(newX, newZ, now, npc.id).run();
+    } catch {}
+    changes.set(npc.id, { x: newX, z: newZ });
   }
 
   return changes;
