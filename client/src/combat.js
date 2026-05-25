@@ -67,6 +67,13 @@ let currentTarget = null;
 let currentTargetNpcId    = null;
 let currentTargetPlayerId = null;
 let attackTimer = null;
+// Sesión 39 — fix exploit multi-click: token de generación. Cada engage (o
+// disengage) lo incrementa. Cada tick recuerda con qué generación arrancó y
+// NO reprograma su setTimeout si la generación ya cambió (clickeaste otro
+// target durante el await del ataque). Sin esto, cambiar de target rápido
+// dejaba CADENAS de ataque huérfanas corriendo en paralelo → atacabas a
+// varios NPCs a la vez ganando XP múltiple.
+let attackGen = 0;
 let pollTimer = null;
 let listeners = [];
 let panelEl = null;
@@ -220,6 +227,12 @@ function stopPolling() {
 
 export async function engageNpc(npcId) {
   if (currentTargetNpcId === npcId && attackTimer) return;
+  // Sesión 39 — fix exploit: cancelar CUALQUIER loop de ataque previo antes
+  // de arrancar el nuevo target, y bumpear la generación para invalidar ticks
+  // viejos que estén a mitad de su await. Un solo target a la vez.
+  if (attackTimer) { clearTimeout(attackTimer); attackTimer = null; }
+  attackGen++;
+  const myGen = attackGen;
   // Si veníamos atacando otro target, lo limpiamos
   currentTargetPlayerId = null;
   // Reset anti-loop de auto-retaliate (engage manual recalibra)
@@ -234,7 +247,7 @@ export async function engageNpc(npcId) {
     try { window.__playerEnterCombat(npcId); } catch {}
   }
   if (isTabOpen) render();
-  await doAttackTick();
+  await doAttackTick(myGen);
 }
 
 /**
@@ -243,6 +256,10 @@ export async function engageNpc(npcId) {
  */
 export async function engagePlayer(targetUserId) {
   if (currentTargetPlayerId === targetUserId && attackTimer) return;
+  // Sesión 39 — fix exploit: mismo patrón que engageNpc.
+  if (attackTimer) { clearTimeout(attackTimer); attackTimer = null; }
+  attackGen++;
+  const myGen = attackGen;
   currentTargetNpcId = null;
   currentTarget = null;
   currentTargetPlayerId = targetUserId;
@@ -257,7 +274,7 @@ export async function engagePlayer(targetUserId) {
     try { window.__playerEnterCombat(`player_${targetUserId}`); } catch {}
   }
   if (isTabOpen) render();
-  await doAttackTick();
+  await doAttackTick(myGen);
 }
 
 export function disengage() {
@@ -265,6 +282,7 @@ export function disengage() {
   currentTargetNpcId = null;
   currentTargetPlayerId = null;
   currentTarget = null;
+  attackGen++;   // Sesión 39 — invalida cualquier tick en vuelo
   if (attackTimer) { clearTimeout(attackTimer); attackTimer = null; }
   // Slice 5d — animación: si estábamos en combate, envaina la espada.
   if (wasEngaged && typeof window !== 'undefined' && typeof window.__playerExitCombat === 'function') {
@@ -273,17 +291,21 @@ export function disengage() {
   if (isTabOpen) render();
 }
 
-async function doAttackTick() {
+async function doAttackTick(gen = attackGen) {
+  // Sesión 39 — si la generación cambió (otro engage/disengage ocurrió),
+  // este tick es de un target viejo: abortar sin atacar ni reprogramar.
+  if (gen !== attackGen) return;
   // Sesión 27 Bloque 3 — Target dual NPC/player.
   if (currentTargetNpcId !== null) {
-    await doAttackTickNpc();
+    await doAttackTickNpc(gen);
   } else if (currentTargetPlayerId !== null) {
-    await doAttackTickPlayer();
+    await doAttackTickPlayer(gen);
   }
 }
 
-async function doAttackTickNpc() {
+async function doAttackTickNpc(gen = attackGen) {
   if (currentTargetNpcId === null) return;
+  if (gen !== attackGen) return;   // Sesión 39 — target cambió antes de empezar
 
   // Sesión 33 día 2 — el style decide si podemos atacar (ammo/runas/etc).
   // Para melee siempre devuelve {ok:true}. Cuando se implemente ranged/magic,
@@ -317,10 +339,17 @@ async function doAttackTickNpc() {
     }
   }
 
+  // Sesión 39 — fix exploit multi-click: si mientras esperábamos la respuesta
+  // del server el jugador cambió de target (otro engage/disengage), ESTE tick
+  // quedó obsoleto. Abortar ANTES de procesar XP/hitsplat/reprogramar, para no
+  // dejar dos cadenas de ataque vivas a la vez. El daño ya lo aplicó el server
+  // (autoritativo), pero NO seguimos atacando a este NPC viejo.
+  if (gen !== attackGen || currentTargetNpcId !== npcId) return;
+
   if (result.error) {
     if (result.error === 'on_cooldown') {
       const wait = (result.cooldown_remaining_ms || TICK_MS) + 50;
-      attackTimer = setTimeout(() => doAttackTick(), wait);
+      if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), wait);
       return;
     }
     if (result.error === 'out_of_range') {
@@ -500,14 +529,15 @@ async function doAttackTickNpc() {
   const nextTickMs = (result && typeof result.cooldown_ms === 'number')
     ? result.cooldown_ms
     : TICK_MS;
-  attackTimer = setTimeout(() => doAttackTick(), nextTickMs);
+  if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), nextTickMs);
 }
 
 // ============================================================
 // Sesión 27 Bloque 3 — Tick PVP (target = otro player)
 // ============================================================
-async function doAttackTickPlayer() {
+async function doAttackTickPlayer(gen = attackGen) {
   if (currentTargetPlayerId === null) return;
+  if (gen !== attackGen) return;   // Sesión 39 — target cambió antes de empezar
 
   // Sesión 33 día 2 — mismo canAttack check que en doAttackTickNpc.
   let canAttackResult = { ok: true };
@@ -545,10 +575,14 @@ async function doAttackTickPlayer() {
     }
   }
 
+  // Sesión 39 — fix exploit multi-click (PVP): abortar si el target cambió
+  // durante el await. Mismo razonamiento que en doAttackTickNpc.
+  if (gen !== attackGen || currentTargetPlayerId !== targetId) return;
+
   if (result.error) {
     if (result.error === 'on_cooldown') {
       const wait = (result.cooldown_remaining_ms || TICK_MS) + 50;
-      attackTimer = setTimeout(() => doAttackTick(), wait);
+      if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), wait);
       return;
     }
     if (result.error === 'out_of_range') {
@@ -704,7 +738,7 @@ async function doAttackTickPlayer() {
   const nextTickMs = (result && typeof result.cooldown_ms === 'number')
     ? result.cooldown_ms
     : TICK_MS;
-  attackTimer = setTimeout(() => doAttackTick(), nextTickMs);
+  if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), nextTickMs);
 }
 
 // ============================================================
