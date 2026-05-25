@@ -40,6 +40,7 @@ import { installHealthCheck }    from './health_check.js';
 import { installOverlay }        from './dev_overlay.js';
 import { installWeaponDebugBridge } from './weapon_debug.js';
 import { installInspector }      from './inspector.js';
+import { installCombatLog }      from './combat_log.js';
 import { BUILD }                 from '../build.js';
 
 let initialized = false;
@@ -59,6 +60,9 @@ export function initDebugSystem() {
   installOverlay();
   installWeaponDebugBridge();
   installInspector();
+  // Sesión 39 — log de combate (observer puro: trampea hooks globales + fetch).
+  // Va al final: no depende de nada del resto, y los traps son order-independent.
+  installCombatLog();
 
   console.log('%c[debug] SebasPresent debug system ready · build ' + BUILD,
     'background:#1a1410;color:#e8c560;padding:2px 6px;border-radius:3px;font-weight:bold');

@@ -261,6 +261,8 @@ function createPanel() {
   btn('Bones',           () => window.__diag?.printBones());
   btn('Snapshot',        () => window.__diag?.printSnapshot());
   btn('Weapon panel',    () => window.__weaponDebug?.());
+  // Sesión 39 — copia el log de combate al portapapeles (clave en móvil).
+  btn('Combat log',      () => window.__combatLog?.copy());
   btn('Clear cache',     clearCacheAndReload);
   btn('Reload',          () => window.location.reload());
 
