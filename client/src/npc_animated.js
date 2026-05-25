@@ -79,21 +79,24 @@ export function isReady() { return _ready; }
 // ============================================================
 
 /**
- * Sesión 39 FIX v3 (definitivo) — El goblin flotaba SOLO durante el React.
- * Diagnóstico real (medido sobre los FBX): cada clip Mixamo tiene las caderas
- * (Hips) a una Y distinta — walk=200.45, react=191.60 (unidades Mixamo). El
- * grounding del modelo se calibra contra UNA altura; cuando el React mueve las
- * caderas a OTRA Y, el goblin salta verticalmente (flota o se hunde).
+ * Sesión 39 FIX v4 (DEFINITIVO, con diagnóstico medido sobre los FBX).
  *
- * Solución: fijamos el track de posición de caderas de TODOS los clips a una
- * misma posición de referencia (X,Y,Z) — la del primer frame del clip de
- * locomoción base (_refHipsPos). Así ninguna animación traslada las caderas:
- *   - X/Z fijos  → no hay deriva horizontal (sin desync; la pos la manda el server).
- *   - Y fija      → todos los clips a la MISMA altura → cero salto entre
- *                   walk / idle / react. Solo rotan los huesos (flinch, piernas).
+ * Causa real del flote: cada clip Mixamo trae un track de POSICIÓN por hueso
+ * (no solo caderas). El esqueleto del goblin sale del GLB (convertido con
+ * assimp, escala ~100). Los clips walk/react son FBX sueltos (FBXLoader,
+ * escala ~200) → sus posiciones de hueso están al ~doble. Al aplicarlas sobre
+ * el esqueleto del GLB, TODOS los huesos se estiran/desplazan → el goblin se
+ * infla y flota. Anclar solo las caderas no alcanzaba.
+ *
+ * Solución estándar de retargeting: en los clips FORÁNEOS (FBX sueltos) se
+ * quitan TODOS los tracks de posición y se dejan solo las ROTACIONES. Las
+ * longitudes/offsets de hueso las define el esqueleto del GLB (bind pose); la
+ * animación solo rota. En el clip NATIVO (run, embebido en el mismo GLB) las
+ * posiciones SÍ coinciden, así que se conservan y solo se neutraliza el
+ * desplazamiento horizontal de las caderas (root motion → lo manda el server).
+ *
+ * @param native  true = clip del propio GLB (run); false = FBX suelto (walk/react)
  */
-let _refHipsPos = null;   // [x,y,z] de referencia (del primer clip que la trae)
-
 function normalizeTrackNames(clip) {
   for (const track of clip.tracks) {
     const idx = track.name.indexOf('mixamorig:');
@@ -102,23 +105,22 @@ function normalizeTrackNames(clip) {
   return clip;
 }
 
-function stripRootMotion(clip, isReference = false) {
-  for (const t of clip.tracks) {
-    if (/mixamorig:Hips\.position$/i.test(t.name) && t.values && t.values.length >= 3) {
-      // Capturar la posición de referencia desde el clip EMBEBIDO (run), que
-      // está en el espacio nativo del esqueleto del GLB (mismo que el bind pose
-      // usado para el grounding). Los FBX sueltos vienen en otra escala y se
-      // re-anclan a esta referencia.
-      if (isReference || !_refHipsPos) {
-        _refHipsPos = [t.values[0], t.values[1], t.values[2]];
-      }
-      const [rx, ry, rz] = _refHipsPos;
-      for (let i = 0; i < t.values.length; i += 3) {
-        t.values[i] = rx;
-        t.values[i + 1] = ry;
-        t.values[i + 2] = rz;
+function stripRootMotion(clip, native = false) {
+  if (native) {
+    // Clip nativo (run): conservar posiciones; solo neutralizar X/Z de caderas.
+    for (const t of clip.tracks) {
+      if (/mixamorig:Hips\.position$/i.test(t.name) && t.values && t.values.length >= 3) {
+        const x0 = t.values[0], z0 = t.values[2];
+        for (let i = 0; i < t.values.length; i += 3) {
+          t.values[i] = x0;       // X fijo (sin deriva horizontal)
+          t.values[i + 2] = z0;   // Z fijo
+          // Y se conserva (es la del propio esqueleto, escala correcta)
+        }
       }
     }
+  } else {
+    // Clip foráneo (FBX): QUITAR todos los tracks de posición. Solo rotaciones.
+    clip.tracks = clip.tracks.filter(t => !/\.position$/i.test(t.name));
   }
   return clip;
 }
@@ -127,8 +129,8 @@ function prepClip(clip, name, cfg) {
   clip = clip.clone();
   clip.name = name;
   normalizeTrackNames(clip);
-  // El clip embebido (run) define la posición de caderas de referencia, porque
-  // está en el espacio nativo del esqueleto del GLB.
+  // 'embedded' (run) = nativo del GLB → conserva posiciones (escala correcta).
+  // 'fbx' (walk/react) = foráneo → solo rotaciones (evita el estiramiento/flote).
   if (cfg.stripRoot) stripRootMotion(clip, cfg.kind === 'embedded');
   return clip;
 }
