@@ -73,6 +73,12 @@ let started = false;
 // Estado del loop activo (null si no estamos talando):
 //   { tree_type, tx, tz, lastChopAt, fails, waitingResponse, started }
 let activeChop = null;
+// Sesión 39 — fix exploit multi-click en tala: token de generación. Cada
+// startChopAt/stopChop lo incrementa. attemptChop recuerda con qué generación
+// arrancó; si cuando vuelve la respuesta la generación cambió (clickeaste otro
+// árbol), NO procesa el resultado ni reabre el gate del árbol nuevo. Sin esto,
+// clickear varios árboles disparaba wcChop concurrentes = super-tala con XP x N.
+let chopGen = 0;
 
 // Map de depletedKey → { restore() } para los árboles ocultados.
 // key = `${tree_type}|${xRound}|${zRound}` para identificar idéntico al server.
@@ -187,6 +193,7 @@ export function startChopAt(treeType, tx, tz) {
 
   // Activar estado pendiente — el update() arrancará el chop loop cuando
   // estemos en rango.
+  chopGen++;   // Sesión 39 — invalida cualquier attemptChop en vuelo del árbol anterior
   activeChop = {
     tree_type: treeType,
     tx, tz,
@@ -194,6 +201,7 @@ export function startChopAt(treeType, tx, tz) {
     fails: 0,
     waitingResponse: false,
     started: false,
+    gen: chopGen,
   };
 }
 
@@ -203,6 +211,7 @@ export function stopChop(reason = 'user') {
   if (reason !== 'user' && reason !== 'depleted' && reason !== 'tap_ground') {
     console.log('[woodcutting] stopChop:', reason);
   }
+  chopGen++;   // Sesión 39 — invalida attemptChop en vuelo
   activeChop = null;
 
   // Sesión 33 (B-001) — Restaurar el arma original si hicimos swap.
@@ -278,7 +287,7 @@ export function update(dt) {
         activeChop.tickMs = Math.max(MIN_CHOP_TICK_MS, dur);
       }
     }
-    attemptChop(activeChop.tree_type, activeChop.tx, activeChop.tz)
+    attemptChop(activeChop.tree_type, activeChop.tx, activeChop.tz, activeChop.gen)
       .catch(err => console.warn('[woodcutting] chop err:', err?.message));
   }
 }
@@ -286,9 +295,14 @@ export function update(dt) {
 // ============================================================
 // Internals
 // ============================================================
-async function attemptChop(treeType, tx, tz) {
+async function attemptChop(treeType, tx, tz, gen = chopGen) {
   try {
     const res = await api.wcChop(treeType, tx, tz);
+    // Sesión 39 — fix exploit: si durante el await el jugador cambió de árbol
+    // (otro startChopAt) o paró, esta respuesta es de un árbol viejo. NO la
+    // procesamos (no XP, no abrir gate del árbol nuevo). El server ya aplicó
+    // su lógica autoritativa; el cliente simplemente ignora el resultado stale.
+    if (gen !== chopGen) return;
     if (activeChop) activeChop.waitingResponse = false;
     if (!res?.ok) return;
 
