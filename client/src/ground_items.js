@@ -103,6 +103,7 @@ export function start(opts) {
 
 export function stop() {
   if (!started) return;
+  closeLootMenu();   // Sesión 39 — cerrar menú de loot si quedó abierto
   // Quitar todos los meshes de items de la escena
   for (const id of Array.from(groundItemsMap.keys())) {
     removeItem(id);
@@ -157,6 +158,139 @@ export function tryHandleTap(clientX, clientY) {
 
   triggerPickup(item);
   return true;
+}
+
+// ============================================================
+// Sesión 39 — LONG-PRESS: menú de loot (lista de ítems, elegís cuál coger)
+// ============================================================
+let lootMenuEl = null;
+
+function ensureLootMenuCss() {
+  if (document.getElementById('lootMenuCss')) return;
+  const st = document.createElement('style');
+  st.id = 'lootMenuCss';
+  // Reusa el look del menú OSRS de NPCs. Si esa clase ya existe, esto solo
+  // agrega lo específico de loot (cantidad a la derecha).
+  st.textContent = `
+    .loot-menu { position: fixed; z-index: 10000; min-width: 160px; max-width: 240px;
+      background: rgba(28,22,14,0.97); border: 1px solid #8a6d3b; border-radius: 8px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.55); overflow: hidden; font-size: 14px; }
+    .loot-menu-header { padding: 8px 12px; font-weight: 700; color: #e8d9a8;
+      background: rgba(0,0,0,0.25); border-bottom: 1px solid #6b542d; }
+    .loot-menu-row { padding: 9px 12px; color: #e6e0cf; display: flex; justify-content: space-between;
+      gap: 10px; cursor: pointer; }
+    .loot-menu-row:active { background: rgba(138,109,59,0.35); }
+    .loot-menu-row .qty { color: #b9a66f; }
+    .loot-menu-row.all { border-top: 1px solid #6b542d; color: #cbe8a0; }
+    .loot-menu-row.cancel { border-top: 1px solid #6b542d; color: #d88; }
+  `;
+  document.head.appendChild(st);
+}
+
+function closeLootMenu() {
+  if (lootMenuEl) { lootMenuEl.remove(); lootMenuEl = null; }
+}
+
+/**
+ * Long-press sobre loot: muestra la LISTA de ítems del montón tapeado y deja
+ * elegir cuál coger (o coger todo). Devuelve true si abrió el menú (consumió
+ * el gesto), false si no había loot bajo el dedo.
+ */
+export function openLootMenuAt(clientX, clientY) {
+  if (!started) return false;
+  closeLootMenu();
+
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera({ x: nx, y: ny }, camera);
+
+  const tapped = findItemAtTap();
+  if (!tapped) return false;
+
+  // Juntar todos los ítems del "montón": los que están cerca del tapeado.
+  const PILE_R = 1.2;
+  const pile = [];
+  for (const it of groundItemsMap.values()) {
+    const dx = it.x - tapped.x, dz = it.z - tapped.z;
+    if (dx * dx + dz * dz <= PILE_R * PILE_R) pile.push(it);
+  }
+  if (pile.length === 0) pile.push(tapped);
+
+  ensureLootMenuCss();
+  const menu = document.createElement('div');
+  menu.className = 'loot-menu';
+  let html = `<div class="loot-menu-header">Suelo (${pile.length})</div>`;
+  for (const it of pile) {
+    const qty = it.qty > 1 ? `<span class="qty">x${it.qty}</span>` : '';
+    html += `<div class="loot-menu-row" data-pick="${it.id}"><span>${escapeLoot(it.name || it.item_id)}</span>${qty}</div>`;
+  }
+  if (pile.length > 1) {
+    html += `<div class="loot-menu-row all" data-pickall="1">⤓ Coger todo</div>`;
+  }
+  html += `<div class="loot-menu-row cancel" data-cancel="1">✕ Cancelar</div>`;
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = clientX + 8, top = clientY + 8;
+  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+  if (top + mh > window.innerHeight - 4) top = clientY - mh - 8;
+  if (top < 4) top = 4;
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  lootMenuEl = menu;
+
+  menu.querySelectorAll('[data-pick],[data-pickall],[data-cancel]').forEach(row => {
+    row.addEventListener('pointerup', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (row.dataset.cancel) { closeLootMenu(); return; }
+      if (row.dataset.pickall) {
+        // Coger todo: caminar hacia el montón y recoger cada uno al llegar.
+        for (const it of pile) requestPickup(it);
+        closeLootMenu();
+        return;
+      }
+      const id = parseInt(row.dataset.pick, 10);
+      const it = groundItemsMap.get(id);
+      if (it) requestPickup(it);
+      closeLootMenu();
+    });
+  });
+
+  // Cerrar al tocar fuera, y autocierre por tiempo.
+  const outside = (e) => {
+    if (lootMenuEl && !lootMenuEl.contains(e.target)) { closeLootMenu(); cleanup(); }
+  };
+  const cleanup = () => document.removeEventListener('pointerdown', outside, true);
+  setTimeout(() => document.addEventListener('pointerdown', outside, true), 100);
+  setTimeout(() => { if (lootMenuEl === menu) { closeLootMenu(); cleanup(); } }, 6000);
+  return true;
+}
+
+/**
+ * Pide recoger un ítem: si estamos cerca lo recoge ya; si no, camina hacia él
+ * y lo recoge al llegar (mismo mecanismo que el tap). Para "coger todo" se
+ * encola el último como pendiente de auto-walk; los que ya estén en rango se
+ * recogen al instante.
+ */
+function requestPickup(item) {
+  if (!item) return;
+  const player = getPlayer();
+  if (!player) return;
+  const dx = item.x - player.position.x;
+  const dz = item.z - player.position.z;
+  if (Math.hypot(dx, dz) <= PICKUP_RADIUS_M) {
+    pickupItem(item.id);
+  } else {
+    pendingPickupItemId = item.id;
+    setPlayerTargetCb(item.x, item.z);
+  }
+}
+
+function escapeLoot(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
 // ============================================================

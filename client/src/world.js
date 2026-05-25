@@ -2276,8 +2276,11 @@ function setupInput() {
 
     // Long-press → menú contextual estilo OSRS
     onLongPress: (cx, cy) => {
-      // Sesión 27 Bloque 3 — long-press primero intenta peer (PVP);
-      // si no impactó un peer, intenta NPC.
+      // Sesión 39 — primero el loot del suelo: si hay ítems bajo el dedo,
+      // abrir la lista para elegir cuál coger (estilo OSRS). Es lo más
+      // "foreground" y lo que el jugador espera priorizar.
+      if (groundItems.openLootMenuAt(cx, cy)) return;
+      // Sesión 27 Bloque 3 — luego peer (PVP); si no impactó, NPC.
       if (multiplayer.openActionMenuAt(cx, cy)) return;
       if (npcRenderer.openActionMenuAt(cx, cy)) return;
       // Sesión 38 — si no cae sobre peer ni NPC, intentar examinar árbol

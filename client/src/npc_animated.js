@@ -51,15 +51,17 @@ const GOBLIN_TARGET_HEIGHT = 1.6;
 const GOBLIN_Y_TWEAK = 0;
 
 // Fuentes de clips. 'embedded' = viene dentro del GLB. Lo demás = FBX en R2.
-// loop:true  → locomoción (se repite). loop:false → one-shot (react).
-// stripRoot:true → quita root motion (locomoción; mantiene pos del server).
+// Sesión 39 FIX v5 (la solución de fondo): TODOS los clips vienen embebidos en
+// el MISMO goblin.glb (run+walk+react+idle), convertidos con el mismo pipeline
+// (assimp) que el mesh. Esto elimina el flote de raíz: antes mezclábamos el GLB
+// (assimp) con clips FBX sueltos (FBXLoader), cuyos esqueletos no encajaban
+// (escalas/estructuras distintas) → el goblin se inflaba/flotaba al caminar.
+// Ahora hay UN solo esqueleto y las animaciones ligan 1:1.
 const CLIP_SOURCES = {
-  run:   { kind: 'embedded', loop: true,  stripRoot: true },
-  walk:  { kind: 'fbx', file: 'Unarmed_Walk_Forward.fbx', loop: true,  stripRoot: true },
-  react: { kind: 'fbx', file: 'Reaction.fbx',             loop: false, stripRoot: true },
-  // Cuando subas un idle/attack del goblin, agregá acá:
-  // idle:   { kind: 'fbx', file: 'Goblin_Idle.fbx',   loop: true,  stripRoot: true },
-  // attack: { kind: 'fbx', file: 'Goblin_Attack.fbx', loop: false, stripRoot: true },
+  run:   { kind: 'embedded', clip: 'run',   loop: true,  stripRoot: true },
+  walk:  { kind: 'embedded', clip: 'walk',  loop: true,  stripRoot: true },
+  react: { kind: 'embedded', clip: 'react', loop: false, stripRoot: true },
+  idle:  { kind: 'embedded', clip: 'idle',  loop: true,  stripRoot: true },
 };
 
 const REACT_TARGET_MS = 400;   // igual que el player: react acelerado a ~400ms
@@ -184,9 +186,8 @@ export async function loadAnimatedTemplate(goblinGlbUrl) {
 
   _loading = (async () => {
     const gltfLoader = new GLTFLoader();
-    const fbxLoader = new FBXLoader();
 
-    // 1) Malla + esqueleto + clip "run" embebido
+    // 1) Malla + esqueleto + TODOS los clips embebidos (run/walk/react/idle)
     const gltf = await gltfLoader.loadAsync(goblinGlbUrl);
     const mesh = gltf.scene;
 
@@ -241,33 +242,26 @@ export async function loadAnimatedTemplate(goblinGlbUrl) {
 
     const clips = {};
 
-    // 2) Clip embebido (run)
+    // Sesión 39 FIX v5 — TODOS los clips vienen embebidos en el goblin.glb.
+    // Los matcheamos por nombre (run/walk/react/idle). assimp nombra las anims;
+    // matcheamos por nombre exacto y, si no, por orden como fallback.
+    const glbAnims = gltf.animations || [];
+    const byName = new Map();
+    for (const a of glbAnims) if (a && a.name) byName.set(a.name, a);
+
     for (const [name, cfg] of Object.entries(CLIP_SOURCES)) {
       if (cfg.kind !== 'embedded') continue;
-      const src = (gltf.animations || [])[0];
-      if (src) clips[name] = prepClip(src, name, cfg);
-      else console.warn(`[npc_animated] '${name}' embebido no encontrado en GLB`);
+      const wanted = cfg.clip || name;
+      let src = byName.get(wanted) || byName.get(name);
+      if (!src) {
+        console.warn(`[npc_animated] clip '${wanted}' no está en el GLB (anims: ${[...byName.keys()].join(', ')})`);
+        continue;
+      }
+      clips[name] = prepClip(src, name, cfg);
     }
 
-    // 3) Clips FBX sueltos (walk, react). Carga tolerante: si uno falla,
-    //    seguimos sin él (no-op para ese estado).
-    await Promise.all(
-      Object.entries(CLIP_SOURCES)
-        .filter(([, cfg]) => cfg.kind === 'fbx')
-        .map(async ([name, cfg]) => {
-          try {
-            const fbx = await fbxLoader.loadAsync(`${ANIM_BASE}/${cfg.file}`);
-            const src = (fbx.animations || [])[0];
-            if (src) clips[name] = prepClip(src, name, cfg);
-            else console.warn(`[npc_animated] '${cfg.file}' sin animaciones`);
-          } catch (err) {
-            console.warn(`[npc_animated] no se pudo cargar '${cfg.file}':`, err.message);
-          }
-        })
-    );
-
     if (!clips.walk && !clips.run) {
-      throw new Error('sin clips de locomoción (walk/run) — abortando pipeline animado');
+      throw new Error('sin clips de locomoción (walk/run) en el GLB — abortando pipeline animado');
     }
 
     _template = { mesh, clips };
