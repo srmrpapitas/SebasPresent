@@ -170,23 +170,19 @@ function updateImpl(dt, player) {
     pollItems(player);
   }
 
-  // 2) Auto-pickup: cualquier item dentro del radio se intenta recoger
-  //    automáticamente (cooldown por item para no spammear el server).
+  // 2) Sesión 39 — AUTO-PICKUP DESACTIVADO (pedido de Nico, estilo OSRS).
+  //    Antes: cualquier item dentro de AUTO_RADIUS_M se recogía solo. Eso hacía
+  //    que al SOLTAR un item lo recogieras al instante (caía a tus pies, dentro
+  //    del radio). Ahora el pickup es SIEMPRE manual: tocás el item en el suelo
+  //    para recogerlo (ver onGroundTap / pendingPickupItemId). Así podés soltar
+  //    cosas y dejarlas, y elegir qué levantar.
+  //    NOTA: el auto-walk + pickup por TAP sigue funcionando (bloque 3).
   const now = Date.now();
-  for (const item of groundItemsMap.values()) {
-    const dx = item.x - player.position.x;
-    const dz = item.z - player.position.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 <= AUTO_RADIUS_M * AUTO_RADIUS_M) {
-      if (!item.lastAttempt || now - item.lastAttempt > PICKUP_COOLDOWN_MS) {
-        item.lastAttempt = now;
-        pickupItem(item.id);
-      }
-    }
-  }
+  // (bucle de auto-pickup eliminado intencionalmente)
 
-  // 3) Pickup pendiente por tap: si ya estamos cerca, limpiar el flag
-  //    (es redundante con el auto-pickup, solo aclara el estado).
+  // 3) Pickup pendiente por tap: caminamos hacia un item tapeado. Cuando
+  //    llegamos cerca, lo recogemos (Sesión 39: antes lo hacía el auto-pickup;
+  //    ahora que está desactivado, el grab al llegar lo hace este bloque).
   if (pendingPickupItemId !== null) {
     const item = groundItemsMap.get(pendingPickupItemId);
     if (!item) {
@@ -195,6 +191,10 @@ function updateImpl(dt, player) {
       const dx = item.x - player.position.x;
       const dz = item.z - player.position.z;
       if (Math.hypot(dx, dz) <= PICKUP_RADIUS_M) {
+        if (!item.lastAttempt || now - item.lastAttempt > PICKUP_COOLDOWN_MS) {
+          item.lastAttempt = now;
+          pickupItem(item.id);
+        }
         pendingPickupItemId = null;
       }
     }
@@ -334,9 +334,9 @@ function findItemAtTap() {
   const meshList = [];
   for (const item of groundItemsMap.values()) {
     if (!item.hitMesh) continue;
-    const dx = item.x - player.position.x;
-    const dz = item.z - player.position.z;
-    if (dx * dx + dz * dz <= AUTO_RADIUS_M * AUTO_RADIUS_M) continue;
+    // Sesión 39 — Antes saltábamos los items muy cercanos (el auto-pickup los
+    // recogía igual, y así el tap caía al suelo para moverse). Ahora que el
+    // pickup es manual, SÍ permitimos tapear items adyacentes para recogerlos.
     meshList.push(item.hitMesh);
   }
   if (meshList.length === 0) return null;
@@ -353,11 +353,14 @@ function triggerPickup(item) {
   const dx = item.x - player.position.x;
   const dz = item.z - player.position.z;
   const d = Math.hypot(dx, dz);
-  if (d <= AUTO_RADIUS_M) {
-    // Ya estamos encima — el auto-pickup lo recogerá en el siguiente tick
+  if (d <= PICKUP_RADIUS_M) {
+    // Sesión 39 — Ya estamos cerca: recoger AHORA (antes lo hacía el auto-pickup,
+    // que está desactivado). El tap es la acción explícita de recoger.
+    pickupItem(item.id);
+    pendingPickupItemId = null;
     return;
   }
-  // Lejos: caminamos hacia él. El auto-pickup hace el resto al llegar.
+  // Lejos: caminamos hacia él y marcamos pendiente; al llegar (bloque 3) se recoge.
   pendingPickupItemId = item.id;
   setPlayerTargetCb(item.x, item.z);
 }
