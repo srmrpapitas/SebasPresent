@@ -234,6 +234,48 @@ const cDark  = new THREE.Color();
 
 let started = false;
 
+// Sesión 40 — Zonas keep-out: regiones donde NO se plantan árboles (ej. el
+// castillo, para que no se ensarten dentro). Las registra castle.js vía
+// terrain.addKeepout(x, z, radius). Como los chunks ya cargados no se
+// re-generan, conviene registrarlas ANTES de explorar la zona, o llamar a
+// terrain.clearTreesNear() para limpiar lo ya plantado.
+const _keepouts = [];   // { x, z, r }
+export function addKeepout(x, z, r) {
+  if (!Number.isFinite(x) || !Number.isFinite(z) || !(r > 0)) return;
+  // evitar duplicados casi idénticos
+  for (const k of _keepouts) {
+    if (Math.hypot(k.x - x, k.z - z) < 1 && Math.abs(k.r - r) < 1) { k.r = r; return; }
+  }
+  _keepouts.push({ x, z, r });
+}
+export function clearKeepouts() { _keepouts.length = 0; }
+function inKeepout(wx, wz) {
+  for (const k of _keepouts) if (Math.hypot(wx - k.x, wz - k.z) < k.r) return true;
+  return false;
+}
+// Quitar árboles YA plantados dentro de un radio (chunks ya cargados).
+// Los árboles son InstancedMesh; tronco y copa comparten el array `trees`.
+// Recorremos TODOS los meshes y, por posición, escondemos la instancia (la
+// mandamos muy abajo) — sin depender de nulificar el array compartido.
+export function clearTreesNear(x, z, r) {
+  const r2 = r * r;
+  const dummy = new THREE.Matrix4().makeTranslation(0, -9999, 0);
+  for (const mesh of interactableMeshes) {
+    const ud = mesh.userData;
+    if (!ud || !Array.isArray(ud.trees) || !mesh.isInstancedMesh) continue;
+    let changed = false;
+    for (let i = 0; i < ud.trees.length; i++) {
+      const t = ud.trees[i];
+      if (!t) continue;
+      const dx = t.x - x, dz = t.z - z;
+      if (dx * dx + dz * dz < r2) {
+        try { mesh.setMatrixAt(i, dummy); changed = true; } catch {}
+      }
+    }
+    if (changed && mesh.instanceMatrix) mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
 // ============================================================
 // API pública: lifecycle
 // ============================================================
@@ -1061,6 +1103,7 @@ function buildDecorationForChunk(cx, cz) {
     const wx = origin.x + offX;
     const wz = origin.z + offZ;
     if (placeRadius > 0 && Math.hypot(wx - placeX, wz - placeZ) < placeRadius) continue;
+    if (inKeepout(wx, wz)) continue;
     const rollPick = hash2(cx * 83 + i * 17 + 9500, cz * 89 + i * 19 + 9600);
     const totalW = config.pool.reduce((s, p) => s + p[1], 0);
     let acc = 0, chosenId = null;
@@ -1486,6 +1529,7 @@ function buildTreesForChunk(cx, cz) {
     const wx = origin.x + offX;
     const wz = origin.z + offZ;
     if (placeRadius > 0 && Math.hypot(wx - placeX, wz - placeZ) < placeRadius) continue;
+    if (inKeepout(wx, wz)) continue;
     const localBiome = biomeAt(wx, wz);
     const localConfig = BIOME_TREES[localBiome.id];
     if (!localConfig || localConfig.pool.length === 0) continue;

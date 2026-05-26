@@ -36,6 +36,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as terrain from './terrain.js';   // Sesión 40 — keep-out de árboles
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const CASTLE_URL = `${R2_BASE}/buildings/castle.glb`;
@@ -43,6 +44,9 @@ const CASTLE_URL = `${R2_BASE}/buildings/castle.glb`;
 // ---- Config por defecto (todo ajustable en vivo, ver window.__castle*) ----
 const DEFAULTS = {
   x: -80, z: -80,          // dónde se coloca (lejos del spawn para no pisar el concejo)
+  y: -1.0,                 // Sesión 40 — altura: el suelo visible está ~1m bajo y=0
+                           //   (el player se asienta en y≈-1.03). Bajamos el
+                           //   castillo para que no flote. Ajustable: __castleY()
   targetHeight: 12.0,      // alto en metros
   rotDeg: 0,               // rotación Y en grados
   gateWidth: 6.0,          // ancho del hueco de puerta (m) en el muro frontal
@@ -50,6 +54,12 @@ const DEFAULTS = {
   bankerOffX: 0,           // banquero respecto al centro del castillo (m)
   bankerOffZ: 0,
   bankerReach: 4.0,        // a qué distancia podés tappear al banquero
+  // Montaña detrás del castillo (tapa la parte de atrás y lo "asienta").
+  mountain: true,
+  mountainOffZ: 18,        // cuánto detrás del centro del castillo (eje local +Z)
+  mountainRadius: 34,      // radio de la base de la montaña (m)
+  mountainHeight: 22,      // alto de la montaña (m) — más alta que el castillo
+  treeKeepoutR: 38,        // radio donde NO se plantan árboles (footprint+algo)
 };
 
 // ============================================================
@@ -65,6 +75,7 @@ let raycaster = null;
 let started = false;
 
 let castleGroup = null;     // mesh del castillo (escalado, posicionado)
+let mountainGroup = null;   // montaña procedural detrás del castillo
 let bankerGroup = null;     // banquero (grupo simple)
 let aabbLocal = null;       // { minX,maxX,minZ,maxZ } del castillo en local (sin rotación)
 let cfg = { ...DEFAULTS };
@@ -157,36 +168,88 @@ export async function start(opts = {}) {
   // Banquero: un grupo simple (cilindro + cabeza). Reemplazable luego por GLB.
   bankerGroup = makeBanker();
 
+  // Sesión 40 — montaña procedural detrás (tapa la parte de atrás, lo asienta).
+  if (cfg.mountain) mountainGroup = makeMountain();
+
   scene.add(castleGroup);
+  if (mountainGroup) scene.add(mountainGroup);
   scene.add(bankerGroup);
   applyTransforms();
 
+  // Sesión 40 — que NO crezcan árboles dentro del castillo, y limpiar los ya
+  // plantados en el footprint (se ensartaban).
+  try {
+    terrain.addKeepout?.(cfg.x, cfg.z, cfg.treeKeepoutR);
+    terrain.clearTreesNear?.(cfg.x, cfg.z, cfg.treeKeepoutR);
+  } catch (e) { console.warn('[castle] keepout:', e); }
+
   started = true;
   exposeDebug();
-  console.log(`[castle] listo en (${cfg.x},${cfg.z}) alto=${cfg.targetHeight}m. Ajustá con window.__castle()`);
+  console.log(`[castle] listo en (${cfg.x},${cfg.z}) alto=${cfg.targetHeight}m y=${cfg.y}. Ajustá con window.__castle()`);
 }
 
 export function stop() {
   try { if (castleGroup) scene?.remove(castleGroup); } catch {}
+  try { if (mountainGroup) scene?.remove(mountainGroup); } catch {}
   try { if (bankerGroup) scene?.remove(bankerGroup); } catch {}
   try { if (menuEl) { menuEl.remove(); menuEl = null; } } catch {}
-  castleGroup = null; bankerGroup = null; aabbLocal = null; started = false;
+  castleGroup = null; mountainGroup = null; bankerGroup = null; aabbLocal = null; started = false;
 }
 
-// Coloca/orienta el castillo + banquero según cfg (llamado tras cada tuner).
+// Coloca/orienta el castillo + montaña + banquero según cfg (tras cada tuner).
 function applyTransforms() {
+  const a = cfg.rotDeg * Math.PI / 180;
   if (castleGroup) {
-    castleGroup.position.set(cfg.x, 0, cfg.z);
-    castleGroup.rotation.y = cfg.rotDeg * Math.PI / 180;
+    castleGroup.position.set(cfg.x, cfg.y, cfg.z);   // y = grounding (no flota)
+    castleGroup.rotation.y = a;
+  }
+  if (mountainGroup) {
+    // detrás del castillo en su eje local +Z, rotado al mundo.
+    const oz = cfg.mountainOffZ;
+    const wx = cfg.x + (-Math.sin(a) * oz);
+    const wz = cfg.z + ( Math.cos(a) * oz);
+    mountainGroup.position.set(wx, cfg.y - 0.5, wz);  // un pelín hundida para fundirse
+    mountainGroup.rotation.y = a;
   }
   if (bankerGroup) {
-    // banquero en coords mundo: centro del castillo + offset rotado
-    const a = cfg.rotDeg * Math.PI / 180;
     const ox = cfg.bankerOffX, oz = cfg.bankerOffZ;
     const wx = cfg.x + (ox * Math.cos(a) - oz * Math.sin(a));
     const wz = cfg.z + (ox * Math.sin(a) + oz * Math.cos(a));
-    bankerGroup.position.set(wx, 0, wz);
+    bankerGroup.position.set(wx, cfg.y, wz);
   }
+}
+
+// Sesión 40 — Montaña procedural: cono irregular de roca con ruido, para
+// "pegar" el castillo y tapar la parte de atrás. Sin assets: geometría pura.
+function makeMountain() {
+  const g = new THREE.Group();
+  g.userData = { kind: 'castle-mountain' };
+  const R = cfg.mountainRadius, H = cfg.mountainHeight;
+  // cono de base ancha con segmentos; desplazamos vértices con pseudo-ruido
+  // para que no sea un cono perfecto (se vea rocoso/natural).
+  const geom = new THREE.ConeGeometry(R, H, 14, 6, false);
+  geom.translate(0, H / 2, 0);   // base en y=0
+  const pos = geom.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    // ruido determinista por ángulo/altura
+    const ang = Math.atan2(v.z, v.x);
+    const n = Math.sin(ang * 3.0) * 0.12 + Math.sin(ang * 7.0 + v.y) * 0.08 + Math.cos(v.y * 0.5) * 0.06;
+    const radial = Math.hypot(v.x, v.z);
+    if (radial > 0.01) {
+      const f = 1 + n;
+      v.x *= f; v.z *= f;
+    }
+    v.y += Math.sin(ang * 5.0) * 0.6;  // crestas
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geom.computeVertexNormals();
+  const mat = new THREE.MeshLambertMaterial({ color: 0x6b6256, flatShading: true });
+  const cone = new THREE.Mesh(geom, mat);
+  cone.userData = { kind: 'castle-mountain-mesh', shared: true };
+  g.add(cone);
+  return g;
 }
 
 function makeBanker() {
@@ -297,7 +360,23 @@ function exposeDebug() {
     console.log('[castle]', JSON.stringify(st, null, 2));
     return st;
   };
-  window.__castlePos = (x, z) => { if (Number.isFinite(x)) cfg.x = x; if (Number.isFinite(z)) cfg.z = z; applyTransforms(); return [cfg.x, cfg.z]; };
+  window.__castlePos = (x, z) => { if (Number.isFinite(x)) cfg.x = x; if (Number.isFinite(z)) cfg.z = z; applyTransforms(); try { terrain.clearKeepouts?.(); terrain.addKeepout?.(cfg.x, cfg.z, cfg.treeKeepoutR); terrain.clearTreesNear?.(cfg.x, cfg.z, cfg.treeKeepoutR); } catch {} return [cfg.x, cfg.z]; };
+  window.__castleY = (y) => { if (Number.isFinite(y)) cfg.y = y; applyTransforms(); return cfg.y; };
+  window.__castleMountain = (on) => {
+    if (typeof on === 'boolean') {
+      cfg.mountain = on;
+      if (on && !mountainGroup) { mountainGroup = makeMountain(); scene.add(mountainGroup); applyTransforms(); }
+      else if (!on && mountainGroup) { scene.remove(mountainGroup); mountainGroup = null; }
+    }
+    return cfg.mountain;
+  };
+  window.__castleMountainSize = (radius, height, offZ) => {
+    if (Number.isFinite(radius)) cfg.mountainRadius = radius;
+    if (Number.isFinite(height)) cfg.mountainHeight = height;
+    if (Number.isFinite(offZ)) cfg.mountainOffZ = offZ;
+    if (mountainGroup) { scene.remove(mountainGroup); mountainGroup = makeMountain(); scene.add(mountainGroup); applyTransforms(); }
+    return [cfg.mountainRadius, cfg.mountainHeight, cfg.mountainOffZ];
+  };
   window.__castleScale = async (m) => {
     if (Number.isFinite(m) && m > 0) {
       cfg.targetHeight = m;
