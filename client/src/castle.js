@@ -59,7 +59,14 @@ const DEFAULTS = {
   mountainOffZ: 18,        // cuánto detrás del centro del castillo (eje local +Z)
   mountainRadius: 34,      // radio de la base de la montaña (m)
   mountainHeight: 22,      // alto de la montaña (m) — más alta que el castillo
-  treeKeepoutR: 38,        // radio donde NO se plantan árboles (footprint+algo)
+  treeKeepoutR: 44,        // radio donde NO se plantan árboles (footprint+algo)
+  // Sesión 40 — ZÓCALO de roca: faldón que envuelve TODO el perímetro y sube
+  // para tapar el hueco "se ve por debajo" en los 4 lados. Es la técnica real:
+  // no peleamos para que el castillo apoye parejo, le construimos el suelo.
+  skirt: true,
+  skirtRise: 5.0,          // cuánto SUBE el faldón sobre el suelo (m) — tapa el hueco
+  skirtOut: 8.0,           // cuánto SOBRESALE hacia afuera del footprint (m)
+  skirtDrop: 6.0,          // cuánto BAJA por debajo (para fundir con terreno)
 };
 
 // ============================================================
@@ -76,6 +83,7 @@ let started = false;
 
 let castleGroup = null;     // mesh del castillo (escalado, posicionado)
 let mountainGroup = null;   // montaña procedural detrás del castillo
+let skirtGroup = null;      // faldón de roca que tapa el hueco bajo el castillo
 let bankerGroup = null;     // banquero (grupo simple)
 let aabbLocal = null;       // { minX,maxX,minZ,maxZ } del castillo en local (sin rotación)
 let cfg = { ...DEFAULTS };
@@ -170,8 +178,11 @@ export async function start(opts = {}) {
 
   // Sesión 40 — montaña procedural detrás (tapa la parte de atrás, lo asienta).
   if (cfg.mountain) mountainGroup = makeMountain();
+  // Sesión 40 — zócalo de roca envolvente (tapa el hueco bajo el castillo).
+  if (cfg.skirt) skirtGroup = makeSkirt();
 
   scene.add(castleGroup);
+  if (skirtGroup) scene.add(skirtGroup);       // el faldón va ANTES (debajo)
   if (mountainGroup) scene.add(mountainGroup);
   scene.add(bankerGroup);
   applyTransforms();
@@ -191,9 +202,10 @@ export async function start(opts = {}) {
 export function stop() {
   try { if (castleGroup) scene?.remove(castleGroup); } catch {}
   try { if (mountainGroup) scene?.remove(mountainGroup); } catch {}
+  try { if (skirtGroup) scene?.remove(skirtGroup); } catch {}
   try { if (bankerGroup) scene?.remove(bankerGroup); } catch {}
   try { if (menuEl) { menuEl.remove(); menuEl = null; } } catch {}
-  castleGroup = null; mountainGroup = null; bankerGroup = null; aabbLocal = null; started = false;
+  castleGroup = null; mountainGroup = null; skirtGroup = null; bankerGroup = null; aabbLocal = null; started = false;
 }
 
 // Coloca/orienta el castillo + montaña + banquero según cfg (tras cada tuner).
@@ -210,6 +222,11 @@ function applyTransforms() {
     const wz = cfg.z + ( Math.cos(a) * oz);
     mountainGroup.position.set(wx, cfg.y - 0.5, wz);  // un pelín hundida para fundirse
     mountainGroup.rotation.y = a;
+  }
+  if (skirtGroup) {
+    // mismo centro y rotación que el castillo; su geometría ya sube/baja sola.
+    skirtGroup.position.set(cfg.x, cfg.y, cfg.z);
+    skirtGroup.rotation.y = a;
   }
   if (bankerGroup) {
     const ox = cfg.bankerOffX, oz = cfg.bankerOffZ;
@@ -249,6 +266,94 @@ function makeMountain() {
   const cone = new THREE.Mesh(geom, mat);
   cone.userData = { kind: 'castle-mountain-mesh', shared: true };
   g.add(cone);
+  return g;
+}
+
+// Sesión 40 — ZÓCALO/FALDÓN de roca. Envuelve el footprint del castillo
+// (aabbLocal) con un talud rocoso que SUBE hasta `skirtRise` pegado a los muros
+// y baja/sobresale hacia afuera, tapando el hueco "se ve por debajo" en los 4
+// lados. Es un anillo de roca generado del contorno real del castillo.
+//
+// Construcción: dos "anillos" de vértices alrededor del rectángulo del footprint
+//   - interior: pegado al muro, a altura skirtRise (tapa el hueco)
+//   - exterior: skirtOut metros afuera, cayendo a -skirtDrop (se mete en el piso)
+// Triangulamos entre ambos anillos. Ruido para que se vea roca, no rampa lisa.
+function makeSkirt() {
+  if (!aabbLocal) return null;
+  const g = new THREE.Group();
+  g.userData = { kind: 'castle-skirt' };
+
+  const minX = aabbLocal.minX, maxX = aabbLocal.maxX;
+  const minZ = aabbLocal.minZ, maxZ = aabbLocal.maxZ;
+  const rise = cfg.skirtRise, out = cfg.skirtOut, drop = cfg.skirtDrop;
+
+  // Muestrear el contorno del rectángulo en N puntos (perímetro).
+  const perimeter = [];
+  const STEPS_PER_SIDE = 10;
+  const corners = [
+    [minX, minZ], [maxX, minZ], [maxX, maxZ], [minX, maxZ],
+  ];
+  for (let c = 0; c < 4; c++) {
+    const [x0, z0] = corners[c];
+    const [x1, z1] = corners[(c + 1) % 4];
+    for (let s = 0; s < STEPS_PER_SIDE; s++) {
+      const t = s / STEPS_PER_SIDE;
+      perimeter.push([x0 + (x1 - x0) * t, z0 + (z1 - z0) * t]);
+    }
+  }
+  const N = perimeter.length;
+  const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+
+  const positions = [];
+  const pushV = (x, y, z) => positions.push(x, y, z);
+  // anillo interior (pegado al muro, arriba) y exterior (afuera, abajo).
+  const inner = [], outer = [];
+  for (let i = 0; i < N; i++) {
+    const [px, pz] = perimeter[i];
+    // dirección hacia afuera = del centro al punto
+    let dx = px - cx, dz = pz - cz;
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len; dz /= len;
+    // ruido por posición para que no sea liso
+    const noise = Math.sin(i * 0.9) * 0.5 + Math.sin(i * 2.3) * 0.3;
+    const innerY = rise + noise;                 // tapa el hueco
+    const outX = px + dx * (out + noise * 1.5);
+    const outZ = pz + dz * (out + noise * 1.5);
+    const outerY = -drop + noise * 0.5;          // cae al piso/abajo
+    inner.push([px, innerY, pz]);
+    outer.push([outX, outerY, outZ]);
+  }
+  // triangular entre anillos (quad por segmento → 2 triángulos)
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    const i0 = inner[i], i1 = inner[j], o0 = outer[i], o1 = outer[j];
+    // tri 1: i0, o0, o1
+    pushV(...i0); pushV(...o0); pushV(...o1);
+    // tri 2: i0, o1, i1
+    pushV(...i0); pushV(...o1); pushV(...i1);
+  }
+  // tapa superior interior (del anillo interior hacia el muro) — un borde extra
+  // hacia adentro para que no se vea el filo al ras del muro.
+  const innerIn = [];
+  for (let i = 0; i < N; i++) {
+    const [px, , pz] = inner[i];
+    let dx = px - cx, dz = pz - cz; const len = Math.hypot(dx, dz) || 1; dx /= len; dz /= len;
+    innerIn.push([px - dx * 1.5, inner[i][1] + 0.3, pz - dz * 1.5]);
+  }
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    const a0 = innerIn[i], a1 = innerIn[j], b0 = inner[i], b1 = inner[j];
+    pushV(...a0); pushV(...b0); pushV(...b1);
+    pushV(...a0); pushV(...b1); pushV(...a1);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.computeVertexNormals();
+  const mat = new THREE.MeshLambertMaterial({ color: 0x5e5648, flatShading: true, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.userData = { kind: 'castle-skirt-mesh', shared: true };
+  g.add(mesh);
   return g;
 }
 
@@ -376,6 +481,22 @@ function exposeDebug() {
     if (Number.isFinite(offZ)) cfg.mountainOffZ = offZ;
     if (mountainGroup) { scene.remove(mountainGroup); mountainGroup = makeMountain(); scene.add(mountainGroup); applyTransforms(); }
     return [cfg.mountainRadius, cfg.mountainHeight, cfg.mountainOffZ];
+  };
+  window.__castleSkirt = (on) => {
+    if (typeof on === 'boolean') {
+      cfg.skirt = on;
+      if (on && !skirtGroup) { skirtGroup = makeSkirt(); if (skirtGroup) { scene.add(skirtGroup); applyTransforms(); } }
+      else if (!on && skirtGroup) { scene.remove(skirtGroup); skirtGroup = null; }
+    }
+    return cfg.skirt;
+  };
+  // rise=cuánto sube y tapa el hueco · out=cuánto sobresale · drop=cuánto baja
+  window.__castleSkirtSize = (rise, out, drop) => {
+    if (Number.isFinite(rise)) cfg.skirtRise = rise;
+    if (Number.isFinite(out)) cfg.skirtOut = out;
+    if (Number.isFinite(drop)) cfg.skirtDrop = drop;
+    if (skirtGroup) { scene.remove(skirtGroup); skirtGroup = makeSkirt(); if (skirtGroup) scene.add(skirtGroup); applyTransforms(); }
+    return [cfg.skirtRise, cfg.skirtOut, cfg.skirtDrop];
   };
   window.__castleScale = async (m) => {
     if (Number.isFinite(m) && m > 0) {
