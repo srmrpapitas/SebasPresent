@@ -72,7 +72,10 @@ const CLIP_SOURCES = {
   idle:  { kind: 'embedded', clip: 'idle',  loop: true,  strip: 'rot_only' },
 };
 
-const REACT_TARGET_MS = 400;   // igual que el player: react acelerado a ~400ms
+const REACT_TARGET_MS = 550;   // Sesión 40 — react del goblin un pelín más
+                               // largo (era 400). A 400ms + persecución encima
+                               // el flinch se "comía" y parecía que no reaccionaba.
+                               // 550ms lo hace claramente visible sin estorbar.
 
 // ============================================================
 // Estado del módulo (template compartido)
@@ -431,7 +434,9 @@ export function triggerReact(inst) {
   if (!inst) return false;
   const a = inst.actions.react;
   if (!a) return false;            // sin clip react → no-op (caller hace flash igual)
-  if (inst.isReacting) return false;
+  // Sesión 40 — si YA está reaccionando y le pegan otra vez, REINICIAMOS el
+  // react (no lo ignoramos). Antes con isReacting se descartaba el 2º golpe y
+  // parecía que "no reaccionaba" al pegarle rápido.
 
   const clipMs = a.getClip().duration * 1000;
   const useNatural = clipMs <= REACT_TARGET_MS;

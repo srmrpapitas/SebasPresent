@@ -26,6 +26,7 @@ import * as homeTele from './home_teleport.js';
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
 import * as buildings from './buildings.js';
+import * as castle from './castle.js';
 import * as interiors from './interiors.js';
 import * as bank from './bank.js';
 import * as ge from './ge.js';
@@ -267,6 +268,30 @@ export async function startWorld(loggedInUser, token) {
         interiors.enter(id);
       },
     });
+
+    // Sesión 40 — CASTILLO: estructura grande que se entra caminando, SIN
+    // teletransporte. El banco/GE/tienda son los MISMOS overlays; los abre el
+    // banquero que vive DENTRO del castillo, en el mundo real. Cero teleport.
+    try {
+      await castle.start({
+        scene, camera, canvas,
+        getPlayer: () => player,
+        feedLog: (type, msg) => combat.feedLog?.(type, msg),
+        onOpenBank: () => {
+          try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
+          try { audio.sfx('coins'); } catch {}
+          openBankOverlay();
+        },
+        onOpenGE: () => {
+          try { audio.sfx('book_open'); } catch {}
+          try { ge.openOverlay?.(); } catch (e) { console.warn('[world] ge.openOverlay:', e); }
+        },
+        onOpenShop: () => {
+          try { audio.sfx('coins'); } catch {}
+          try { shop.open('general_store'); } catch (e) { console.warn('[world] shop.open:', e); }
+        },
+      });
+    } catch (e) { console.warn('[world] castle.start falló:', e); }
     // Sesión 11c-1 — interiors (switch exterior↔interior)
     // Sesión 11c-2 — añadidos camera/canvas + callbacks Banco/GE para NPC menú
     showWorldLoading('Cargando interior…');
@@ -736,6 +761,7 @@ export function stopWorld() {
 
   // Sesión 11a — buildings (GLB instances)
   buildings.stop();
+  try { castle.stop(); } catch {}
 
   // Sesión 5 refactor — terrain (chunks, árboles, decoración, places, colliders)
   terrain.stop();
@@ -2366,6 +2392,9 @@ function doCanvasTap(clientX, clientY) {
   // Sesión 11b parcial — Tap edificio → placeholder (en 11c será "entrar")
   if (buildings.tryHandleTap(clientX, clientY)) return;
 
+  // Sesión 40 — Tap al banquero del castillo → abre banco (sin teleport).
+  try { if (castle.handleTap(nx, ny)) return; } catch (e) { console.warn('[world] castle.handleTap:', e); }
+
   // 3) Tap árbol → arrancar chop (Sesión 30).
   //    El raycast contra InstancedMesh devuelve `instanceId` que apunta al
   //    índice del árbol en userData.trees. Sacamos x,z reales y tipo, y le
@@ -2598,7 +2627,8 @@ function updatePlayer(dt) {
     const nextZ = player.position.z + wz * speed * dt;
     const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
     const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
-    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
+    const a3 = castle.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
+    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
     player.position.x = adjusted.x;
     player.position.z = adjusted.z;
     moveWx = wx;
@@ -2626,7 +2656,8 @@ function updatePlayer(dt) {
       const adjusted = (() => {
         const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
         const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
-        return interiors.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
+        const a3 = castle.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
+        return interiors.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
       })();
       const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
       if (moved < 0.01) {
