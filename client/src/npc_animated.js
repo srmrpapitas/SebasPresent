@@ -45,10 +45,15 @@ export const ANIMATED_NPC_TYPES = new Set(['goblin']);
 // Altura objetivo (debe coincidir con NPC_TARGET_HEIGHTS de npc_renderer).
 const GOBLIN_TARGET_HEIGHT = 1.6;
 
-// Sesión 39 — AJUSTE MANUAL del grounding. Si tras el cálculo automático el
-// goblin queda un poco flotando (subir = negativo) o hundido (subir = positivo),
-// cambiá SOLO este número. En metros. 0 = solo cálculo automático.
-const GOBLIN_Y_TWEAK = 0;
+// Sesión 39/40 — AJUSTE FINO del grounding (grosor de suela). El sistema
+// AUTO-GROUND (Sesión 40, ver groundToFeet) planta el HUESO de pie más bajo en
+// y=0 CADA FRAME, así que ningún pose puede flotar ni hundirse. Este número solo
+// sube/baja TODO un pelín si hace falta (suela). Live-tuneable en el móvil:
+//   window.__goblinY(0.05)   // sube 5cm     window.__goblinY()  // ver actual
+let GOBLIN_Y_TWEAK = 0;
+// Auto-ground: plantar el pie más bajo en el suelo cada frame. ON por defecto.
+// Apagar para depurar con: window.__goblinAutoGround(false)
+let GOBLIN_AUTOGROUND = true;
 
 // Fuentes de clips. 'embedded' = viene dentro del GLB. Lo demás = FBX en R2.
 // Sesión 39 FIX v6 (el correcto): aunque ahora todos los clips están en el
@@ -328,7 +333,32 @@ export function createAnimatedInstance() {
     actions[name] = a;
   }
 
-  const inst = { root, mixer, actions, bodyMaterials, state: null, isReacting: false, _reactTimer: 0 };
+  // Sesión 40 — AUTO-GROUND: localizar los huesos de pie/dedo. Cada frame
+  // plantamos el más bajo en y=0 (ver groundToFeet). Preferimos ToeBase (la
+  // punta, el punto más bajo real); si no hay, Foot; último recurso, cualquier
+  // hueso cuyo nombre tenga 'foot'/'toe'. Funciona aunque assimp renombre
+  // (mixamorig:LeftToeBase, mixamorigLeftToeBase, LeftToeBase, etc).
+  const footBones = [];
+  const footPref = [];
+  root.traverse(o => {
+    if (!o.isBone && o.type !== 'Bone') return;
+    const n = (o.name || '').toLowerCase();
+    if (n.includes('toebase') || n.includes('toe_end') || n.endsWith('toe')) footPref.push(o);
+    else if (n.includes('foot')) footBones.push(o);
+  });
+  const groundBones = footPref.length ? footPref : footBones;
+
+  const inst = {
+    root, mixer, actions, bodyMaterials,
+    state: null, isReacting: false, _reactTimer: 0,
+    _groundBones: groundBones,
+    _baseY: _xform ? _xform.groundOffsetY : 0,
+  };
+  if (groundBones.length === 0) {
+    console.warn('[npc_animated] sin huesos de pie detectados → auto-ground OFF, uso offset estático');
+  } else {
+    console.log(`[npc_animated] auto-ground con ${groundBones.length} hueso(s) de pie: ${groundBones.map(b=>b.name).join(', ')}`);
+  }
 
   // Estado inicial: quieto. Sin idle propio → pose congelada neutra (frame 0
   // del walk/run), nunca T-pose.
@@ -368,17 +398,25 @@ export function setLocomotion(inst, moving, speed = 0) {
     return;
   }
 
-  // QUIETO. Si hay un idle real, reproducirlo. Si NO (caso actual), descansar
-  // en BIND POSE (T-pose, brazos a los lados). Sesión 39 FIX: antes congelaba
-  // el frame 0 del walk, que dejaba los BRAZOS HACIA ATRÁS (bug reportado).
-  // El bind pose es la pose neutra del rig (brazos a los lados / T-pose).
+  // QUIETO. Preferencia: idle real > walk pausado en un frame plantado > bind
+  // pose (T). Sesión 40: si el GLB trae 'idle' (debería), se reproduce y el
+  // goblin respira parado. Si NO está (GLB viejo / merge sin idle), en vez de
+  // caer a la T-pose (brazos en cruz, feo) congelamos un frame de WALK: piernas
+  // juntas-ish, brazos a los lados, mucho más presentable. El auto-ground lo
+  // mantiene a ras de suelo en cualquier caso.
   if (inst.state === '__still') return;
   if (inst.actions.idle) {
     const a = inst.actions.idle;
     a.paused = false;
     fadeTo(inst, 'idle', 0.2);
+  } else if (inst.actions.walk || inst.actions.run) {
+    const name = inst.actions.walk ? 'walk' : 'run';
+    fadeTo(inst, name, 0.2);
+    // Pausar en un frame "de apoyo" (ambos pies cerca del suelo) en vez de T.
+    const a = inst.actions[name];
+    if (a) { a.time = a.getClip().duration * 0.5; a.paused = true; }
   } else {
-    // Sin idle: parar todas las acciones → el SkinnedMesh vuelve a bind pose.
+    // Sin clips de locomoción tampoco: último recurso, bind pose.
     try { inst.mixer.stopAllAction(); } catch {}
     inst._current = null;
   }
@@ -411,31 +449,61 @@ export function triggerReact(inst) {
 }
 
 /**
+ * Sesión 40 — AUTO-GROUND. Planta el hueso de pie más bajo en y=0 (+tweak)
+ * ajustando root.position.y. Se llama CADA FRAME tras avanzar el mixer, así
+ * que funciona para CUALQUIER pose (quieto/walk/run/react) sin un offset por
+ * animación. Mata el flote Y el hundido de una: medimos dónde está el pie de
+ * verdad y lo apoyamos. Es el equivalente esquelético al horneado de los NPCs
+ * estáticos (que plantan los pies en y=0 al hornear).
+ *
+ * Por qué un solo paso basta: el group del goblin está en y=0 y la rotación es
+ * solo en Y → mover root.position.y en `delta` mueve el Y mundial de TODOS los
+ * huesos exactamente `delta`. Medimos el pie, calculamos delta = 0 - pieY, lo
+ * aplicamos. Exacto, sin iterar.
+ */
+function groundToFeet(inst) {
+  if (!GOBLIN_AUTOGROUND) return;
+  const bones = inst._groundBones;
+  if (!bones || bones.length === 0) return;
+  // Refrescar matrices de mundo del subárbol del goblin tras el mixer.
+  inst.root.updateMatrixWorld(true);
+  let minY = Infinity;
+  for (const b of bones) {
+    // elemento [13] de la matrixWorld = traslación Y en mundo.
+    const y = b.matrixWorld.elements[13];
+    if (y < minY) minY = y;
+  }
+  if (!Number.isFinite(minY)) return;
+  const target = GOBLIN_Y_TWEAK;          // suelo (0) + ajuste de suela
+  const delta = target - minY;
+  // Clamp defensivo: nunca empujar más de 3m por frame.
+  inst.root.position.y += Math.max(-3, Math.min(3, delta));
+}
+
+/**
  * Avanza el mixer. Llamar cada frame desde npc_renderer.updateInterpolation.
  * @param {number} dtSec  delta en segundos
  */
 export function updateAnimatedInstance(inst, dtSec) {
   if (!inst || !inst.mixer) return;
   inst.mixer.update(dtSec);
+  groundToFeet(inst);   // Sesión 40 — plantar pies tras animar (anti-flote/hundido)
   if (inst.isReacting) {
     inst._reactTimer -= dtSec * 1000;
     if (inst._reactTimer <= 0) {
       inst.isReacting = false;
       inst._reactTimer = 0;
-      // Sesión 39 FIX: al terminar el React, parar TODAS las acciones de
-      // forma explícita → el esqueleto vuelve a bind pose (T, a ras de suelo).
-      // Antes solo nuleábamos el estado y dependíamos de setLocomotion en el
-      // frame siguiente, lo que dejaba un instante con la pose del react
-      // "pegada" (se veía flotar y luego caer). Pararlo acá lo hace limpio.
+      // Sesión 40 — al terminar el React, NO forzar bind pose (T). Limpiamos el
+      // estado y dejamos que setLocomotion vuelva a elegir la pose de reposo
+      // (idle real, o walk pausado como fallback). Así no queda en T tras pegarle.
       try {
         if (inst.actions.react) {
-          inst.actions.react.stop();
           inst.actions.react.setEffectiveTimeScale(1);
         }
-        inst.mixer.stopAllAction();
       } catch {}
-      inst.state = '__still';   // ya en bind pose; setLocomotion no re-disparará
-      inst._current = null;
+      inst.state = null;        // forzar re-evaluación
+      inst._current = inst.actions.react || inst._current;
+      setLocomotion(inst, false, 0);   // vuelve a idle/walk-pausado, nunca T
     }
   }
 }
@@ -453,4 +521,57 @@ export function disposeAnimatedInstance(inst) {
       }
     });
   } catch {}
+}
+
+// ============================================================
+// Sesión 40 — Herramientas de debug live (Eruda en el móvil)
+// ============================================================
+// Setters para tunear sin recompilar. Devuelven el valor actual si no se pasa
+// argumento. El estado del template/clips lo lee window.__goblinDebug (en
+// npc_renderer, que tiene acceso a las instancias vivas).
+export function setYTweak(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) GOBLIN_Y_TWEAK = v;
+  return GOBLIN_Y_TWEAK;
+}
+export function setAutoGround(on) {
+  if (typeof on === 'boolean') GOBLIN_AUTOGROUND = on;
+  return GOBLIN_AUTOGROUND;
+}
+export function getGroundState() {
+  return {
+    autoGround: GOBLIN_AUTOGROUND,
+    yTweak: GOBLIN_Y_TWEAK,
+    templateReady: _ready,
+    clips: _template ? Object.keys(_template.clips) : [],
+    xform: _xform,
+  };
+}
+
+/** Lee el estado de grounding de UNA instancia viva (para el probe). */
+export function probeInstance(inst) {
+  if (!inst) return null;
+  let minFootY = Infinity, footList = [];
+  if (inst._groundBones) {
+    inst.root.updateMatrixWorld(true);
+    for (const b of inst._groundBones) {
+      const y = b.matrixWorld.elements[13];
+      footList.push({ bone: b.name, worldY: +y.toFixed(3) });
+      if (y < minFootY) minFootY = y;
+    }
+  }
+  return {
+    state: inst.state,
+    isReacting: inst.isReacting,
+    currentAction: inst._current ? inst._current.getClip()?.name : null,
+    rootY: +inst.root.position.y.toFixed(3),
+    lowestFootWorldY: Number.isFinite(minFootY) ? +minFootY.toFixed(3) : null,
+    feet: footList,
+    isAnimatedMesh: !!inst._groundBones,
+  };
+}
+
+if (typeof window !== 'undefined') {
+  window.__goblinY = (v) => setYTweak(v);
+  window.__goblinAutoGround = (on) => setAutoGround(on);
+  window.__goblinState = () => getGroundState();
 }

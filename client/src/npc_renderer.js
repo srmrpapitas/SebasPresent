@@ -257,6 +257,33 @@ export async function start(opts) {
       if (!p || !p.position) return null;
       return { x: p.position.x, z: p.position.z };
     };
+    // Sesión 40 — DEBUG DEL GOBLIN. Corré window.__goblinDebug() en Eruda:
+    // imprime, por cada goblin visible, si su mesh es ANIMADA u HORNEADA, qué
+    // clip está sonando, su rootY, la Y MUNDIAL del pie más bajo (debería ser
+    // ~0 con auto-ground), y el estado del template (qué clips cargó el GLB).
+    // Es el dato que dice si flota (pieY≠0), si está en T (mesh horneada / sin
+    // idle) y qué animaciones trajo el GLB realmente.
+    window.__goblinDebug = () => {
+      const out = { template: npcAnimated.getGroundState(), goblins: [] };
+      for (const [id, group] of npcMeshes.entries()) {
+        const ud = group.userData;
+        if (!ud || ud.npc?.def_id !== 'goblin') continue;
+        const entry = {
+          id,
+          groupPos: {
+            x: +group.position.x.toFixed(2),
+            y: +group.position.y.toFixed(2),
+            z: +group.position.z.toFixed(2),
+          },
+          animated: !!ud.anim,
+        };
+        if (ud.anim) Object.assign(entry, npcAnimated.probeInstance(ud.anim));
+        else entry.note = 'HORNEADO (sin esqueleto) → T-pose. Template no listo al spawnear.';
+        out.goblins.push(entry);
+      }
+      console.log('[goblinDebug]', JSON.stringify(out, null, 2));
+      return out;
+    };
   }
 
   started = true;
