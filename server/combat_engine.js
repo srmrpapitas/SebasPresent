@@ -1913,10 +1913,23 @@ async function safeInsertInvSlot(db, userId, itemId, qty, preferredSlot) {
 // cooldown aunque lleguen 10 polls). Esto también CIERRA el exploit de
 // multi-click server-side: el cooldown del NPC es autoritativo.
 //
-// Tuneable: NPC_MOVE_SPEED_MPS, NPC_LEASH_M.
+// Tuneable: NPC_MOVE_SPEED_MPS, NPC_AGGRO_GIVEUP_M.
 
 const NPC_MOVE_SPEED_MPS = 2.55;  // m/s de persecución (Nico pidió subirlo un pelín)
-const NPC_LEASH_M = 12.0;         // si el target se aleja > esto del SPAWN, de-aggro
+// Sesión 40 FIX (PETRIFICACIÓN, §3.2) — El leash ANTERIOR medía distancia al
+// SPAWN (NPC_LEASH_M=12). Bug fatal: el goblin perseguía, se alejaba >12m de su
+// spawn, de-aggraba... y NUNCA volvía a casa (el "volver a casa" estaba comentado
+// pero NO implementado). Quedaba varado a >12m del spawn. Al pasar al lado:
+// re-aggraba (estás en aggro_radius) y en la MISMA pasada se cancelaba (dFromHome
+// seguía >12) → adquiría-y-soltaba el target cada tick, sin moverse ni pegar.
+// PETRIFICADO permanente. Es exactamente el síntoma de Nico.
+//
+// Fix: el "rendirse" ahora mide distancia al JUGADOR (estilo OSRS: te persigue
+// mientras te tenga cerca, se rinde si te ALEJÁS). Y cuando no tiene target y
+// está lejos de su casa, CAMINA DE VUELTA al spawn (implementado de verdad).
+// El re-aggro por aggro_radius es absoluto y NUNCA se auto-cancela.
+const NPC_AGGRO_GIVEUP_M = 25.0; // si el JUGADOR se aleja > esto del NPC, se rinde
+const NPC_HOME_SNAP_M = 0.4;     // si está a menos de esto del spawn, ya está "en casa"
 const NPC_AI_MAX_STEP_MS = 400;   // cap del dt por tick (evita saltos si un poll tardó)
 // Sesión 39 — Wander (deambular) de NPCs pasivos (pollos/vacas).
 const WANDER_SPEED_MPS = 0.8;     // lento, tipo pastoreo
@@ -1977,28 +1990,33 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
   for (const npc of rows) {
     const dToViewer = dist(viewer.x, viewer.z, npc.x, npc.z);
 
-    // ---- DE-AGGRO por leash: si está lejísimos de su spawn, soltar y parar.
+    // Casa (spawn) del NPC y distancia actual a ella.
     const homeX = npc.spawn_x != null ? npc.spawn_x : npc.x;
     const homeZ = npc.spawn_z != null ? npc.spawn_z : npc.z;
     const dFromHome = dist(homeX, homeZ, npc.x, npc.z);
 
-    // ---- AGRO: adquirir target si estoy en su radio y no tiene (o es el viewer).
+    // ---- AGRO / RE-AGRO (Sesión 40 FIX §3.2) ----
+    // REGLA 1 (absoluta): si el jugador está dentro del aggro_radius, el NPC lo
+    // adquiere SIEMPRE. No hay condición que pueda cancelar esto en la misma
+    // pasada (era el deadlock que petrificaba: re-aggro e inmediato de-aggro).
+    // REGLA 2: el "rendirse" mide distancia al JUGADOR, no al spawn. Solo soltás
+    // al goblin alejándote >NPC_AGGRO_GIVEUP_M de ÉL. Mientras estés a tiro,
+    // persigue infinito (estilo OSRS).
     let target = npc.in_combat_with;
-    // Sesión 39 fix — Si el target guardado NO es el viewer pero el viewer SÍ
-    // está dentro del radio de agro, re-adquirimos al viewer. Esto evita que un
-    // "in_combat_with" viejo/fantasma (un jugador que se fue, o un lock que
-    // quedó de una sesión anterior) bloquee el agro para siempre. El NPC
-    // siempre puede re-enganchar a alguien que tiene al lado.
-    if (dToViewer <= npc.aggro_radius && target !== viewer.user_id) {
+
+    if (dToViewer <= npc.aggro_radius) {
+      // El viewer está pegado → adquirir/robar SIEMPRE. Mata el deadlock.
       target = viewer.user_id;
-    } else if (!target && dToViewer <= npc.aggro_radius) {
-      target = viewer.user_id;
+    } else if (target === viewer.user_id) {
+      // Tiene al viewer como target pero está fuera del radio de adquisición.
+      // Sigue persiguiendo MIENTRAS el viewer no se haya alejado demasiado.
+      if (dToViewer > NPC_AGGRO_GIVEUP_M) {
+        target = null;   // el jugador huyó lejos → rendirse y volver a casa.
+      }
+      // (si está entre aggro_radius y giveup → conserva target y persigue)
     }
-    // Si su target es el viewer pero el viewer se fue del leash desde el spawn,
-    // de-aggro (volver a casa lo hace el paso de movimiento de abajo).
-    if (target === viewer.user_id && dFromHome > NPC_LEASH_M) {
-      target = null;
-    }
+    // Nota: si target es OTRO jugador (no el viewer), no lo tocamos: el tick de
+    // ESE jugador lo maneja. Solo lo robamos si el viewer entra a su radio (R1).
 
     let newX = npc.x, newZ = npc.z;
     let attacked = false;
@@ -2030,6 +2048,18 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
           attacked = true;
         }
       }
+    } else if (!target && dFromHome > NPC_HOME_SNAP_M) {
+      // ---- VOLVER A CASA (Sesión 40 FIX — antes NO existía) ----
+      // Sin target y lejos del spawn → caminar de vuelta. Esto es lo que evita
+      // que el goblin quede VARADO lejos de casa y no pueda re-aggrar nunca.
+      const lastMoved = npc.last_moved_at || (now - 250);
+      const dtMs = Math.min(Math.max(0, now - lastMoved), NPC_AI_MAX_STEP_MS);
+      const step = NPC_MOVE_SPEED_MPS * (dtMs / 1000);
+      const ux = (homeX - npc.x) / (dFromHome || 1);
+      const uz = (homeZ - npc.z) / (dFromHome || 1);
+      const move = Math.min(step, dFromHome);   // no pasarse de la casa
+      newX = npc.x + ux * move;
+      newZ = npc.z + uz * move;
     }
 
     // ---- Aplicar cambios a la DB ----
