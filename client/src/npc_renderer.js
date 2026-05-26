@@ -330,12 +330,43 @@ export function stop() {
 export function update(dt) {
   if (!started) return;
   pollSnapshotForNpcs();
+  upgradeBakedGoblins();     // Sesión 40 — barrido por-frame: si un goblin quedó
+                             // horneado (T-pose) y el template YA cargó, lo pasa a
+                             // animado sin esperar un snapshot nuevo.
   updateInterpolation(dt);   // sustituye al antiguo updatePatrol
   updateHpBars();
-  // updateCombatFollow ELIMINADO: ya no hace falta perseguir un NPC que
-  // orbita, porque ahora la mesh está donde el server dice. Si en el
-  // futuro el server mueve NPCs, el cliente los seguirá visualmente por
-  // sí mismo a través de la interpolación.
+}
+
+// Sesión 40 — Upgrade horneado→animado desacoplado del snapshot. El bug de la
+// T-pose persistente venía de que el upgrade SOLO corría al llegar un snapshot
+// NUEVO (pollSnapshotForNpcs). Un goblin quieto manda snapshots iguales → no se
+// reprocesaba → si el template cargó tarde, quedaba horneado (T-pose) para
+// siempre. Ahora barremos cada frame: barato (un Set.has + flag) y definitivo.
+function upgradeBakedGoblins() {
+  if (!scene) return;
+  if (!npcAnimated.isReady()) return;       // template aún no listo: nada que hacer
+  for (const [id, mesh] of npcMeshes.entries()) {
+    const npc = mesh.userData?.npc;
+    if (!npc) continue;
+    if (!npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id)) continue;
+    if (mesh.userData.anim) continue;        // ya es animado
+    // Recrear como animado, conservando posición/rotación visual actual.
+    const curX = mesh.position.x, curZ = mesh.position.z, curRotY = mesh.rotation.y;
+    scene.remove(mesh);
+    mesh.traverse?.(obj => {
+      if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
+      if (obj.material && !obj.userData?.shared) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+      }
+    });
+    const fresh = createMesh(npc);
+    if (!fresh) continue;
+    fresh.position.x = curX; fresh.position.z = curZ; fresh.rotation.y = curRotY;
+    scene.add(fresh);
+    npcMeshes.set(id, fresh);
+    console.log(`[npc_renderer] goblin ${id} upgradeado a animado (barrido por-frame)`);
+  }
 }
 
 // ============================================================
