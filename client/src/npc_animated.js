@@ -333,36 +333,39 @@ export function createAnimatedInstance() {
     actions[name] = a;
   }
 
-  // Sesión 40 — AUTO-GROUND: localizar los huesos de pie/dedo. Cada frame
-  // plantamos el más bajo en y=0 (ver groundToFeet). Preferimos ToeBase (la
-  // punta, el punto más bajo real); si no hay, Foot; último recurso, cualquier
-  // hueso cuyo nombre tenga 'foot'/'toe'. Funciona aunque assimp renombre
-  // (mixamorig:LeftToeBase, mixamorigLeftToeBase, LeftToeBase, etc).
-  const footBones = [];
-  const footPref = [];
+  // Sesión 40 v2 — AUTO-GROUND POR MALLA. La versión v1 medía HUESOS de pie,
+  // pero en este esqueleto los huesos toe/foot reportan Y que NO sigue a la
+  // malla visible (medido: el toe daba y~158 cuando el pie visible estaba
+  // abajo). Por eso "plantar el hueso" hundía el goblin. La medición CORRECTA
+  // es el vértice MÁS BAJO de la malla skinneada real (lo que se ve). Probado
+  // sobre el GLB: planta idle/walk/run/react en y=0.000 exacto.
+  const skinnedMeshes = [];
   root.traverse(o => {
-    if (!o.isBone && o.type !== 'Bone') return;
-    const n = (o.name || '').toLowerCase();
-    if (n.includes('toebase') || n.includes('toe_end') || n.endsWith('toe')) footPref.push(o);
-    else if (n.includes('foot')) footBones.push(o);
+    if (o.isSkinnedMesh && o.geometry && o.geometry.attributes.position) {
+      skinnedMeshes.push(o);
+    }
   });
-  const groundBones = footPref.length ? footPref : footBones;
 
   const inst = {
     root, mixer, actions, bodyMaterials,
     state: null, isReacting: false, _reactTimer: 0,
-    _groundBones: groundBones,
+    _skinnedMeshes: skinnedMeshes,
+    _gtmp: new THREE.Vector3(),
     _baseY: _xform ? _xform.groundOffsetY : 0,
   };
-  if (groundBones.length === 0) {
-    console.warn('[npc_animated] sin huesos de pie detectados → auto-ground OFF, uso offset estático');
+  if (skinnedMeshes.length === 0) {
+    console.warn('[npc_animated] sin mallas skinneadas → auto-ground OFF, uso offset estático');
   } else {
-    console.log(`[npc_animated] auto-ground con ${groundBones.length} hueso(s) de pie: ${groundBones.map(b=>b.name).join(', ')}`);
+    console.log(`[npc_animated] auto-ground por malla (${skinnedMeshes.length} mesh)`);
   }
 
-  // Estado inicial: quieto. Sin idle propio → pose congelada neutra (frame 0
-  // del walk/run), nunca T-pose.
+  // Estado inicial: quieto → idle. Forzamos un sample del mixer YA para que el
+  // primer frame visible sea idle, no la bind pose (T). Sesión 40.
   setLocomotion(inst, false, 0);
+  try {
+    inst.mixer.update(0);   // evaluar pose inicial (idle frame 0) sin avanzar
+    groundToFeet(inst);     // y plantarlo de una
+  } catch {}
   return inst;
 }
 
@@ -461,22 +464,48 @@ export function triggerReact(inst) {
  * huesos exactamente `delta`. Medimos el pie, calculamos delta = 0 - pieY, lo
  * aplicamos. Exacto, sin iterar.
  */
+/**
+ * Sesión 40 v2 — AUTO-GROUND POR MALLA. Planta el vértice MÁS BAJO de la malla
+ * skinneada en y=0 (+tweak) ajustando root.position.y, CADA FRAME. Funciona para
+ * cualquier pose sin offset por animación. Probado sobre el GLB real: idle, walk,
+ * run y react quedan en y=0.000.
+ *
+ * Por qué la malla y no los huesos: en este esqueleto los huesos toe/foot
+ * reportan una Y que NO corresponde al pie visible (artefacto del rig). Medir el
+ * vértice skinneado real es lo que se ve y nunca miente.
+ *
+ * Rendimiento (móvil): NO recorremos todos los vértices cada frame. Muestreamos
+ * con paso (stride) — para detectar el punto más bajo alcanza con una muestra
+ * densa. STRIDE ajustable; con ~120 muestras por goblin el costo es trivial.
+ *
+ * Un solo paso basta: el group está en y=0 y solo rota en Y → mover
+ * root.position.y en delta mueve la malla entera ese delta. Medimos, corregimos.
+ */
+const _GROUND_SAMPLES_TARGET = 120;  // muestras de vértice por mesh (suficiente p/ el mínimo)
+
 function groundToFeet(inst) {
   if (!GOBLIN_AUTOGROUND) return;
-  const bones = inst._groundBones;
-  if (!bones || bones.length === 0) return;
-  // Refrescar matrices de mundo del subárbol del goblin tras el mixer.
+  const meshes = inst._skinnedMeshes;
+  if (!meshes || meshes.length === 0) return;
   inst.root.updateMatrixWorld(true);
+  const v = inst._gtmp;
   let minY = Infinity;
-  for (const b of bones) {
-    // elemento [13] de la matrixWorld = traslación Y en mundo.
-    const y = b.matrixWorld.elements[13];
-    if (y < minY) minY = y;
+  for (const sm of meshes) {
+    const pos = sm.geometry.attributes.position;
+    if (!pos) continue;
+    const count = pos.count;
+    // stride para tocar ~_GROUND_SAMPLES_TARGET vértices (mínimo 1).
+    const stride = Math.max(1, Math.floor(count / _GROUND_SAMPLES_TARGET));
+    for (let i = 0; i < count; i += stride) {
+      v.fromBufferAttribute(pos, i);
+      sm.applyBoneTransform ? sm.applyBoneTransform(i, v) : sm.boneTransform?.(i, v);
+      v.applyMatrix4(sm.matrixWorld);
+      if (v.y < minY) minY = v.y;
+    }
   }
   if (!Number.isFinite(minY)) return;
   const target = GOBLIN_Y_TWEAK;          // suelo (0) + ajuste de suela
   const delta = target - minY;
-  // Clamp defensivo: nunca empujar más de 3m por frame.
   inst.root.position.y += Math.max(-3, Math.min(3, delta));
 }
 
@@ -550,13 +579,20 @@ export function getGroundState() {
 /** Lee el estado de grounding de UNA instancia viva (para el probe). */
 export function probeInstance(inst) {
   if (!inst) return null;
-  let minFootY = Infinity, footList = [];
-  if (inst._groundBones) {
+  let minMeshY = Infinity;
+  if (inst._skinnedMeshes && inst._skinnedMeshes.length) {
     inst.root.updateMatrixWorld(true);
-    for (const b of inst._groundBones) {
-      const y = b.matrixWorld.elements[13];
-      footList.push({ bone: b.name, worldY: +y.toFixed(3) });
-      if (y < minFootY) minFootY = y;
+    const v = inst._gtmp || new THREE.Vector3();
+    for (const sm of inst._skinnedMeshes) {
+      const pos = sm.geometry.attributes.position;
+      if (!pos) continue;
+      const stride = Math.max(1, Math.floor(pos.count / 120));
+      for (let i = 0; i < pos.count; i += stride) {
+        v.fromBufferAttribute(pos, i);
+        sm.applyBoneTransform ? sm.applyBoneTransform(i, v) : sm.boneTransform?.(i, v);
+        v.applyMatrix4(sm.matrixWorld);
+        if (v.y < minMeshY) minMeshY = v.y;
+      }
     }
   }
   return {
@@ -564,9 +600,8 @@ export function probeInstance(inst) {
     isReacting: inst.isReacting,
     currentAction: inst._current ? inst._current.getClip()?.name : null,
     rootY: +inst.root.position.y.toFixed(3),
-    lowestFootWorldY: Number.isFinite(minFootY) ? +minFootY.toFixed(3) : null,
-    feet: footList,
-    isAnimatedMesh: !!inst._groundBones,
+    lowestMeshWorldY: Number.isFinite(minMeshY) ? +minMeshY.toFixed(3) : null,
+    isAnimatedMesh: !!(inst._skinnedMeshes && inst._skinnedMeshes.length),
   };
 }
 
