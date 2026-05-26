@@ -258,24 +258,29 @@ export function openLootMenuAt(clientX, clientY) {
       if (row.dataset.cancel) { closeLootMenu(); return; }
       if (row.dataset.pickall) {
         // Coger todo. Recoger ya los que estén en rango; si alguno está lejos,
-        // caminar al centro del montón y recoger el resto al llegar.
+        // caminar AL ÍTEM MÁS CERCANO del montón (no al promedio: el promedio
+        // puede caer en un punto vacío donde no hay loot) y recoger todo al
+        // llegar.
         const player = getPlayer();
-        let cx = 0, cz = 0, far = false;
+        let nearest = null, nearestD2 = Infinity, far = false;
         for (const it of pile) {
-          cx += it.x; cz += it.z;
           const dx = it.x - player.position.x, dz = it.z - player.position.z;
-          if (Math.hypot(dx, dz) <= PICKUP_RADIUS_M) {
+          const d2 = dx * dx + dz * dz;
+          if (d2 <= PICKUP_RADIUS_M * PICKUP_RADIUS_M) {
             if (!it.lastAttempt || Date.now() - it.lastAttempt > PICKUP_COOLDOWN_MS) {
               it.lastAttempt = Date.now();
               pickupItem(it.id);
             }
           } else {
             far = true;
+            if (d2 < nearestD2) { nearestD2 = d2; nearest = it; }
           }
         }
-        if (far) {
-          pendingPickupAll = { x: cx / pile.length, z: cz / pile.length };
-          setPlayerTargetCb(pendingPickupAll.x, pendingPickupAll.z);
+        if (far && nearest) {
+          // Caminar a la posición EXACTA del ítem más cercano; al llegar, el
+          // bloque pendingPickupAll recoge todos los que queden en rango.
+          pendingPickupAll = { x: nearest.x, z: nearest.z };
+          setPlayerTargetCb(nearest.x, nearest.z);
         }
         closeLootMenu();
         return;
@@ -577,11 +582,19 @@ async function pickupItem(itemDropId) {
       const id = pu.id || pu;
       removeItem(id);
     }
-    // Sesión 32 — SFX al recoger item (solo si recogió al menos uno)
+    // Sesión 39 — SFX al recoger item (solo si recogió al menos uno)
     if (pickedUp.length > 0) {
       try {
         if (typeof window.__playSfx === 'function') {
           window.__playSfx('item_grab');
+        }
+      } catch {}
+      // Sesión 39 FIX — refrescar la mochila YA, para que el item aparezca al
+      // instante. Antes solo se quitaba del suelo pero el inventario no se
+      // recargaba → el item quedaba "invisible" hasta re-loguear.
+      try {
+        if (window.inventory && typeof window.inventory.refresh === 'function') {
+          window.inventory.refresh();
         }
       } catch {}
     }
