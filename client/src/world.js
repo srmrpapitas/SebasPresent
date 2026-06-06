@@ -2548,6 +2548,7 @@ function animate() {
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
+  castle.update?.(dt);     // Sesión 40 — animación de la puerta del castillo
   drawMinimap();
   updatePositionSave(dt);
   renderer.render(scene, camera);

@@ -49,8 +49,14 @@ const DEFAULTS = {
                            //   castillo para que no flote. Ajustable: __castleY()
   targetHeight: 12.0,      // alto en metros
   rotDeg: 0,               // rotación Y en grados
-  gateWidth: 6.0,          // ancho del hueco de puerta (m) en el muro frontal
-  gateDepth: 4.0,          // profundidad del hueco hacia adentro (m)
+  gateWidth: 7.0,          // ancho del hueco de puerta (m)
+  gateDepth: 5.0,          // profundidad del hueco hacia adentro (m)
+  gateSide: 'front',       // muro donde está la entrada: front/back/left/right
+                           //   front=-Z back=+Z left=-X right=+X (local).
+                           //   Alinealo al arco REAL con __castleGateSide().
+  gateOffset: 0,           // corrimiento del hueco a lo largo de ese muro (m)
+  door: true,              // dibujar una puerta de madera en el hueco
+  doorAutoOpen: true,      // se abre sola al acercarte
   bankerOffX: 0,           // banquero respecto al centro del castillo (m)
   bankerOffZ: 0,
   bankerReach: 4.0,        // a qué distancia podés tappear al banquero
@@ -84,7 +90,9 @@ let started = false;
 let castleGroup = null;     // mesh del castillo (escalado, posicionado)
 let mountainGroup = null;   // montaña procedural detrás del castillo
 let skirtGroup = null;      // faldón de roca que tapa el hueco bajo el castillo
+let doorGroup = null;       // puerta de madera en el hueco de entrada
 let bankerGroup = null;     // banquero (grupo simple)
+let doorOpen = false;
 let aabbLocal = null;       // { minX,maxX,minZ,maxZ } del castillo en local (sin rotación)
 let cfg = { ...DEFAULTS };
 let wallsOn = true;
@@ -180,10 +188,13 @@ export async function start(opts = {}) {
   if (cfg.mountain) mountainGroup = makeMountain();
   // Sesión 40 — zócalo de roca envolvente (tapa el hueco bajo el castillo).
   if (cfg.skirt) skirtGroup = makeSkirt();
+  // Sesión 40 — puerta de madera en el hueco de entrada.
+  if (cfg.door) doorGroup = makeDoor();
 
   scene.add(castleGroup);
   if (skirtGroup) scene.add(skirtGroup);       // el faldón va ANTES (debajo)
   if (mountainGroup) scene.add(mountainGroup);
+  if (doorGroup) scene.add(doorGroup);
   scene.add(bankerGroup);
   applyTransforms();
 
@@ -203,9 +214,10 @@ export function stop() {
   try { if (castleGroup) scene?.remove(castleGroup); } catch {}
   try { if (mountainGroup) scene?.remove(mountainGroup); } catch {}
   try { if (skirtGroup) scene?.remove(skirtGroup); } catch {}
+  try { if (doorGroup) scene?.remove(doorGroup); } catch {}
   try { if (bankerGroup) scene?.remove(bankerGroup); } catch {}
   try { if (menuEl) { menuEl.remove(); menuEl = null; } } catch {}
-  castleGroup = null; mountainGroup = null; skirtGroup = null; bankerGroup = null; aabbLocal = null; started = false;
+  castleGroup = null; mountainGroup = null; skirtGroup = null; doorGroup = null; bankerGroup = null; aabbLocal = null; started = false;
 }
 
 // Coloca/orienta el castillo + montaña + banquero según cfg (tras cada tuner).
@@ -227,6 +239,15 @@ function applyTransforms() {
     // mismo centro y rotación que el castillo; su geometría ya sube/baja sola.
     skirtGroup.position.set(cfg.x, cfg.y, cfg.z);
     skirtGroup.rotation.y = a;
+  }
+  if (doorGroup) {
+    // la puerta vive en el hueco: centro local del gate rotado al mundo.
+    const gc = gateLocalCenter();
+    const wx = cfg.x + (gc.x * Math.cos(a) - gc.z * Math.sin(a));
+    const wz = cfg.z + (gc.x * Math.sin(a) + gc.z * Math.cos(a));
+    doorGroup.position.set(wx, cfg.y, wz);
+    // orientar el marco según el muro (gate en eje Z mira ±Z; en eje X, ±X)
+    doorGroup.rotation.y = (gc.axis === 'z') ? a : a + Math.PI / 2;
   }
   if (bankerGroup) {
     const ox = cfg.bankerOffX, oz = cfg.bankerOffZ;
@@ -369,6 +390,57 @@ function makeBanker() {
   return g;
 }
 
+// Sesión 40 — Puerta de madera de doble hoja en el hueco. Las hojas pivotan
+// sobre los goznes (extremos del hueco) y se abren hacia adentro. El grupo se
+// orienta al muro desde applyTransforms; acá construimos en local: ancho a lo
+// largo de X, apertura hacia -Z (adentro).
+let _doorLeftPivot = null, _doorRightPivot = null;
+function makeDoor() {
+  const g = new THREE.Group();
+  g.userData = { kind: 'castle-door' };
+  const w = cfg.gateWidth;
+  const half = w / 2;
+  const h = Math.min(cfg.targetHeight * 0.55, 6.5);
+  const thick = 0.35;
+  const woodMat = new THREE.MeshLambertMaterial({ color: 0x5a3a1c, flatShading: true });
+  const ironMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2e, flatShading: true });
+
+  function leaf(sign) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sign * half, 0, 0);    // gozne en el extremo del hueco
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(half, h, thick), woodMat);
+    panel.position.set(-sign * half / 2, h / 2, 0);  // borde de la hoja en el gozne
+    pivot.add(panel);
+    for (const yy of [h * 0.25, h * 0.72]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(half * 0.95, 0.18, thick + 0.06), ironMat);
+      bar.position.set(-sign * half / 2, yy, 0);
+      pivot.add(bar);
+    }
+    return pivot;
+  }
+  _doorLeftPivot = leaf(-1);
+  _doorRightPivot = leaf(+1);
+  g.add(_doorLeftPivot);
+  g.add(_doorRightPivot);
+  return g;
+}
+
+// Llamar cada frame desde world.js (castle.update(dt)). Abre/cierra la puerta
+// según distancia del player, animando el giro de las hojas.
+let _doorAngle = 0;
+export function update(dt = 0.016) {
+  if (!started || !doorGroup) return;
+  const player = getPlayer();
+  if (cfg.doorAutoOpen && player) {
+    const d = Math.hypot(player.position.x - doorGroup.position.x, player.position.z - doorGroup.position.z);
+    doorOpen = d < cfg.gateWidth * 1.6;   // se abre al acercarte al hueco
+  }
+  const targetA = doorOpen ? (Math.PI * 0.62) : 0;   // ~110° abierto
+  _doorAngle += (targetA - _doorAngle) * Math.min(1, dt * 6);
+  if (_doorLeftPivot)  _doorLeftPivot.rotation.y  = -_doorAngle;  // abre hacia adentro
+  if (_doorRightPivot) _doorRightPivot.rotation.y = +_doorAngle;
+}
+
 // ============================================================
 // Colisión perimetral con hueco de puerta
 // ============================================================
@@ -385,26 +457,49 @@ export function applyCollision(x0, z0, x1, z1) {
 
 // ¿El punto del mundo es muro sólido del castillo? Dentro del AABB SALVO el
 // hueco de la puerta (gate) en el muro frontal (-Z local). Esto deja entrar.
+// Centro local del hueco de puerta según gateSide + gateOffset. Lo usan la
+// colisión y la puerta visual, así SIEMPRE coinciden.
+function gateLocalCenter() {
+  const A = aabbLocal;
+  switch (cfg.gateSide) {
+    case 'back':  return { x: cfg.gateOffset, z: A.maxZ, axis: 'z', sign: +1 };
+    case 'left':  return { x: A.minX, z: cfg.gateOffset, axis: 'x', sign: -1 };
+    case 'right': return { x: A.maxX, z: cfg.gateOffset, axis: 'x', sign: +1 };
+    case 'front':
+    default:      return { x: cfg.gateOffset, z: A.minZ, axis: 'z', sign: -1 };
+  }
+}
+
+// ¿El punto del mundo es muro sólido del castillo? Dentro del AABB SALVO el
+// hueco de la puerta (gate), que puede estar en cualquier muro (gateSide).
 function solidAt(worldX, worldZ) {
   const a = cfg.rotDeg * Math.PI / 180;
   const dx = worldX - cfg.x, dz = worldZ - cfg.z;
   const c = Math.cos(-a), s = Math.sin(-a);
   const lx = dx * c - dz * s;
   const lz = dx * s + dz * c;
+  const A = aabbLocal;
   // fuera del AABB → libre
-  if (lx < aabbLocal.minX || lx > aabbLocal.maxX || lz < aabbLocal.minZ || lz > aabbLocal.maxZ) return false;
-  // dentro del AABB: ¿está en el corredor de la puerta? (centrado en X, en el
-  // borde frontal -Z, con ancho gateWidth y profundidad gateDepth). Si sí, libre.
-  const inGateX = Math.abs(lx) <= cfg.gateWidth / 2;
-  const nearFront = lz <= (aabbLocal.minZ + cfg.gateDepth);
-  if (inGateX && nearFront) return false;   // hueco de puerta → podés pasar
-  // CENTRO hueco: una vez DENTRO (pasada la profundidad de puerta), el interior
-  // es transitable (no bloqueamos el centro; solo los muros del perímetro).
-  const margin = 1.2; // grosor de muro
+  if (lx < A.minX || lx > A.maxX || lz < A.minZ || lz > A.maxZ) return false;
+  // ¿en el corredor de la puerta? (según el muro elegido)
+  const gc = gateLocalCenter();
+  let inGate = false;
+  if (gc.axis === 'z') {
+    const inWidth = Math.abs(lx - cfg.gateOffset) <= cfg.gateWidth / 2;
+    const nearEdge = gc.sign < 0 ? (lz <= A.minZ + cfg.gateDepth) : (lz >= A.maxZ - cfg.gateDepth);
+    inGate = inWidth && nearEdge;
+  } else {
+    const inWidth = Math.abs(lz - cfg.gateOffset) <= cfg.gateWidth / 2;
+    const nearEdge = gc.sign < 0 ? (lx <= A.minX + cfg.gateDepth) : (lx >= A.maxX - cfg.gateDepth);
+    inGate = inWidth && nearEdge;
+  }
+  if (inGate) return false;   // hueco de puerta → podés pasar
+  // solo el borde (muros) bloquea; el interior queda libre para caminar.
+  const margin = 1.2;
   const onPerimeter =
-    lx <= aabbLocal.minX + margin || lx >= aabbLocal.maxX - margin ||
-    lz <= aabbLocal.minZ + margin || lz >= aabbLocal.maxZ - margin;
-  return onPerimeter;   // solo el borde bloquea; el interior queda libre
+    lx <= A.minX + margin || lx >= A.maxX - margin ||
+    lz <= A.minZ + margin || lz >= A.maxZ - margin;
+  return onPerimeter;
 }
 
 // ============================================================
@@ -454,6 +549,15 @@ function openBankerMenu() {
   document.body.appendChild(menuEl);
 }
 function closeBankerMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+
+// Reconstruye la puerta tras cambiar ancho/lado (las hojas dependen del ancho).
+function rebuildDoor() {
+  if (!cfg.door) return;
+  if (doorGroup) { scene.remove(doorGroup); doorGroup = null; }
+  doorGroup = makeDoor();
+  scene.add(doorGroup);
+  applyTransforms();
+}
 
 // ============================================================
 // Debug / tuning en vivo (Eruda en el móvil)
@@ -509,7 +613,18 @@ function exposeDebug() {
     return cfg.targetHeight;
   };
   window.__castleRot = (deg) => { if (Number.isFinite(deg)) cfg.rotDeg = deg; applyTransforms(); return cfg.rotDeg; };
-  window.__castleGate = (w, d) => { if (Number.isFinite(w)) cfg.gateWidth = w; if (Number.isFinite(d)) cfg.gateDepth = d; return [cfg.gateWidth, cfg.gateDepth]; };
+  window.__castleGate = (w, d) => { if (Number.isFinite(w)) cfg.gateWidth = w; if (Number.isFinite(d)) cfg.gateDepth = d; rebuildDoor(); return [cfg.gateWidth, cfg.gateDepth]; };
+  // alinear el hueco al ARCO REAL del castillo: probá front/back/left/right
+  window.__castleGateSide = (side) => { if (['front','back','left','right'].includes(side)) cfg.gateSide = side; rebuildDoor(); applyTransforms(); return cfg.gateSide; };
+  window.__castleGatePos = (off) => { if (Number.isFinite(off)) cfg.gateOffset = off; applyTransforms(); return cfg.gateOffset; };
+  window.__castleDoor = (on) => {
+    if (typeof on === 'boolean') {
+      cfg.door = on;
+      if (on && !doorGroup) { doorGroup = makeDoor(); scene.add(doorGroup); applyTransforms(); }
+      else if (!on && doorGroup) { scene.remove(doorGroup); doorGroup = null; }
+    }
+    return cfg.door;
+  };
   window.__castleWalls = (on) => { if (typeof on === 'boolean') wallsOn = on; return wallsOn; };
   window.__bankerPos = (x, z) => { if (Number.isFinite(x)) cfg.bankerOffX = x; if (Number.isFinite(z)) cfg.bankerOffZ = z; applyTransforms(); return [cfg.bankerOffX, cfg.bankerOffZ]; };
   window.__castleBox = () => aabbLocal;
