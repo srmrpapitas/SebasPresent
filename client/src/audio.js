@@ -66,6 +66,15 @@ const SFX_DEFS = {
   equip_weapon: { url: 'equip_weapon.ogg', category: 'sfx' },
   wc_chop:      { url: 'wc_chop.ogg',      category: 'sfx' },
   cook_pot:     { url: 'cook_pot.ogg',     category: 'sfx' },
+
+  // Sesión 41 — Magia. Cast = al lanzar; impact = al golpear. spell_zap es
+  // el rayo (eléctrico); spell_ice_impact suena a cristal (hielo).
+  spell_fire:        { url: 'spell_fire.ogg',        category: 'sfx' },
+  spell_ice:         { url: 'spell_ice.ogg',         category: 'sfx' },
+  spell_zap:         { url: 'spell_zap.ogg',         category: 'sfx' },
+  spell_entangle:    { url: 'spell_entangle.ogg',    category: 'sfx' },
+  spell_impact:      { url: 'spell_impact.ogg',      category: 'sfx' },
+  spell_ice_impact:  { url: 'spell_ice_impact.ogg',  category: 'sfx' },
 };
 
 // ============================================================
