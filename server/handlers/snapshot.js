@@ -322,13 +322,19 @@ export async function handleWorldSnapshot(request, env) {
       // por el side path).
       last_died_at: null,
       you_died_recently: false,
+      // Sesión 41 — maná crudo + magic_xp para que el cliente muestre la barra
+      // y calcule maxMana (= magicLevel×2) y la regen visual.
+      mana_current: 0,
+      mana_updated_at: 0,
+      magic_xp: 0,
     };
     // Sesión 32 — fetch last_hit_* del combat_stats. Defensivo: si las
     // columnas no existen, los campos quedan null (cliente maneja como
     // "no hit").
     try {
       const hitRow = await env.DB.prepare(
-        `SELECT last_hit_from_user_id, last_hit_damage, last_hit_at, last_hit_is_crit
+        `SELECT last_hit_from_user_id, last_hit_damage, last_hit_at, last_hit_is_crit,
+                mana_current, mana_updated_at, magic_xp
          FROM combat_stats WHERE user_id = ?`
       ).bind(session.user_id).first();
       if (hitRow) {
@@ -336,6 +342,9 @@ export async function handleWorldSnapshot(request, env) {
         me.last_hit_damage = hitRow.last_hit_damage;
         me.last_hit_at = hitRow.last_hit_at;
         me.last_hit_is_crit = hitRow.last_hit_is_crit;
+        me.mana_current = hitRow.mana_current || 0;
+        me.mana_updated_at = hitRow.mana_updated_at || 0;
+        me.magic_xp = hitRow.magic_xp || 0;
       }
     } catch {
       // columnas no existen → me.last_hit_* quedan null. OK.

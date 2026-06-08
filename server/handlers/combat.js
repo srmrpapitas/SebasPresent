@@ -50,6 +50,10 @@ export async function handleCombatAttack(request, env) {
   if (Number.isFinite(cx) && Number.isFinite(cz)) {
     opts.userPos = { x: cx, z: cz };
   }
+  // Sesión 41 — magia: si viene spell_id, el engine lo trata como casteo.
+  if (body.spell_id && typeof body.spell_id === 'string') {
+    opts.spellId = body.spell_id;
+  }
 
   const db = makeDbAdapter(env);
   try {
