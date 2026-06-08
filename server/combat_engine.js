@@ -184,6 +184,7 @@ const COMBAT_SKILL_MAP = {
   defence_xp:  'defence',
   hp_xp:       'hitpoints',
   ranged_xp:   'ranged',
+  magic_xp:    'magic',     // Sesión 41 — mago (día 8). Ya existe la columna (S34).
 };
 
 export {
