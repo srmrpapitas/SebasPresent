@@ -140,8 +140,8 @@ const NPC_RANGED_ENGAGE_RANGE = 8.0;
 function getNpcEngageRange() {
   try {
     const wt = equipment.getWeaponType?.();
-    if (wt === 'bow') return NPC_RANGED_ENGAGE_RANGE;
-    // Cuando agreguemos 'staff' (Bloque 2 días 8-11), va acá también.
+    if (wt === 'bow' || wt === 'staff') return NPC_RANGED_ENGAGE_RANGE;
+    // bow + staff (mago) atacan a distancia → enganchan sin acercarse a melé.
   } catch {}
   return NPC_MELEE_ENGAGE_RANGE;
 }

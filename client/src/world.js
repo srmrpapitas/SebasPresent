@@ -451,10 +451,25 @@ export async function startWorld(loggedInUser, token) {
       getMana: () => {
         try {
           const me = worldSnapshot.getMe?.();
-          if (!me) return { current: 0, max: 0 };
-          const lvl = skills.xpToLevel(me.magic_xp || 0);
-          return { current: me.mana_current || 0, max: 20 + lvl * 2 };
-        } catch { return { current: 0, max: 0 }; }
+          if (!me) return { current: 0, max: 20 };
+          // Sesión 41 — pool = 20 base + 100 si hay staff equipado. Mostramos
+          // el maná REGENERANDO en vivo (raw del server + tiempo transcurrido)
+          // para que en el HUD se vea subir, no solo al castear.
+          const hasStaff = (() => { try { return equipment.getWeaponType?.() === 'staff'; } catch { return false; } })();
+          const max = 20 + (hasStaff ? 100 : 0);
+          const rate = hasStaff ? 1.0 : 0.2;   // maná/seg (1.0 = 10 cada 10s)
+          const raw = me.mana_current || 0;
+          const updatedAt = me.mana_updated_at || 0;
+          const now = worldSnapshot.getServerNow?.() || Date.now();
+          let current;
+          if (!updatedAt) {
+            current = max;   // nunca casteó → pozo lleno
+          } else {
+            const elapsed = Math.max(0, (now - updatedAt) / 1000);
+            current = Math.min(max, Math.floor(raw + elapsed * rate));
+          }
+          return { current, max };
+        } catch { return { current: 0, max: 20 }; }
       },
     });
 
