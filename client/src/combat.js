@@ -329,6 +329,7 @@ async function doAttackTickNpc(gen = attackGen) {
       if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = p;
     } catch {}
     result = await api.attackNpc(npcId, pos);
+    try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en combate
   } catch (err) {
     if (err.code) {
       result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}) };
@@ -565,6 +566,7 @@ async function doAttackTickPlayer(gen = attackGen) {
       targetVisualPos = multiplayer.getPeerVisualPosition?.(targetId);
     } catch {}
     result = await api.attackPlayer(targetId, pos, targetVisualPos);
+    try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en PvP
   } catch (err) {
     if (err.code) {
       result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}) };

@@ -46,8 +46,34 @@
 
 import * as duel from './duel.js';   // Sesión 28 — hook onSnapshotMe
 
-const SNAPSHOT_POLL_INTERVAL_MS = 250;   // 4 ticks/sec, según plan Bloque 1
+// Sesión 41 — Polling ADAPTATIVO para no reventar el límite de Cloudflare
+// (100k req/día). El poll también es el "heartbeat" (manda x=&z=), así que:
+//   - En COMBATE/PvP polleamos RÁPIDO (250ms) → targeting crujiente, sin
+//     "fuera de alcance" por ver al rival atrasado.
+//   - Caminando/talando/quieto polleamos LENTO (500ms) → mitad de requests.
+// El modo rápido se activa con markCombatActivity() (al atacar o ser atacado) y
+// dura COMBAT_GRACE_MS tras la última acción de combate. Los NPCs (PvE) no se
+// ven afectados por la velocidad: el server usa SU posición autoritativa.
+const POLL_FAST_MS = 250;          // en combate / PvP
+const POLL_SLOW_MS = 500;          // idle / caminando
+const COMBAT_GRACE_MS = 8_000;     // seguir rápido N ms tras la última pelea
+let _fastUntil = 0;                 // timestamp hasta el que polleamos rápido
+
 const SNAPSHOT_STALE_AFTER_MS   = 5_000; // tras esto consideramos stale
+
+// Devuelve el intervalo actual según si estamos en "modo combate".
+function currentPollInterval() {
+  return (Date.now() < _fastUntil) ? POLL_FAST_MS : POLL_SLOW_MS;
+}
+
+/**
+ * Marca que hubo actividad de combate (atacar o ser atacado). Mantiene el
+ * polling en modo RÁPIDO durante COMBAT_GRACE_MS. Llamado desde combat.js al
+ * enviar un ataque, y desde handleIncomingHit al recibir uno.
+ */
+export function markCombatActivity() {
+  _fastUntil = Date.now() + COMBAT_GRACE_MS;
+}
 
 // ============================================================
 // Estado del módulo (privado)
@@ -108,7 +134,7 @@ export function start(opts) {
     window.__snapshotDebug = dbg;
   }
 
-  console.log('[world_snapshot] started, polling each', SNAPSHOT_POLL_INTERVAL_MS, 'ms');
+  console.log('[world_snapshot] started, polling adaptativo', POLL_FAST_MS, '/', POLL_SLOW_MS, 'ms (combate/idle)');
 }
 
 export function stop() {
@@ -134,7 +160,7 @@ export function stop() {
 export function update(dt) {
   if (!started) return;
   pollTimer += dt * 1000;
-  if (pollTimer >= SNAPSHOT_POLL_INTERVAL_MS && !inFlight) {
+  if (pollTimer >= currentPollInterval() && !inFlight) {
     pollTimer = 0;
     fetchSnapshot();
   }
@@ -327,6 +353,10 @@ function handleIncomingHit(me) {
   }
 
   _lastProcessedHitAt = hitAt;
+
+  // Sesión 41 — recibir un hit = estás en combate → polling rápido para que el
+  // contraataque/seguimiento del rival se sienta crujiente.
+  markCombatActivity();
 
   const damage = me.last_hit_damage || 0;
 
