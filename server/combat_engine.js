@@ -28,6 +28,8 @@
  *        porque user_skills puede haber recibido XP extra vía /api/skills/grant.
  */
 
+import * as magic from './magic.js';   // Sesión 41 — sistema de mago
+
 const XP_TABLE = [
   0,         83,        174,       276,       388,       512,       650,       801,       969,       1154,
   1358,      1584,      1833,      2107,      2411,      2746,      3115,      3523,      3973,      4470,
@@ -308,14 +310,27 @@ function rollHit(rng, attackerAtkLvl, defenderDefLvl, maxHit) {
  *
  * Magic/prayer no están acá todavía — se agregan en días 8-12 del Bloque 2.
  */
-function awardXp(stats, damage, style, weaponType = null) {
-  if (damage <= 0) return { attack: 0, strength: 0, defence: 0, hp: 0, ranged: 0 };
+function awardXp(stats, damage, style, weaponType = null, isMagic = false) {
+  if (damage <= 0) return { attack: 0, strength: 0, defence: 0, hp: 0, ranged: 0, magic: 0 };
   const shared  = Math.floor(damage * 4 / 3);
   const focused = damage * 4;
-  let aXp = 0, sXp = 0, dXp = 0, rXp = 0;
+  let aXp = 0, sXp = 0, dXp = 0, rXp = 0, mXp = 0;
   const hXp = shared;
 
   const isRanged = (weaponType === 'bow');
+
+  // Sesión 41 — Magia: SOLO si fue un casteo real (isMagic). Un golpe con el
+  // staff sin hechizo NO es magia → cae al bloque melee (XP Ataque/Fuerza).
+  if (isMagic) {
+    mXp = focused;
+    stats.attack_xp   += 0;
+    stats.strength_xp += 0;
+    stats.defence_xp  += 0;
+    stats.hp_xp       += hXp;
+    stats.ranged_xp   = (stats.ranged_xp || 0) + 0;
+    stats.magic_xp    = (stats.magic_xp || 0) + mXp;
+    return { attack: 0, strength: 0, defence: 0, hp: hXp, ranged: 0, magic: mXp };
+  }
 
   if (isRanged) {
     switch (style) {
@@ -360,7 +375,7 @@ function awardXp(stats, damage, style, weaponType = null) {
   // arrancamos desde 0.
   stats.ranged_xp = (stats.ranged_xp || 0) + rXp;
 
-  return { attack: aXp, strength: sXp, defence: dXp, hp: hXp, ranged: rXp };
+  return { attack: aXp, strength: sXp, defence: dXp, hp: hXp, ranged: rXp, magic: 0 };
 }
 
 function levelsOf(stats) {
@@ -372,6 +387,7 @@ function levelsOf(stats) {
     // S34 — backward-compat: si la cuenta tiene combat_stats anterior a
     // la migración de Bloque 2, ranged_xp puede ser undefined. Default 0.
     ranged:   levelFromXp(stats.ranged_xp || 0),
+    magic:    levelFromXp(stats.magic_xp || 0),   // Sesión 41
   };
 }
 
@@ -382,6 +398,7 @@ function detectLevelUps(before, after) {
   if (after.defence  > before.defence)  ups.push('defence');
   if (after.hp       > before.hp)       ups.push('hp');
   if (after.ranged   > before.ranged)   ups.push('ranged');
+  if (after.magic    > before.magic)    ups.push('magic');   // Sesión 41
   return ups;
 }
 
@@ -594,7 +611,7 @@ async function dbGetNpcInstance(db, npcInstanceId) {
   const row = await db.first(
     `SELECT i.*, d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
             d.attack_speed_ticks, d.max_hit, d.xp_per_kill, d.respawn_ms,
-            d.spawn_x, d.spawn_z, d.attack_range, d.model
+            d.spawn_x, d.spawn_z, d.attack_range, d.model, d.style
      FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
      WHERE i.id = ?`,
     [npcInstanceId]
@@ -819,6 +836,14 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // El staff y 2H son lentos; bow y 1H son rápidos. Smash es +5% lento,
   // slash es -10% rápido. Estos compounean multiplicativamente.
   const weaponType = await getUserWeaponType(db, userId);
+  // Sesión 41 — MAGIA solo si el cliente manda un hechizo (opts.spellId). Como
+  // en OSRS: el staff puede pegar a melee (golpe con el palo → XP Ataque/Fuerza)
+  // O lanzar un hechizo (→ XP de Magia, a distancia). Hasta que exista el
+  // spellbook (2B) que mande spellId, el staff pega melee. Sin spellId NO es
+  // magia aunque tengas staff.
+  const isMagic = (weaponType === 'staff') && !!opts.spellId;
+  const spell = isMagic ? magic.getSpell(opts.spellId) : null;
+  if (isMagic && !spell) return { error: 'invalid_spell', weapon_type: weaponType };
   const stanceKey = STYLE_TO_STANCE[style] || 'smash';
   const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
   const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
@@ -836,9 +861,11 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   if (!userPos) return { error: 'user_no_position' };
   const d = dist(userPos.x, userPos.z, npc.x, npc.z);
   // Sesión 26 — Para bow el rango es mayor. Para melee se mantiene el cap.
+  // Sesión 41 — magia usa el mismo rango largo que ranged (atacás a distancia).
   const isRanged = (weaponType === 'bow');
-  const maxRange = isRanged
-    ? Math.max(npc.attack_range + 8.0, 10.0)   // ranged: hasta 10m
+  const isRangedLike = isRanged || isMagic;
+  const maxRange = isRangedLike
+    ? Math.max(npc.attack_range + 8.0, 10.0)   // ranged/magia: hasta 10m
     : Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE);
   if (d > maxRange) {
     return {
@@ -849,6 +876,27 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   }
 
   if (stats.hp_current <= 0) return { error: 'user_dead' };
+
+  // Sesión 41 — MAGIA: chequeo de nivel + maná ANTES del roll. El maná se
+  // regenera de forma perezosa (como la HP): según el tiempo desde
+  // mana_updated_at y la regen (lenta sin set de mago, rápida con staff).
+  const magicLevel = isMagic ? levelFromXp(stats.magic_xp || 0) : 0;
+  let manaAfter = null;   // si magia: maná que queda tras castear (para persistir)
+  if (isMagic) {
+    if (magicLevel < spell.magic_level_req) {
+      return { error: 'magic_level_too_low', required: spell.magic_level_req, weapon_type: weaponType };
+    }
+    const maxMana = magic.computeMaxMana(magicLevel, 0);   // itemBonus=0 por ahora
+    const regenPerSec = magic.manaRegenPerSec(true, 0);    // tiene staff → boost
+    const manaNow = magic.regenMana(
+      stats.mana_current || 0, maxMana,
+      stats.mana_updated_at || 0, now, regenPerSec
+    );
+    if (manaNow < spell.mana_cost) {
+      return { error: 'no_mana', mana_current: manaNow, mana_max: maxMana, mana_cost: spell.mana_cost, weapon_type: weaponType };
+    }
+    manaAfter = manaNow - spell.mana_cost;   // se descuenta al castear
+  }
 
   // Sesión 34 — Si el ataque es ranged, consumir 1 flecha ANTES del roll.
   // OSRS-faithful: la flecha se gasta incluso si fallás el roll (el shot
@@ -874,10 +922,18 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   // ---- User hit ----
   const userLvls = levelsOf(stats);
-  // Sesión 34 — Bifurcación ranged vs melee.
+  // Sesión 34 — Bifurcación ranged vs melee. Sesión 41 — + magia.
+  //   Magia:  usa magicLevel + base del hechizo para el max hit.
   //   Ranged: usa userLvls.ranged + totalRangedBonus (arco + flecha).
-  //   Melee:  usa userLvls.attack para hit chance, userLvls.strength para max hit (original).
-  const userHit = isRanged
+  //   Melee:  usa userLvls.attack (hit chance) + userLvls.strength (max hit).
+  const userHit = isMagic
+    ? magic.rollHitMagic(
+        rng,
+        magicLevel,
+        npc.defence_lvl,
+        magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, 0)
+      )
+    : isRanged
     ? rollHitRanged(
         rng,
         userLvls.ranged,
@@ -891,20 +947,24 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   //   1. Weapon base mult (1.5× para 2H)
   //   2. Stance mult (slash 0.95, smash 1.05)
   //   3. Crit roll (solo si el arma tiene crit_chance > 0)
+  // Sesión 41 — Magia NO usa weapon/stance/crit (el daño viene del hechizo).
+  //   Y el TRIÁNGULO de combate (+20% en matchup favorable) se aplica a TODOS
+  //   los estilos: magic>melee, melee>ranged, ranged>magic.
   let dmgRaw = userHit.damage;
   let isCrit = false;
   if (userHit.hit && dmgRaw > 0) {
-    const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
-    dmgRaw = dmgRaw * weaponMult * stanceMods.damage_mult;
-    // Roll crit automático (solo 2H tiene >0% chance)
-    const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
-    if (critChance > 0 && rng() < critChance) {
-      isCrit = true;
-      dmgRaw = dmgRaw * CRIT_DAMAGE_MULT;
-      // Nota: NPCs actuales no tienen stance, así que el crit_taken_mult
-      // no se aplica aquí. Si en futuro PVP el target está en block,
-      // se aplicaría dmgRaw *= targetStance.crit_taken_mult.
+    if (!isMagic) {
+      const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
+      dmgRaw = dmgRaw * weaponMult * stanceMods.damage_mult;
+      // Roll crit automático (solo 2H tiene >0% chance)
+      const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+      if (critChance > 0 && rng() < critChance) {
+        isCrit = true;
+        dmgRaw = dmgRaw * CRIT_DAMAGE_MULT;
+      }
     }
+    // Triángulo de combate: +20% si el estilo del atacante le gana al del NPC.
+    dmgRaw = dmgRaw * magic.triangleMult(weaponType, npc.style || 'melee');
     dmgRaw = Math.max(1, Math.floor(dmgRaw)); // mínimo 1 si hit
   }
   const dmgToNpc = Math.min(dmgRaw, npc.hp_current);
@@ -916,7 +976,9 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const xpBefore = levelsOf(stats);
   // Sesión 34 — Pasar weaponType para que awardXp distinga entre melee
   // y ranged. Para bow, la XP va a Ranged (no Attack/Strength).
-  const xpGained = awardXp(stats, dmgToNpc, style, weaponType);
+  // Sesión 41 — para staff CON hechizo, la XP va a Magia. Staff sin hechizo
+  // (golpe con el palo) cae a melee.
+  const xpGained = awardXp(stats, dmgToNpc, style, weaponType, isMagic);
   const xpAfter = levelsOf(stats);
   const levelUps = detectLevelUps(xpBefore, xpAfter);
 
@@ -996,15 +1058,24 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // ---- Persist user ----
   // Sesión 34 — Agregado ranged_xp. Usar (stats.ranged_xp || 0) defensivamente
   // por si la cuenta es pre-migración y el SELECT no devolvió la columna.
+  // Sesión 41 — Agregado magic_xp + maná (mana_current/mana_updated_at).
+  //   Si fue casteo, manaAfter tiene el maná tras descontar el hechizo y
+  //   sellamos mana_updated_at=now (corta la regen acumulada hasta acá). Si NO
+  //   fue magia, dejamos el maná intacto (regen perezosa sigue desde su último
+  //   updated_at, sin tocar nada).
+  const persistMana   = (manaAfter !== null) ? manaAfter : (stats.mana_current || 0);
+  const persistManaAt = (manaAfter !== null) ? now : (stats.mana_updated_at || 0);
   await db.run(
     `UPDATE combat_stats
      SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
-         ranged_xp = ?,
+         ranged_xp = ?, magic_xp = ?,
+         mana_current = ?, mana_updated_at = ?,
          hp_current = ?, last_attack_at = ?, last_died_at = ?
      WHERE user_id = ?`,
     [
       stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
-      stats.ranged_xp || 0,
+      stats.ranged_xp || 0, stats.magic_xp || 0,
+      persistMana, persistManaAt,
       stats.hp_current, stats.last_attack_at, stats.last_died_at,
       userId,
     ]
@@ -1058,6 +1129,20 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     your_hp: stats.hp_current,
     your_hp_max: xpAfter.hp,
     your_levels: xpAfter,
+    // Sesión 41 — info de magia (null si no fue casteo). El cliente la usa para
+    // disparar el proyectil del color correcto, actualizar la barra de maná y
+    // (futuro) aplicar el root de Entangle.
+    spell_cast: isMagic
+      ? {
+          spell_id: spell.id,
+          name: spell.name,
+          color: spell.color,
+          root_ms: spell.root_ms || 0,
+          mana_current: persistMana,
+          mana_max: magic.computeMaxMana(magicLevel, 0),
+          mana_cost: spell.mana_cost,
+        }
+      : null,
   };
 }
 
