@@ -1310,8 +1310,8 @@ export class Character {
    *   //   → reproduce Sword_Attack_2.fbx escalada a 600ms
    */
   playAttack(stanceKey, weaponType, cooldownMs) {
-    if (!this.loaded || this.isDead) return;
-    if (this.isAttacking || this.isInTransition) return;
+    if (!this.loaded || this.isDead) return 'not_loaded_or_dead';
+    if (this.isAttacking || this.isInTransition) return this.isAttacking ? 'busy_attacking' : 'busy_transition';
 
     const animMs = (typeof cooldownMs === 'number' && cooldownMs > 0)
       ? cooldownMs
@@ -1327,7 +1327,7 @@ export class Character {
         && this.actions.bow_overdraw
         && this.actions.bow_recoil) {
       this._playBowAttack(animMs);
-      return;
+      return 'bow_sequence';
     }
 
     let action = null;
@@ -1355,7 +1355,7 @@ export class Character {
     }
     // Fallback
     if (!action) action = this.actions.punching || this.actions.attack_1;
-    if (!action) return;
+    if (!action) return 'no_action_clip';
 
     this._scaleOneShot(action, animMs);
     this._crossFadeTo(action, 0.08);
@@ -1373,6 +1373,7 @@ export class Character {
     setTimeout(() => {
       this.isAttacking = false;
     }, animMs + 20);
+    return 'played';
   }
 
   /**

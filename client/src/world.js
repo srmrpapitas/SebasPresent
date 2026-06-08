@@ -616,7 +616,10 @@ export async function startWorld(loggedInUser, token) {
       // Sesión 32 — exponer playHitReaction para que world_snapshot dispare
       // la anim cuando detecta un hit recibido.
       window.__playerReact = () => {
-        try { character?.playHitReaction?.(); } catch {}
+        try {
+          if (window.__combatDebugOn) console.log('%c[combat-dbg]', 'color:#e0a030', 'HIT recibido → react');
+          character?.playHitReaction?.();
+        } catch {}
       };
       // Sesión 32 — exponer audio.sfx para que cualquier módulo pueda
       // disparar SFX sin import circular (world_snapshot, multiplayer, etc).

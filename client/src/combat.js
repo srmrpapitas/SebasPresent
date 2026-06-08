@@ -226,6 +226,7 @@ function stopPolling() {
 // ============================================================
 
 export async function engageNpc(npcId) {
+  clog('engageNpc(', npcId, ') — caller:', new Error().stack?.split('\n')[2]?.trim());
   if (currentTargetNpcId === npcId && attackTimer) return;
   // Sesión 39 — fix exploit: cancelar CUALQUIER loop de ataque previo antes
   // de arrancar el nuevo target, y bumpear la generación para invalidar ticks
@@ -255,6 +256,7 @@ export async function engageNpc(npcId) {
  * Mismo flujo que engageNpc pero target = otro player.
  */
 export async function engagePlayer(targetUserId) {
+  clog('engagePlayer(', targetUserId, ') — caller:', new Error().stack?.split('\n')[2]?.trim());
   if (currentTargetPlayerId === targetUserId && attackTimer) return;
   // Sesión 39 — fix exploit: mismo patrón que engageNpc.
   if (attackTimer) { clearTimeout(attackTimer); attackTimer = null; }
@@ -384,11 +386,12 @@ async function doAttackTickNpc(gen = attackGen) {
 
   if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
-      window.__playerPlayAttack(
+      const animResult = window.__playerPlayAttack(
         uiSelectedStance,
         result.weapon_type,
         result.cooldown_ms
       );
+      clog('playAttack(npc) →', animResult, '| weapon:', result.weapon_type, 'stance:', uiSelectedStance);
     } catch {}
   }
 
@@ -632,11 +635,12 @@ async function doAttackTickPlayer(gen = attackGen) {
   // Animación de swing del player (igual que NPC)
   if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
-      window.__playerPlayAttack(
+      const animResult = window.__playerPlayAttack(
         uiSelectedStance,
         result.weapon_type,
         result.cooldown_ms
       );
+      clog('playAttack(pvp) →', animResult, '| weapon:', result.weapon_type, 'stance:', uiSelectedStance);
     } catch {}
   }
 
@@ -872,6 +876,28 @@ function detectEquippedWeapon() {
 let uiSelectedStance = null;
 let autoRetaliate = false;  // TODO: persistir cuando server lo soporte
 
+// Sesión 41 — Diagnóstico del auto-ataque/retaliate. Activar en Eruda con
+// window.__combatDebug(true). Loguea CADA decisión del flujo de combate para
+// ver exactamente qué dispara un ataque y si la animación se ejecutó o se
+// bloqueó. Solo loguea — no cambia comportamiento.
+let _combatDebug = false;
+function clog(...args) {
+  if (_combatDebug) console.log('%c[combat-dbg]', 'color:#e0a030', ...args);
+}
+if (typeof window !== 'undefined') {
+  window.__combatDebug = (on = true) => {
+    _combatDebug = !!on;
+    window.__combatDebugOn = _combatDebug;   // visible para hooks en world.js
+    console.log('[combat-dbg]', _combatDebug ? 'ON — reproducí el bug ahora' : 'OFF');
+    console.log('[combat-dbg] estado actual:', {
+      autoRetaliate,
+      currentTargetNpcId,
+      currentTargetPlayerId,
+    });
+    return _combatDebug;
+  };
+}
+
 // ============================================================
 // Sesión 27 Bloque 3 — AUTO RETALIATE real
 // ============================================================
@@ -923,6 +949,7 @@ function tryAutoRetaliate() {
   if (key === lastAutoEngagedAttackerKey) return;
   lastAutoEngagedAttackerKey = key;
 
+  clog('tryAutoRetaliate → ENGAGE (retaliate ON). atacante:', atk);
   if (atk.type === 1) {
     // NPC me atacó → engagear NPC (atk.id es npc_instance_id)
     engageNpc(atk.id).catch(e => console.warn('[auto-retaliate npc]', e));
@@ -1087,6 +1114,7 @@ function attachHandlers() {
         // Sesión 18 — Auto Retaliate (local-only por ahora; cuando el server
         // soporte el flag, mandar POST /api/combat/retaliate).
         autoRetaliate = !autoRetaliate;
+        clog('toggle-retaliate → autoRetaliate =', autoRetaliate);
         render();
       } else if (action === 'style') {
         // Legacy: botones viejos de "style" (accurate/aggressive/defensive/
