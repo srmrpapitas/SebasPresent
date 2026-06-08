@@ -441,6 +441,7 @@ export async function startWorld(loggedInUser, token) {
     // nivel de Magia del snapshot (me block).
     spellbook.start({
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
+      onAutocastChange: () => { try { combat.refreshCombatTab?.(); } catch {} },
       getMagicLevel: () => {
         try {
           const me = worldSnapshot.getMe?.();

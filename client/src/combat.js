@@ -181,6 +181,12 @@ export function onUpdate(cb) {
   return () => { listeners = listeners.filter(x => x !== cb); };
 }
 
+// Sesión 41 — re-render del tab Combate desde afuera (ej: el spellbook avisa que
+// cambió el autocast). Solo redibuja si el tab está abierto.
+export function refreshCombatTab() {
+  try { if (isTabOpen) render(); } catch {}
+}
+
 function notify() {
   if (!state) return;
   for (const cb of listeners) {
@@ -863,6 +869,60 @@ const WEAPON_STANCES = {
   },
 };
 
+// Sesión 41 — La pestaña de Combate se adapta a mago: con staff equipado,
+// muestra el slot de AUTOCAST (SVG del hechizo seleccionado + toggle on/off) y
+// el next-cast encolado si hay. El control del autocast vive ACÁ, no en el
+// spellbook (como OSRS).
+function renderMageAutocast() {
+  let meta = null, nextMeta = null, on = false;
+  try {
+    meta = spellbook.getAutocastSpellMeta?.();
+    nextMeta = spellbook.getNextCastSpellMeta?.();
+    on = !!spellbook.isAutocastOn?.();
+  } catch {}
+  const svg = meta?.svg || '';
+  const name = meta?.name || 'Ningún hechizo';
+  const nextRow = nextMeta
+    ? `<div class="combat-mage-next">Next cast: <b>${escapeHtml(nextMeta.name)}</b></div>`
+    : '';
+  return `
+    <div class="combat-mage-cast">
+      <div class="combat-mage-cast-label">Autocast</div>
+      <button class="combat-mage-slot ${on ? 'on' : 'off'}" data-action="toggle-autocast"
+              title="${on ? 'Autocast ON (tocá para apagar)' : 'Autocast OFF (tocá para encender)'}">
+        <div class="combat-mage-slot-icon">${svg || '<span style="opacity:.5">—</span>'}</div>
+        <div class="combat-mage-slot-text">
+          <div class="combat-mage-slot-name">${escapeHtml(name)}</div>
+          <div class="combat-mage-slot-state">${on ? 'ON' : 'OFF'}</div>
+        </div>
+      </button>
+      ${nextRow}
+      <div class="combat-mage-hint">Elegí el hechizo en el tab Magia 🔮 (long-press para opciones).</div>
+    </div>`;
+}
+
+// CSS del slot de autocast (inyectado una vez, sin tocar style.css).
+function ensureMageCss() {
+  if (typeof document === 'undefined' || document.getElementById('combat-mage-css')) return;
+  const css = document.createElement('style');
+  css.id = 'combat-mage-css';
+  css.textContent = [
+    '.combat-mage-cast{margin:8px 0;padding:8px;border:1px solid #2a3550;border-radius:10px;background:rgba(45,108,255,0.06)}',
+    '.combat-mage-cast-label{font-size:11px;opacity:0.7;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em}',
+    '.combat-mage-slot{display:flex;align-items:center;gap:10px;width:100%;padding:8px;border-radius:8px;border:2px solid #3a4a6a;background:#10131c;cursor:pointer;color:#f0e6d2}',
+    '.combat-mage-slot.on{border-color:#2d6cff;box-shadow:0 0 8px rgba(45,108,255,0.4)}',
+    '.combat-mage-slot-icon{width:34px;height:34px;flex:0 0 34px}',
+    '.combat-mage-slot-icon svg{width:100%;height:100%;display:block}',
+    '.combat-mage-slot-text{text-align:left}',
+    '.combat-mage-slot-name{font-size:14px;font-weight:700}',
+    '.combat-mage-slot-state{font-size:11px;opacity:0.7}',
+    '.combat-mage-slot.on .combat-mage-slot-state{color:#6aa8ff;opacity:1}',
+    '.combat-mage-next{font-size:12px;opacity:0.85;margin-top:6px}',
+    '.combat-mage-hint{font-size:10px;opacity:0.55;margin-top:6px}',
+  ].join('\n');
+  document.head.appendChild(css);
+}
+
 // Mapping server-stance → UI-stance-id para la weapon activa
 function uiStanceFromServer(weaponKey, serverStance) {
   const w = WEAPON_STANCES[weaponKey];
@@ -977,6 +1037,7 @@ function tryAutoRetaliate() {
 
 function render() {
   if (!panelEl) return;
+  ensureMageCss();
   if (!state) { panelEl.innerHTML = '<div class="combat-loading">Cargando…</div>'; return; }
   const s = state.stats;
   const dead = s.hp_current <= 0;
@@ -1011,6 +1072,8 @@ function render() {
       </div>
 
       ${dead ? '<button class="combat-respawn" data-action="respawn">⚱ Respawn</button>' : ''}
+
+      ${weaponKey === 'staff' ? renderMageAutocast() : ''}
 
       <div class="combat-osrs-stances ${weapon.stances.length === 3 ? 'stances-3' : 'stances-4'}">
         ${weapon.stances.map(st => `
@@ -1127,6 +1190,10 @@ function attachHandlers() {
         // soporte el flag, mandar POST /api/combat/retaliate).
         autoRetaliate = !autoRetaliate;
         clog('toggle-retaliate → autoRetaliate =', autoRetaliate);
+        render();
+      } else if (action === 'toggle-autocast') {
+        // Sesión 41 — encender/apagar autocast del mago desde el tab Combate.
+        try { spellbook.toggleAutocast?.(); } catch {}
         render();
       } else if (action === 'style') {
         // Legacy: botones viejos de "style" (accurate/aggressive/defensive/
