@@ -158,7 +158,7 @@ function refreshVisuals() {
     btn.classList.toggle('locked', locked);
     btn.classList.toggle('selected', autocastOn && sp.id === selectedSpellId);
   }
-  // barra de maná
+  // barra de maná (en el spellbook) + valor en el HUD (debajo de la bota)
   const mana = getMana();
   if (manaBarEl && mana && mana.max > 0) {
     const pct = Math.max(0, Math.min(100, (mana.current / mana.max) * 100));
@@ -168,6 +168,11 @@ function refreshVisuals() {
     manaTextEl.textContent = `${mana?.current ?? 0} / ${mana?.max ?? 0}`;
     if (manaBarEl) manaBarEl.style.width = mana?.max ? `${(mana.current / mana.max) * 100}%` : '0%';
   }
+  // HUD (debajo de la bota): mostramos el maná actual como las otras stats.
+  try {
+    const hud = document.getElementById('hudManaValue');
+    if (hud) hud.textContent = String(mana?.current ?? 0);
+  } catch {}
   const toggle = document.querySelector('.magic-autocast-toggle');
   if (toggle) {
     toggle.textContent = `Autocast: ${autocastOn ? 'ON' : 'OFF'}`;

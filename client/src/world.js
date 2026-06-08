@@ -452,7 +452,7 @@ export async function startWorld(loggedInUser, token) {
           const me = worldSnapshot.getMe?.();
           if (!me) return { current: 0, max: 0 };
           const lvl = skills.xpToLevel(me.magic_xp || 0);
-          return { current: me.mana_current || 0, max: lvl * 2 };
+          return { current: me.mana_current || 0, max: 20 + lvl * 2 };
         } catch { return { current: 0, max: 0 }; }
       },
     });

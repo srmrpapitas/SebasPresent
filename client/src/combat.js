@@ -368,6 +368,17 @@ async function doAttackTickNpc(gen = attackGen) {
       disengage();
       return;
     }
+    // Sesión 41 — errores de magia: avisar al jugador (antes era disengage mudo).
+    if (result.error === 'no_mana') {
+      feedLog('warning', `Sin maná suficiente (${result.mana_current ?? 0}/${result.mana_cost} para el hechizo). Espera a que regenere.`);
+      disengage();
+      return;
+    }
+    if (result.error === 'magic_level_too_low') {
+      feedLog('warning', `Necesitas nivel ${result.required} de Magia para ese hechizo.`);
+      disengage();
+      return;
+    }
     if (result.error === 'npc_dead' || result.error === 'npc_not_found') {
       disengage();
       await refresh();
