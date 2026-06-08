@@ -212,12 +212,14 @@ export async function getCombatState() {
  * "fuera de alcance" causado por desfase entre heartbeat y posición real).
  * Si no viene, el server hace fallback a online_users / users.last_x.
  */
-export async function attackNpc(npcId, pos) {
+export async function attackNpc(npcId, pos, spellId) {
   const body = { npc_id: npcId };
   if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.z)) {
     body.x = pos.x;
     body.z = pos.z;
   }
+  // Sesión 41 — si el cliente manda spell_id, el server lo trata como magia.
+  if (spellId) body.spell_id = spellId;
   return apiFetch('/api/combat/attack', {
     method: 'POST',
     auth: true,

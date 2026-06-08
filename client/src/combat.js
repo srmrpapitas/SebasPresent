@@ -33,6 +33,7 @@
  */
 
 import * as api from './api.js';
+import * as spellbook from './spellbook.js';   // Sesión 41 — hechizo seleccionado
 import * as equipment from './equipment.js';
 import * as inventory from './inventory.js';        // Sesión 35 — sync local de arrows
 import * as skills from './skills.js';
@@ -330,7 +331,7 @@ async function doAttackTickNpc(gen = attackGen) {
       const p = window.__getPlayerPosition?.();
       if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = p;
     } catch {}
-    result = await api.attackNpc(npcId, pos);
+    result = await api.attackNpc(npcId, pos, spellbook.getSelectedSpellId?.());
     try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en combate
   } catch (err) {
     if (err.code) {

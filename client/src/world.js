@@ -23,6 +23,7 @@ import * as party from './party.js';                  // Sesión 27 Bloque 3 —
 import * as duel from './duel.js';                    // Sesión 28 — Duelos PVP no-wild
 import * as chat from './chat.js';                    // Sesión 29 — Chat global
 import * as homeTele from './home_teleport.js';
+import * as spellbook from './spellbook.js';   // Sesión 41 — hechizos de combate
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
 import * as buildings from './buildings.js';
@@ -436,6 +437,26 @@ export async function startWorld(loggedInUser, token) {
       },
     });
 
+    // Sesión 41 — spellbook (hechizos de combate en el tab Magia). Lee maná y
+    // nivel de Magia del snapshot (me block).
+    spellbook.start({
+      feedLog: (type, msg) => combat.feedLog?.(type, msg),
+      getMagicLevel: () => {
+        try {
+          const me = worldSnapshot.getMe?.();
+          return me ? skills.xpToLevel(me.magic_xp || 0) : 1;
+        } catch { return 1; }
+      },
+      getMana: () => {
+        try {
+          const me = worldSnapshot.getMe?.();
+          if (!me) return { current: 0, max: 0 };
+          const lvl = skills.xpToLevel(me.magic_xp || 0);
+          return { current: me.mana_current || 0, max: lvl * 2 };
+        } catch { return { current: 0, max: 0 }; }
+      },
+    });
+
     // Sesión 4 refactor — arrancar ground_items (loot polling + auto-pickup)
     groundItems.start({
       scene, camera, canvas,
@@ -723,6 +744,7 @@ export function stopWorld() {
 
   // Sesión 4 refactor — detener home_teleport (quita botón, clear interval)
   homeTele.stop();
+  try { spellbook.stop(); } catch {}
 
   // Sesión 4 refactor — detener ground_items (quita meshes, limpia timers)
   groundItems.stop();
