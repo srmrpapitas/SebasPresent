@@ -106,11 +106,13 @@ function triangleMult(attackerStyle, defenderStyle) {
 // ============================================================
 // Maná
 // ============================================================
-// Pool máximo (fórmula A). itemManaBonus = suma de bonus de ítems de mago
-// equipados (hoy 0, listo para cuando existan los sets).
+// Pool máximo. Fórmula A + COLCHÓN BASE: sin él, nivel 1 = 2 maná y no
+// alcanzaba ni para el hechizo más barato (5). Con base 20: nivel 1 = 22
+// (casteable), nivel 50 = 120, nivel 99 = 218. itemManaBonus = ítems de mago.
+const MANA_BASE = 20;
 function computeMaxMana(magicLevel, itemManaBonus = 0) {
   const lvl = Math.max(1, magicLevel | 0);
-  return lvl * 2 + (itemManaBonus | 0);
+  return MANA_BASE + lvl * 2 + (itemManaBonus | 0);
 }
 
 // Regen LENTA de base; los ítems de mago la suben. Devuelve maná por segundo.
