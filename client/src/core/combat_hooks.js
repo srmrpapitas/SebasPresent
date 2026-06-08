@@ -86,8 +86,8 @@ export function register(opts) {
   // 2H=Sword_Attack_X según stance) y escala la anim a cooldownMs.
   window.__playerPlayAttack = (stanceKey, weaponType, cooldownMs) => {
     const ch = _getCharacter();
-    try { ch?.playAttack?.(stanceKey, weaponType, cooldownMs); }
-    catch (e) { console.warn('[combat_hooks] playAttack:', e); }
+    try { return ch?.playAttack?.(stanceKey, weaponType, cooldownMs); }
+    catch (e) { console.warn('[combat_hooks] playAttack:', e); return 'threw'; }
   };
 
   // Slice 5d: animaciones de combate (engage/disengage = draw/sheath espada;
