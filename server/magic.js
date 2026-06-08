@@ -29,7 +29,7 @@ const SPELLS = {
     id: 'fire_strike',
     name: 'Rayo de fuego',
     magic_level_req: 1,
-    mana_cost: 5,
+    mana_cost: 10,
     base_max_hit: 4,
     color: 0xff6622,   // naranja (para el proyectil del cliente)
   },
@@ -106,21 +106,21 @@ function triangleMult(attackerStyle, defenderStyle) {
 // ============================================================
 // Maná
 // ============================================================
-// Pool máximo. Fórmula A + COLCHÓN BASE: sin él, nivel 1 = 2 maná y no
-// alcanzaba ni para el hechizo más barato (5). Con base 20: nivel 1 = 22
-// (casteable), nivel 50 = 120, nivel 99 = 218. itemManaBonus = ítems de mago.
+// Pool máximo. Nico (S41): base fija 20 + bonus de ítems de mago (el staff
+// normal da +100 → total 120). El nivel de Magia NO escala el pool (decisión
+// explícita); escala el DAÑO y baja el miss. itemManaBonus = suma de ítems.
 const MANA_BASE = 20;
 function computeMaxMana(magicLevel, itemManaBonus = 0) {
-  const lvl = Math.max(1, magicLevel | 0);
-  return MANA_BASE + lvl * 2 + (itemManaBonus | 0);
+  return MANA_BASE + (itemManaBonus | 0);
 }
 
-// Regen LENTA de base; los ítems de mago la suben. Devuelve maná por segundo.
-//   base = 0.4/s (sin set: lento aunque tengas pozo grande)
-//   +itemRegenBonus (cada pieza de mago suma; hoy 0)
-//   tener staff equipado da un pequeño boost (sos "mago activo")
-const MANA_REGEN_BASE_PER_SEC = 0.4;
-const MANA_REGEN_STAFF_BONUS  = 0.6;   // staff equipado
+// Regen LENTA de base; el staff la sube. Devuelve maná por segundo.
+//   base = 0.2/s = 2 maná cada 10s (sin staff)
+//   +staff = +0.8/s → 1.0/s = 10 maná cada 10s (con staff equipado)
+// Nico (S41): "regen base con staff 2/10s; staff +5 magia → 10/10s". El boost
+// del staff lo dejamos como un solo término tuneable (MANA_REGEN_STAFF_BONUS).
+const MANA_REGEN_BASE_PER_SEC = 0.2;
+const MANA_REGEN_STAFF_BONUS  = 0.8;   // staff equipado → llega a 1.0/s
 function manaRegenPerSec(hasStaff, itemRegenBonus = 0) {
   return MANA_REGEN_BASE_PER_SEC + (hasStaff ? MANA_REGEN_STAFF_BONUS : 0) + (itemRegenBonus || 0);
 }

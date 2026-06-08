@@ -30,6 +30,11 @@
 
 import * as magic from './magic.js';   // Sesión 41 — sistema de mago
 
+// Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
+// tengan stats de maná/magia propios (llega con smithing/crafting). Base 20 +
+// 100 = 120 de maná con el staff equipado (Nico).
+const STAFF_MANA_BONUS = 100;
+
 const XP_TABLE = [
   0,         83,        174,       276,       388,       512,       650,       801,       969,       1154,
   1358,      1584,      1833,      2107,      2411,      2746,      3115,      3523,      3973,      4470,
@@ -886,7 +891,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     if (magicLevel < spell.magic_level_req) {
       return { error: 'magic_level_too_low', required: spell.magic_level_req, weapon_type: weaponType };
     }
-    const maxMana = magic.computeMaxMana(magicLevel, 0);   // itemBonus=0 por ahora
+    const maxMana = magic.computeMaxMana(magicLevel, STAFF_MANA_BONUS);   // staff +100
     const regenPerSec = magic.manaRegenPerSec(true, 0);    // tiene staff → boost
     const manaNow = magic.regenMana(
       stats.mana_current || 0, maxMana,
@@ -1139,7 +1144,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
           color: spell.color,
           root_ms: spell.root_ms || 0,
           mana_current: persistMana,
-          mana_max: magic.computeMaxMana(magicLevel, 0),
+          mana_max: magic.computeMaxMana(magicLevel, STAFF_MANA_BONUS),
           mana_cost: spell.mana_cost,
         }
       : null,
