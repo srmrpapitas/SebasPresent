@@ -84,9 +84,9 @@ export function register(opts) {
   // Sesión 26 — combat.js pasa stance + weaponType + cooldownMs. El
   // character usa weaponType para decidir qué FBX usar (1H=Punching,
   // 2H=Sword_Attack_X según stance) y escala la anim a cooldownMs.
-  window.__playerPlayAttack = (stanceKey, weaponType, cooldownMs) => {
+  window.__playerPlayAttack = (stanceKey, weaponType, cooldownMs, spellId) => {
     const ch = _getCharacter();
-    try { return ch?.playAttack?.(stanceKey, weaponType, cooldownMs); }
+    try { return ch?.playAttack?.(stanceKey, weaponType, cooldownMs, spellId); }
     catch (e) { console.warn('[combat_hooks] playAttack:', e); return 'threw'; }
   };
 
