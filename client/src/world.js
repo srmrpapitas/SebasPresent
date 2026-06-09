@@ -32,6 +32,7 @@ import * as bank from './bank.js';
 import * as ge from './ge.js';
 import * as audio from './audio.js';
 import * as skills from './skills.js';
+import * as highscores from './highscores.js';   // Sesión 42 — ranking / highscore
 import * as equipment from './equipment.js';
 import * as inventory from './inventory.js';
 import * as shop from './shop.js';
@@ -1855,8 +1856,22 @@ function renderSkillsPanel(pane) {
     </div>
   `;
   html += '</div>';
+  // Sesión 42 — Botón de ranking DENTRO del panel (renderSkillsPanel reescribe
+  // este pane en cada onChange; por eso el botón va acá y no en index.html).
+  html += '<button id="statsHighscoreBtn" class="osrs-btn osrs-btn-primary hs-open-btn">🏆 Ver ranking</button>';
   html += '</div>';
   pane.innerHTML = html;
+
+  // Sesión 42 — cablear el botón de ranking (se re-cablea en cada render).
+  const hsBtn = pane.querySelector('#statsHighscoreBtn');
+  if (hsBtn) {
+    hsBtn.addEventListener('pointerup', (ev) => {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      try { highscores.openOverlay(); } catch (e) { console.warn('[world] highscores.openOverlay:', e); }
+    });
+  }
 
   // Listeners: tap en cada skill abre tooltip
   pane.querySelectorAll('.skill-slot[data-skill-id]').forEach(slot => {
