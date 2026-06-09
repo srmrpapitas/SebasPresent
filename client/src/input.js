@@ -153,6 +153,7 @@ export function setup(opts) {
       '.osrs-minimap-wrap, #worldMinimap, #minimapOpenMap, ' +
       '.osrs-fullmap-overlay, #fullMapOverlay, ' +
       '.ge-overlay, #geOverlay, ' +
+      '.hs-overlay, #hsOverlay, ' +
       '.bank-overlay, #bankOverlay, ' +
       '#interiorNpcMenu, #interiorExitBtn, ' +
       '.modal, [role="dialog"], ' +

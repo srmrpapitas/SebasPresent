@@ -18,6 +18,7 @@ import * as bank from './bank.js';
 import * as ge from './ge.js';
 import * as combat from './combat.js';
 import * as interiors from './interiors.js';
+import * as highscores from './highscores.js';
 
 const $ = (id) => {
   const el = document.getElementById(id);
@@ -138,6 +139,18 @@ export function initSidebar({ onLogout } = {}) {
 
   // Inicializar el modulo del GE (crea el overlay si no existe)
   try { ge.init(); } catch (e) { console.warn('[ui] ge.init error:', e); }
+  // Sesión 42 — Highscores: init del overlay + cablear el botón de la tab Habilidades.
+  try {
+    highscores.init();
+    const hsBtn = document.getElementById('statsHighscoreBtn');
+    if (hsBtn) {
+      hsBtn.addEventListener('pointerup', (ev) => {
+        if (ev.button !== undefined && ev.button !== 0) return;
+        ev.preventDefault();
+        highscores.openOverlay().catch(e => console.warn('[ui] highscores.openOverlay error:', e));
+      });
+    }
+  } catch (e) { console.warn('[ui] highscores.init error:', e); }
   // Inicializar el modulo de combat (crea splat container y HP HUD sync)
   try { combat.init(); } catch (e) { console.warn('[ui] combat.init error:', e); }
   // Refresh inicial del state de combat para que el HUD HP refleje el HP real

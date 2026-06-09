@@ -504,3 +504,13 @@ export async function fmLight(slot) {
     body: { slot },
   });
 }
+
+// ---------- Highscores (Sesión 42) ----------
+/**
+ * Ranking global de jugadores, ordenado por nivel total (tiebreak XP total).
+ * `auth: true` para que el server marque is_you en la fila propia.
+ * Respuesta: { ranking: [{ rank, username, total_level, combat_level, total_xp, is_you }], count }
+ */
+export async function getHighscores() {
+  return apiFetch('/api/skills/highscores', { auth: true });
+}
