@@ -212,6 +212,36 @@ export function fireProjectile(fromVec3, toVec3, opts = {}) {
   const fromAdj = new THREE.Vector3(fromVec3.x, (fromVec3.y || 0) + SHOOTER_Y_OFFSET, fromVec3.z);
   const toAdj   = new THREE.Vector3(toVec3.x,   (toVec3.y   || 0) + TARGET_Y_OFFSET,  toVec3.z);
 
+  // Sesión 41 — Proyectil de HECHIZO: esfera brillante del color del hechizo
+  // (procedural, sin GLB). Núcleo + halo translúcido + luz puntual. Reusa el
+  // lerp de liveProjectiles (mismo arco que la flecha).
+  if (opts.type === 'spell') {
+    const color = (typeof opts.color === 'number') ? opts.color : 0xff6622;
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 12, 12),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.34, 12, 12),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32 })
+    );
+    group.add(core);
+    group.add(glow);
+    try { group.add(new THREE.PointLight(color, 1.2, 4)); } catch {}
+    group.position.copy(fromAdj);
+    scene.add(group);
+    liveProjectiles.push({
+      obj: group,
+      spawnedAt: performance.now(),
+      durationMs,
+      from: fromAdj.clone(),
+      to:   toAdj.clone(),
+      isLine: false,
+    });
+    return;
+  }
+
   // Si el mesh aún no cargó, fallback temporal (línea verde como el stub).
   if (!arrowBaseMesh) {
     spawnFallbackLine(fromAdj, toAdj, durationMs);
