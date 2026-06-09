@@ -1839,7 +1839,9 @@ function renderSkillsPanel(pane) {
       </div>
     `;
   }
-  // Slot vacío para alinear
+  // Sesión 42b — 2 slots vacíos de relleno: con 13 skills, esto empuja los
+  // 3 especiales (Combate/Total/Ranking) a una misma fila de 3 columnas.
+  html += `<div class="skill-slot" style="opacity:0; pointer-events:none;"></div>`;
   html += `<div class="skill-slot" style="opacity:0; pointer-events:none;"></div>`;
   // Combat level
   html += `
@@ -1855,21 +1857,26 @@ function renderSkillsPanel(pane) {
       <span class="skill-slot-special-value">${totalLvl}</span>
     </div>
   `;
+  // Sesión 42b — Ranking (Highscores): slot especial al lado de Combate/Total.
+  // Al tocarlo abre el libro de ranking (highscores.open()).
+  html += `
+    <div class="skill-slot special" id="statsHighscoreSlot" style="cursor:pointer;">
+      <span class="skill-slot-name">Ranking</span>
+      <span class="skill-slot-special-value">🏆</span>
+    </div>
+  `;
   html += '</div>';
-  // Sesión 42 — Botón de ranking DENTRO del panel (renderSkillsPanel reescribe
-  // este pane en cada onChange; por eso el botón va acá y no en index.html).
-  html += '<button id="statsHighscoreBtn" class="osrs-btn osrs-btn-primary hs-open-btn">🏆 Ver ranking</button>';
   html += '</div>';
   pane.innerHTML = html;
 
-  // Sesión 42 — cablear el botón de ranking (se re-cablea en cada render).
-  const hsBtn = pane.querySelector('#statsHighscoreBtn');
-  if (hsBtn) {
-    hsBtn.addEventListener('pointerup', (ev) => {
+  // Sesión 42b — cablear el slot de ranking (se re-cablea en cada render).
+  const hsSlot = pane.querySelector('#statsHighscoreSlot');
+  if (hsSlot) {
+    hsSlot.addEventListener('pointerup', (ev) => {
       if (ev.button !== undefined && ev.button !== 0) return;
       ev.preventDefault();
       ev.stopPropagation();
-      try { highscores.openOverlay(); } catch (e) { console.warn('[world] highscores.openOverlay:', e); }
+      try { highscores.open(); } catch (e) { console.warn('[world] highscores.open:', e); }
     });
   }
 
