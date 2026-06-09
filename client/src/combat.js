@@ -402,15 +402,37 @@ async function doAttackTickNpc(gen = attackGen) {
   const npc = state?.npcs?.find(n => n.id === npcId);
   const npcName = npc ? npc.name : 'el objetivo';
 
+  // Sesión 41 — info del hechizo (null si no fue magia).
+  const spellCast = result.spell_cast || null;
+
   if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
       const animResult = window.__playerPlayAttack(
         uiSelectedStance,
         result.weapon_type,
-        result.cooldown_ms
+        result.cooldown_ms,
+        spellCast ? spellCast.spell_id : null
       );
-      clog('playAttack(npc) →', animResult, '| weapon:', result.weapon_type, 'stance:', uiSelectedStance);
+      clog('playAttack(npc) →', animResult, '| weapon:', result.weapon_type, 'spell:', spellCast?.spell_id);
     } catch {}
+  }
+
+  // Sesión 41 — MAGIA: sonido de cast + proyectil del color del hechizo.
+  if (spellCast && npc) {
+    const CAST_SFX = { fire_strike: 'spell_fire', ice_spear: 'spell_ice', thunderbolt: 'spell_zap', entangle: 'spell_entangle' };
+    try { audio.sfx(CAST_SFX[spellCast.spell_id] || 'spell_fire'); } catch {}
+    if (typeof window !== 'undefined' && typeof window.__worldFireProjectile === 'function') {
+      try {
+        const playerPos = window.__getPlayerPosition?.();
+        if (playerPos) {
+          window.__worldFireProjectile(
+            { x: playerPos.x, y: 0, z: playerPos.z },
+            { x: npc.x, y: 0, z: npc.z },
+            { type: 'spell', color: spellCast.color, spellId: spellCast.spell_id, windupMs: 250 }
+          );
+        }
+      } catch {}
+    }
   }
 
   // Sesión 34 — Si fue un ataque ranged (server consumió una flecha), disparar
@@ -453,7 +475,15 @@ async function doAttackTickNpc(gen = attackGen) {
     }
     // Sesión 32 — SFX hit. Solo en hits que conectan (los misses tendrán
     // su propio SFX más adelante cuando lo tengamos en R2).
-    try { audio.sfx('hit_blade'); } catch {}
+    // Sesión 41 — si fue magia, el impacto suena al hechizo (y con un pequeño
+    // delay para que coincida con la llegada del proyectil).
+    if (spellCast) {
+      const IMPACT_SFX = { ice_spear: 'spell_ice_impact' };
+      const sfxName = IMPACT_SFX[spellCast.spell_id] || 'spell_impact';
+      setTimeout(() => { try { audio.sfx(sfxName); } catch {} }, 300);
+    } else {
+      try { audio.sfx('hit_blade'); } catch {}
+    }
     if (typeof window !== 'undefined' && typeof window.__worldFlashNpcHit === 'function') {
       try { window.__worldFlashNpcHit(npcId); } catch {}
     }
