@@ -200,6 +200,19 @@ const ICONS = {
     <line x1="17" y1="23" x2="22" y2="23" stroke="#3a1f08" stroke-width="0.8"/>
   </svg>`,
 
+  // Sesión 42b — 'logs' es el id VIVO del tronco normal (la tala suelta 'logs';
+  // 'log_normal' es el id legacy de cuentas viejas). Mismo SVG para los dos.
+  logs: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <ellipse cx="16" cy="16" rx="11" ry="7" fill="#7a4a1f" stroke="#000" stroke-width="1"/>
+    <ellipse cx="11" cy="16" rx="4" ry="5" fill="#a06b2a" stroke="#000" stroke-width="0.8"/>
+    <ellipse cx="11" cy="16" rx="2.5" ry="3.5" fill="#7a4a1f"/>
+    <ellipse cx="11" cy="16" rx="1.2" ry="2" fill="#d4a567"/>
+    <line x1="16" y1="9" x2="22" y2="9" stroke="#3a1f08" stroke-width="0.8"/>
+    <line x1="17" y1="12" x2="23" y2="12" stroke="#3a1f08" stroke-width="0.8"/>
+    <line x1="16" y1="20" x2="22" y2="20" stroke="#3a1f08" stroke-width="0.8"/>
+    <line x1="17" y1="23" x2="22" y2="23" stroke="#3a1f08" stroke-width="0.8"/>
+  </svg>`,
+
   // ============= Materiales =============
   leather: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
     <path d="M 6 8 Q 8 5 14 6 L 22 5 Q 28 7 27 14 L 28 22 Q 26 27 20 26 L 12 27 Q 6 25 7 18 Z"
