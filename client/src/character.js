@@ -632,6 +632,46 @@ export class Character {
       a.clampWhenFinished = true;
     }
 
+    // Sesión 42c — Layered blend (piernas + torso por separado). PASO 1:
+    // construir los clips partidos. ADITIVO: no toca las actions existentes
+    // ni play(); solo crea actions extra `<name>__legs` / `<name>__torso`.
+    this._buildLayeredClips();
+
+    // Hook de prueba para validar EN EL JUEGO que el rig no se rompe con una
+    // combinación piernas+torso, sin cablear nada al loop principal todavía.
+    //   window.__testLayered('walk_forward','attack_1')  → piernas caminan, torso ataca
+    //   window.__testLayeredOff()                        → vuelve a idle normal
+    if (typeof window !== 'undefined') {
+      window.__testLayered = (legs = 'walk_forward', torso = 'attack_1') => {
+        const ch = window.__character;
+        if (!ch || !ch.mixer) return 'no character';
+        const la = ch.actions[legs + '__legs'];
+        const ta = ch.actions[torso + '__torso'];
+        if (!la || !ta) {
+          return 'falta: ' + (!la ? legs + '__legs ' : '') + (!ta ? torso + '__torso' : '');
+        }
+        ch.mixer.stopAllAction();
+        ch.isAttacking = false;
+        ch.isInTransition = false;
+        la.reset(); la.setLoop(THREE.LoopRepeat, Infinity); la.setEffectiveWeight(1); la.setEffectiveTimeScale(1); la.play();
+        ta.reset(); ta.setLoop(THREE.LoopRepeat, Infinity); ta.setEffectiveWeight(1); ta.setEffectiveTimeScale(1); ta.play();
+        ch.current = null;
+        return 'reproduciendo ' + legs + '__legs + ' + torso + '__torso';
+      };
+      window.__testLayeredOff = () => {
+        const ch = window.__character;
+        if (!ch || !ch.mixer) return 'no character';
+        ch.mixer.stopAllAction();
+        ch.current = null;
+        ch.play('idle');
+        return 'idle';
+      };
+      window.__layeredList = () => {
+        const ch = window.__character;
+        return Object.keys(ch?.actions || {}).filter(k => k.endsWith('__legs') || k.endsWith('__torso'));
+      };
+    }
+
     this.actions.idle.play();
     this.current = this.actions.idle;
     this.loaded = true;
@@ -1764,6 +1804,40 @@ export class Character {
     }, dur + 20);
 
     return true;
+  }
+
+  // ============================================================
+  // Sesión 42c — Layered blend: parte cada clip en versión PIERNAS y TORSO.
+  // Piernas = Hips + UpLeg/Leg/Foot/Toe (izq+der). Torso = el resto
+  // (Spine*, Neck, Head, Shoulder/Arm/ForeArm/Hand + dedos). Hips va a la
+  // capa PIERNAS (el torso hereda la cadera del walk → se ve natural).
+  // El root motion ya está stripeado en _registerClip, así que las piernas
+  // quedan in-place. ADITIVO: crea actions `<name>__legs` / `<name>__torso`
+  // sin tocar las existentes.
+  // ============================================================
+  _buildLayeredClips() {
+    const LEG_RE = /(Hips|UpLeg|Leg|Foot|Toe)/i;
+    const isLeg = (trackName) => LEG_RE.test(String(trackName).split('.')[0]);
+    let built = 0;
+    const sourceNames = Object.keys(this.clips);
+    for (const name of sourceNames) {
+      const clip = this.clips[name];
+      if (!clip || !Array.isArray(clip.tracks)) continue;
+      const legTracks = clip.tracks.filter(t => isLeg(t.name)).map(t => t.clone());
+      const torsoTracks = clip.tracks.filter(t => !isLeg(t.name)).map(t => t.clone());
+      if (legTracks.length) {
+        const legClip = new THREE.AnimationClip(name + '__legs', clip.duration, legTracks);
+        this.actions[name + '__legs'] = this.mixer.clipAction(legClip);
+        this.clips[name + '__legs'] = legClip;
+      }
+      if (torsoTracks.length) {
+        const torsoClip = new THREE.AnimationClip(name + '__torso', clip.duration, torsoTracks);
+        this.actions[name + '__torso'] = this.mixer.clipAction(torsoClip);
+        this.clips[name + '__torso'] = torsoClip;
+      }
+      built++;
+    }
+    console.log('[character] layered clips construidos para', built, 'clips');
   }
 
   _scaleOneShot(action, targetMs) {
