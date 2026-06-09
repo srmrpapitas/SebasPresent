@@ -77,6 +77,30 @@ const ANIM_FILES = {
   bow_walk_back:     'Bow_Walk_Back.fbx',
   bow_walk_left:     'Bow_Walk_Left.fbx',
   bow_walk_right:    'Bow_Walk_Right.fbx',
+
+  // Sesión 42 — Anims de mago (staff). Estos FBX ya estaban en R2 desde S41
+  // pero NUNCA se enchufaron acá: el staff caía al cycle de Sword_Attack_N.
+  // Mapeo hechizo→clip vía SPELL_ANIM (abajo). One-shots como los de bow
+  // (sin sheath → clamp=true).
+  //   fire_strike → staff_attack_1 (fuego)
+  //   ice_spear   → staff_attack_3 (hielo)
+  //   thunderbolt → staff_attack_5 (rayo)
+  //   entangle    → staff_cast
+  staff_attack_1: 'staff_attack_1.fbx',
+  staff_attack_3: 'staff_attack_3.fbx',
+  staff_attack_5: 'staff_attack_5.fbx',
+  staff_cast:     'staff_cast.fbx',
+};
+
+// Sesión 42 — Mapa spell_id → clave de anim en ANIM_FILES. El server manda el
+// spell_id (combat_engine.js → combat.js → __playerPlayAttack → playAttack).
+// Si un spell_id no está acá (o el clip no cargó), playAttack cae al fallback
+// de sword cycle igual que el staff sin hechizo.
+const SPELL_ANIM = {
+  fire_strike: 'staff_attack_1',
+  ice_spear:   'staff_attack_3',
+  thunderbolt: 'staff_attack_5',
+  entangle:    'staff_cast',
 };
 
 const CRITICAL_ANIMS = ['idle', 'walk_forward', 'run_forward'];
@@ -102,6 +126,9 @@ const CLIPS_TO_STRIP_ROOT = new Set([
   // que tiene root motion y la incluimos acá).
   'bow_draw_arrow', 'bow_overdraw', 'bow_recoil',
   'bow_walk_forward', 'bow_walk_back', 'bow_walk_left', 'bow_walk_right',
+  // Sesión 42 — anims de mago: misma regla de oro, asumimos drift y las
+  // dejamos in-place (la capa de movimiento llega después con el layered blend).
+  'staff_attack_1', 'staff_attack_3', 'staff_attack_5', 'staff_cast',
 ]);
 
 const CHARACTER_SCALE = 0.01;
@@ -591,6 +618,14 @@ export class Character {
     // bind pose por 1-2 frames (mismo bug de S26 que llevó a clamp=true en
     // _scaleOneShot).
     for (const name of ['bow_draw_arrow', 'bow_overdraw', 'bow_recoil']) {
+      const a = this.actions[name];
+      if (!a) continue;
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+    }
+    // Sesión 42 — anims de mago: one-shots sin sheath (igual que bow). Clamp al
+    // último frame para no caer en bind pose; world.js vuelve a idle después.
+    for (const name of ['staff_attack_1', 'staff_attack_3', 'staff_attack_5', 'staff_cast']) {
       const a = this.actions[name];
       if (!a) continue;
       a.setLoop(THREE.LoopOnce, 1);
@@ -1309,7 +1344,7 @@ export class Character {
    *   window.__playerPlayAttack('slash', '2h_sword', 600);
    *   //   → reproduce Sword_Attack_2.fbx escalada a 600ms
    */
-  playAttack(stanceKey, weaponType, cooldownMs) {
+  playAttack(stanceKey, weaponType, cooldownMs, spellId) {
     if (!this.loaded || this.isDead) return 'not_loaded_or_dead';
     if (this.isAttacking || this.isInTransition) return this.isAttacking ? 'busy_attacking' : 'busy_transition';
 
@@ -1348,7 +1383,13 @@ export class Character {
         action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
       }
     }
-    // Staff o bow (fallback si los clips de bow no cargaron) → cycle sword
+    // Sesión 42 — Staff CON hechizo → anim de casteo según el spell_id.
+    // El server manda el spell_id por el 4º arg. Si el clip no cargó (warning
+    // del loader), caemos abajo al cycle de sword para no quedarnos sin anim.
+    else if (weaponType === 'staff' && spellId && SPELL_ANIM[spellId] && this.actions[SPELL_ANIM[spellId]]) {
+      action = this.actions[SPELL_ANIM[spellId]];
+    }
+    // Staff SIN hechizo (golpe con el palo = melé) o bow fallback → cycle sword
     else if (weaponType === 'staff' || weaponType === 'bow') {
       this.attackCycle = (this.attackCycle % 4) + 1;
       action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
