@@ -195,6 +195,8 @@ export default {
       // ----- Skills (Sesión 14) -----
       } else if (path === '/api/skills' && method === 'GET') {
         response = await skills.handleGetSkills(request, env);
+      } else if (path === '/api/skills/highscores' && method === 'GET') {
+        response = await skills.handleHighscores(request, env);
       } else if (path === '/api/skills/grant' && method === 'POST') {
         response = await skills.handleGrantXp(request, env);
 
