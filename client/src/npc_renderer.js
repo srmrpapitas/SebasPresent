@@ -257,6 +257,13 @@ export async function start(opts) {
       if (!p || !p.position) return null;
       return { x: p.position.x, z: p.position.z };
     };
+    // Sesión 41 — posición VIVA del NPC (mesh interpolado), para que el
+    // proyectil de hechizo persiga al objetivo aunque se mueva (homing).
+    window.__getNpcPosition = (npcId) => {
+      const m = npcMeshes.get(npcId);
+      if (!m || !m.position) return null;
+      return { x: m.position.x, y: m.position.y, z: m.position.z };
+    };
     // Sesión 40 — DEBUG DEL GOBLIN. Corré window.__goblinDebug() en Eruda:
     // imprime, por cada goblin visible, si su mesh es ANIMADA u HORNEADA, qué
     // clip está sonando, su rootY, la Y MUNDIAL del pie más bajo (debería ser

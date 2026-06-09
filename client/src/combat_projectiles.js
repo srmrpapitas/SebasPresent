@@ -238,6 +238,11 @@ export function fireProjectile(fromVec3, toVec3, opts = {}) {
       from: fromAdj.clone(),
       to:   toAdj.clone(),
       isLine: false,
+      // Sesión 41 — homing: si viene targetNpcId, el update refresca `to` a la
+      // posición VIVA del NPC cada frame → el proyectil va directo al objetivo
+      // aunque camine. arcHeight chico = bolt casi recto (no arco de flecha).
+      targetNpcId: (opts.targetNpcId != null) ? opts.targetNpcId : null,
+      arcHeight: (typeof opts.arcHeight === 'number') ? opts.arcHeight : 0.15,
     });
     return;
   }
@@ -288,12 +293,22 @@ export function update() {
       continue;
     }
 
+    // Sesión 41 — HOMING: si el proyectil tiene un NPC objetivo, refrescamos
+    // `to` a su posición viva cada frame, así va directo aunque el NPC camine.
+    if (p.targetNpcId != null && typeof window !== 'undefined' && typeof window.__getNpcPosition === 'function') {
+      try {
+        const live = window.__getNpcPosition(p.targetNpcId);
+        if (live) { p.to.x = live.x; p.to.z = live.z; }
+      } catch {}
+    }
+
     // Posición: lerp lineal en XZ + arc parabólico sutil en Y.
     // sin(t*PI) va de 0 → 1 → 0 a lo largo de t∈[0,1].
+    const arcH = (typeof p.arcHeight === 'number') ? p.arcHeight : ARROW_ARC_HEIGHT;
     const x = p.from.x + (p.to.x - p.from.x) * t;
     const z = p.from.z + (p.to.z - p.from.z) * t;
     const yLinear = p.from.y + (p.to.y - p.from.y) * t;
-    const arc = ARROW_ARC_HEIGHT * Math.sin(t * Math.PI);
+    const arc = arcH * Math.sin(t * Math.PI);
     p.obj.position.set(x, yLinear + arc, z);
 
     // Rotación: la flecha apunta "hacia donde va a estar 0.01 de t más
@@ -305,7 +320,7 @@ export function update() {
     const nx = p.from.x + (p.to.x - p.from.x) * tNext;
     const nz = p.from.z + (p.to.z - p.from.z) * tNext;
     const nyLin = p.from.y + (p.to.y - p.from.y) * tNext;
-    const nyArc = ARROW_ARC_HEIGHT * Math.sin(tNext * Math.PI);
+    const nyArc = arcH * Math.sin(tNext * Math.PI);
     p.obj.lookAt(nx, nyLin + nyArc, nz);
     if (ARROW_ROT_OFFSET_X !== 0) p.obj.rotateX(ARROW_ROT_OFFSET_X);
     if (ARROW_ROT_OFFSET_Y !== 0) p.obj.rotateY(ARROW_ROT_OFFSET_Y);

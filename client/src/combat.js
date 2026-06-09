@@ -428,7 +428,7 @@ async function doAttackTickNpc(gen = attackGen) {
           window.__worldFireProjectile(
             { x: playerPos.x, y: 0, z: playerPos.z },
             { x: npc.x, y: 0, z: npc.z },
-            { type: 'spell', color: spellCast.color, spellId: spellCast.spell_id, windupMs: 250 }
+            { type: 'spell', color: spellCast.color, spellId: spellCast.spell_id, targetNpcId: npcId, windupMs: 250 }
           );
         }
       } catch {}
