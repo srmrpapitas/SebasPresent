@@ -217,24 +217,28 @@ export async function handleHighscores(request, env) {
       total_level: totalLevel(entry.xpById),
       combat_level: combatLevel(lvlById),
       total_xp: totalXp,
+      // Sesión 42b — XP crudo por skill, para que el libro arme una página
+      // por habilidad (el cliente calcula el nivel con su propia xpToLevel).
+      skills: { ...entry.xpById },
     });
   }
 
-  // Orden: nivel total desc, tiebreak XP total desc, luego username asc.
+  // Orden por defecto: nivel total desc, tiebreak XP total desc, username asc.
+  // (El cliente re-ordena por página: cada skill se ranquea por su XP.)
   players.sort((a, b) => {
     if (b.total_level !== a.total_level) return b.total_level - a.total_level;
     if (b.total_xp !== a.total_xp) return b.total_xp - a.total_xp;
     return a.username.localeCompare(b.username);
   });
 
-  const ranking = players.slice(0, HIGHSCORES_LIMIT).map((p, i) => ({
-    rank: i + 1,
+  const out = players.slice(0, HIGHSCORES_LIMIT).map((p) => ({
     username: p.username,
     total_level: p.total_level,
     combat_level: p.combat_level,
     total_xp: p.total_xp,
+    skills: p.skills,
     is_you: meUserId != null && p.user_id === meUserId,
   }));
 
-  return json({ ranking, count: ranking.length });
+  return json({ players: out, count: out.length });
 }
