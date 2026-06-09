@@ -651,17 +651,26 @@ export class Character {
           return 'falta: ' + (!la ? legs + '__legs ' : '') + (!ta ? torso + '__torso' : '');
         }
         ch.mixer.stopAllAction();
-        ch.isAttacking = false;
-        ch.isInTransition = false;
+        // Congelar el loop normal: world.js llama play() cada frame y, como
+        // play() reproduce un clip COMPLETO (todos los huesos), pisaría las
+        // dos capas y se volvería a ver "todo unido". play() hace early-return
+        // si isInTransition/isAttacking, así que los dejamos en true durante
+        // la prueba. __testLayeredOff() los limpia.
+        ch.isAttacking = true;
+        ch.isInTransition = true;
         la.reset(); la.setLoop(THREE.LoopRepeat, Infinity); la.setEffectiveWeight(1); la.setEffectiveTimeScale(1); la.play();
         ta.reset(); ta.setLoop(THREE.LoopRepeat, Infinity); ta.setEffectiveWeight(1); ta.setEffectiveTimeScale(1); ta.play();
         ch.current = null;
-        return 'reproduciendo ' + legs + '__legs + ' + torso + '__torso';
+        const legN = ch.clips[legs + '__legs']?.tracks?.length ?? '?';
+        const torsoN = ch.clips[torso + '__torso']?.tracks?.length ?? '?';
+        return `reproduciendo ${legs}__legs (${legN} tracks: piernas) + ${torso}__torso (${torsoN} tracks: torso). Si ves todo unido igual, avisá.`;
       };
       window.__testLayeredOff = () => {
         const ch = window.__character;
         if (!ch || !ch.mixer) return 'no character';
         ch.mixer.stopAllAction();
+        ch.isAttacking = false;
+        ch.isInTransition = false;
         ch.current = null;
         ch.play('idle');
         return 'idle';
