@@ -154,3 +154,87 @@ export async function initSkillsForNewUser(env, userId) {
   );
   await env.DB.batch(stmts);
 }
+
+/**
+ * Sesión 42 — Highscores / ranking.
+ *
+ * GET /api/skills/highscores
+ *
+ * Devuelve el ranking de TODOS los jugadores ordenado por nivel total
+ * (tiebreak: XP total). Reutiliza datos que ya existen (user_skills) — no
+ * toca el schema. Cada fila trae: rank, username, total_level, combat_level,
+ * total_xp, y un flag is_you para resaltar al jugador actual.
+ *
+ * Una sola query (JOIN users × user_skills), se agrupa por usuario en JS y
+ * se computan los niveles con el engine (mismas funciones que /api/skills).
+ *   - totalLevel(xpById)   espera XP por skill.
+ *   - combatLevel(lvlById) espera NIVELES por skill.
+ *
+ * No requiere sesión para LEER el ranking, pero si hay sesión válida marca
+ * is_you en la fila propia. Cap defensivo de 200 jugadores.
+ */
+const HIGHSCORES_LIMIT = 200;
+
+export async function handleHighscores(request, env) {
+  // La sesión es opcional: si está, resaltamos al jugador. Si no, igual
+  // devolvemos el ranking (es info pública de competencia).
+  let meUserId = null;
+  try {
+    const session = await requireSession(request, env);
+    if (session) meUserId = session.user_id;
+  } catch { /* sin sesión → ranking anónimo */ }
+
+  const rows = await env.DB.prepare(
+    `SELECT u.id AS user_id, u.username AS username, us.skill_id AS skill_id, us.xp AS xp
+       FROM users u
+       JOIN user_skills us ON us.user_id = u.id`
+  ).all();
+
+  // Agrupar XP por usuario.
+  const byUser = new Map();
+  for (const r of (rows.results || [])) {
+    let entry = byUser.get(r.user_id);
+    if (!entry) {
+      entry = { user_id: r.user_id, username: r.username, xpById: {} };
+      byUser.set(r.user_id, entry);
+    }
+    entry.xpById[r.skill_id] = r.xp;
+  }
+
+  // Computar métricas por usuario.
+  const players = [];
+  for (const entry of byUser.values()) {
+    const lvlById = {};
+    let totalXp = 0;
+    for (const sid in entry.xpById) {
+      const xp = entry.xpById[sid] || 0;
+      lvlById[sid] = xpToLevel(xp);
+      totalXp += xp;
+    }
+    players.push({
+      user_id: entry.user_id,
+      username: entry.username,
+      total_level: totalLevel(entry.xpById),
+      combat_level: combatLevel(lvlById),
+      total_xp: totalXp,
+    });
+  }
+
+  // Orden: nivel total desc, tiebreak XP total desc, luego username asc.
+  players.sort((a, b) => {
+    if (b.total_level !== a.total_level) return b.total_level - a.total_level;
+    if (b.total_xp !== a.total_xp) return b.total_xp - a.total_xp;
+    return a.username.localeCompare(b.username);
+  });
+
+  const ranking = players.slice(0, HIGHSCORES_LIMIT).map((p, i) => ({
+    rank: i + 1,
+    username: p.username,
+    total_level: p.total_level,
+    combat_level: p.combat_level,
+    total_xp: p.total_xp,
+    is_you: meUserId != null && p.user_id === meUserId,
+  }));
+
+  return json({ ranking, count: ranking.length });
+}
