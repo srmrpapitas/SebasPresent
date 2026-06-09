@@ -2517,3 +2517,153 @@ body:has(#worldScreen:not(.hidden)) #splash {
 /* Sesión 38 (fix v3) — El escalado desktop del sidebar se hace con zoom
    uniforme (ver bloque .osrs-sidebar @media min-width:801px de arriba +
    world.js). Por eso ya NO hay bumps de fuente/icono por elemento acá. */
+
+/* ============================================================
+   Sesión 42 — Highscores / ranking overlay
+   Espeja .ge-overlay (marco dorado OSRS). Base CSS: funciona en mobile
+   (Nico juega desde iPhone). NO modifica ninguna regla existente.
+   ============================================================ */
+.hs-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 90;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  font-family: 'IM Fell English', serif;
+}
+
+.hs-overlay.visible { display: flex; }
+
+.hs-overlay-frame {
+  position: relative;
+  background: rgba(20, 14, 8, 0.97);
+  border: 3px solid var(--osrs-gold);
+  border-radius: 6px;
+  box-shadow: 0 0 60px rgba(200, 160, 67, 0.4), 0 12px 40px rgba(0,0,0,0.8);
+  padding: 12px;
+  width: min(520px, calc(100vw - 24px));
+  height: min(680px, calc(100vh - 24px));
+  display: flex;
+  flex-direction: column;
+  color: #e8d8a8;
+  overflow: hidden;
+}
+
+.hs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 8px 4px;
+  border-bottom: 1px solid rgba(200, 160, 67, 0.3);
+  margin-bottom: 8px;
+  flex: 0 0 auto;
+}
+
+.hs-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: 18px;
+  color: var(--osrs-gold-bright);
+  letter-spacing: 0.05em;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+  margin: 0;
+}
+
+.hs-close-btn {
+  background: transparent;
+  border: 1px solid rgba(200, 160, 67, 0.5);
+  color: var(--osrs-gold-bright);
+  font-size: 16px;
+  line-height: 1;
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.hs-close-btn:hover { background: rgba(200, 160, 67, 0.15); }
+
+.hs-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hs-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hs-row {
+  display: grid;
+  grid-template-columns: 2.2em minmax(0, 1fr) 3.4em 3.4em 5.4em;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.hs-row-head {
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--osrs-gold);
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(200, 160, 67, 0.25);
+  position: sticky;
+  top: 0;
+  background: rgba(20, 14, 8, 0.98);
+}
+
+.hs-row:not(.hs-row-head):nth-child(even) {
+  background: rgba(200, 160, 67, 0.06);
+}
+
+.hs-row-you {
+  background: rgba(200, 160, 67, 0.18) !important;
+  outline: 1px solid var(--osrs-gold);
+}
+
+.hs-col-rank { text-align: center; color: var(--osrs-gold-bright); font-weight: 700; }
+.hs-col-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hs-col-lvl { text-align: right; }
+.hs-col-cmb { text-align: right; }
+.hs-col-xp  { text-align: right; font-variant-numeric: tabular-nums; }
+
+.hs-you-tag {
+  color: var(--osrs-gold-bright);
+  font-size: 11px;
+}
+
+.hs-loading,
+.hs-empty,
+.hs-error {
+  padding: 24px 12px;
+  text-align: center;
+  color: #d9c89a;
+  font-size: 14px;
+}
+
+.hs-error { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+
+.hs-open-btn {
+  margin-top: 14px;
+}
+
+@media (max-width: 380px) {
+  .hs-row { font-size: 12px; grid-template-columns: 2em minmax(0, 1fr) 3em 3em 4.6em; }
+  .hs-title { font-size: 16px; }
+}
