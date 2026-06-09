@@ -675,6 +675,33 @@ export class Character {
         ch.play('idle');
         return 'idle';
       };
+      // Diagnóstico: reproducir UNA sola capa para ver qué bones mueve.
+      //   __testLegs('run_forward')  → SOLO piernas (el torso debería quedar en
+      //     bind pose / T-pose de brazos). Si las piernas se mueven acá, la capa
+      //     piernas funciona y el problema es el blend de las dos juntas.
+      //   __testTorso('attack_1')    → SOLO torso (las piernas deberían quedar
+      //     en bind pose, rectas). Si acá las piernas TAMBIÉN se mueven, el clip
+      //     de torso todavía trae tracks de piernas (bug de filtrado).
+      window.__testLegs = (name = 'run_forward') => {
+        const ch = window.__character;
+        if (!ch || !ch.mixer) return 'no character';
+        const a = ch.actions[name + '__legs'];
+        if (!a) return 'falta: ' + name + '__legs';
+        ch.mixer.stopAllAction();
+        ch.isAttacking = true; ch.isInTransition = true; ch.current = null;
+        a.reset(); a.setLoop(THREE.LoopRepeat, Infinity); a.setEffectiveWeight(1); a.setEffectiveTimeScale(1); a.play();
+        return name + '__legs (' + (ch.clips[name + '__legs']?.tracks?.length ?? '?') + ' tracks). Mirá SOLO las piernas.';
+      };
+      window.__testTorso = (name = 'attack_1') => {
+        const ch = window.__character;
+        if (!ch || !ch.mixer) return 'no character';
+        const a = ch.actions[name + '__torso'];
+        if (!a) return 'falta: ' + name + '__torso';
+        ch.mixer.stopAllAction();
+        ch.isAttacking = true; ch.isInTransition = true; ch.current = null;
+        a.reset(); a.setLoop(THREE.LoopRepeat, Infinity); a.setEffectiveWeight(1); a.setEffectiveTimeScale(1); a.play();
+        return name + '__torso (' + (ch.clips[name + '__torso']?.tracks?.length ?? '?') + ' tracks). Mirá si las PIERNAS se mueven (no deberían).';
+      };
       window.__layeredList = () => {
         const ch = window.__character;
         return Object.keys(ch?.actions || {}).filter(k => k.endsWith('__legs') || k.endsWith('__torso'));
