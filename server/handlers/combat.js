@@ -54,6 +54,11 @@ export async function handleCombatAttack(request, env) {
   if (body.spell_id && typeof body.spell_id === 'string') {
     opts.spellId = body.spell_id;
   }
+  // Sesion 44 — special attack: el cliente manda use_special=true cuando la
+  // barra esta "armada". El engine valida energia/arma (server-authoritative).
+  if (body.use_special === true) {
+    opts.useSpecial = true;
+  }
 
   const db = makeDbAdapter(env);
   try {
@@ -62,6 +67,7 @@ export async function handleCombatAttack(request, env) {
       const knownClient = new Set([
         'npc_not_found', 'npc_dead', 'on_cooldown',
         'out_of_range', 'user_no_position', 'user_dead',
+        'no_spec_energy',
       ]);
       if (knownClient.has(result.error)) return json(result, 400);
     }
