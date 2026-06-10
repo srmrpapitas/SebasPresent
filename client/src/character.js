@@ -412,7 +412,7 @@ const _armorMeshCache = new Map();
 // Sesion 45 — Quiver (carcaj). A diferencia del resto del armor, el GLB tiene
 // NOMBRE FIJO (no <item_id>.glb): el archivo en R2 se llama quiver.glb. Si lo
 // subiste a otra carpeta (ej. /weapons), cambiá SOLO esta constante.
-const QUIVER_GLB_URL = `${ARMOR_BASE}/quiver.glb`;
+const QUIVER_GLB_URL = `${WEAPONS_BASE}/quiver.glb`;
 
 export class Character {
   constructor() {
