@@ -586,11 +586,13 @@ function renderPanel() {
 
   let attackBonus = 0;
   let defenceBonus = 0;
+  let rangedBonus = 0;
   for (const slot of EQUIP_SLOTS) {
     const item = equipped[slot.id];
     if (item) {
       attackBonus += item.attack_bonus | 0;
       defenceBonus += item.defence_bonus | 0;
+      rangedBonus += item.ranged_bonus | 0;
     }
   }
 
@@ -619,6 +621,7 @@ function renderPanel() {
     <div class="equip-footer">
       <div class="equip-footer-row"><span>Bonus Ataque:</span><b>+${attackBonus}</b></div>
       <div class="equip-footer-row"><span>Bonus Defensa:</span><b>+${defenceBonus}</b></div>
+      ${rangedBonus > 0 ? `<div class="equip-footer-row"><span>Bonus Distancia:</span><b>+${rangedBonus}</b></div>` : ''}
     </div>
   `;
   html += '</div>';
