@@ -467,6 +467,32 @@ export class Character {
     this._combatStanceMode = 'sword';
     this._bowAttackTimeoutId = null;
 
+    // Sesion 42c - Layered blend (piernas independientes durante ataques).
+    // _legsAction = la action `<name>__legs` que maneja las piernas mientras el
+    // torso ejecuta un ataque (playAttack mele/casteo/staff).
+    // _legLayerActive = true SOLO mientras un ataque layered esta en curso;
+    // play() lo usa para decidir si, durante isAttacking, redirige a _driveLegs
+    // en vez de hacer early-return. Bow (_playBowAttack) y gather (playGather)
+    // NO activan esta capa -> conservan el comportamiento viejo (piernas
+    // congeladas / clamp del clip completo).
+    // _attackEndTimeoutId = id del setTimeout que libera isAttacking al final
+    // del ataque. Lo trackeamos (igual que _bowAttackTimeoutId) para cancelarlo
+    // si se sale de combate a mitad de swing y que un timeout viejo no apague
+    // las piernas del ataque siguiente.
+    // _layeredEnabled = kill-switch en runtime: window.__layeredBlend(false)
+    // vuelve al clip COMPLETO (piernas congeladas) sin revertir el archivo.
+    this._legsAction = null;
+    this._legLayerActive = false;
+    this._attackEndTimeoutId = null;
+    this._layeredEnabled = true;
+    // Sesion 43 - ultimo estado de locomocion que pidio world.js (lo actualiza
+    // play() en cada frame). playAttack lo usa para primear la capa de piernas
+    // con el estado REAL (run/walk + direccion) en vez de hardcodear 'idle':
+    // antes, cada tick de ataque (~900ms) las piernas saltaban a pose idle
+    // por 1 frame y el ciclo de correr se reiniciaba -> look de "caminata".
+    this._lastLocoState = 'idle';
+    this._lastLocoDir = 'forward';
+
     // Sesión 26 — Armor attach state (body, shield, helm, cape)
     this._spineBone = null;
     this._headBone = null;
@@ -705,6 +731,17 @@ export class Character {
       window.__layeredList = () => {
         const ch = window.__character;
         return Object.keys(ch?.actions || {}).filter(k => k.endsWith('__legs') || k.endsWith('__torso'));
+      };
+      // Sesion 42c - kill-switch del layered blend en runtime. Sin arg = toggle.
+      //   window.__layeredBlend(false) -> ataques con clip COMPLETO (piernas
+      //     congeladas, como antes). Aplica desde el PROXIMO ataque.
+      //   window.__layeredBlend(true)  -> piernas independientes (default).
+      window.__layeredBlend = (on) => {
+        const ch = window.__character;
+        if (!ch) return 'no character';
+        ch._layeredEnabled = (typeof on === 'boolean') ? on : !ch._layeredEnabled;
+        if (!ch._layeredEnabled) ch._stopLegLayer();
+        return 'layered blend: ' + (ch._layeredEnabled ? 'ON' : 'OFF');
       };
     }
 
@@ -1074,7 +1111,24 @@ export class Character {
    */
   play(state, direction = 'forward') {
     if (!this.loaded) return;
-    if (this.isAttacking || this.isInTransition || this.isDead) return;
+    // Sesion 43 - registrar SIEMPRE el ultimo estado pedido por world.js,
+    // incluso si abajo hacemos early-return. playAttack primea la capa de
+    // piernas con esto (el estado real del joystick, no 'idle' a ciegas).
+    this._lastLocoState = state;
+    this._lastLocoDir = direction;
+    if (this.isDead || this.isInTransition) return;
+
+    // Sesion 42c - Layered blend. Si hay un ataque LAYERED en curso
+    // (mele/casteo/staff), no hacemos early-return: el torso sigue con el
+    // one-shot del ataque (this.current = un `<name>__torso`) y aca manejamos
+    // las PIERNAS aparte segun el joystick. world.js sigue llamando play() cada
+    // frame -> eso alimenta a _driveLegs sin tocar el torso. Para ataques NO
+    // layered (bow, o fallback sin clip __torso) _legLayerActive queda false ->
+    // early-return como siempre. Idem gather (isInTransition, ya cubierto).
+    if (this.isAttacking) {
+      if (this._legLayerActive) this._driveLegs(state, direction);
+      return;
+    }
 
     // Sesión 36 — Bow idle: NO usar crossFade normal porque reseteamos el
     // tiempo de bow_draw_arrow y replayearíamos la anim de "sacar la flecha"
@@ -1166,6 +1220,14 @@ export class Character {
         clearTimeout(this._bowAttackTimeoutId);
         this._bowAttackTimeoutId = null;
       }
+      // Sesion 42c - si salimos de combate a mitad de un ataque layered,
+      // cancelamos el timeout de fin de ataque (sino apagaria las piernas de lo
+      // que venga despues) y apagamos la capa de piernas a mano.
+      if (this._attackEndTimeoutId !== null) {
+        clearTimeout(this._attackEndTimeoutId);
+        this._attackEndTimeoutId = null;
+      }
+      this._stopLegLayer();
     }
   }
 
@@ -1200,6 +1262,16 @@ export class Character {
       clearTimeout(this._drawSheathTimeoutId);
       this._drawSheathTimeoutId = null;
     }
+
+    // Sesion 43 - mismo cleanup que playSheath: el draw es clip COMPLETO,
+    // si habia un ataque layered en curso (switch de arma mid-combate)
+    // apagamos la capa de piernas y su timeout.
+    if (this._attackEndTimeoutId !== null) {
+      clearTimeout(this._attackEndTimeoutId);
+      this._attackEndTimeoutId = null;
+    }
+    this.isAttacking = false;
+    this._stopLegLayer();
 
     const action = this.actions.draw;
     if (!action) {
@@ -1246,6 +1318,19 @@ export class Character {
       clearTimeout(this._drawSheathTimeoutId);
       this._drawSheathTimeoutId = null;
     }
+
+    // Sesion 43 - si nos llaman a mitad de un ataque LAYERED (matar al NPC
+    // mid-swing -> disengage -> sheath), el sheath es un clip COMPLETO: hay
+    // que apagar la capa de piernas ANTES, sino pelea los huesos de las
+    // piernas contra el sheath hasta que el timeout de fin de ataque dispare
+    // (hasta ~900ms despues). Tambien cancelamos ese timeout y liberamos
+    // isAttacking para que no opere sobre el estado nuevo.
+    if (this._attackEndTimeoutId !== null) {
+      clearTimeout(this._attackEndTimeoutId);
+      this._attackEndTimeoutId = null;
+    }
+    this.isAttacking = false;
+    this._stopLegLayer();
 
     const action = this.actions.sheath;
 
@@ -1379,6 +1464,12 @@ export class Character {
     if (!this.mixer) return;
     const idle = this.actions.idle;
     if (!idle) return;
+    // Sesion 43 - stopAllAction (abajo) para tambien las actions de piernas,
+    // pero si el puntero _legsAction sobrevive, el guard de _driveLegs
+    // ("ya esta sonando") compararia igual contra una action MUERTA y haria
+    // no-op -> piernas congeladas en el proximo ataque. Limpiar siempre.
+    this._legLayerActive = false;
+    this._legsAction = null;
     try {
       this.mixer.stopAllAction();
       this.mixer.setTime(0);
@@ -1441,42 +1532,71 @@ export class Character {
       return 'bow_sequence';
     }
 
-    let action = null;
+    let name = null;
 
     // 1H sword o unarmed → SIEMPRE punching
     if (weaponType === '1h_sword' || weaponType === 'unarmed' || !weaponType) {
-      action = this.actions.punching;
+      name = 'punching';
     }
     // 2H sword → mapping específico por stance
     else if (weaponType === '2h_sword') {
       const stanceToAnim = { chop: 1, slash: 2, smash: 3, block: 4 };
       const animNum = stanceToAnim[stanceKey];
       if (animNum) {
-        action = this.actions[`attack_${animNum}`] || this.actions.attack_1;
+        name = this.actions[`attack_${animNum}`] ? `attack_${animNum}` : 'attack_1';
       } else {
         // Sin stance: cycle automático
         this.attackCycle = (this.attackCycle % 4) + 1;
-        action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
+        name = this.actions[`attack_${this.attackCycle}`] ? `attack_${this.attackCycle}` : 'attack_1';
       }
     }
     // Sesión 42 — Staff CON hechizo → anim de casteo según el spell_id.
     // El server manda el spell_id por el 4º arg. Si el clip no cargó (warning
     // del loader), caemos abajo al cycle de sword para no quedarnos sin anim.
     else if (weaponType === 'staff' && spellId && SPELL_ANIM[spellId] && this.actions[SPELL_ANIM[spellId]]) {
-      action = this.actions[SPELL_ANIM[spellId]];
+      name = SPELL_ANIM[spellId];
     }
     // Staff SIN hechizo (golpe con el palo = melé) o bow fallback → cycle sword
     else if (weaponType === 'staff' || weaponType === 'bow') {
       this.attackCycle = (this.attackCycle % 4) + 1;
-      action = this.actions[`attack_${this.attackCycle}`] || this.actions.attack_1;
+      name = this.actions[`attack_${this.attackCycle}`] ? `attack_${this.attackCycle}` : 'attack_1';
     }
     // Fallback
+    if (!name) name = this.actions.punching ? 'punching' : 'attack_1';
+
+    // Sesion 42c - LAYERED BLEND. En vez de reproducir el clip COMPLETO del
+    // ataque (que congela las piernas al pisarlas con su pose in-place),
+    // reproducimos su version `<name>__torso` (solo Spine/brazos/cabeza, SIN
+    // piernas ni Hips). Las piernas las maneja la capa _legsAction via
+    // _driveLegs(), alimentada por world.js -> play() cada frame segun el
+    // joystick. Si no existe el __torso (clip raro) o el kill-switch esta off,
+    // caemos al clip COMPLETO y NO activamos la capa (comportamiento viejo:
+    // piernas congeladas, sin riesgo de conflicto de bones).
+    const torsoName = name + '__torso';
+    let action;
+    let useLayered = false;
+    if (this._layeredEnabled && this.actions[torsoName]) {
+      action = this.actions[torsoName];
+      useLayered = true;
+    } else {
+      action = this.actions[name];
+    }
     if (!action) action = this.actions.punching || this.actions.attack_1;
     if (!action) return 'no_action_clip';
 
     this._scaleOneShot(action, animMs);
     this._crossFadeTo(action, 0.08);
     this.isAttacking = true;
+
+    // Sesion 42c - arrancar la capa de piernas. Sesion 43: primeamos con el
+    // ULTIMO estado real de locomocion (lo que world.js pidio este frame),
+    // no con 'idle' hardcodeado. Antes, en cada tick de ataque las piernas
+    // saltaban a idle por 1 frame y el ciclo de correr arrancaba de cero ->
+    // nunca completaba una zancada y parecia que caminaba.
+    if (useLayered) {
+      this._legLayerActive = true;
+      this._driveLegs(this._lastLocoState, this._lastLocoDir);
+    }
 
     // Sesión 26 — al terminar, solo desbloqueamos isAttacking. La anim
     // de ataque queda en su ÚLTIMO frame (clampWhenFinished=true puesto
@@ -1487,10 +1607,23 @@ export class Character {
     // crossFadeFrom). Antes hacíamos un crossfade explícito aquí mismo
     // pero eso CORTABA el giro de las anims attack_2/attack_3 que
     // necesitan ejecutarse hasta el final para verse completas.
-    setTimeout(() => {
+    //
+    // Sesion 42c - ademas apagamos la capa de piernas (fadeOut) para que el
+    // proximo play() (clip COMPLETO) retome todo el cuerpo limpio. El timeout
+    // se trackea para poder cancelarlo desde setCombatStance(false).
+    if (this._attackEndTimeoutId !== null) {
+      clearTimeout(this._attackEndTimeoutId);
+    }
+    this._attackEndTimeoutId = setTimeout(() => {
+      this._attackEndTimeoutId = null;
       this.isAttacking = false;
+      this._stopLegLayer();
     }, animMs + 20);
-    return 'played';
+    // Sesion 43 - return diagnostico: __combatDebug(true) muestra este string
+    // en el clog de combat.js. 'played_full' con staff/mele = el __torso de
+    // ese clip no existe (no se construyo o el FBX no cargo) -> piernas
+    // congeladas por diseño (fallback al clip completo).
+    return useLayered ? 'played_layered' : 'played_full';
   }
 
   /**
@@ -1590,6 +1723,13 @@ export class Character {
     this.isDead = true;
     this.isAttacking = false;
     this.isInTransition = false;
+    // Sesion 42c - si morimos a mitad de un ataque layered, matar la capa de
+    // piernas (la death anim es clip completo y maneja todo el cuerpo).
+    if (this._attackEndTimeoutId !== null) {
+      clearTimeout(this._attackEndTimeoutId);
+      this._attackEndTimeoutId = null;
+    }
+    this._stopLegLayer();
   }
 
   /**
@@ -1613,6 +1753,13 @@ export class Character {
     this.isAttacking = false;
     this.isInTransition = false;
     this.combatStance = false;
+    // Sesion 42c - la capa de piernas no sobrevive a un respawn.
+    if (this._attackEndTimeoutId !== null) {
+      clearTimeout(this._attackEndTimeoutId);
+      this._attackEndTimeoutId = null;
+    }
+    this._legLayerActive = false;
+    this._legsAction = null;
     for (const name of ['death', 'sword_death']) {
       const a = this.actions[name];
       if (!a) continue;
@@ -1876,6 +2023,72 @@ export class Character {
     console.log('[character] layered clips construidos para', built, 'clips');
   }
 
+  // ============================================================
+  // Sesion 42c - Capa de PIERNAS para el layered blend.
+  // ============================================================
+  // _driveLegs maneja la action `<name>__legs` que mueve piernas/cintura segun
+  // el joystick MIENTRAS el torso ejecuta un ataque (el torso vive en
+  // this.current como un `<name>__torso`, en huesos disjuntos -> no se pisan).
+  // Resuelve el nombre con _resolveLocomotion (respeta combatStance /
+  // _combatStanceMode), le agrega __legs y crossfadea.
+  // NO toca this.current (eso es el torso). Solo gestiona this._legsAction.
+  //
+  // Sesion 43 - 3 fixes sobre la version original:
+  //   1. FALLBACK: si el `__legs` del nombre resuelto no existe (ej. el FBX
+  //      de sword_run_forward no cargo), caemos al generico del state
+  //      (walk_forward/run_forward/idle), igual que hace play() con el clip
+  //      completo. Antes era no-op total -> las piernas quedaban CLAVADAS en
+  //      la anim anterior (sword_idle__legs) mientras el cuerpo se deslizaba.
+  //   2. SIN reset(): si la action ya venia sonando (o quedo congelada por el
+  //      fadeOut del tick anterior - THREE la auto-deshabilita al llegar a
+  //      weight 0 pero conserva su time), retomamos la FASE del ciclo en vez
+  //      de arrancar de cero. Antes el ciclo de correr se reiniciaba en cada
+  //      tick de ataque (~900ms) y nunca completaba una zancada -> parecia
+  //      una caminata rara en vez de correr.
+  //   3. SIN warp en el crossfade: warp=true interpola los timeScales segun
+  //      la duracion de los clips (sword_idle dura varios segundos, sword_run
+  //      <1s) -> las piernas de correr arrancaban en camara lenta (~10-20%)
+  //      y aceleraban durante 220ms EN CADA transicion. Para piernas queremos
+  //      velocidad 1 constante; el warp queda solo para los crossfades de
+  //      cuerpo completo (_crossFadeTo), donde siempre estuvo.
+  _driveLegs(state, direction = 'forward') {
+    let baseName = this._resolveLocomotion(state, direction);
+    let legAction = this.actions[baseName + '__legs'];
+    if (!legAction) {
+      baseName = this._fallbackLocomotion(state);
+      legAction = this.actions[baseName + '__legs'];
+    }
+    if (!legAction) return;                       // ni fallback -> no-op
+    if (this._legsAction === legAction) return;   // ya esta sonando -> no tocar
+
+    const prev = this._legsAction;
+    legAction.stopFading();
+    legAction.stopWarping();
+    legAction.enabled = true;
+    legAction.paused = false;
+    legAction.setLoop(THREE.LoopRepeat, Infinity);
+    legAction.clampWhenFinished = false;
+    legAction.setEffectiveTimeScale(1);
+    legAction.setEffectiveWeight(1);
+    legAction.play();
+    if (prev && prev !== legAction) {
+      legAction.crossFadeFrom(prev, CROSSFADE, false);
+    }
+    this._legsAction = legAction;
+  }
+
+  // Apaga la capa de piernas al terminar el ataque (o al salir de combate /
+  // morir). fadeOut suave para que el siguiente play() (clip COMPLETO) retome
+  // las piernas sin salto. Idempotente: seguro de llamar desde cualquier path.
+  _stopLegLayer() {
+    this._legLayerActive = false;
+    const a = this._legsAction;
+    this._legsAction = null;
+    if (a) {
+      try { a.fadeOut(CROSSFADE); } catch {}
+    }
+  }
+
   _scaleOneShot(action, targetMs) {
     action.setLoop(THREE.LoopOnce, 1);
     // Sesión 26 — bug fix: antes era false, lo cual hacía que al terminar
@@ -1929,6 +2142,13 @@ export class Character {
       clearTimeout(this._bowAttackTimeoutId);
       this._bowAttackTimeoutId = null;
     }
+    // Sesion 42c - limpiar capa de piernas + su timeout.
+    if (this._attackEndTimeoutId !== null) {
+      clearTimeout(this._attackEndTimeoutId);
+      this._attackEndTimeoutId = null;
+    }
+    this._legsAction = null;
+    this._legLayerActive = false;
     this._combatStanceMode = 'sword';
 
     // Sesión 24 — limpiar arma equipada
