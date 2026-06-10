@@ -60,7 +60,7 @@ export async function handleGetEquipment(request, env) {
   const result = await env.DB.prepare(
     `SELECT eq.slot_id, eq.item_id, eq.equipped_at,
             i.name, i.icon, i.equip_slot, i.weapon_type,
-            i.attack_bonus, i.defence_bonus, i.description
+            i.attack_bonus, i.defence_bonus, i.ranged_bonus, i.description
      FROM user_equipment eq
      JOIN items i ON i.id = eq.item_id
      WHERE eq.user_id = ?`
@@ -76,6 +76,7 @@ export async function handleGetEquipment(request, env) {
       weapon_type: r.weapon_type,
       attack_bonus: r.attack_bonus | 0,
       defence_bonus: r.defence_bonus | 0,
+      ranged_bonus: r.ranged_bonus | 0,
       description: r.description,
       equipped_at: r.equipped_at,
     };
