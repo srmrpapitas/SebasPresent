@@ -121,6 +121,37 @@ export async function swapInventorySlots(from, to) {
   });
 }
 
+// ============================================================
+// Sesion 45 — Quiver (carcaj). El server ya tenia los endpoints desde S34;
+// recien ahora el cliente los usa. GET devuelve el contenido; deposit mete
+// flechas de un slot del inv (qty null = todo el stack); withdraw saca
+// (qty null = todo).
+// ============================================================
+export async function getQuiver() {
+  return apiFetch('/api/quiver', { auth: true });
+}
+
+export async function depositToQuiver(slotIndex, quantity = null) {
+  const body = {};
+  if (Number.isInteger(slotIndex)) body.slot_index = slotIndex;
+  if (Number.isInteger(quantity) && quantity > 0) body.quantity = quantity;
+  return apiFetch('/api/quiver/deposit', {
+    method: 'POST',
+    auth: true,
+    body,
+  });
+}
+
+export async function withdrawFromQuiver(quantity = null) {
+  const body = {};
+  if (Number.isInteger(quantity) && quantity > 0) body.quantity = quantity;
+  return apiFetch('/api/quiver/withdraw', {
+    method: 'POST',
+    auth: true,
+    body,
+  });
+}
+
 // ---------- Bank endpoints (Slice 4b) ----------
 
 export async function getBank() {

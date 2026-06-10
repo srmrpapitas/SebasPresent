@@ -82,6 +82,10 @@ export async function init() {
   // (abre nuestro menú Equipar/Examinar/Cancelar).
   gridEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  // Sesion 45 — hook para que otros modulos (equipment, al sacar flechas del
+  // carcaj) puedan refrescar la mochila sin crear dependencia circular.
+  if (typeof window !== 'undefined') window.__inventoryRefresh = () => refresh();
+
   await refresh();
   isInitialized = true;
 }
@@ -451,6 +455,13 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   if (isEquipable) {
     html += `<div class="inv-context-row" data-act="equip">⚔ Equipar</div>`;
   }
+  // Sesion 45 — "Equipar en carcaj": aparece solo si el item es una flecha
+  // (arrow_*) Y el player tiene un carcaj equipado. Mete el stack al quiver
+  // (libera el slot de la mochila). El server valida igual.
+  const itemIsArrow = typeof item.item_id === 'string' && item.item_id.startsWith('arrow_');
+  if (itemIsArrow && hasQuiverEquipped()) {
+    html += `<div class="inv-context-row" data-act="to_quiver">🎯 Equipar en carcaj</div>`;
+  }
   // Sesión 30 — Encender fuego: aparece solo si el item es un log
   // y el player tiene un yesquero en inv.
   const fm = (typeof window !== 'undefined') ? window.__firemaking : null;
@@ -484,6 +495,19 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
       menu.remove();
       if (act === 'equip') {
         await doEquip(slotIdx);
+      } else if (act === 'to_quiver') {
+        // Sesion 45 — depositar el stack de flechas en el carcaj equipado.
+        try {
+          const res = await api.depositToQuiver(slotIdx);
+          if (res && res.ok) {
+            await refresh();
+          } else {
+            showError(res?.message || 'No se pudo meter las flechas al carcaj.');
+          }
+        } catch (err) {
+          console.warn('[inventory] to_quiver err:', err);
+          showError('No se pudo meter las flechas al carcaj.');
+        }
       } else if (act === 'examine') {
         showError(item.name + (item.equip_slot ? ` · ${item.equip_slot}` : '') + (item.stackable ? ` · stackable (x${item.quantity})` : ''));
       } else if (act === 'light_fire') {
@@ -678,4 +702,13 @@ function hasTinderboxInInventory() {
     if (s && s.item_id === 'tinderbox') return true;
   }
   return false;
+}
+
+// Sesion 45 — ¿hay un carcaj equipado? (para mostrar "Equipar en carcaj").
+function hasQuiverEquipped() {
+  try {
+    return !!equipment.getEquipped?.('quiver');
+  } catch {
+    return false;
+  }
 }

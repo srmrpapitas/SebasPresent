@@ -396,9 +396,23 @@ const ARMOR_TRANSFORMS = {
     rotation: [0.0, 0.0, 0.0],
     bone: 'spine',
   },
+  // Sesion 45 — Carcaj: anclado al spine (espalda), como la capa. SIN calibrar
+  // todavia: ajustá scale/position/rotation in-game con window.__quiverDebug()
+  // (igual que se calibro la pechera/escudo) y pega los valores aca.
+  quiver: {
+    scale: 100.0,
+    position: [0.0, 0.0, -8.0],
+    rotation: [0.0, 0.0, 0.0],
+    bone: 'spine',
+  },
 };
 
 const _armorMeshCache = new Map();
+
+// Sesion 45 — Quiver (carcaj). A diferencia del resto del armor, el GLB tiene
+// NOMBRE FIJO (no <item_id>.glb): el archivo en R2 se llama quiver.glb. Si lo
+// subiste a otra carpeta (ej. /weapons), cambiá SOLO esta constante.
+const QUIVER_GLB_URL = `${ARMOR_BASE}/quiver.glb`;
 
 export class Character {
   constructor() {
@@ -986,6 +1000,8 @@ export class Character {
       case 'helm':   return this._headBone;
       case 'shield': return this._leftHandBone;
       case 'cape':   return this._neckBone || this._spineBone;
+      // Sesion 45 — el carcaj va al spine (espalda), como la capa.
+      case 'quiver': return this._spineBone;
       default: return null;
     }
   }
@@ -998,7 +1014,10 @@ export class Character {
     if (_armorMeshCache.has(itemId)) {
       return _armorMeshCache.get(itemId).clone(true);
     }
-    const url = `${ARMOR_BASE}/${itemId}.glb`;
+    // Sesion 45 — el carcaj usa filename FIJO (quiver.glb), no <item_id>.glb.
+    const url = (itemId && itemId.startsWith('quiver'))
+      ? QUIVER_GLB_URL
+      : `${ARMOR_BASE}/${itemId}.glb`;
     const gltf = await _gltfLoader.loadAsync(url);
     const base = gltf.scene;
     base.traverse(o => {
@@ -2611,9 +2630,12 @@ window.__weaponDebug = function () {
 // Mueve los sliders hasta que quede bien. Pulsa COPIAR y pégame el
 // resultado para que lo deje fijo en ARMOR_TRANSFORMS.
 //
+// Sesion 45 — alias para calibrar el carcaj (el panel sirve para cualquier
+// slot de _equippedArmor; el quiver se guarda ahi via attachArmor).
+window.__quiverDebug = function () { return window.__armorDebug('quiver'); };
 window.__armorDebug = function (slotId) {
   if (!slotId) {
-    console.warn('[armor-debug] uso: __armorDebug("body" | "shield" | "helm" | "cape")');
+    console.warn('[armor-debug] uso: __armorDebug("body" | "shield" | "helm" | "cape" | "quiver")');
     return;
   }
   const existing = document.getElementById('armorDebugPanel');

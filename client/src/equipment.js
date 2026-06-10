@@ -30,6 +30,7 @@ const listeners = [];
 // SVGs custom desde item_icons.js cuando están disponibles.
 export const EQUIP_SLOTS = [
   { id: 'helm',   label: 'Casco',    icon: '⛑',  row: 0, col: 1 },
+  { id: 'quiver', label: 'Carcaj',   icon: '🎯',  row: 0, col: 2 },
   { id: 'cape',   label: 'Capa',     icon: '🧣',  row: 1, col: 0 },
   { id: 'amulet', label: 'Amuleto',  icon: '📿',  row: 1, col: 1 },
   { id: 'weapon', label: 'Arma',     icon: '⚔️',  row: 2, col: 0 },
@@ -344,6 +345,42 @@ function notifyChange() {
 }
 
 // ============================================================
+// Sesion 45 — Quiver helpers (raw fetch, mismo estilo que el resto del modulo)
+// ============================================================
+async function fetchQuiverState() {
+  const token = getToken?.();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${apiBase}/api/quiver`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();   // { equipped, arrow_item_id, arrow_quantity }
+  } catch (err) {
+    console.warn('[equipment] fetchQuiverState err:', err);
+    return null;
+  }
+}
+
+async function withdrawQuiver() {
+  const token = getToken?.();
+  if (!token) return { error: 'no_token' };
+  try {
+    const res = await fetch(`${apiBase}/api/quiver/withdraw`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),   // qty vacio = sacar todo
+    });
+    const data = await res.json();
+    if (!res.ok) return data;
+    return data;
+  } catch (err) {
+    console.error('[equipment] withdrawQuiver err:', err);
+    return { error: 'network' };
+  }
+}
+
+// ============================================================
 // UI
 // ============================================================
 
@@ -611,13 +648,21 @@ function showSlotTooltip(slotId, clientX, clientY) {
   el.className = 'equip-tooltip';
 
   if (item) {
+    // Sesion 45 — el carcaj muestra Bonus Distancia + un placeholder de
+    // contenido que se rellena async con /api/quiver, y un boton "Sacar
+    // flechas" (withdraw). El resto de slots: tooltip estandar.
+    const isQuiver = slotId === 'quiver';
     el.innerHTML = `
       <div class="equip-tooltip-title"><span class="equip-tooltip-icon">${getItemIconHtml(item.item_id, item.icon)}</span> ${item.name}</div>
       ${item.description ? `<div class="equip-tooltip-desc">${escapeHtml(item.description)}</div>` : ''}
       <div class="equip-tooltip-stat"><span>Ranura:</span><b>${slot.label}</b></div>
-      <div class="equip-tooltip-stat"><span>Bonus Ataque:</span><b>+${item.attack_bonus | 0}</b></div>
-      <div class="equip-tooltip-stat"><span>Bonus Defensa:</span><b>+${item.defence_bonus | 0}</b></div>
+      ${isQuiver
+        ? `<div class="equip-tooltip-stat"><span>Bonus Distancia:</span><b>+${item.ranged_bonus | 0}</b></div>
+           <div class="equip-tooltip-stat" id="quiverContents"><span>Contiene:</span><b>…</b></div>`
+        : `<div class="equip-tooltip-stat"><span>Bonus Ataque:</span><b>+${item.attack_bonus | 0}</b></div>
+           <div class="equip-tooltip-stat"><span>Bonus Defensa:</span><b>+${item.defence_bonus | 0}</b></div>`}
       <div class="equip-tooltip-actions">
+        ${isQuiver ? `<button class="equip-tooltip-btn" data-action="withdraw">Sacar flechas</button>` : ''}
         <button class="equip-tooltip-btn" data-action="unequip">Quitar</button>
         <button class="equip-tooltip-btn secondary" data-action="close">Cerrar</button>
       </div>
@@ -649,11 +694,33 @@ function showSlotTooltip(slotId, clientX, clientY) {
           alert(result.message || result.error);
         }
         el.remove();
+      } else if (act === 'withdraw') {
+        // Sesion 45 — sacar TODAS las flechas del carcaj al inventario.
+        const result = await withdrawQuiver();
+        if (result && result.error) {
+          alert(result.message || result.error);
+        } else {
+          try { window.__inventoryRefresh?.(); } catch {}
+        }
+        el.remove();
       } else {
         el.remove();
       }
     });
   });
+
+  // Sesion 45 — rellenar el contenido del carcaj async (GET /api/quiver).
+  if (slotId === 'quiver' && item) {
+    fetchQuiverState().then(q => {
+      const node = el.querySelector('#quiverContents b');
+      if (!node) return;
+      if (q && q.arrow_item_id && q.arrow_quantity > 0) {
+        node.textContent = `${q.arrow_quantity} (${q.arrow_item_id.replace('arrow_', '')})`;
+      } else {
+        node.textContent = 'vacío';
+      }
+    }).catch(() => {});
+  }
 
   const outsideClose = (e) => {
     if (!el.contains(e.target)) {

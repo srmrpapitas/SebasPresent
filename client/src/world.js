@@ -542,7 +542,9 @@ export async function startWorld(loggedInUser, token) {
       //
       // Sesión 26 — También attach/detach armor (body, shield, helm, cape)
       // a los huesos del cuerpo.
-      const ARMOR_SLOTS = ['body', 'shield', 'helm', 'cape'];
+      // Sesion 45 — + quiver (carcaj). Reusa la misma maquinaria de armor
+      // (attachArmor/detachArmor); character.js resuelve el GLB de nombre fijo.
+      const ARMOR_SLOTS = ['body', 'shield', 'helm', 'cape', 'quiver'];
       equipment.onChange((slots) => {
         if (!character || !character.loaded) return;
         const weapon = slots.weapon;
