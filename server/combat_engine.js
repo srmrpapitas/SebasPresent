@@ -105,48 +105,6 @@ const WEAPON_CRIT_CHANCE = {
 };
 const CRIT_DAMAGE_MULT = 1.5;
 
-// ============================================================
-// Sesion 44 — SPECIAL ATTACK (doble golpe estilo Dragon Dagger / Magic
-// Shortbow). Server-authoritative.
-//
-// Energia 0-100 por user (combat_stats.spec_energy + spec_updated_at).
-// Regen LAZY pero SIN escritura en lecturas: la energia actual se DERIVA
-// de (stored + intervalos transcurridos desde spec_updated_at). Solo se
-// escribe al GASTAR el spec (stored = energiaActual - costo, updated=now).
-// Es mas simple que el patron de HP regen (que avanza last_attack_at)
-// porque aca no hay lockout de combate: regenera siempre.
-//
-// Efecto: DOS rolls de daño independientes en el mismo tick, cada uno
-// pasa por el pipeline completo de multiplicadores (arma, stance, crit,
-// triangulo). El cliente muestra dos hitsplats.
-//
-// Armas con spec (costo en % de la barra):
-//   - mele 1h/2h: 50 (doble golpe)
-//   - bow: 55 (doble disparo — consume 2 flechas; si solo hay 1, el
-//     ataque DEGRADA a normal sin gastar energia)
-// Staff/magia: sin spec por ahora (pendiente de diseño).
-// ============================================================
-const SPEC_MAX = 100;
-const SPEC_REGEN_AMOUNT = 10;            // % que regenera por intervalo
-const SPEC_REGEN_INTERVAL_MS = 15000;    // 10% cada 15s → barra llena en 2.5 min
-const SPEC_COSTS = {
-  '1h_sword': 50,
-  '2h_sword': 50,
-  'bow':      55,
-};
-
-/**
- * Energia de spec actual, derivada (NO escribe en DB).
- * Defensivo con cuentas pre-migracion: sin columna → arranca en SPEC_MAX.
- */
-function computeSpecEnergy(stats, now) {
-  const stored = Number.isFinite(stats.spec_energy) ? stats.spec_energy : SPEC_MAX;
-  if (stored >= SPEC_MAX) return SPEC_MAX;
-  const since = stats.spec_updated_at || 0;
-  const ticks = Math.floor(Math.max(0, now - since) / SPEC_REGEN_INTERVAL_MS);
-  return Math.min(SPEC_MAX, stored + ticks * SPEC_REGEN_AMOUNT);
-}
-
 /**
  * Modificadores por stance del player.
  *   speed_mult: multiplica el cooldown (>1 = más lento, <1 = más rápido)
@@ -541,14 +499,22 @@ async function getUserWeaponType(db, userId) {
  */
 async function getUserBowRangedBonus(db, userId) {
   try {
-    const row = await db.first(
+    // Sesion 45 — suma bonus del arco + bonus del carcaj equipado (si hay).
+    const bow = await db.first(
       `SELECT i.ranged_bonus
        FROM user_equipment ue
        JOIN items i ON i.id = ue.item_id
        WHERE ue.user_id = ? AND ue.slot_id = 'weapon' AND i.weapon_type = 'bow'`,
       [userId]
     );
-    return row?.ranged_bonus || 0;
+    const quiver = await db.first(
+      `SELECT i.ranged_bonus
+       FROM user_equipment ue
+       JOIN items i ON i.id = ue.item_id
+       WHERE ue.user_id = ? AND ue.slot_id = 'quiver'`,
+      [userId]
+    );
+    return (bow?.ranged_bonus || 0) + (quiver?.ranged_bonus || 0);
   } catch (err) {
     console.warn('[combat] getUserBowRangedBonus fallback 0:', err.message);
     return 0;
@@ -573,6 +539,12 @@ async function getUserBowRangedBonus(db, userId) {
  * en quiver, deja el slot con item_id=NULL y qty=0 (el quiver sigue
  * equipado pero vacío).
  */
+// Sesion 45 — quiver: 75% de conservacion (1 flecha consumida de 4).
+// Del 25% gastado, 50% cae al piso (solo para el tirador, 1 min).
+const QUIVER_CONSERVE_CHANCE = 0.75;   // prob de NO consumir
+const QUIVER_DROP_CHANCE     = 0.50;   // del 25% gastado, prob de caer al piso
+const ARROW_FLOOR_TTL_MS     = 60_000; // 1 minuto visible solo para el tirador
+
 async function consumeArrow(db, userId, now) {
   const ts = now || Date.now();
 
@@ -588,23 +560,36 @@ async function consumeArrow(db, userId, now) {
         [userId]
       );
       if (q && q.arrow_item_id && q.arrow_quantity > 0) {
+        // Sesion 45 — conservacion: 75% de las veces la flecha NO se gasta.
+        const conserved = Math.random() < QUIVER_CONSERVE_CHANCE;
+        if (conserved) {
+          return { ok: true, arrow_item_id: q.arrow_item_id, source: 'quiver', conserved: true };
+        }
+        // Se gasta — descontar del quiver
         const newQty = q.arrow_quantity - 1;
         if (newQty === 0) {
           await db.run(
-            `UPDATE user_quiver
-               SET arrow_item_id = NULL, arrow_quantity = 0, updated_at = ?
-             WHERE user_id = ?`,
+            `UPDATE user_quiver SET arrow_item_id = NULL, arrow_quantity = 0, updated_at = ? WHERE user_id = ?`,
             [ts, userId]
           );
         } else {
           await db.run(
-            `UPDATE user_quiver
-               SET arrow_quantity = ?, updated_at = ?
-             WHERE user_id = ?`,
+            `UPDATE user_quiver SET arrow_quantity = ?, updated_at = ? WHERE user_id = ?`,
             [newQty, ts, userId]
           );
         }
-        return { ok: true, arrow_item_id: q.arrow_item_id, source: 'quiver' };
+        // Sesion 45 — 50% de las flechas gastadas cae al piso.
+        // Visible solo para el tirador 1 minuto (dropped_by_user = userId,
+        // despawn_at = now + 60s). Necesitamos la posicion del jugador;
+        // si no esta disponible, no dropeamos (no rompemos el ataque).
+        const arrowDropped = Math.random() < QUIVER_DROP_CHANCE;
+        return {
+          ok: true,
+          arrow_item_id: q.arrow_item_id,
+          source: 'quiver',
+          conserved: false,
+          arrow_dropped: arrowDropped,
+        };
       }
     }
   } catch (err) {
@@ -634,7 +619,7 @@ async function consumeArrow(db, userId, now) {
       [newQty, userId, invRow.slot_index]
     );
   }
-  return { ok: true, arrow_item_id: invRow.item_id, source: 'inventory' };
+  return { ok: true, arrow_item_id: invRow.item_id, source: 'inventory', conserved: false };
 }
 
 /**
@@ -839,9 +824,6 @@ async function getCombatState(db, userId, opts = {}) {
       hp:       { level: lvls.hp,       xp: stats.hp_xp,       xp_next: xpForLevel(lvls.hp + 1) },
       hp_current: stats.hp_current,
       hp_max: lvls.hp,
-      // Sesion 44 — energia de special attack (derivada, sin escritura).
-      spec_energy: computeSpecEnergy(stats, now),
-      spec_max: SPEC_MAX,
       last_attack_at: stats.last_attack_at,
       last_died_at: stats.last_died_at,
     },
@@ -927,25 +909,6 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   if (stats.hp_current <= 0) return { error: 'user_dead' };
 
-  // Sesion 44 — SPECIAL ATTACK: validar energia ANTES de consumir flechas
-  // (un spec rechazado no debe gastar municion ni cooldown). Si el arma no
-  // tiene spec o es magia, el flag se ignora en silencio (ataque normal).
-  const specCost = SPEC_COSTS[weaponType];
-  let specActive = false;
-  let specEnergyNow = null;
-  if (opts.useSpecial && !isMagic && specCost) {
-    specEnergyNow = computeSpecEnergy(stats, now);
-    if (specEnergyNow < specCost) {
-      return {
-        error: 'no_spec_energy',
-        spec_energy: specEnergyNow,
-        spec_cost: specCost,
-        weapon_type: weaponType,
-      };
-    }
-    specActive = true;
-  }
-
   // Sesión 41 — MAGIA: chequeo de nivel + maná ANTES del roll. El maná se
   // regenera de forma perezosa (como la HP): según el tiempo desde
   // mana_updated_at y la regen (lenta sin set de mago, rápida con staff).
@@ -976,7 +939,6 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // por la fórmula de damage abajo.
   let totalRangedBonus = 0;
   let arrowConsumed = null;
-  let secondArrow = null;
   if (isRanged) {
     const bowBonus = await getUserBowRangedBonus(db, userId);
     arrowConsumed = await consumeArrow(db, userId, now);
@@ -988,17 +950,23 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     }
     const arrowBonus = await getArrowRangedBonus(db, arrowConsumed.arrow_item_id);
     totalRangedBonus = bowBonus + arrowBonus;
-    // Sesion 44 — spec de bow = DOBLE disparo = 2 flechas. La segunda se
-    // consume aca; si NO hay segunda flecha, el ataque DEGRADA a normal
-    // (1 disparo) y NO se gasta energia de spec. El bonus de la 2ª flecha
-    // no se recalcula: ambos disparos usan el bonus de la primera (mismo
-    // tipo de flecha en el 99% de los casos; simplificacion deliberada).
-    if (specActive) {
-      const second = await consumeArrow(db, userId, now);
-      if (second.ok) {
-        secondArrow = second;
-      } else {
-        specActive = false;
+    // Sesion 45 — si la flecha se gasto del quiver Y el roll dijo que cae al
+    // piso, la insertamos en ground_items cerca de donde esta el jugador.
+    // Visible solo para el tirador (dropped_by_user=userId) por 1 minuto.
+    // Si no hay posicion disponible, silenciosamente omitimos (no rompemos el ataque).
+    if (arrowConsumed.source === 'quiver' && !arrowConsumed.conserved && arrowConsumed.arrow_dropped) {
+      try {
+        if (userPos) {
+          const ox = (rng() - 0.5) * 2;
+          const oz = (rng() - 0.5) * 2;
+          await db.run(
+            `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+             VALUES (?, 1, ?, ?, ?, ?, ?)`,
+            [arrowConsumed.arrow_item_id, userPos.x + ox, userPos.z + oz, now, userId, now + ARROW_FLOOR_TTL_MS]
+          );
+        }
+      } catch (err) {
+        console.warn('[combat] arrow floor drop failed (non-fatal):', err.message);
       }
     }
   }
@@ -1009,27 +977,22 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   //   Magia:  usa magicLevel + base del hechizo para el max hit.
   //   Ranged: usa userLvls.ranged + totalRangedBonus (arco + flecha).
   //   Melee:  usa userLvls.attack (hit chance) + userLvls.strength (max hit).
-  // Sesion 44 — extraido a doRoll() para poder tirar DOS rolls independientes
-  // cuando hay special attack. Misma matematica que antes, solo envuelta.
-  const doRoll = () => (
-    isMagic
-      ? magic.rollHitMagic(
-          rng,
-          magicLevel,
-          npc.defence_lvl,
-          magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, 0)
-        )
-      : isRanged
-      ? rollHitRanged(
-          rng,
-          userLvls.ranged,
-          npc.defence_lvl,
-          totalRangedBonus,
-          calcMaxHitRanged(userLvls.ranged, totalRangedBonus)
-        )
-      : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength))
-  );
-  const userHit = doRoll();
+  const userHit = isMagic
+    ? magic.rollHitMagic(
+        rng,
+        magicLevel,
+        npc.defence_lvl,
+        magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, 0)
+      )
+    : isRanged
+    ? rollHitRanged(
+        rng,
+        userLvls.ranged,
+        npc.defence_lvl,
+        totalRangedBonus,
+        calcMaxHitRanged(userLvls.ranged, totalRangedBonus)
+      )
+    : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength));
 
   // Sesión 26 — Aplicar damage multipliers:
   //   1. Weapon base mult (1.5× para 2H)
@@ -1038,56 +1001,24 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // Sesión 41 — Magia NO usa weapon/stance/crit (el daño viene del hechizo).
   //   Y el TRIÁNGULO de combate (+20% en matchup favorable) se aplica a TODOS
   //   los estilos: magic>melee, melee>ranged, ranged>magic.
-  // Sesion 44 — extraido a applyDamageMults() (misma matematica) para
-  // aplicarlo a cada golpe del special por separado (cada uno puede crittear
-  // independientemente, como dos ataques reales).
-  const applyDamageMults = (hitRes) => {
-    let dmg = hitRes.damage;
-    let crit = false;
-    if (hitRes.hit && dmg > 0) {
-      if (!isMagic) {
-        const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
-        dmg = dmg * weaponMult * stanceMods.damage_mult;
-        // Roll crit automático (solo 2H tiene >0% chance)
-        const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
-        if (critChance > 0 && rng() < critChance) {
-          crit = true;
-          dmg = dmg * CRIT_DAMAGE_MULT;
-        }
+  let dmgRaw = userHit.damage;
+  let isCrit = false;
+  if (userHit.hit && dmgRaw > 0) {
+    if (!isMagic) {
+      const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
+      dmgRaw = dmgRaw * weaponMult * stanceMods.damage_mult;
+      // Roll crit automático (solo 2H tiene >0% chance)
+      const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+      if (critChance > 0 && rng() < critChance) {
+        isCrit = true;
+        dmgRaw = dmgRaw * CRIT_DAMAGE_MULT;
       }
-      // Triángulo de combate: +20% si el estilo del atacante le gana al del NPC.
-      dmg = dmg * magic.triangleMult(weaponType, npc.style || 'melee');
-      dmg = Math.max(1, Math.floor(dmg)); // mínimo 1 si hit
-    } else {
-      dmg = 0;
     }
-    return { dmg, crit };
-  };
-
-  const m1 = applyDamageMults(userHit);
-  let dmgRaw = m1.dmg;
-  let isCrit = m1.crit;
-
-  // Sesion 44 — SPECIAL: segundo roll independiente. your_hit = true si
-  // CUALQUIERA de los dos conecta. specHits guarda los dos valores para
-  // que el cliente muestre dos hitsplats.
-  let specHits = null;
-  if (specActive) {
-    const secondHit = doRoll();
-    const m2 = applyDamageMults(secondHit);
-    specHits = [m1.dmg, m2.dmg];
-    dmgRaw = m1.dmg + m2.dmg;
-    isCrit = m1.crit || m2.crit;
-    userHit.hit = userHit.hit || secondHit.hit;
+    // Triángulo de combate: +20% si el estilo del atacante le gana al del NPC.
+    dmgRaw = dmgRaw * magic.triangleMult(weaponType, npc.style || 'melee');
+    dmgRaw = Math.max(1, Math.floor(dmgRaw)); // mínimo 1 si hit
   }
-
   const dmgToNpc = Math.min(dmgRaw, npc.hp_current);
-  // Sesion 44 — si el cap por HP recorto el total, ajustar los splits para
-  // que sumen exactamente dmgToNpc (el 2º golpe absorbe el recorte).
-  if (specHits) {
-    specHits[0] = Math.min(specHits[0], dmgToNpc);
-    specHits[1] = Math.max(0, dmgToNpc - specHits[0]);
-  }
   userHit.damage = dmgToNpc;
   const npcHpAfter = npc.hp_current - dmgToNpc;
   const npcKilled = npcHpAfter <= 0;
@@ -1185,28 +1116,17 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   //   updated_at, sin tocar nada).
   const persistMana   = (manaAfter !== null) ? manaAfter : (stats.mana_current || 0);
   const persistManaAt = (manaAfter !== null) ? now : (stats.mana_updated_at || 0);
-  // Sesion 44 — spec: si se uso, descontar y sellar spec_updated_at=now
-  // (corta la regen acumulada hasta aca, mismo patron que el mana). Si NO
-  // se uso, dejar las columnas intactas (la energia se deriva al leer).
-  // Defensivo pre-migracion: stats.spec_energy puede no existir → SPEC_MAX.
-  const specAfter      = specActive ? (specEnergyNow - specCost) : null;
-  const persistSpec    = (specAfter !== null)
-    ? specAfter
-    : (Number.isFinite(stats.spec_energy) ? stats.spec_energy : SPEC_MAX);
-  const persistSpecAt  = (specAfter !== null) ? now : (stats.spec_updated_at || 0);
   await db.run(
     `UPDATE combat_stats
      SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
          ranged_xp = ?, magic_xp = ?,
          mana_current = ?, mana_updated_at = ?,
-         spec_energy = ?, spec_updated_at = ?,
          hp_current = ?, last_attack_at = ?, last_died_at = ?
      WHERE user_id = ?`,
     [
       stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
       stats.ranged_xp || 0, stats.magic_xp || 0,
       persistMana, persistManaAt,
-      persistSpec, persistSpecAt,
       stats.hp_current, stats.last_attack_at, stats.last_died_at,
       userId,
     ]
@@ -1247,23 +1167,6 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     arrow_consumed: arrowConsumed
       ? { item_id: arrowConsumed.arrow_item_id, source: arrowConsumed.source }
       : null,
-    // Sesion 44 — SPECIAL ATTACK (null si no se uso). hits = los dos golpes
-    // (para dos hitsplats); second_arrow = la 2ª flecha consumida en bow spec
-    // (para sync del inv local); energy_after = barra tras descontar.
-    special: specActive
-      ? {
-          hits: specHits,
-          cost: specCost,
-          energy_after: specAfter,
-          second_arrow: secondArrow
-            ? { item_id: secondArrow.arrow_item_id, source: secondArrow.source }
-            : null,
-        }
-      : null,
-    // Energia de spec actual (derivada; post-descuento si se uso). El cliente
-    // actualiza la barra con esto sin esperar al proximo poll de /state.
-    spec_energy: specActive ? specAfter : computeSpecEnergy(stats, now),
-    spec_max: SPEC_MAX,
     npc_killed: npcKilled,
     npc_hp: npcKilled ? 0 : npcHpAfter,
     npc_max_hp: npc.max_hp,
