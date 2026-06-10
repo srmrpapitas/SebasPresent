@@ -173,6 +173,18 @@ const ICONS = {
     <polygon points="6,26 3,28 5,23" fill="#d4a574" stroke="#000" stroke-width="0.6"/>
     <polygon points="6,26 9,29 4,28" fill="#a06b2a" stroke="#000" stroke-width="0.6"/>
   </svg>`,
+  quiver_bronze: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <rect x="10" y="14" width="12" height="16" rx="1" fill="#8a4a1f" stroke="#000" stroke-width="0.8"/>
+    <rect x="10" y="12" width="12" height="4" rx="1" fill="#a86a3f" stroke="#000" stroke-width="0.8"/>
+    <rect x="10" y="26" width="12" height="4" rx="1" fill="#a86a3f" stroke="#000" stroke-width="0.8"/>
+    <rect x="12" y="14" width="2" height="12" fill="#6e3a10" opacity="0.4"/>
+    <line x1="14" y1="5" x2="14" y2="14" stroke="#5a3a1d" stroke-width="1.2"/>
+    <line x1="17" y1="3" x2="17" y2="14" stroke="#5a3a1d" stroke-width="1.2"/>
+    <line x1="20" y1="5" x2="20" y2="14" stroke="#5a3a1d" stroke-width="1.2"/>
+    <polygon points="12,5 14,1 16,5" fill="#c98a3d" stroke="#000" stroke-width="0.6"/>
+    <polygon points="15,3 17,0 19,3" fill="#c98a3d" stroke="#000" stroke-width="0.6"/>
+    <polygon points="18,5 20,1 22,5" fill="#c98a3d" stroke="#000" stroke-width="0.6"/>
+  </svg>`,
 
   // ============= Monedas =============
   coins: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">

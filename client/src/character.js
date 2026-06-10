@@ -400,9 +400,9 @@ const ARMOR_TRANSFORMS = {
   // todavia: ajustá scale/position/rotation in-game con window.__quiverDebug()
   // (igual que se calibro la pechera/escudo) y pega los valores aca.
   quiver: {
-    scale: 100.0,
-    position: [0.0, 0.0, -8.0],
-    rotation: [0.0, 0.0, 0.0],
+    scale: 124.0,
+    position: [-29.5, -20.0, -11.0],
+    rotation: [-0.092, -0.092, 0.000],
     bone: 'spine',
   },
 };
@@ -1000,8 +1000,9 @@ export class Character {
       case 'helm':   return this._headBone;
       case 'shield': return this._leftHandBone;
       case 'cape':   return this._neckBone || this._spineBone;
-      // Sesion 45 — el carcaj va al spine (espalda), como la capa.
-      case 'quiver': return this._spineBone;
+      // Sesion 45 — quiver: intenta spine, si es null busca por nombre en el rig.
+      case 'quiver': return this._spineBone
+        || this._findBone(['mixamorigSpine2', 'mixamorigSpine1', 'mixamorigSpine', 'Spine2', 'Spine1', 'Spine']);
       default: return null;
     }
   }

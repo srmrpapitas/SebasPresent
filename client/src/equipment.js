@@ -692,6 +692,10 @@ function showSlotTooltip(slotId, clientX, clientY) {
         const result = await unequip(slotId);
         if (result.error) {
           alert(result.message || result.error);
+        } else {
+          // Sesion 45 — refrescar inventario: el item vuelve a la mochila
+          // pero sin esto el slot no aparece hasta el proximo poll.
+          try { window.__inventoryRefresh?.(); } catch {}
         }
         el.remove();
       } else if (act === 'withdraw') {
