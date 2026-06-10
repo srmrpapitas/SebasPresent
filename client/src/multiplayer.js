@@ -771,6 +771,10 @@ function upsertPeer(p) {
     if (p.weapon_item_id) {
       attachPeerWeapon(peer, p.weapon_item_id, p.weapon_type || null, peer.handBones);
     }
+    // Sesion 46 — guardar weapon_type para elegir la anim correcta en
+    // triggerPeerAttackAnim (bow→bow_overdraw, staff→staff_attack_1, etc.)
+    peer._peerWeaponType = p.weapon_type || 'melee';
+    peer._peerWeaponItemId = p.weapon_item_id || null;
   }
 
   // Nueva interpolación: from = posición visual actual, to = la del server
@@ -846,14 +850,25 @@ function upsertPeer(p) {
 function triggerPeerAttackAnim(peer) {
   if (!peer || !peer.actions || !peer.mixer) return;
 
-  // Pick anim: ciclo 1→2→3→1
-  peer._attackCycle = ((peer._attackCycle || 0) % 3) + 1;
-  const animName = `attack_${peer._attackCycle}`;
-  const action = peer.actions[animName] || peer.actions.attack_1 || peer.actions.punching;
+  // Sesion 46 — elegir la anim segun weapon_type del peer (viene del snapshot
+  // via upsertPeer → peer._peerWeaponType). Antes siempre usaba attack_1/2/3
+  // independientemente del arma → arquero se veia con swing de melé.
+  const wt = peer._peerWeaponType || 'melee';
+  let action;
+  if (wt === 'bow') {
+    // Bow: overdraw es el momento visible del disparo.
+    action = peer.actions.bow_overdraw || peer.actions.bow_draw_arrow;
+  } else if (wt === 'staff') {
+    // Staff: usar el primer clip de casteo disponible.
+    action = peer.actions.staff_attack_1 || peer.actions.staff_cast;
+  } else {
+    // Melee: ciclo 1→2→3→1 igual que antes.
+    peer._attackCycle = ((peer._attackCycle || 0) % 3) + 1;
+    const animName = `attack_${peer._attackCycle}`;
+    action = peer.actions[animName] || peer.actions.attack_1 || peer.actions.punching;
+  }
   if (!action) return;
 
-  // Reset + play one-shot. clampWhenFinished=false para que no se quede
-  // en último frame.
   action.reset();
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = false;
@@ -864,7 +879,7 @@ function triggerPeerAttackAnim(peer) {
     action.crossFadeFrom(peer.currentAction, 0.08, true);
   }
   peer.currentAction = action;
-  peer._attackingUntil = Date.now() + 600;  // bloquea idle override por 600ms
+  peer._attackingUntil = Date.now() + 600;
 }
 
 // ============================================================
