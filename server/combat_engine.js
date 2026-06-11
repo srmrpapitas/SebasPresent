@@ -973,52 +973,66 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   // ---- User hit ----
   const userLvls = levelsOf(stats);
-  // Sesión 34 — Bifurcación ranged vs melee. Sesión 41 — + magia.
-  //   Magia:  usa magicLevel + base del hechizo para el max hit.
-  //   Ranged: usa userLvls.ranged + totalRangedBonus (arco + flecha).
-  //   Melee:  usa userLvls.attack (hit chance) + userLvls.strength (max hit).
-  const userHit = isMagic
-    ? magic.rollHitMagic(
-        rng,
-        magicLevel,
-        npc.defence_lvl,
-        magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, 0)
-      )
-    : isRanged
-    ? rollHitRanged(
-        rng,
-        userLvls.ranged,
-        npc.defence_lvl,
-        totalRangedBonus,
-        calcMaxHitRanged(userLvls.ranged, totalRangedBonus)
-      )
-    : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength));
-
-  // Sesión 26 — Aplicar damage multipliers:
-  //   1. Weapon base mult (1.5× para 2H)
-  //   2. Stance mult (slash 0.95, smash 1.05)
-  //   3. Crit roll (solo si el arma tiene crit_chance > 0)
-  // Sesión 41 — Magia NO usa weapon/stance/crit (el daño viene del hechizo).
-  //   Y el TRIÁNGULO de combate (+20% en matchup favorable) se aplica a TODOS
-  //   los estilos: magic>melee, melee>ranged, ranged>magic.
-  let dmgRaw = userHit.damage;
-  let isCrit = false;
-  if (userHit.hit && dmgRaw > 0) {
-    if (!isMagic) {
-      const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
-      dmgRaw = dmgRaw * weaponMult * stanceMods.damage_mult;
-      // Roll crit automático (solo 2H tiene >0% chance)
-      const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
-      if (critChance > 0 && rng() < critChance) {
-        isCrit = true;
-        dmgRaw = dmgRaw * CRIT_DAMAGE_MULT;
-      }
-    }
-    // Triángulo de combate: +20% si el estilo del atacante le gana al del NPC.
-    dmgRaw = dmgRaw * magic.triangleMult(weaponType, npc.style || 'melee');
-    dmgRaw = Math.max(1, Math.floor(dmgRaw)); // mínimo 1 si hit
+  // Sesion 46 — restaurado el SPECIAL ATTACK en attackNpc (se habia perdido
+  // al regenerar el engine para el quiver). Mismo patron que attackPlayer:
+  // valida energia, hace DOS rolls independientes, descuenta la barra.
+  const specCost = SPEC_COSTS[weaponType];
+  let specActive = false;
+  let specEnergyNow = null;
+  if (opts.useSpecial && !isMagic && specCost) {
+    specEnergyNow = computeSpecEnergy(stats, now);
+    if (specEnergyNow >= specCost) specActive = true;
   }
+
+  const doRoll = () => (
+    isMagic
+      ? magic.rollHitMagic(rng, magicLevel, npc.defence_lvl,
+          magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, 0))
+      : isRanged
+      ? rollHitRanged(rng, userLvls.ranged, npc.defence_lvl,
+          totalRangedBonus, calcMaxHitRanged(userLvls.ranged, totalRangedBonus))
+      : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength))
+  );
+  const userHit = doRoll();
+
+  // Sesión 26 — Aplicar damage multipliers (extraido a fn para el spec).
+  const applyDamageMults = (hitRes) => {
+    let dmg = hitRes.damage;
+    let crit = false;
+    if (hitRes.hit && dmg > 0) {
+      if (!isMagic) {
+        const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
+        dmg = dmg * weaponMult * stanceMods.damage_mult;
+        const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+        if (critChance > 0 && rng() < critChance) { crit = true; dmg = dmg * CRIT_DAMAGE_MULT; }
+      }
+      dmg = dmg * magic.triangleMult(weaponType, npc.style || 'melee');
+      dmg = Math.max(1, Math.floor(dmg));
+    } else { dmg = 0; }
+    return { dmg, crit };
+  };
+
+  const m1 = applyDamageMults(userHit);
+  let dmgRaw = m1.dmg;
+  let isCrit = m1.crit;
+
+  // Sesion 46 — SPECIAL: segundo roll independiente. specHits = los dos
+  // golpes (para dos hitsplats en el cliente).
+  let specHits = null;
+  if (specActive) {
+    const h2 = doRoll();
+    const m2 = applyDamageMults(h2);
+    specHits = [m1.dmg, m2.dmg];
+    dmgRaw = m1.dmg + m2.dmg;
+    isCrit = m1.crit || m2.crit;
+    userHit.hit = userHit.hit || h2.hit;
+  }
+
   const dmgToNpc = Math.min(dmgRaw, npc.hp_current);
+  if (specHits) {
+    specHits[0] = Math.min(specHits[0], dmgToNpc);
+    specHits[1] = Math.max(0, dmgToNpc - specHits[0]);
+  }
   userHit.damage = dmgToNpc;
   const npcHpAfter = npc.hp_current - dmgToNpc;
   const npcKilled = npcHpAfter <= 0;
@@ -1116,17 +1130,24 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   //   updated_at, sin tocar nada).
   const persistMana   = (manaAfter !== null) ? manaAfter : (stats.mana_current || 0);
   const persistManaAt = (manaAfter !== null) ? now : (stats.mana_updated_at || 0);
+  // Sesion 46 — spec: descontar energia si se uso, sino dejar intacta.
+  const specAfter      = specActive ? (specEnergyNow - specCost) : null;
+  const persistSpec    = specAfter !== null ? specAfter
+    : (Number.isFinite(stats.spec_energy) ? stats.spec_energy : SPEC_MAX);
+  const persistSpecAt  = specAfter !== null ? now : (stats.spec_updated_at || 0);
   await db.run(
     `UPDATE combat_stats
      SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
          ranged_xp = ?, magic_xp = ?,
          mana_current = ?, mana_updated_at = ?,
+         spec_energy = ?, spec_updated_at = ?,
          hp_current = ?, last_attack_at = ?, last_died_at = ?
      WHERE user_id = ?`,
     [
       stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
       stats.ranged_xp || 0, stats.magic_xp || 0,
       persistMana, persistManaAt,
+      persistSpec, persistSpecAt,
       stats.hp_current, stats.last_attack_at, stats.last_died_at,
       userId,
     ]
@@ -1167,6 +1188,14 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     arrow_consumed: arrowConsumed
       ? { item_id: arrowConsumed.arrow_item_id, source: arrowConsumed.source }
       : null,
+    // Sesion 46 — SPECIAL ATTACK restaurado. hits = los dos golpes (para dos
+    // hitsplats); energy_after = barra tras descontar. spec_energy siempre
+    // presente (derivado) para que el cliente actualice la barra.
+    special: specActive
+      ? { hits: specHits, cost: specCost, energy_after: specAfter }
+      : null,
+    spec_energy: specActive ? specAfter : computeSpecEnergy(stats, now),
+    spec_max: SPEC_MAX,
     npc_killed: npcKilled,
     npc_hp: npcKilled ? 0 : npcHpAfter,
     npc_max_hp: npc.max_hp,
