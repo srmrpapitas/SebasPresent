@@ -276,7 +276,7 @@ export async function attackNpc(npcId, pos, spellId, useSpecial) {
  *   'not_in_wilderness_no_duel', 'out_of_range', 'on_cooldown',
  *   'target_dead', 'same_party'.
  */
-export async function attackPlayer(targetUserId, pos, targetPos) {
+export async function attackPlayer(targetUserId, pos, targetPos, spellId, useSpecial) {
   const body = { target_user_id: targetUserId };
   if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.z)) {
     body.x = pos.x;
@@ -286,6 +286,10 @@ export async function attackPlayer(targetUserId, pos, targetPos) {
     body.target_x = targetPos.x;
     body.target_z = targetPos.z;
   }
+  // Sesion 46 — magia PvP: mismo patron que el NPC. El server ya aceptaba
+  // spell_id pero el cliente nunca lo mandaba -> el mago atacaba como melee.
+  if (spellId) body.spell_id = spellId;
+  if (useSpecial) body.use_special = true;
   return apiFetch('/api/combat/attack_player', {
     method: 'POST',
     auth: true,

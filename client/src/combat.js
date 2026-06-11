@@ -337,7 +337,7 @@ async function doAttackTickNpc(gen = attackGen) {
       const p = window.__getPlayerPosition?.();
       if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = p;
     } catch {}
-    result = await api.attackNpc(npcId, pos, spellbook.getSelectedSpellId?.(), specArmed);
+    result = await api.attackNpc(npcId, pos, spellbook.getSelectedSpellId?.());
     try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en combate
   } catch (err) {
     if (err.code) {
@@ -372,16 +372,6 @@ async function doAttackTickNpc(gen = attackGen) {
     if (result.error === 'no_ammo') {
       feedLog('warning', 'Sin flechas. Equipa o consigue munición.');
       disengage();
-      return;
-    }
-    // Sesion 44 — sin energia de spec: desarmar y seguir atacando NORMAL en
-    // el proximo tick (el server NO consumio cooldown en este error, asi que
-    // reprogramamos casi inmediato). No disengage: el combate sigue.
-    if (result.error === 'no_spec_energy') {
-      specArmed = false;
-      feedLog('warning', 'Sin energía de especial. Espera a que regenere.');
-      if (isTabOpen) render();
-      if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), 80);
       return;
     }
     // Sesión 41 — errores de magia: avisar al jugador (antes era disengage mudo).
@@ -476,32 +466,9 @@ async function doAttackTickNpc(gen = attackGen) {
   if (result.arrow_consumed && result.arrow_consumed.source === 'inventory') {
     try { inventory.decrementItem(result.arrow_consumed.item_id, 1); } catch {}
   }
-  // Sesion 44 — spec de bow: 2ª flecha. Proyectil extra con un pequeño delay
-  // (sale "detras" del primero, doble disparo estilo Magic Shortbow) + sync
-  // del inv local igual que la primera.
-  if (result.special && result.special.second_arrow && npc &&
-      typeof window !== 'undefined' &&
-      typeof window.__worldFireProjectile === 'function') {
-    try {
-      const playerPos2 = window.__getPlayerPosition?.();
-      if (playerPos2) {
-        window.__worldFireProjectile(
-          { x: playerPos2.x, y: 0, z: playerPos2.z },
-          { x: npc.x, y: 0, z: npc.z },
-          { type: 'arrow', arrowItemId: result.special.second_arrow.item_id, windupMs: 380 }
-        );
-      }
-    } catch {}
-  }
-  if (result.special && result.special.second_arrow &&
-      result.special.second_arrow.source === 'inventory') {
-    try { inventory.decrementItem(result.special.second_arrow.item_id, 1); } catch {}
-  }
 
   if (result.your_hit) {
-    if (result.special) {
-      feedLog('hit', `⚡ ¡ESPECIAL! Doble golpe a ${npcName}: ${result.special.hits[0]} + ${result.special.hits[1]} HP.`);
-    } else if (result.is_crit) {
+    if (result.is_crit) {
       feedLog('hit', `⚡ ¡CRÍTICO! Golpe demoledor a ${npcName}: ${result.your_damage} HP.`);
     } else {
       feedLog('hit', `Le pegas a ${npcName} y le quitas ${result.your_damage} HP.`);
@@ -523,23 +490,8 @@ async function doAttackTickNpc(gen = attackGen) {
   } else {
     feedLog('miss', `Fallas a ${npcName}.`);
   }
-  // Sesion 44 — SPECIAL: dos hitsplats (el 2º con delay, como dos golpes
-  // reales). Normal: un hitsplat con el daño total (comportamiento de siempre).
   if (typeof window !== 'undefined' && typeof window.__worldSpawnHitsplat === 'function') {
-    if (result.special) {
-      try { window.__worldSpawnHitsplat(npcId, result.special.hits[0] || 0); } catch {}
-      setTimeout(() => {
-        try { window.__worldSpawnHitsplat(npcId, result.special.hits[1] || 0); } catch {}
-      }, 260);
-    } else {
-      try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
-    }
-  }
-  // Sesion 44 — actualizar barra de spec con el valor del server (sin esperar
-  // al proximo poll) y desarmar si el spec se ejecuto.
-  if (result.special) specArmed = false;
-  if (typeof result.spec_energy === 'number' && state && state.stats) {
-    state.stats.spec_energy = result.spec_energy;
+    try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
   }
   // Sesión 39 — Pieza 1: marcar este hit como LOCAL para que el feedback
   // derivado del snapshot (que ven los demás jugadores) no se lo duplique a
@@ -664,7 +616,8 @@ async function doAttackTickPlayer(gen = attackGen) {
     try {
       targetVisualPos = multiplayer.getPeerVisualPosition?.(targetId);
     } catch {}
-    result = await api.attackPlayer(targetId, pos, targetVisualPos);
+    result = await api.attackPlayer(targetId, pos, targetVisualPos,
+      spellbook.getSelectedSpellId?.(), specArmed);
     try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en PvP
   } catch (err) {
     if (err.code) {
@@ -906,7 +859,7 @@ const WEAPON_STANCES = {
   '1h_sword': {
     name: 'Bronze sword',
     category: '1H Sword',
-    hasSpecial: true,
+    hasSpecial: false,
     stances: [
       { id: 'chop',  label: 'Chop',  icon: '⚔', server: 'accurate'   },
       { id: 'slash', label: 'Slash', icon: '⚔', server: 'aggressive' },
@@ -928,7 +881,7 @@ const WEAPON_STANCES = {
   bow: {
     name: 'Shortbow',
     category: 'Bow',
-    hasSpecial: true,
+    hasSpecial: false,
     stances: [
       { id: 'accurate_bow', label: 'Accurate', icon: '🏹', server: 'accurate'   },
       { id: 'rapid',        label: 'Rapid',    icon: '🏹', server: 'aggressive' },
@@ -1025,10 +978,6 @@ function detectEquippedWeapon() {
 // Estado local de UI: stance seleccionada y auto-retaliate.
 let uiSelectedStance = null;
 let autoRetaliate = false;  // TODO: persistir cuando server lo soporte
-// Sesion 44 — special attack "armado": el proximo tick de ataque lo manda con
-// use_special=true. Se desarma al ejecutarse (o si el server rechaza por
-// energia). Estado local del cliente; el server es quien valida y descuenta.
-let specArmed = false;
 
 // Sesión 41 — Diagnóstico del auto-ataque/retaliate. Activar en Eruda con
 // window.__combatDebug(true). Loguea CADA decisión del flujo de combate para
@@ -1172,14 +1121,11 @@ function render() {
         Auto Retaliate (${autoRetaliate ? 'On' : 'Off'})
       </button>
 
-      ${weapon.hasSpecial ? (() => {
-        const specPct = Math.max(0, Math.min(100, Math.round(s.spec_energy ?? 100)));
-        return `
-        <div class="combat-osrs-special ${specArmed ? 'armed' : ''}" data-action="toggle-special">
-          <div class="combat-osrs-special-label">Special Attack: ${specPct}%${specArmed ? ' ⚡ ARMADO' : ''}</div>
-          <div class="combat-osrs-special-bar"><div class="combat-osrs-special-fill" style="width:${specPct}%"></div></div>
-        </div>`;
-      })() : ''}
+      ${weapon.hasSpecial ? `
+        <div class="combat-osrs-special">
+          <div class="combat-osrs-special-label">Special Attack: 100%</div>
+          <div class="combat-osrs-special-bar"><div class="combat-osrs-special-fill" style="width:100%"></div></div>
+        </div>` : ''}
 
       <div class="combat-osrs-category">Category: ${weapon.category}</div>
 
@@ -1241,13 +1187,6 @@ function attachHandlers() {
         await engageNpc(npcId);
       } else if (action === 'stop') {
         disengage();
-      } else if (action === 'toggle-special') {
-        // Sesion 44 — armar/desarmar el special attack. Validacion rapida
-        // local (energia visible < costo aprox = feedback inmediato), pero
-        // el server es quien decide de verdad en el proximo tick.
-        specArmed = !specArmed;
-        if (specArmed) { try { audio.sfx('book_open'); } catch {} }
-        render();
       } else if (action === 'respawn') {
         try {
           await api.respawnUser();
@@ -1469,22 +1408,6 @@ function ensureStyles() {
     /* Special Attack bar (solo arms 2H) */
     .combat-osrs-special {
       margin: 4px 0;
-      cursor: pointer;
-      padding: 3px 4px;
-      border-radius: 4px;
-      border: 1.5px solid transparent;
-    }
-    /* Sesion 44 — estado ARMADO: borde + glow dorado, barra amarilla. */
-    .combat-osrs-special.armed {
-      border-color: #e8c34a;
-      box-shadow: 0 0 8px rgba(232, 195, 74, 0.55);
-      background: rgba(60, 45, 15, 0.45);
-    }
-    .combat-osrs-special.armed .combat-osrs-special-label {
-      color: #f5d76e;
-    }
-    .combat-osrs-special.armed .combat-osrs-special-fill {
-      background: linear-gradient(180deg, #f5d76e, #b8902e);
     }
     .combat-osrs-special-label {
       font-family: 'IM Fell English', serif;
