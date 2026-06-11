@@ -1370,24 +1370,91 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     };
   }
 
+  // -------- Spec: validar energia ANTES de consumir flechas --------
+  const specCostPvp = SPEC_COSTS[weaponType];
+  let specActivePvp = false;
+  let specEnergyNowPvp = null;
+  const isMagicPvp = (weaponType === 'staff' || !!opts.spellId);
+  if (opts.useSpecial && !isMagicPvp && specCostPvp) {
+    specEnergyNowPvp = computeSpecEnergy(attackerStats, now);
+    if (specEnergyNowPvp < specCostPvp) {
+      return { error: 'no_spec_energy', spec_energy: specEnergyNowPvp, spec_cost: specCostPvp };
+    }
+    specActivePvp = true;
+  }
+
+  // -------- Ranged: consumir flecha --------
+  let totalRangedBonusPvp = 0;
+  let arrowConsumedPvp = null;
+  if (isRanged) {
+    const bowBonus  = await getUserBowRangedBonus(db, attackerId);
+    arrowConsumedPvp = await consumeArrow(db, attackerId, now);
+    if (!arrowConsumedPvp.ok) return { error: 'no_ammo', weapon_type: weaponType };
+    const arrowBonus = await getArrowRangedBonus(db, arrowConsumedPvp.arrow_item_id);
+    totalRangedBonusPvp = bowBonus + arrowBonus;
+  }
+
+  // -------- Magia --------
+  let spellPvp = null;
+  let magicLevelPvp = 0;
+  if (isMagicPvp && opts.spellId) {
+    spellPvp = magic.getSpell(opts.spellId);
+    if (!spellPvp) return { error: 'unknown_spell' };
+    magicLevelPvp = levelsOf(attackerStats).magic || 1;
+    const manaCost = spellPvp.mana_cost || 0;
+    const manaOk   = await magic.checkAndConsumeMana(db, attackerId, attackerStats, manaCost, now);
+    if (!manaOk) return { error: 'no_mana', spell_id: opts.spellId, mana_cost: manaCost };
+  }
+
   // -------- User hit --------
   const attackerLvls = levelsOf(attackerStats);
   const targetLvls   = levelsOf(targetStats);
-  const userHit = rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength));
 
-  let dmgRaw = userHit.damage;
-  let isCrit = false;
-  if (userHit.hit && dmgRaw > 0) {
-    const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
-    dmgRaw = dmgRaw * weaponMult * stanceMods.damage_mult;
-    const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
-    if (critChance > 0 && rng() < critChance) {
-      isCrit = true;
-      dmgRaw = dmgRaw * CRIT_DAMAGE_MULT;
-    }
-    dmgRaw = Math.max(1, Math.floor(dmgRaw));
+  const doRollPvp = () => (
+    isMagicPvp && spellPvp
+      ? magic.rollHitMagic(rng, magicLevelPvp, targetLvls.defence,
+          magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, 0))
+      : isRanged
+      ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
+          totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp))
+      : rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength))
+  );
+  const userHit = doRollPvp();
+
+  const applyMultsPvp = (hitRes) => {
+    let dmg = hitRes.damage;
+    let crit = false;
+    if (hitRes.hit && dmg > 0) {
+      if (!isMagicPvp) {
+        const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
+        dmg = dmg * weaponMult * stanceMods.damage_mult;
+        const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+        if (critChance > 0 && rng() < critChance) { crit = true; dmg = dmg * CRIT_DAMAGE_MULT; }
+      }
+      dmg = dmg * magic.triangleMult(weaponType, 'melee'); // players siempre melee-style defense
+      dmg = Math.max(1, Math.floor(dmg));
+    } else { dmg = 0; }
+    return { dmg, crit };
+  };
+
+  const m1pvp = applyMultsPvp(userHit);
+  let dmgRaw = m1pvp.dmg;
+  let isCrit = m1pvp.crit;
+  let specHitsPvp = null;
+  if (specActivePvp) {
+    const h2 = doRollPvp();
+    const m2 = applyMultsPvp(h2);
+    specHitsPvp = [m1pvp.dmg, m2.dmg];
+    dmgRaw = m1pvp.dmg + m2.dmg;
+    isCrit = m1pvp.crit || m2.crit;
+    userHit.hit = userHit.hit || h2.hit;
   }
+
   const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
+  if (specHitsPvp) {
+    specHitsPvp[0] = Math.min(specHitsPvp[0], dmgToTarget);
+    specHitsPvp[1] = Math.max(0, dmgToTarget - specHitsPvp[0]);
+  }
   userHit.damage = dmgToTarget;
   const targetHpAfter = targetStats.hp_current - dmgToTarget;
   const targetKilled = targetHpAfter <= 0;
@@ -1492,6 +1559,10 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   attackerStats.last_attack_at = now;
 
   // -------- Persist attacker --------
+  const specAfterPvp    = specActivePvp ? (specEnergyNowPvp - specCostPvp) : null;
+  const persistSpecPvp  = specAfterPvp !== null ? specAfterPvp
+    : (Number.isFinite(attackerStats.spec_energy) ? attackerStats.spec_energy : SPEC_MAX);
+  const persistSpecAtPvp = specAfterPvp !== null ? now : (attackerStats.spec_updated_at || 0);
   // Sesión 32 — incluir last_hit_*. Si las columnas no existen (migración
   // pendiente), el UPDATE falla con "no such column" y caemos al UPDATE
   // legacy sin los campos nuevos.
@@ -1499,6 +1570,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     await db.run(
       `UPDATE combat_stats
        SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+           spec_energy = ?, spec_updated_at = ?,
            hp_current = ?, last_attack_at = ?, last_died_at = ?,
            last_hit_from_user_id = ?, last_hit_damage = ?,
            last_hit_at = ?, last_hit_is_crit = ?
@@ -1506,6 +1578,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       [
         attackerStats.attack_xp, attackerStats.strength_xp,
         attackerStats.defence_xp, attackerStats.hp_xp,
+        persistSpecPvp, persistSpecAtPvp,
         attackerStats.hp_current, attackerStats.last_attack_at,
         attackerStats.last_died_at,
         attackerStats.last_hit_from_user_id ?? null,
@@ -1620,6 +1693,16 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     your_hp:       attackerStats.hp_current,
     your_hp_max:   xpAfter.hp,
     your_levels:   xpAfter,
+    // Sesion 46 — spec + ranged (misma forma que attackNpc para que el
+    // cliente reutilice el mismo handler de hitsplats y barra de spec).
+    special: specActivePvp
+      ? { hits: specHitsPvp, cost: specCostPvp, energy_after: specAfterPvp }
+      : null,
+    spec_energy: specActivePvp ? specAfterPvp : computeSpecEnergy(attackerStats, now),
+    spec_max: SPEC_MAX,
+    arrow_consumed: arrowConsumedPvp
+      ? { item_id: arrowConsumedPvp.arrow_item_id, source: arrowConsumedPvp.source }
+      : null,
   };
 }
 
