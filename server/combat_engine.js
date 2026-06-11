@@ -1168,23 +1168,47 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const persistSpec    = specAfter !== null ? specAfter
     : (Number.isFinite(stats.spec_energy) ? stats.spec_energy : SPEC_MAX);
   const persistSpecAt  = specAfter !== null ? now : (stats.spec_updated_at || 0);
-  await db.run(
-    `UPDATE combat_stats
-     SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
-         ranged_xp = ?, magic_xp = ?,
-         mana_current = ?, mana_updated_at = ?,
-         spec_energy = ?, spec_updated_at = ?,
-         hp_current = ?, last_attack_at = ?, last_died_at = ?
-     WHERE user_id = ?`,
-    [
-      stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
-      stats.ranged_xp || 0, stats.magic_xp || 0,
-      persistMana, persistManaAt,
-      persistSpec, persistSpecAt,
-      stats.hp_current, stats.last_attack_at, stats.last_died_at,
-      userId,
-    ]
-  );
+  // Sesión 47 — MISMO patrón de fallback que ya usa attackPlayer: si la tabla
+  // combat_stats no tiene las columnas nuevas (ranged_xp/magic_xp/mana_*/
+  // spec_*), el UPDATE completo lanza "no such column" y caemos a un UPDATE
+  // legacy con solo las columnas base. Así pegar a un NPC funciona AUNQUE la
+  // migración de esas columnas esté pendiente en la DB. (attackNpc se había
+  // quedado sin esta protección al regenerarse para el quiver.)
+  try {
+    await db.run(
+      `UPDATE combat_stats
+       SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+           ranged_xp = ?, magic_xp = ?,
+           mana_current = ?, mana_updated_at = ?,
+           spec_energy = ?, spec_updated_at = ?,
+           hp_current = ?, last_attack_at = ?, last_died_at = ?
+       WHERE user_id = ?`,
+      [
+        stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
+        stats.ranged_xp || 0, stats.magic_xp || 0,
+        persistMana, persistManaAt,
+        persistSpec, persistSpecAt,
+        stats.hp_current, stats.last_attack_at, stats.last_died_at,
+        userId,
+      ]
+    );
+  } catch (err) {
+    if (String(err?.message || '').includes('no such column')) {
+      await db.run(
+        `UPDATE combat_stats
+         SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+             hp_current = ?, last_attack_at = ?, last_died_at = ?
+         WHERE user_id = ?`,
+        [
+          stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
+          stats.hp_current, stats.last_attack_at, stats.last_died_at,
+          userId,
+        ]
+      );
+    } else {
+      throw err;
+    }
+  }
 
   // Sesión 16 — Mirror al user_skills tras cada attackNpc. Si hubo XP,
   // se replica; si no hubo (miss total), igual mirroreamos por seguridad
