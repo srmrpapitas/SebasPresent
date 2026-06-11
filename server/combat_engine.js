@@ -1372,23 +1372,13 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // -------- Range --------
   const d = dist(attackerPos.x, attackerPos.z, targetPos.x, targetPos.z);
   const isRanged = (weaponType === 'bow');
-  // Sesión 27 Bloque 3 fix — Rango PVP MÁS GENEROSO que el de NPC.
-  //
-  // Razón: en PVP dos personajes 3D tienen ~0.5-0.7m de ancho cada uno,
-  // así que cuando se ven "pegados" en pantalla los CENTROS están a
-  // 1.5-2m de distancia. Con la fórmula vieja (1.0 + 0.8 = 1.8m max
-  // melee) caías "fuera de rango" al moverte aunque visualmente
-  // estuvierais al lado.
-  //
-  // Ahora:
-  //   - PVP_PLAYER_BASE_RANGE = 2.5m (compensa el ancho del personaje)
-  //   - PVP_MELEE_MAX_RANGE   = 4.0m (cap más amplio que NPC)
-  // Resultado: melee PVP llega hasta min(2.5+0.8, 4.0) = 3.3m. Suficiente
-  // para que estar visualmente al lado siempre cuente como "en rango",
-  // sin permitir golpes desde lejos.
+  // Sesion 46 — isMagicPvp se calcula ACA (antes estaba despues del rango ->
+  // el staff usaba rango de melé y daba out_of_range si no estabas pegado).
+  const isMagicPvp = (weaponType === 'staff' || !!opts.spellId);
   const PVP_PLAYER_BASE_RANGE = 2.5;
   const PVP_MELEE_MAX_RANGE   = 4.0;
-  const maxRange = isRanged
+  // Ranged y magia: rango largo (~10m). Melé: hasta 3.3m.
+  const maxRange = (isRanged || isMagicPvp)
     ? Math.max(PVP_PLAYER_BASE_RANGE + 8.0, 10.0)
     : Math.min(PVP_PLAYER_BASE_RANGE + RANGE_TOLERANCE, PVP_MELEE_MAX_RANGE);
   if (d > maxRange) {
@@ -1403,7 +1393,6 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const specCostPvp = SPEC_COSTS[weaponType];
   let specActivePvp = false;
   let specEnergyNowPvp = null;
-  const isMagicPvp = (weaponType === 'staff' || !!opts.spellId);
   if (opts.useSpecial && !isMagicPvp && specCostPvp) {
     specEnergyNowPvp = computeSpecEnergy(attackerStats, now);
     if (specEnergyNowPvp < specCostPvp) {
@@ -1424,15 +1413,26 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   }
 
   // -------- Magia --------
+  // Sesion 46 — FIX: antes usaba magic.checkAndConsumeMana que NO EXISTE
+  // (me la invente) -> el mago PvP crasheaba. Ahora replica el patron de
+  // attackNpc: computeMaxMana + regenMana + descuento manual.
   let spellPvp = null;
   let magicLevelPvp = 0;
+  let manaAfterPvp = null;
   if (isMagicPvp && opts.spellId) {
     spellPvp = magic.getSpell(opts.spellId);
     if (!spellPvp) return { error: 'unknown_spell' };
     magicLevelPvp = levelsOf(attackerStats).magic || 1;
-    const manaCost = spellPvp.mana_cost || 0;
-    const manaOk   = await magic.checkAndConsumeMana(db, attackerId, attackerStats, manaCost, now);
-    if (!manaOk) return { error: 'no_mana', spell_id: opts.spellId, mana_cost: manaCost };
+    const maxMana = magic.computeMaxMana(magicLevelPvp, STAFF_MANA_BONUS);
+    const regenPerSec = magic.manaRegenPerSec(true, 0);
+    const manaNow = magic.regenMana(
+      attackerStats.mana_current || 0, maxMana,
+      attackerStats.mana_updated_at || 0, now, regenPerSec
+    );
+    if (manaNow < (spellPvp.mana_cost || 0)) {
+      return { error: 'no_mana', mana_current: manaNow, mana_max: maxMana, mana_cost: spellPvp.mana_cost };
+    }
+    manaAfterPvp = manaNow - (spellPvp.mana_cost || 0);
   }
 
   // -------- User hit --------
@@ -1592,6 +1592,9 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const persistSpecPvp  = specAfterPvp !== null ? specAfterPvp
     : (Number.isFinite(attackerStats.spec_energy) ? attackerStats.spec_energy : SPEC_MAX);
   const persistSpecAtPvp = specAfterPvp !== null ? now : (attackerStats.spec_updated_at || 0);
+  // Sesion 46 — persist del mana PvP (igual que spec). Si no se casteo, intacto.
+  const persistManaPvp = manaAfterPvp !== null ? manaAfterPvp : (attackerStats.mana_current || 0);
+  const persistManaAtPvp = manaAfterPvp !== null ? now : (attackerStats.mana_updated_at || 0);
   // Sesión 32 — incluir last_hit_*. Si las columnas no existen (migración
   // pendiente), el UPDATE falla con "no such column" y caemos al UPDATE
   // legacy sin los campos nuevos.
@@ -1600,6 +1603,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       `UPDATE combat_stats
        SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
            spec_energy = ?, spec_updated_at = ?,
+           mana_current = ?, mana_updated_at = ?,
            hp_current = ?, last_attack_at = ?, last_died_at = ?,
            last_hit_from_user_id = ?, last_hit_damage = ?,
            last_hit_at = ?, last_hit_is_crit = ?
@@ -1608,6 +1612,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         attackerStats.attack_xp, attackerStats.strength_xp,
         attackerStats.defence_xp, attackerStats.hp_xp,
         persistSpecPvp, persistSpecAtPvp,
+        persistManaPvp, persistManaAtPvp,
         attackerStats.hp_current, attackerStats.last_attack_at,
         attackerStats.last_died_at,
         attackerStats.last_hit_from_user_id ?? null,
