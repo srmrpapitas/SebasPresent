@@ -106,6 +106,39 @@ const WEAPON_CRIT_CHANCE = {
 const CRIT_DAMAGE_MULT = 1.5;
 
 /**
+ * Sesión 46 (fix Sesión 47) — SPECIAL ATTACK: definiciones que FALTABAN.
+ * El engine referencia SPEC_COSTS, SPEC_MAX y computeSpecEnergy() en
+ * attackNpc (líneas ~979) y attackPlayer (~1393), pero las definiciones
+ * se perdieron al regenerar el archivo para el quiver. Como SPEC_COSTS se
+ * lee en CADA ataque (antes de comprobar si el especial está armado),
+ * cada golpe lanzaba `ReferenceError: SPEC_COSTS is not defined` → el
+ * worker devolvía 500 → el cliente hacía disengage() mudo. Resultado:
+ * no se podía pegar a NADA (NPC ni player) y el especial no funcionaba.
+ *
+ * Barra de energía 0-100 (estilo OSRS), regen +10 cada 30s. La regen es
+ * perezosa: solo se materializa en la columna spec_energy cuando se gasta
+ * un especial (igual que mana/hp). computeSpecEnergy() la calcula al vuelo
+ * desde spec_updated_at.
+ */
+const SPEC_MAX = 100;
+const SPEC_REGEN_PER_MS = 10 / 30000;   // +10 energía cada 30 000 ms
+// El especial consume 50% de la barra (50 de 100) para TODA arma que pueda
+// usarlo. Staff (magia) y unarmed no tienen especial → coste 0 = desactivado.
+const SPEC_COSTS = {
+  '1h_sword': 50,
+  '2h_sword': 50,
+  'bow':      50,
+  'staff':     0,
+  'unarmed':   0,
+};
+function computeSpecEnergy(stats, now) {
+  const base = Number.isFinite(stats.spec_energy) ? stats.spec_energy : SPEC_MAX;
+  if (!stats.spec_updated_at) return Math.min(SPEC_MAX, base);
+  const since = Math.max(0, now - stats.spec_updated_at);
+  return Math.min(SPEC_MAX, base + since * SPEC_REGEN_PER_MS);
+}
+
+/**
  * Modificadores por stance del player.
  *   speed_mult: multiplica el cooldown (>1 = más lento, <1 = más rápido)
  *   damage_mult: multiplica el damage final
