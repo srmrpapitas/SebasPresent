@@ -859,6 +859,10 @@ async function getCombatState(db, userId, opts = {}) {
       hp_max: lvls.hp,
       last_attack_at: stats.last_attack_at,
       last_died_at: stats.last_died_at,
+      // Sesión 47 — spec real (regenerado al vuelo) para que el panel muestre
+      // el valor correcto al abrirlo, en vez de caer al default 100.
+      spec_energy: computeSpecEnergy(stats, now),
+      spec_max: SPEC_MAX,
     },
     combat_style: combatStyle,
     position: pos,
