@@ -122,6 +122,16 @@ export async function handleCombatAttackPlayer(request, env) {
   if (Number.isFinite(tx) && Number.isFinite(tz)) {
     opts.targetPos = { x: tx, z: tz };
   }
+  // Sesión 47 — magia/especial PvP: el cliente ya mandaba spell_id y
+  // use_special, pero este handler los ignoraba (solo el de NPC los parseaba).
+  // attackPlayer SÍ los consume (isMagicPvp / useSpecial), así que sin esto la
+  // magia PvP se trataba como melee y el especial PvP nunca se armaba.
+  if (body.spell_id && typeof body.spell_id === 'string') {
+    opts.spellId = body.spell_id;
+  }
+  if (body.use_special === true) {
+    opts.useSpecial = true;
+  }
 
   const db = makeDbAdapter(env);
   try {
