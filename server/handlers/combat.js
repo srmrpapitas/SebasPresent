@@ -141,8 +141,9 @@ export async function handleCombatAttackPlayer(request, env) {
         'cannot_attack_self', 'attacker_not_found', 'target_not_found',
         'target_dead', 'on_cooldown', 'out_of_range',
         'user_no_position', 'target_no_position', 'user_dead',
-        'not_in_wilderness',
+        'not_in_wilderness', 'not_in_wilderness_no_duel',
         'same_party',                              // Sesión 27 Bloque 3
+        'unknown_spell', 'no_mana', 'magic_level_too_low', // Sesión 47 — magia PvP
       ]);
       if (knownClient.has(result.error)) return json(result, 400);
     }
