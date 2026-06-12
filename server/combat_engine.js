@@ -1480,6 +1480,10 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     spellPvp = magic.getSpell(opts.spellId);
     if (!spellPvp) return { error: 'unknown_spell' };
     magicLevelPvp = levelsOf(attackerStats).magic || 1;
+    // Sesión 47 — gate de nivel de magia en PvP (faltaba; el de NPC lo tenía).
+    if (magicLevelPvp < spellPvp.magic_level_req) {
+      return { error: 'magic_level_too_low', required: spellPvp.magic_level_req };
+    }
     const maxMana = magic.computeMaxMana(magicLevelPvp, STAFF_MANA_BONUS);
     const regenPerSec = magic.manaRegenPerSec(true, 0);
     const manaNow = magic.regenMana(
@@ -1793,6 +1797,18 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     spec_max: SPEC_MAX,
     arrow_consumed: arrowConsumedPvp
       ? { item_id: arrowConsumedPvp.arrow_item_id, source: arrowConsumedPvp.source }
+      : null,
+    // Sesión 47 — info del hechizo para que el cliente dispare el proyectil
+    // y el SFX en PvP (igual que en attackNpc). Antes no se devolvía → la
+    // magia PvP no tenía animación.
+    spell_cast: (isMagicPvp && spellPvp)
+      ? {
+          spell_id: spellPvp.id,
+          name:     spellPvp.name,
+          color:    spellPvp.color,
+          root_ms:  spellPvp.root_ms || 0,
+          mana_cost: spellPvp.mana_cost,
+        }
       : null,
   };
 }
