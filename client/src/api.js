@@ -542,6 +542,23 @@ export async function fmLight(slot) {
   });
 }
 
+// ---------- Cooking + comida (Sesión 48) ----------
+export async function eatFood(slot) {
+  return apiFetch('/api/food/eat', {
+    method: 'POST',
+    auth: true,
+    body: { slot },
+  });
+}
+
+export async function cookFood(slot) {
+  return apiFetch('/api/cooking/cook', {
+    method: 'POST',
+    auth: true,
+    body: { slot },
+  });
+}
+
 // ---------- Highscores (Sesión 42) ----------
 /**
  * Ranking global de jugadores, ordenado por nivel total (tiebreak XP total).

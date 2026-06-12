@@ -33,6 +33,11 @@ import { renderItemIcon, getItemIconHtml } from './item_icons.js';
 const SLOTS = 20; // 4 columns × 5 rows
 const LONG_PRESS_MS = 450;
 
+// Sesión 48 — comida. Debe matchear EDIBLE_DEFS / COOKABLE_DEFS del server
+// (handlers/skills/cooking.js). El server valida todo igualmente.
+const EDIBLE_ITEM_IDS = new Set(['raw_chicken', 'cooked_chicken', 'raw_beef', 'cooked_beef']);
+const COOKABLE_ITEM_IDS = new Set(['raw_chicken', 'raw_beef']);
+
 // ---------- State ----------
 /**
  * `slots` is a sparse array of length 20.
@@ -336,12 +341,17 @@ function onPointerUp(ev) {
     }
     selectedSlot = null;
   } else {
-    // Sesión 38 — Desktop: un CLICK NORMAL (botón izq del ratón) sobre un item
-    // EQUIPABLE lo equipa directo (estilo OSRS-PC). En móvil (touch) y para
-    // items NO equipables se mantiene el tap-to-tap para mover/intercambiar.
+    // Sesión 49 — Tap simple estilo OSRS (PVP fluido):
+    //   - Comida → COMER al instante (con cooldown de 1 pieza / 1.8s).
+    //   - Equipable → EQUIPAR al instante (ya no solo con ratón: móvil también).
+    //   - Resto → tap-to-tap para mover (comportamiento de siempre).
+    // El long-press (menú) y el drag (mover) NO cambian. Si hay una selección
+    // activa, el tap es DESTINO de movimiento — tiene prioridad, así puedes
+    // seguir moviendo comida/armadura con tap-to-tap.
     const data = slots[fromSlot];
-    if (isMouse && isEquipableItem(data)) {
-      selectedSlot = null;
+    if (selectedSlot === null && data && EDIBLE_ITEM_IDS.has(data.item_id)) {
+      eatInstant(fromSlot);
+    } else if (selectedSlot === null && isEquipableItem(data)) {
       doEquip(fromSlot);
     } else if (selectedSlot === null) {
       // First tap — select this slot
@@ -468,6 +478,14 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   if (fm && fm.isLogItem && fm.isLogItem(item.item_id) && hasTinderboxInInventory()) {
     html += `<div class="inv-context-row" data-act="light_fire">🔥 Encender fuego</div>`;
   }
+  // Sesión 48 — Comer: comestibles (crudo cura poco, cocinado cura más).
+  // Cocinar: solo crudos; el server valida fuego cercano + nivel de Cocina.
+  if (EDIBLE_ITEM_IDS.has(item.item_id)) {
+    html += `<div class="inv-context-row" data-act="eat">🍗 Comer</div>`;
+  }
+  if (COOKABLE_ITEM_IDS.has(item.item_id)) {
+    html += `<div class="inv-context-row" data-act="cook">🍳 Cocinar</div>`;
+  }
   html += `<div class="inv-context-row" data-act="examine">🔍 Examinar</div>`;
   // Sesión 39 — Soltar (drop) el ítem al suelo. Los demás jugadores lo ven.
   html += `<div class="inv-context-row" data-act="drop">🗑 Soltar</div>`;
@@ -517,6 +535,29 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
         } catch (err) {
           console.warn('[inventory] light_fire err:', err);
         }
+      } else if (act === 'eat') {
+        // Sesión 49 — mismo camino que el tap simple (cooldown + HUD instantáneo).
+        await eatInstant(slotIdx);
+      } else if (act === 'cook') {
+        // Sesión 48 — Cocinar en un fuego cercano. Quemado posible (baja con nivel).
+        try {
+          const res = await api.cookFood(slotIdx);
+          if (res && res.ok) {
+            await refresh();
+            if (res.result === 'burnt') {
+              try { window.__feedLog?.('warning', '🔥 ¡Se te ha quemado la comida!'); } catch {}
+            } else {
+              try { window.__feedLog?.('info', `🍳 Cocinas la comida. +${res.xp_gained} XP de Cocina.`); } catch {}
+              try { window.__spawnXpDrops?.({ cooking: res.xp_gained }); } catch {}
+              if (res.level_up) {
+                try { window.__feedLog?.('levelup', `¡Subes a nivel ${res.level} de Cocina!`); } catch {}
+                try { window.__spawnLevelUpBanner?.('cooking', res.level); } catch {}
+              }
+            }
+          }
+        } catch (err) {
+          showError(err.message || 'No se pudo cocinar.');
+        }
       } else if (act === 'drop') {
         // Sesión 39 — Soltar el ítem al suelo (lo ven los demás jugadores).
         try {
@@ -561,6 +602,43 @@ function isEquipableItem(item) {
   if (!item) return false;
   const isWeaponByName = /^(axe|pickaxe|sword|bow|staff|dagger|hammer|spear|shield)(_|$)/i.test(item.item_id || '');
   return !!(item.equip_slot || item.weapon_type || isWeaponByName);
+}
+
+// ============================================================
+// Sesión 49 — Comer instantáneo (tap simple, PVP fluido)
+// Cooldown OSRS-style: máximo 1 pieza de comida cada EAT_COOLDOWN_MS.
+// El server lo valida igual (authoritative); esto evita el round-trip
+// del spam y da feedback inmediato.
+// ============================================================
+const EAT_COOLDOWN_MS = 1800;   // 2 ticks de 900ms, como OSRS
+let lastEatAt = 0;
+
+async function eatInstant(slotIdx) {
+  const now = Date.now();
+  if (now - lastEatAt < EAT_COOLDOWN_MS) {
+    try { window.__feedLog?.('warning', 'Aún estás comiendo…'); } catch {}
+    return;
+  }
+  lastEatAt = now;
+  try {
+    const res = await api.eatFood(slotIdx);
+    if (res && res.ok) {
+      // HP al HUD AL INSTANTE (sin esperar al poll de combate/snapshot).
+      try { window.__setHpInstant?.(res.hp_current, res.hp_max); } catch {}
+      try { window.__feedLog?.('info', `🍗 +${res.healed} HP (${res.hp_current}/${res.hp_max}).`); } catch {}
+      try { window.__playSfx?.('drink'); } catch {}
+      await refresh();
+    }
+  } catch (err) {
+    lastEatAt = 0;   // liberar el cooldown local si el server rechazó
+    if (err.code === 'hp_full') {
+      try { window.__feedLog?.('info', 'Ya tienes la vida llena.'); } catch {}
+    } else if (err.code === 'eat_cooldown') {
+      try { window.__feedLog?.('warning', 'Aún estás comiendo…'); } catch {}
+    } else {
+      showError(err.message || 'No se pudo comer.');
+    }
+  }
 }
 
 async function doEquip(slotIdx) {

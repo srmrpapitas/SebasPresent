@@ -121,6 +121,19 @@ export function init() {
   try {
     if (typeof window !== 'undefined') {
       window.__showDeathOverlay = showDeathOverlay;
+      // Sesión 49 — setter de HP instantáneo (comer en PVP). Actualiza el
+      // estado interno ADEMÁS del DOM para que el próximo render/poll no
+      // revierta el valor visualmente.
+      window.__setHpInstant = (hp, hpMax) => {
+        try {
+          if (state && state.stats) {
+            state.stats.hp_current = hp;
+            if (Number.isFinite(hpMax)) state.stats.hp_max = hpMax;
+          }
+          updateHpHud();
+          if (isTabOpen) render();
+        } catch {}
+      };
     }
   } catch (e) { console.warn('[combat] death overlay hook:', e); }
 
