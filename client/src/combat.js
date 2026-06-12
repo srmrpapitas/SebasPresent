@@ -537,7 +537,18 @@ async function doAttackTickNpc(gen = attackGen) {
   }
   // Sesion 44 — actualizar barra de spec con el valor del server (sin esperar
   // al proximo poll) y desarmar si el spec se ejecuto.
-  if (result.special) specArmed = false;
+  if (result.special) {
+    // Sesión 47 — cue del especial (mismo que PvP): SFX grave + flash + aviso.
+    try { audio.sfx('hit_blade', { pitch: 0.65, volume: 1 }); } catch {}
+    if (typeof window !== 'undefined' && typeof window.__worldFlashNpcHit === 'function') {
+      try {
+        window.__worldFlashNpcHit(npcId);
+        setTimeout(() => { try { window.__worldFlashNpcHit(npcId); } catch {} }, 120);
+      } catch {}
+    }
+    feedLog('hit', '⚡ ¡ATAQUE ESPECIAL!');
+    specArmed = false;
+  }
   if (typeof result.spec_energy === 'number' && state && state.stats) {
     state.stats.spec_energy = result.spec_energy;
   }
@@ -722,6 +733,23 @@ async function doAttackTickPlayer(gen = attackGen) {
       await refresh();
       return;
     }
+    // Sesión 47 — feedback de magia PvP (antes estos errores desenganchaban
+    // en silencio).
+    if (result.error === 'magic_level_too_low') {
+      feedLog('warning', `Necesitas nivel ${result.required} de Magia para ese hechizo.`);
+      disengage();
+      return;
+    }
+    if (result.error === 'no_mana') {
+      feedLog('warning', 'No tienes maná suficiente.');
+      disengage();
+      return;
+    }
+    if (result.error === 'unknown_spell') {
+      feedLog('warning', 'Hechizo desconocido.');
+      disengage();
+      return;
+    }
     disengage();
     return;
   }
@@ -739,6 +767,43 @@ async function doAttackTickPlayer(gen = attackGen) {
       );
       clog('playAttack(pvp) →', animResult, '| weapon:', result.weapon_type, 'stance:', uiSelectedStance);
     } catch {}
+  }
+
+  // Sesión 47 — MAGIA PvP: proyectil del color del hechizo + SFX de cast,
+  // igual que en el path NPC. El server ahora devuelve result.spell_cast (antes
+  // no lo mandaba, por eso la magia PvP no tenía animación).
+  const spellCastPvp = result.spell_cast || null;
+  if (spellCastPvp) {
+    const CAST_SFX = { fire_strike: 'spell_fire', ice_spear: 'spell_ice', thunderbolt: 'spell_zap', entangle: 'spell_entangle' };
+    try { audio.sfx(CAST_SFX[spellCastPvp.spell_id] || 'spell_fire'); } catch {}
+    if (typeof window !== 'undefined'
+        && typeof window.__worldFireProjectile === 'function'
+        && typeof window.__getPlayerPosition === 'function') {
+      try {
+        const playerPos = window.__getPlayerPosition();
+        const peerPos = multiplayer.getPeerVisualPosition?.(targetId);
+        if (playerPos && peerPos) {
+          window.__worldFireProjectile(
+            { x: playerPos.x, y: 0, z: playerPos.z },
+            { x: peerPos.x, y: 0, z: peerPos.z },
+            { type: 'spell', color: spellCastPvp.color, spellId: spellCastPvp.spell_id, windupMs: 250 }
+          );
+        }
+      } catch {}
+    }
+  }
+
+  // Sesión 47 — ESPECIAL: no hay animación dedicada, así que el cue es un SFX
+  // grave (hit_blade pitcheado) + doble flash sobre el objetivo + aviso.
+  if (result.special) {
+    try { audio.sfx('hit_blade', { pitch: 0.65, volume: 1 }); } catch {}
+    if (typeof window !== 'undefined' && typeof window.__worldFlashPeerHit === 'function') {
+      try {
+        window.__worldFlashPeerHit(targetId);
+        setTimeout(() => { try { window.__worldFlashPeerHit(targetId); } catch {} }, 120);
+      } catch {}
+    }
+    feedLog('hit', '⚡ ¡ATAQUE ESPECIAL!');
   }
 
   // Mensaje de hit/miss
