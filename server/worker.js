@@ -53,6 +53,7 @@ import * as duel from './handlers/duel.js';          // Sesión 28 — Duelos PV
 import * as chat from './handlers/chat.js';          // Sesión 29 — Chat global
 import * as woodcutting from './handlers/skills/woodcutting.js';  // Sesión 30 (movido a skills/ en S32)
 import * as firemaking from './handlers/skills/firemaking.js';    // Sesión 30 (movido a skills/ en S32)
+import * as cooking from './handlers/skills/cooking.js';          // Sesión 48 — comer + cocinar
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -229,6 +230,12 @@ export default {
         response = await woodcutting.handleWoodcuttingChop(request, env);
       } else if (path === '/api/firemaking/light' && method === 'POST') {
         response = await firemaking.handleFiremakingLight(request, env);
+
+      // ----- Cooking + comida (Sesión 48) -----
+      } else if (path === '/api/food/eat' && method === 'POST') {
+        response = await cooking.handleFoodEat(request, env);
+      } else if (path === '/api/cooking/cook' && method === 'POST') {
+        response = await cooking.handleCookingCook(request, env);
 
       // ----- Health + 404 -----
       } else if (path === '/api/health') {
