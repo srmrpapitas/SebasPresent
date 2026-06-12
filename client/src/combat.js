@@ -113,6 +113,17 @@ export function init() {
     multiplayer.setFeedLog(feedLog);
   } catch (e) { console.warn('[combat] multiplayer wire:', e); }
 
+  // Sesión 48 — FIX respawn invisible: world_snapshot.js detecta tu muerte
+  // (you_died_recently) y llama window.__showDeathOverlay... que NUNCA se
+  // asignaba. Resultado: si morías sin estar a mitad de tu propio ataque
+  // (NPC por aggro, o PVP visto vía snapshot), no salía el botón de Respawn.
+  // El typeof === 'function' del snapshot lo saltaba en silencio.
+  try {
+    if (typeof window !== 'undefined') {
+      window.__showDeathOverlay = showDeathOverlay;
+    }
+  } catch (e) { console.warn('[combat] death overlay hook:', e); }
+
   isInitialized = true;
 }
 

@@ -317,8 +317,10 @@ const PEER_RANGED_ENGAGE_RANGE = 8.0;
 function getPeerEngageRange() {
   try {
     const wt = equipment.getWeaponType?.();
-    if (wt === 'bow') return PEER_RANGED_ENGAGE_RANGE;
-    // Cuando llegue 'staff' (Bloque 2 días 8-11), va acá.
+    // Sesión 48 — staff agregado: el mago (S41) llegó pero este gate nunca se
+    // actualizó → con staff el auto-walk te llevaba hasta 2m (melé) antes de
+    // castear contra otro jugador. El server ya permitía 10 para magia PvP.
+    if (wt === 'bow' || wt === 'staff') return PEER_RANGED_ENGAGE_RANGE;
   } catch {}
   return PEER_MELEE_ENGAGE_RANGE;
 }
