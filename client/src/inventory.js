@@ -328,6 +328,10 @@ function onPointerUp(ev) {
   const { fromSlot, moved, hoverSlot, longPressed, isMouse } = dragState;
   destroyGhost();
 
+  // Sesión 49 — cualquier interacción directa con el inventario (tap/drag/menú)
+  // corta el "cocinar todo" encadenado, como en OSRS.
+  cancelCookAll();
+
   if (longPressed) {
     // El menú está abierto; no hacer nada más con tap
     dragState = null;
@@ -485,6 +489,7 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   }
   if (COOKABLE_ITEM_IDS.has(item.item_id)) {
     html += `<div class="inv-context-row" data-act="cook">🍳 Cocinar</div>`;
+    html += `<div class="inv-context-row" data-act="cook_all">🍳 Cocinar todo</div>`;
   }
   html += `<div class="inv-context-row" data-act="examine">🔍 Examinar</div>`;
   // Sesión 39 — Soltar (drop) el ítem al suelo. Los demás jugadores lo ven.
@@ -511,6 +516,9 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
       ev.stopPropagation();
       const act = row.dataset.act;
       menu.remove();
+      // Sesión 49 — cualquier acción nueva del menú corta el "cocinar todo"
+      // en curso (salvo arrancar otro cook_all, que ya se auto-reemplaza).
+      if (act !== 'cook_all') cancelCookAll();
       if (act === 'equip') {
         await doEquip(slotIdx);
       } else if (act === 'to_quiver') {
@@ -558,6 +566,12 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
         } catch (err) {
           showError(err.message || 'No se pudo cocinar.');
         }
+      } else if (act === 'cook_all') {
+        // Sesión 49 — Cocinar TODO encadenado estilo OSRS: una pieza por tick,
+        // con su animación, parando cuando se acaban / te alejas del fuego /
+        // cancelas (cualquier otra acción del inventario corta el bucle).
+        const item = slots[slotIdx];
+        if (item) startCookAll(item.item_id);
       } else if (act === 'drop') {
         // Sesión 39 — Soltar el ítem al suelo (lo ven los demás jugadores).
         try {
@@ -638,6 +652,77 @@ async function eatInstant(slotIdx) {
     } else {
       showError(err.message || 'No se pudo comer.');
     }
+  }
+}
+
+// ============================================================
+// Sesión 49 — Cocinar todo ENCADENADO (estilo OSRS)
+// Cocina una pieza por "tick" (COOK_TICK_MS) con animación, hasta que:
+//  - no queden crudas de ese tipo,
+//  - el server responda no_fire (te alejaste) u otro error,
+//  - se cancele (cualquier interacción con el inventario llama cancelCookAll).
+// ============================================================
+const COOK_TICK_MS = 1200;   // cadencia entre piezas (~2 ticks OSRS)
+let cookAllToken = 0;        // se incrementa para cancelar el bucle activo
+
+function cancelCookAll() {
+  cookAllToken++;
+}
+
+function findRawSlot(itemId) {
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i] && slots[i].item_id === itemId) return i;
+  }
+  return -1;
+}
+
+async function startCookAll(itemId) {
+  const myToken = ++cookAllToken;   // invalida cualquier bucle previo
+  let cooked = 0, burnt = 0, xpTotal = 0, lastLevel = null;
+
+  while (cookAllToken === myToken) {
+    const slot = findRawSlot(itemId);
+    if (slot === -1) break;   // no quedan crudas
+
+    // Animación de cocina (kneel junto al fuego) sincronizada con el tick
+    try { window.__playerGather?.('kneel', COOK_TICK_MS); } catch {}
+
+    let res;
+    try {
+      res = await api.cookFood(slot);
+    } catch (err) {
+      // no_fire / nivel / etc → cortar y avisar (una sola vez)
+      if (err.code === 'no_fire') showError(err.message || 'Te alejaste del fuego.');
+      else if (err.code === 'cooking_level_too_low') showError(err.message || 'Nivel insuficiente.');
+      else showError(err.message || 'No se pudo cocinar.');
+      break;
+    }
+    if (cookAllToken !== myToken) break;   // cancelado durante el await
+
+    if (res && res.ok) {
+      if (res.result === 'burnt') burnt++; else cooked++;
+      if (res.xp_gained) xpTotal += res.xp_gained;
+      if (typeof res.level === 'number') lastLevel = res.level;
+      try { window.__playSfx?.('drink', { pitch: 0.9, volume: 0.5 }); } catch {}
+      if (res.level_up) {
+        try { window.__feedLog?.('levelup', `¡Subes a nivel ${res.level} de Cocina!`); } catch {}
+        try { window.__spawnLevelUpBanner?.('cooking', res.level); } catch {}
+      }
+      await refresh();   // re-pinta el grid (el crudo ya es cocinado/quemado)
+    }
+    if (cookAllToken !== myToken) break;
+
+    // Esperar al siguiente tick (cancelable)
+    await new Promise(r => setTimeout(r, COOK_TICK_MS));
+  }
+
+  // Resumen al terminar (solo si este bucle sigue siendo el activo)
+  if (cookAllToken === myToken && (cooked > 0 || burnt > 0)) {
+    const parts = [];
+    if (cooked > 0) parts.push(`${cooked} cocinada(s)`);
+    if (burnt > 0) parts.push(`${burnt} quemada(s)`);
+    try { window.__feedLog?.('info', `🍳 Terminas de cocinar: ${parts.join(', ')}. +${xpTotal} XP.`); } catch {}
+    try { if (xpTotal > 0) window.__spawnXpDrops?.({ cooking: xpTotal }); } catch {}
   }
 }
 

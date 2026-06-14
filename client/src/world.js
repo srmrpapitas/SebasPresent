@@ -666,6 +666,11 @@ export async function startWorld(loggedInUser, token) {
       window.__playSfx = (name, opts) => {
         try { audio.sfx(name, opts); } catch {}
       };
+      // Sesión 49 — exponer la anim de gathering (kneel/woodcut) para que el
+      // inventario la dispare por pieza al "Cocinar todo" (encadenado OSRS).
+      window.__playerGather = (animKey, ms) => {
+        try { character?.playGather?.(animKey || 'kneel', ms || 1000); } catch {}
+      };
       // Level up banner también vía skills.onLevelUp (cubre grants vía API directa)
       skills.onLevelUp((evt) => {
         try { damageSplat.spawnLevelUpBanner(evt.skillId, evt.newLevel); } catch {}

@@ -296,31 +296,33 @@ const ICONS = {
   </svg>`,
 
   // ============= Comida (Sesión 49) =============
-  // Pollo crudo — muslo rosado pálido, hueso blanco asomando, sin dorar.
+  // Pollo crudo — muslo blanco pálido (sin dorar), hueso limpio.
   raw_chicken: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-    <ellipse cx="17" cy="19" rx="9" ry="7" fill="#f3c9c0" stroke="#000" stroke-width="1"/>
-    <ellipse cx="17" cy="19" rx="9" ry="7" fill="none" stroke="#d99a8e" stroke-width="0.6"/>
-    <path d="M 14 14 Q 17 11 21 13" fill="none" stroke="#e8a89a" stroke-width="0.8"/>
-    <ellipse cx="14" cy="17" rx="2.5" ry="2" fill="#fadcd6" opacity="0.7"/>
-    <rect x="8" y="9" width="2.2" height="9" rx="1.1" fill="#f5efe0" stroke="#000" stroke-width="1" transform="rotate(28 9 13)"/>
-    <circle cx="7.5" cy="8.2" r="2.1" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
-    <circle cx="11" cy="9.5" r="1.7" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
-    <circle cx="18" cy="20" r="0.7" fill="#d99a8e"/>
-    <circle cx="20" cy="17" r="0.6" fill="#d99a8e"/>
+    <rect x="20.5" y="5" width="3" height="11" rx="1.5" fill="#f3efe4" stroke="#000" stroke-width="1" transform="rotate(34 22 10)"/>
+    <circle cx="25.5" cy="6.5" r="2.4" fill="#fbf8ef" stroke="#000" stroke-width="1"/>
+    <circle cx="22" cy="8" r="2" fill="#fbf8ef" stroke="#000" stroke-width="1"/>
+    <path d="M 6 20 Q 5 11 13 10 Q 21 10 21 18 Q 21 27 13 27 Q 6 27 6 20 Z" fill="#f0ddd6" stroke="#000" stroke-width="1"/>
+    <path d="M 8 16 Q 13 12 19 15" fill="none" stroke="#e3c2ba" stroke-width="0.8"/>
+    <ellipse cx="11" cy="17" rx="3.5" ry="2.6" fill="#f8e9e4" opacity="0.8"/>
+    <circle cx="12" cy="21" r="0.7" fill="#dcb3ab"/>
+    <circle cx="15" cy="19" r="0.6" fill="#dcb3ab"/>
   </svg>`,
 
-  // Pollo cocinado — dorado/tostado, hueso, brillo de asado y vapor.
+  // Pollo cocinado — muslo súper crispy, dorado intenso con costra y vapor.
   cooked_chicken: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-    <path d="M 21 8 Q 23 6 24 8 M 25 7 Q 27 5 27.5 8" fill="none" stroke="#cfcfcf" stroke-width="1" opacity="0.55" stroke-linecap="round"/>
-    <ellipse cx="17" cy="19" rx="9" ry="7" fill="#c8842f" stroke="#000" stroke-width="1"/>
-    <ellipse cx="17" cy="19" rx="9" ry="7" fill="none" stroke="#7a4a18" stroke-width="0.7"/>
-    <path d="M 11 16 Q 17 12 23 16" fill="none" stroke="#e3a44a" stroke-width="1"/>
-    <ellipse cx="14" cy="17" rx="2.6" ry="1.8" fill="#e6b35e" opacity="0.8"/>
-    <circle cx="20" cy="21" r="1" fill="#5e3712"/>
-    <circle cx="18" cy="18" r="0.7" fill="#8a531c"/>
-    <rect x="8" y="9" width="2.2" height="9" rx="1.1" fill="#f5efe0" stroke="#000" stroke-width="1" transform="rotate(28 9 13)"/>
-    <circle cx="7.5" cy="8.2" r="2.1" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
-    <circle cx="11" cy="9.5" r="1.7" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
+    <path d="M 22 6 Q 24 3.5 25.5 6 M 26.5 5 Q 28.5 2.5 29 5.5" fill="none" stroke="#d8d8d8" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
+    <rect x="20.5" y="5" width="3" height="11" rx="1.5" fill="#f5f0e2" stroke="#000" stroke-width="1" transform="rotate(34 22 10)"/>
+    <circle cx="25.5" cy="6.5" r="2.4" fill="#fdfaf0" stroke="#000" stroke-width="1"/>
+    <circle cx="22" cy="8" r="2" fill="#fdfaf0" stroke="#000" stroke-width="1"/>
+    <path d="M 6 20 Q 5 11 13 10 Q 21 10 21 18 Q 21 27 13 27 Q 6 27 6 20 Z" fill="#c87a22" stroke="#000" stroke-width="1"/>
+    <path d="M 6 20 Q 5 11 13 10 Q 21 10 21 18 Q 21 27 13 27 Q 6 27 6 20 Z" fill="none" stroke="#7a4612" stroke-width="0.8"/>
+    <path d="M 7 16 Q 13 11 20 15" fill="none" stroke="#e0a040" stroke-width="1"/>
+    <ellipse cx="11" cy="16" rx="3.6" ry="2.4" fill="#dd9a3c" opacity="0.85"/>
+    <circle cx="10" cy="20" r="1" fill="#5e3712"/>
+    <circle cx="14" cy="22" r="0.9" fill="#6e4216"/>
+    <circle cx="16" cy="18" r="0.8" fill="#8a531c"/>
+    <circle cx="12" cy="15" r="0.7" fill="#f0c070" opacity="0.9"/>
+    <circle cx="13" cy="23" r="0.6" fill="#5e3712"/>
   </svg>`,
 
   // Carne cruda (ternera) — filete rojo crudo con grasa blanca y hueso.
