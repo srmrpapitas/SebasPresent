@@ -294,6 +294,57 @@ const ICONS = {
     <circle cx="6.5" cy="16" r="0.7" fill="#c98a3d" stroke="#000" stroke-width="0.3"/>
     <circle cx="25.5" cy="16" r="0.7" fill="#c98a3d" stroke="#000" stroke-width="0.3"/>
   </svg>`,
+
+  // ============= Comida (Sesión 49) =============
+  // Pollo crudo — muslo rosado pálido, hueso blanco asomando, sin dorar.
+  raw_chicken: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <ellipse cx="17" cy="19" rx="9" ry="7" fill="#f3c9c0" stroke="#000" stroke-width="1"/>
+    <ellipse cx="17" cy="19" rx="9" ry="7" fill="none" stroke="#d99a8e" stroke-width="0.6"/>
+    <path d="M 14 14 Q 17 11 21 13" fill="none" stroke="#e8a89a" stroke-width="0.8"/>
+    <ellipse cx="14" cy="17" rx="2.5" ry="2" fill="#fadcd6" opacity="0.7"/>
+    <rect x="8" y="9" width="2.2" height="9" rx="1.1" fill="#f5efe0" stroke="#000" stroke-width="1" transform="rotate(28 9 13)"/>
+    <circle cx="7.5" cy="8.2" r="2.1" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
+    <circle cx="11" cy="9.5" r="1.7" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
+    <circle cx="18" cy="20" r="0.7" fill="#d99a8e"/>
+    <circle cx="20" cy="17" r="0.6" fill="#d99a8e"/>
+  </svg>`,
+
+  // Pollo cocinado — dorado/tostado, hueso, brillo de asado y vapor.
+  cooked_chicken: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <path d="M 21 8 Q 23 6 24 8 M 25 7 Q 27 5 27.5 8" fill="none" stroke="#cfcfcf" stroke-width="1" opacity="0.55" stroke-linecap="round"/>
+    <ellipse cx="17" cy="19" rx="9" ry="7" fill="#c8842f" stroke="#000" stroke-width="1"/>
+    <ellipse cx="17" cy="19" rx="9" ry="7" fill="none" stroke="#7a4a18" stroke-width="0.7"/>
+    <path d="M 11 16 Q 17 12 23 16" fill="none" stroke="#e3a44a" stroke-width="1"/>
+    <ellipse cx="14" cy="17" rx="2.6" ry="1.8" fill="#e6b35e" opacity="0.8"/>
+    <circle cx="20" cy="21" r="1" fill="#5e3712"/>
+    <circle cx="18" cy="18" r="0.7" fill="#8a531c"/>
+    <rect x="8" y="9" width="2.2" height="9" rx="1.1" fill="#f5efe0" stroke="#000" stroke-width="1" transform="rotate(28 9 13)"/>
+    <circle cx="7.5" cy="8.2" r="2.1" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
+    <circle cx="11" cy="9.5" r="1.7" fill="#fdfbf2" stroke="#000" stroke-width="1"/>
+  </svg>`,
+
+  // Carne cruda (ternera) — filete rojo crudo con grasa blanca y hueso.
+  raw_beef: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <path d="M 7 16 Q 9 7 18 8 Q 27 9 26 18 Q 25 26 15 25 Q 6 24 7 16 Z" fill="#c0392b" stroke="#000" stroke-width="1"/>
+    <path d="M 9 14 Q 14 10 22 12" fill="none" stroke="#e25c4d" stroke-width="0.8"/>
+    <ellipse cx="13" cy="15" rx="3" ry="2.2" fill="#d8503f" opacity="0.7"/>
+    <path d="M 7 16 Q 9 7 18 8 Q 22 8.4 24 11" fill="none" stroke="#f0e2d0" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="22" cy="9" r="2.4" fill="#f5efe0" stroke="#000" stroke-width="1"/>
+    <circle cx="22" cy="9" r="0.9" fill="#d8c4a0"/>
+    <circle cx="16" cy="18" r="0.7" fill="#8e2018"/>
+    <circle cx="19" cy="20" r="0.6" fill="#8e2018"/>
+  </svg>`,
+
+  // Carne cocinada (ternera) — filete dorado a la parrilla con marcas y vapor.
+  cooked_beef: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <path d="M 20 7 Q 22 5 23 7 M 24 6 Q 26 4 26.5 7" fill="none" stroke="#cfcfcf" stroke-width="1" opacity="0.55" stroke-linecap="round"/>
+    <path d="M 7 16 Q 9 7 18 8 Q 27 9 26 18 Q 25 26 15 25 Q 6 24 7 16 Z" fill="#7a3a14" stroke="#000" stroke-width="1"/>
+    <path d="M 10 12 L 21 17 M 13 10 L 24 15" stroke="#3f1d08" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M 9 16 Q 15 12 23 15" fill="none" stroke="#a05a22" stroke-width="0.9"/>
+    <path d="M 7 16 Q 9 7 18 8 Q 22 8.4 24 11" fill="none" stroke="#e8d6bf" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="22" cy="9" r="2.4" fill="#efe6d4" stroke="#000" stroke-width="1"/>
+    <circle cx="14" cy="18" r="0.8" fill="#4a2510"/>
+  </svg>`,
 };
 
 // ============================================================
