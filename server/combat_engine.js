@@ -1602,9 +1602,10 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         try {
           // Sesión 27 Bloque 3 — usar PVP drop (descompone stacks por
           // unidades, incluye equipment, conserva top-N más valiosos).
+          // Sesión 48 — killer = target (su contraataque te mató).
           await dropAllExceptTopUnitsOnDeathPVP(
             db, attackerId, attackerPos.x, attackerPos.z, now,
-            PVP_DEATH_KEEP_TOP_N, rng
+            PVP_DEATH_KEEP_TOP_N, rng, targetId
           );
         } catch (err) {
           console.error('[combat/pvp/attacker-death-drop]', err);
@@ -1635,10 +1636,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     // Target murió por el golpe → drop sus items en la pos PERSISTIDA
     // del server. Sesión 27 Bloque 3 — usar PVP drop (descompone stacks,
     // incluye equipment, conserva top-N más valiosos por valor unitario).
+    // Sesión 48 — killer = attacker (tú lo mataste): él ve el loot al instante.
     try {
       await dropAllExceptTopUnitsOnDeathPVP(
         db, targetId, targetPosServer.x, targetPosServer.z, now,
-        PVP_DEATH_KEEP_TOP_N, rng
+        PVP_DEATH_KEEP_TOP_N, rng, attackerId
       );
     } catch (err) {
       console.error('[combat/pvp/target-death-drop]', err);
@@ -1969,11 +1971,14 @@ async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepT
     const ox = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
     const oz = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
 
-    // INSERT en ground_items (dropped_by_user = NULL para que cualquiera lo recoja)
+    // Sesión 48 — FIX loot invisible: antes NULL → tu propio loot de muerte
+    // era invisible para TODOS (incluido tú) sus primeros 60s. Ahora se
+    // atribuye al muerto: lo ve y puede volver a por él en exclusiva 60s;
+    // luego queda público.
     await db.run(
       `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
-       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-      [r.item_id, r.quantity, deathX + ox, deathZ + oz, now, despawnAt]
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [r.item_id, r.quantity, deathX + ox, deathZ + oz, now, userId, despawnAt]
     );
 
     // DELETE del slot del user
@@ -2009,7 +2014,7 @@ async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepT
 //   5. Agrupa el drop por item_id en el suelo (no crea 100 piles para
 //      100 plumas, crea 1 pile con qty=100).
 //
-async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, keepTopN, rng) {
+async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, keepTopN, rng, killerId = null) {
   rng = rng || Math.random;
 
   // ---- 1) Inventario actual del muerto
@@ -2132,10 +2137,13 @@ async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, 
     if (qty <= 0) continue;
     const ox = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
     const oz = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
+    // Sesión 48 — FIX loot invisible: antes NULL → el loot del muerto era
+    // invisible para TODOS sus primeros 60s. Ahora se atribuye al KILLER
+    // (estilo OSRS): lo ve al instante y en exclusiva 60s, luego todos.
     await db.run(
       `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
-       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-      [item_id, qty, deathX + ox, deathZ + oz, now, despawnAt]
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [item_id, qty, deathX + ox, deathZ + oz, now, killerId ?? userId, despawnAt]
     );
   }
 
