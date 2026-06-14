@@ -23,7 +23,7 @@ import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.
 import { tableExists } from './_shared.js';
 
 const SKILL_ID = 'cooking';
-const FIRE_COOK_RADIUS_M = 2.5;   // distancia máxima al fuego para cocinar
+const FIRE_COOK_RADIUS_M = 5.0;   // Sesión 49 — subido de 2.5 (ver fix abajo)
 const MAX_INV_SLOTS = 20;
 // Sesión 49 — cooldown de comida estilo OSRS: 1 pieza cada 2 ticks (1.8s).
 const EAT_COOLDOWN_MS = 1800;
@@ -32,7 +32,7 @@ const EAT_COOLDOWN_MS = 1800;
 const EDIBLE_DEFS = {
   raw_chicken:    { name: 'Pollo crudo',       heal: 1 },
   cooked_chicken: { name: 'Pollo cocinado',    heal: 3 },
-  raw_beef:       { name: 'Ternera cruda',     heal: 2 },
+  raw_beef:       { name: 'Ternera cruda',     heal: 1 },
   cooked_beef:    { name: 'Ternera cocinada',  heal: 5 },
 };
 
@@ -190,23 +190,39 @@ export async function handleCookingCook(request, env) {
   ).bind(userId).first();
   if (!meRow) return json({ error: 'no_position' }, 400);
 
-  // 3) Fuego encendido a <2.5m (bbox + distancia exacta)
+  // 3) Fuego encendido cercano. Sesión 49 fix — radio 5m (antes 2.5m era
+  //    demasiado justo: el fuego se coloca 1.2m delante al encenderlo y la
+  //    pos del server (online_users, heartbeat) va con algo de lag → "estás
+  //    al lado" pero salía no_fire). Buscamos el MÁS CERCANO sin bbox y
+  //    medimos distancia exacta; si está fuera, el error la incluye para
+  //    diagnóstico.
   const now = Date.now();
-  const R = FIRE_COOK_RADIUS_M;
-  const fireRow = await env.DB.prepare(
-    `SELECT id, x, z FROM fires
-     WHERE expires_at > ?
-       AND x BETWEEN ? AND ? AND z BETWEEN ? AND ?`
-  ).bind(now, meRow.x - R, meRow.x + R, meRow.z - R, meRow.z + R).first();
-
-  let nearFire = false;
-  if (fireRow) {
-    const dx = fireRow.x - meRow.x;
-    const dz = fireRow.z - meRow.z;
-    nearFire = (dx * dx + dz * dz) <= R * R;
+  if (meRow.x == null || meRow.z == null) {
+    return json({ error: 'no_position', message: 'Posición no disponible.' }, 400);
   }
-  if (!nearFire) {
-    return json({ error: 'no_fire', message: 'Necesitas estar junto a un fuego encendido.' }, 400);
+  const fires = await env.DB.prepare(
+    'SELECT id, x, z FROM fires WHERE expires_at > ?'
+  ).bind(now).all();
+  const fireRows = fires?.results || [];
+
+  let nearest = null;
+  let nearestDist = Infinity;
+  for (const f of fireRows) {
+    const dx = f.x - meRow.x;
+    const dz = f.z - meRow.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d < nearestDist) { nearestDist = d; nearest = f; }
+  }
+
+  if (!nearest || nearestDist > FIRE_COOK_RADIUS_M) {
+    return json({
+      error: 'no_fire',
+      message: fireRows.length === 0
+        ? 'No hay ningún fuego encendido. Enciende uno con un log + yesquero.'
+        : `Acércate más al fuego (estás a ${nearestDist === Infinity ? '∞' : nearestDist.toFixed(1)}m, necesitas ${FIRE_COOK_RADIUS_M}m).`,
+      nearest_fire_dist_m: nearestDist === Infinity ? null : Number(nearestDist.toFixed(2)),
+      fires_lit: fireRows.length,
+    }, 400);
   }
 
   // 4) Nivel de cocina
