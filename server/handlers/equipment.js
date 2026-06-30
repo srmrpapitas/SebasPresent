@@ -40,7 +40,7 @@ const INVENTORY_SLOTS = 20;
 // Sesión 34 — Agregado slot 'quiver' (Bloque 2). Container especial para
 // flechas: las flechas se almacenan dentro del quiver mientras está
 // equipado (user_quiver table), en lugar de ocupar slot del inv.
-const VALID_EQUIP_SLOTS = ['weapon', 'shield', 'helm', 'body', 'legs', 'boots', 'cape', 'amulet', 'ring', 'quiver'];
+const VALID_EQUIP_SLOTS = ['weapon', 'shield', 'helm', 'body', 'legs', 'boots', 'gloves', 'cape', 'amulet', 'ring', 'quiver'];
 
 // Sesión 35 — Tipos de arma que ocupan ambas manos. Equipar cualquiera de
 // estos cuando hay escudo equipado fuerza al escudo al inv (y viceversa).
