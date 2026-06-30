@@ -38,6 +38,7 @@ export const EQUIP_SLOTS = [
   { id: 'shield', label: 'Escudo',   icon: '🛡',  row: 2, col: 2 },
   { id: 'legs',   label: 'Piernas',  icon: '👖',  row: 3, col: 1 },
   { id: 'ring',   label: 'Anillo',   icon: '💍',  row: 4, col: 0 },
+  { id: 'gloves', label: 'Guantes',  icon: '🧤',  row: 4, col: 1 },
   { id: 'boots',  label: 'Botas',    icon: '🥾',  row: 4, col: 2 },
 ];
 
