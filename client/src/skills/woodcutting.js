@@ -45,6 +45,7 @@ import * as skills from '../skills.js';
 import * as equipment from '../equipment.js';
 import * as inventory from '../inventory.js';
 import * as THREE from 'three';
+import * as audio from '../audio.js';   // Sesión 50 — sonido del hachazo
 
 // ============================================================
 // Constantes (deben matchear server/handlers/woodcutting.js)
@@ -154,12 +155,9 @@ export function startChopAt(treeType, tx, tz) {
     maple: 45, mahogany: 50, yew: 60, magic: 75,
   };
   const reqLvl = TREE_LEVELS[treeType] || 1;
-  if (levelClient < reqLvl) {
-    feedLog('error', `Necesitas nivel ${reqLvl} de Tala.`);
-    return;
-  }
 
   // Caminar hacia el árbol (a APPROACH_DIST_M del centro).
+  // Sesión 50 — SIEMPRE camina, aunque no tenga nivel (avisa igualmente).
   const dx = player.position.x - tx;
   const dz = player.position.z - tz;
   const dist = Math.hypot(dx, dz);
@@ -171,6 +169,10 @@ export function startChopAt(treeType, tx, tz) {
     const goX = tx + ux * APPROACH_DIST_M;
     const goZ = tz + uz * APPROACH_DIST_M;
     setPlayerTargetCb(goX, goZ);
+  }
+  if (levelClient < reqLvl) {
+    feedLog('error', `Necesitas nivel ${reqLvl} de Tala.`);
+    return;
   }
 
   // Sesión 33 (B-001) — Tool override: si el jugador no tiene un hacha en
@@ -292,6 +294,15 @@ export function update(dt) {
         activeChop.tickMs = Math.max(MIN_CHOP_TICK_MS, dur);
       }
     }
+    // Sesión 50 — sonido del hachazo a mitad del swing. Usa wc_chop.ogg de R2
+    // si está cargado; si no, uno sintetizado (así nunca queda en silencio).
+    const genAtSwing = activeChop.gen;
+    setTimeout(() => {
+      if (!activeChop || activeChop.gen !== genAtSwing) return;
+      const pitch = 0.92 + Math.random() * 0.16;
+      if (audio.hasSfx?.('wc_chop')) audio.sfx('wc_chop', { pitch });
+      else audio.synth?.('wood_chop', { pitch });
+    }, 300);
     attemptChop(activeChop.tree_type, activeChop.tx, activeChop.tz, activeChop.gen)
       .catch(err => console.warn('[woodcutting] chop err:', err?.message));
   }

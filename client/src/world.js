@@ -2368,8 +2368,7 @@ function setupInput() {
     onTouchStart: () => npcRenderer.closeActionMenu(),
 
     // Tap simple → goto / atacar NPC / pickup item / tooltip árbol
-    // Sesión 50 — pasa por la cola de acciones (ver onCanvasTap).
-    onTap: (cx, cy) => onCanvasTap(cx, cy),
+    onTap: (cx, cy) => doCanvasTap(cx, cy),
 
     // Long-press → menú contextual estilo OSRS
     onLongPress: (cx, cy) => {
@@ -2395,8 +2394,6 @@ function setupInput() {
 
     // Joystick virtual → escribe en joyState que usa updatePlayer
     onJoystickMove: (s) => {
-      // Sesión 50 — mover con el joystick vacía la cola de acciones.
-      if (s.active && (Math.abs(s.x) > 0.15 || Math.abs(s.y) > 0.15)) clearActionQueue();
       joyState.active = s.active;
       joyState.x = s.x;
       joyState.y = s.y;
@@ -2423,94 +2420,6 @@ function setupInput() {
 
   // Resize: lo gestiona world porque toca camera/renderer
   addL(window, 'resize', onResize);
-}
-
-// ============================================================
-// Sesión 50 — Cola de acciones (estilo "shift-click")
-// ============================================================
-// Mientras el personaje está HACIENDO algo (picando una veta o talando):
-//   - 1 toque        → la acción se pone en COLA y se hace al terminar la actual.
-//   - doble toque    → PRIORIDAD: corta lo que está haciendo y la hace ya.
-// Si no está haciendo nada, el toque funciona como siempre (inmediato).
-// La cola guarda el toque + la cámara de ese momento, y al ejecutarlo repite
-// el mismo raycast (así da igual si luego giraste la cámara).
-const ACTION_QUEUE_MAX = 5;
-const DOUBLE_TAP_MS = 350;
-const DOUBLE_TAP_PX = 45;
-const actionQueue = [];
-let lastTapInfo = { t: 0, x: 0, y: 0, queuedItem: null };
-let actionQueueWaitUntil = 0;
-
-function isSkillBusy() {
-  try { return !!(mining.isBusy?.() || woodcutting.isBusy?.()); } catch { return false; }
-}
-function isSkillEngaged() {
-  try { return !!(mining.isEngaged?.() || woodcutting.isEngaged?.()); } catch { return false; }
-}
-function clearActionQueue() {
-  if (actionQueue.length) actionQueue.length = 0;
-}
-
-function onCanvasTap(clientX, clientY) {
-  const now = performance.now();
-  const isDouble = (now - lastTapInfo.t) < DOUBLE_TAP_MS &&
-    Math.hypot(clientX - lastTapInfo.x, clientY - lastTapInfo.y) < DOUBLE_TAP_PX;
-  const prevQueued = lastTapInfo.queuedItem;
-  lastTapInfo = { t: now, x: clientX, y: clientY, queuedItem: null };
-
-  const busy = !interiors.isActive() && (isSkillBusy() || actionQueue.length > 0);
-  if (!busy) { doCanvasTap(clientX, clientY); return; }
-
-  if (isDouble) {
-    // Prioridad: quitar de la cola el primer toque (si se encoló) y hacerlo YA.
-    if (prevQueued) {
-      const i = actionQueue.indexOf(prevQueued);
-      if (i >= 0) actionQueue.splice(i, 1);
-    }
-    try { mining.stopMining?.('priority'); } catch {}
-    try { woodcutting.stopChop?.('priority'); } catch {}
-    combat.feedLog?.('info', 'Prioridad: acción inmediata.');
-    doCanvasTap(clientX, clientY);
-    return;
-  }
-
-  if (actionQueue.length >= ACTION_QUEUE_MAX) {
-    combat.feedLog?.('warning', `Cola llena (${ACTION_QUEUE_MAX}). Doble toque para hacerlo ya.`);
-    return;
-  }
-  const item = {
-    cx: clientX, cy: clientY,
-    camPos: camera.position.clone(),
-    camQuat: camera.quaternion.clone(),
-  };
-  actionQueue.push(item);
-  lastTapInfo.queuedItem = item;
-  combat.feedLog?.('info', `Acción en cola (${actionQueue.length}). Doble toque = hacerlo ya.`);
-}
-
-/** Cada frame: si el personaje quedó libre, ejecuta la siguiente de la cola. */
-function processActionQueue() {
-  if (!actionQueue.length) return;
-  if (interiors.isActive()) { clearActionQueue(); return; }
-  const now = performance.now();
-  if (now < actionQueueWaitUntil) return;
-  if (isSkillEngaged() || playerTarget) return;   // sigue ocupado o caminando
-  const item = actionQueue.shift();
-  const savedPos = camera.position.clone();
-  const savedQuat = camera.quaternion.clone();
-  try {
-    camera.position.copy(item.camPos);
-    camera.quaternion.copy(item.camQuat);
-    camera.updateMatrixWorld(true);
-    doCanvasTap(item.cx, item.cy);
-  } catch (e) {
-    console.warn('[world] cola de acciones:', e);
-  } finally {
-    camera.position.copy(savedPos);
-    camera.quaternion.copy(savedQuat);
-    camera.updateMatrixWorld(true);
-  }
-  actionQueueWaitUntil = now + 400;   // deja que la acción arranque antes de mirar de nuevo
 }
 
 // Sesión 50 — Pulsación larga sobre veta / árbol → menú contextual.
@@ -2563,6 +2472,11 @@ function doCanvasTap(clientX, clientY) {
     }
     return;
   }
+
+  // Sesión 50 — Cada toque es una orden nueva: corta la tala/minería en curso.
+  // Si el toque cae en otra veta/árbol, más abajo arranca la acción nueva.
+  try { mining.stopMining?.('tap_ground'); } catch {}
+  try { woodcutting.stopChop?.('tap_ground'); } catch {}
 
   // Sesión 27 Bloque 3 — Tap PVP: ¿el tap impacta otro player?
   // Primero peers (PVP), después NPCs. Si el peer cae bajo el tap,
@@ -2743,7 +2657,6 @@ function animate() {
   chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles
   woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
   mining.update(dt);          // Sesión 50 — vetas + loop de picar
-  processActionQueue();       // Sesión 50 — cola de acciones
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior

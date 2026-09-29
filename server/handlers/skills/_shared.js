@@ -88,11 +88,17 @@ export async function hasItemAvailable(env, userId, itemId, opts = {}) {
  *   - 'full':  el inventario está completamente lleno
  */
 export async function findInventorySpotForItem(env, userId, itemId) {
-  // 1) Stack existente
-  const stackRow = await env.DB.prepare(
-    'SELECT slot_index, quantity FROM user_inventory WHERE user_id = ? AND item_id = ? LIMIT 1'
-  ).bind(userId, itemId).first();
-  if (stackRow) return { kind: 'stack', slot: stackRow.slot_index };
+  // 1) Stack existente — Sesión 50: SOLO si el item es apilable. Minerales,
+  //    lingotes y troncos NO se apilan en la mochila (1 unidad = 1 slot, como
+  //    en OSRS). Antes este helper apilaba siempre, ignorando items.stackable.
+  const meta = await env.DB.prepare('SELECT stackable FROM items WHERE id = ?').bind(itemId).first();
+  const stackable = meta ? meta.stackable === 1 : true;
+  if (stackable) {
+    const stackRow = await env.DB.prepare(
+      'SELECT slot_index, quantity FROM user_inventory WHERE user_id = ? AND item_id = ? LIMIT 1'
+    ).bind(userId, itemId).first();
+    if (stackRow) return { kind: 'stack', slot: stackRow.slot_index };
+  }
 
   // 2) Slot vacío
   const usedRows = await env.DB.prepare(

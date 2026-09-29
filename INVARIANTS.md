@@ -596,3 +596,7 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - SFX de minería sintetizados (`audio.synth`), no necesitan archivos en R2.
 - 7 tiers: bronce 1 · hierro 10 · acero 20 · oro 30 · obsidiana 40 · basaltita 55 · teiderio 70.
 
+- Minerales (`ore_*`), lingotes (`bar_*`) y troncos (`*logs`) son NO apilables
+  (`items.stackable = 0`): 1 unidad = 1 slot. `findInventorySpotForItem` respeta
+  el flag. En el banco sí se apilan; "Depositar X/Todo" recoge de todos los slots.
+- Tocar el mundo SIEMPRE corta la tala/minería en curso (no hay cola de acciones).

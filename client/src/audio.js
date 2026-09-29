@@ -182,6 +182,14 @@ export function sfx(name, opts = {}) {
   }
 }
 
+/** Sesión 50 — true si el SFX tiene su archivo ya cargado desde R2. */
+export function hasSfx(name) {
+  const def = SFX_DEFS[name];
+  if (!def) return false;
+  const key = def.variants ? def.variants[0] : def.url;
+  return sfxBuffers.has(key);
+}
+
 /**
  * Sesión 50 — SFX sintetizados con Web Audio (no necesitan archivo en R2).
  *   audio.synth('mine_hit')      golpe metálico del pico contra la roca
@@ -228,7 +236,11 @@ export function synth(name, opts = {}) {
       o.start(t0 + start); o.stop(t0 + start + dur + 0.02);
     };
 
-    if (name === 'mine_hit') {
+    if (name === 'wood_chop') {
+      noiseBurst(0.12, 'lowpass', 900 * pitch, 0.8, 1.0);
+      noiseBurst(0.05, 'bandpass', 2200 * pitch, 1.5, 0.5);
+      tone(140, 0, 0.12, 0.35, 'sine');
+    } else if (name === 'mine_hit') {
       noiseBurst(0.06, 'bandpass', 3200 * pitch, 1.2, 0.9);
       tone(1870, 0, 0.22, 0.28, 'triangle');
       tone(2890, 0, 0.14, 0.16, 'sine');

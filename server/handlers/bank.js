@@ -67,13 +67,34 @@ export async function handleBankDeposit(request, env) {
     return json({ error: 'empty_slot', message: 'No hay nada en ese slot del inventario.' }, 400);
   }
 
-  const available = invRow.quantity;
-  if (qty === -1) qty = available;
-  if (qty > available) qty = available;
-  if (invRow.stackable !== 1 && qty > 1) qty = 1;
-
   const itemId = invRow.item_id;
   const now = Date.now();
+
+  // Sesión 50 — Items NO apilables (minerales, lingotes, troncos...) ocupan un
+  // slot por unidad. "Depositar X / Todo" recoge unidades de TODOS los slots
+  // con ese item (empezando por el tocado), como en OSRS.
+  let unitSlots = null;   // [{ slot, quantity }] a borrar/restar
+  let available = invRow.quantity;
+  if (invRow.stackable !== 1) {
+    const same = await env.DB.prepare(
+      'SELECT slot_index, quantity FROM user_inventory WHERE user_id = ? AND item_id = ? ORDER BY slot_index'
+    ).bind(session.user_id, itemId).all();
+    const rows = (same.results || []).sort((a, b) =>
+      (a.slot_index === invSlot ? -1 : b.slot_index === invSlot ? 1 : a.slot_index - b.slot_index));
+    available = rows.reduce((t, r) => t + r.quantity, 0);
+    if (qty === -1 || qty > available) qty = available;
+    unitSlots = [];
+    let left = qty;
+    for (const r of rows) {
+      if (left <= 0) break;
+      const take = Math.min(left, r.quantity);
+      unitSlots.push({ slot: r.slot_index, quantity: r.quantity, take });
+      left -= take;
+    }
+  } else {
+    if (qty === -1) qty = available;
+    if (qty > available) qty = available;
+  }
 
   const bankRow = await env.DB.prepare(
     'SELECT slot_index, quantity FROM user_bank WHERE user_id = ? AND item_id = ?'
@@ -98,7 +119,15 @@ export async function handleBankDeposit(request, env) {
     ).bind(session.user_id, nextSlot, itemId, qty, now));
   }
 
-  if (qty >= available) {
+  if (unitSlots) {
+    for (const u of unitSlots) {
+      stmts.push(u.take >= u.quantity
+        ? env.DB.prepare('DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?')
+            .bind(session.user_id, u.slot)
+        : env.DB.prepare('UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ?')
+            .bind(u.take, now, session.user_id, u.slot));
+    }
+  } else if (qty >= available) {
     stmts.push(env.DB.prepare(
       'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?'
     ).bind(session.user_id, invSlot));
@@ -109,7 +138,7 @@ export async function handleBankDeposit(request, env) {
   }
 
   await env.DB.batch(stmts);
-  return json({ ok: true });
+  return json({ ok: true, deposited: qty });
 }
 
 export async function handleBankWithdraw(request, env) {
