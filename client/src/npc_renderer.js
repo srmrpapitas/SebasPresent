@@ -83,6 +83,8 @@ import { bakeGlbModel } from './terrain.js';
 // Sesión 39 — pipeline esquelético (goblin animado). Forma A: malla del GLB +
 // clips FBX sueltos desde R2. Los NPCs no animados siguen por bakeGlbModel.
 import * as npcAnimated from './npc_animated.js';
+// Sesión 50 — mobs nuevos low-poly (rata, araña, jabalí, lobo, escorpión, gólem, yeti, esqueleto).
+import { buildProceduralNpc, PROC_NPC_HEIGHTS } from './npc_procedural.js';
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -106,7 +108,7 @@ export const NPC_TARGET_HEIGHTS = {
   chicken: 1.0,
   cow:     1.4,
   goblin:  1.6,
-  wolf:    1.0,
+  ...PROC_NPC_HEIGHTS,   // Sesión 50
 };
 
 const NPC_GLB_FORCE_NO_ZUP = { cow: true };
@@ -702,6 +704,7 @@ function createMesh(npc) {
   // Sesión 39 — intento ANIMADO primero (goblin). Si el template no está
   // listo (assets fallaron o aún cargando), cae al horneado de abajo.
   let animInst = null;
+  let proc = null;
   if (npcAnimated.ANIMATED_NPC_TYPES.has(typeId)) {
     try { animInst = npcAnimated.createAnimatedInstance(); } catch (e) { animInst = null; }
   }
@@ -720,6 +723,12 @@ function createMesh(npc) {
       group.add(mesh);
       group.userData.bodyMaterials.push(ownMat);
     }
+  } else if ((proc = buildProceduralNpc(typeId))) {
+    // Sesión 50 — modelo low-poly con animación propia (ver npc_procedural.js)
+    proc.root.traverse(o => { if (o.isMesh) o.userData = { kind: 'npc-body', npcId: npc.id }; });
+    group.add(proc.root);
+    group.userData.proc = proc;
+    group.userData.bodyMaterials.push(...proc.materials);
   } else {
     const h = NPC_TARGET_HEIGHTS[typeId] || 1.0;
     const color = NPC_FALLBACK_COLORS[typeId] || 0x808080;
@@ -827,6 +836,11 @@ function updateInterpolation(dt = 0) {
         npcAnimated.setLocomotion(ud.anim, moving, speed);
         npcAnimated.updateAnimatedInstance(ud.anim, dt);
       } catch {}
+    }
+
+    // ---- Sesión 50 — animación de los mobs procedurales ----
+    if (ud.proc) {
+      try { ud.proc.animate(dt, moveLen2 > 0.01 && t < 1); } catch {}
     }
 
     // ---- Hit reaction kick ----
