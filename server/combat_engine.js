@@ -29,6 +29,7 @@
  */
 
 import * as magic from './magic.js';   // Sesión 41 — sistema de mago
+import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.js';   // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
 // tengan stats de maná/magia propios (llega con smithing/crafting). Base 20 +
@@ -461,6 +462,24 @@ async function getEquipBonuses(db, userId) {
     return { atk: 0, def: 0 };
   }
 }
+// Sesión 50 — Plegarias activas (con el gasto de puntos aplicado) → efectos.
+function prayerFx(stats, now) {
+  if (!stats || stats.prayer_points == null) return prayerEffects([]);
+  const st = currentPrayerState(stats.prayer_points, stats.prayer_updated_at, stats.active_prayers, now);
+  return prayerEffects(st.active);
+}
+// Niveles con el % de las plegarias (como en OSRS: suben el nivel efectivo).
+function boostLvls(l, fx) {
+  return {
+    ...l,
+    attack:   Math.floor(l.attack   * (1 + fx.atk)),
+    strength: Math.floor(l.strength * (1 + fx.str)),
+    defence:  Math.floor(l.defence  * (1 + fx.def)),
+    ranged:   Math.floor(l.ranged   * (1 + fx.rng)),
+    magic:    Math.floor(l.magic    * (1 + fx.mag)),
+  };
+}
+
 function atkMultOf(eq) { return (64 + (eq?.atk || 0)) / 64; }
 function defMultOf(eq, stanceKey) {
   const st = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
@@ -816,7 +835,9 @@ async function applyPassiveHpRegen(db, userId, stats, now) {
   if (elapsed < HP_REGEN_COMBAT_LOCKOUT_MS) return; // aún en combate
 
   const usableElapsed = elapsed - HP_REGEN_COMBAT_LOCKOUT_MS;
-  const ticksAvailable = Math.floor(usableElapsed / HP_REGEN_INTERVAL_MS);
+  // Sesión 50 — Curación rápida (plegaria): regenera el doble de rápido.
+  const regenInterval = prayerFx(stats, now).rapidHeal ? HP_REGEN_INTERVAL_MS / 2 : HP_REGEN_INTERVAL_MS;
+  const ticksAvailable = Math.floor(usableElapsed / regenInterval);
   if (ticksAvailable <= 0) return;
 
   const missing = hpMax - stats.hp_current;
@@ -826,7 +847,7 @@ async function applyPassiveHpRegen(db, userId, stats, now) {
   stats.hp_current += ticksToApply;
   // Avanzar last_attack_at virtualmente para que la próxima llamada
   // continúe el conteo desde aquí (evita doble-aplicación).
-  const newLastAttackAt = baseTs + HP_REGEN_COMBAT_LOCKOUT_MS + ticksToApply * HP_REGEN_INTERVAL_MS;
+  const newLastAttackAt = baseTs + HP_REGEN_COMBAT_LOCKOUT_MS + ticksToApply * regenInterval;
   stats.last_attack_at = newLastAttackAt;
 
   await db.run(
@@ -1036,7 +1057,8 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   }
 
   // ---- User hit ----
-  const userLvls = levelsOf(stats);
+  const userFx = prayerFx(stats, now);                  // Sesión 50 — plegarias
+  const userLvls = boostLvls(levelsOf(stats), userFx);
   const userEq = await getEquipBonuses(db, userId);   // Sesión 50
   // Sesion 46 — restaurado el SPECIAL ATTACK en attackNpc (se habia perdido
   // al regenerar el engine para el quiver). Mismo patron que attackPlayer:
@@ -1051,7 +1073,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   const doRoll = () => (
     isMagic
-      ? magic.rollHitMagic(rng, magicLevel, npc.defence_lvl,
+      ? magic.rollHitMagic(rng, Math.floor(magicLevel * (1 + userFx.mag)), npc.defence_lvl,
           magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, 0))
       : isRanged
       ? rollHitRanged(rng, userLvls.ranged, npc.defence_lvl,
@@ -1155,6 +1177,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     const userInNpcRange = d <= npcMeleeRange;
     if (npcReady && userInNpcRange) {
       npcCounterHit = rollHit(rng, npc.attack_lvl, userLvls.defence, npc.max_hit, 1, defMultOf(userEq, stanceKey));
+      if (userFx.protectMelee) npcCounterHit = { hit: false, damage: 0 };   // Sesión 50 — Protección
       dmgToUser = Math.min(npcCounterHit.damage, stats.hp_current);
       const userHpAfter = stats.hp_current - dmgToUser;
       if (userHpAfter <= 0) {
@@ -1533,8 +1556,10 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   }
 
   // -------- User hit --------
-  const attackerLvls = levelsOf(attackerStats);
-  const targetLvls   = levelsOf(targetStats);
+  const attackerFx   = prayerFx(attackerStats, now);   // Sesión 50 — plegarias
+  const targetFx     = prayerFx(targetStats, now);
+  const attackerLvls = boostLvls(levelsOf(attackerStats), attackerFx);
+  const targetLvls   = boostLvls(levelsOf(targetStats), targetFx);
   // Sesión 50 — bonus de equipo de ambos + estilo defensivo del target.
   const attackerEq = await getEquipBonuses(db, attackerId);
   const targetEq   = await getEquipBonuses(db, targetId);
@@ -1544,7 +1569,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   const doRollPvp = () => (
     isMagicPvp && spellPvp
-      ? magic.rollHitMagic(rng, magicLevelPvp, Math.round(targetLvls.defence * targetDefMult),
+      ? magic.rollHitMagic(rng, Math.floor(magicLevelPvp * (1 + attackerFx.mag)), Math.round(targetLvls.defence * targetDefMult),
           magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, 0))
       : isRanged
       ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
@@ -1583,6 +1608,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     userHit.hit = userHit.hit || h2.hit;
   }
 
+  // Sesión 50 — Protección cuerpo a cuerpo en PvP: −40 % contra golpes de melé.
+  if (targetFx.protectMelee && !isRanged && !(isMagicPvp && spellPvp)) dmgRaw = Math.floor(dmgRaw * 0.6);
   const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
   if (specHitsPvp) {
     specHitsPvp[0] = Math.min(specHitsPvp[0], dmgToTarget);
@@ -1634,6 +1661,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       const targetMaxHit = calcMaxHit(targetLvls.strength);
       targetCounterHit = rollHit(rng, targetLvls.attack, attackerLvls.defence, targetMaxHit,
         atkMultOf(targetEq), attackerDefMult);
+      if (attackerFx.protectMelee) targetCounterHit.damage = Math.floor(targetCounterHit.damage * 0.6);   // S50
       dmgToAttacker = Math.min(targetCounterHit.damage, attackerStats.hp_current);
       const attackerHpAfter = attackerStats.hp_current - dmgToAttacker;
       if (attackerHpAfter <= 0) {
@@ -2366,12 +2394,13 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
   let viewerStats;
   try {
     viewerStats = await env.DB.prepare(
-      `SELECT hp_current, defence_xp FROM combat_stats WHERE user_id = ?`
+      `SELECT * FROM combat_stats WHERE user_id = ?`
     ).bind(viewer.user_id).first();
   } catch { viewerStats = null; }
   if (!viewerStats || viewerStats.hp_current <= 0) return changes; // muerto: no agro
 
-  const viewerDefLvl = viewerStats.defence_xp != null ? levelFromXp(viewerStats.defence_xp) : 1;
+  const viewerFx = prayerFx(viewerStats, now);   // Sesión 50 — plegarias del jugador
+  const viewerDefLvl = Math.floor((viewerStats.defence_xp != null ? levelFromXp(viewerStats.defence_xp) : 1) * (1 + viewerFx.def));
   // Sesión 50 — la armadura y el estilo defensivo del jugador cuentan.
   let viewerDefMult = 1;
   try {
@@ -2438,7 +2467,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
         const ready = !npc.last_attack_at || (now - npc.last_attack_at) >= cooldownMs;
         if (ready && viewerHp > 0) {
           const roll = rollHit(rng, npc.attack_lvl, viewerDefLvl, npc.max_hit, 1, viewerDefMult);
-          dmg = Math.min(roll.damage, viewerHp);
+          dmg = viewerFx.protectMelee ? 0 : Math.min(roll.damage, viewerHp);
           attacked = true;
         }
       }

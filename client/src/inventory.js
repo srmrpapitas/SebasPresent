@@ -36,6 +36,7 @@ const LONG_PRESS_MS = 450;
 // Sesión 48 — comida. Debe matchear EDIBLE_DEFS / COOKABLE_DEFS del server
 // (handlers/skills/cooking.js). El server valida todo igualmente.
 const EDIBLE_ITEM_IDS = new Set(['raw_chicken', 'cooked_chicken', 'raw_beef', 'cooked_beef']);
+const BURYABLE_ITEM_IDS = new Set(['bones']);   // Sesión 50 — Plegaria
 const COOKABLE_ITEM_IDS = new Set(['raw_chicken', 'raw_beef']);
 
 // ---------- State ----------
@@ -355,6 +356,8 @@ function onPointerUp(ev) {
     const data = slots[fromSlot];
     if (selectedSlot === null && data && EDIBLE_ITEM_IDS.has(data.item_id)) {
       eatInstant(fromSlot);
+    } else if (selectedSlot === null && data && BURYABLE_ITEM_IDS.has(data.item_id)) {
+      window.__prayer?.buryFromSlot?.(fromSlot);   // Sesión 50 — tocar huesos = enterrar
     } else if (selectedSlot === null && isEquipableItem(data)) {
       doEquip(fromSlot);
     } else if (selectedSlot === null) {
@@ -487,6 +490,10 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   if (EDIBLE_ITEM_IDS.has(item.item_id)) {
     html += `<div class="inv-context-row" data-act="eat">🍗 Comer</div>`;
   }
+  // Sesión 50 — Plegaria: enterrar huesos.
+  if (BURYABLE_ITEM_IDS.has(item.item_id)) {
+    html += `<div class="inv-context-row" data-act="bury">⚱ Enterrar</div>`;
+  }
   if (COOKABLE_ITEM_IDS.has(item.item_id)) {
     html += `<div class="inv-context-row" data-act="cook">🍳 Cocinar</div>`;
     html += `<div class="inv-context-row" data-act="cook_all">🍳 Cocinar todo</div>`;
@@ -543,6 +550,8 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
         } catch (err) {
           console.warn('[inventory] light_fire err:', err);
         }
+      } else if (act === 'bury') {
+        await window.__prayer?.buryFromSlot?.(slotIdx);
       } else if (act === 'eat') {
         // Sesión 49 — mismo camino que el tap simple (cooldown + HUD instantáneo).
         await eatInstant(slotIdx);

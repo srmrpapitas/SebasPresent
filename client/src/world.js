@@ -45,6 +45,7 @@ import * as woodcutting from './skills/woodcutting.js';
 import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as quests from './quests.js';   // Sesión 50 — misiones
+import * as prayer from './prayer.js';   // Sesión 50 — plegaria
 import * as firemaking  from './skills/firemaking.js';
 // Sesión 31 — extraído de world.js: setup de three.js + cámara orbital.
 import * as sceneSetup    from './core/scene.js';
@@ -240,6 +241,7 @@ export async function startWorld(loggedInUser, token) {
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
     try { mining.registerKeepouts(terrain); } catch (e) { console.warn('[world] mining keepouts:', e); }
     try { smithing.registerKeepouts(terrain); } catch (e) { console.warn('[world] smithing keepouts:', e); }
+    try { prayer.registerKeepouts(terrain); } catch (e) { console.warn('[world] prayer keepouts:', e); }
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
     // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
     // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
@@ -740,6 +742,17 @@ export async function startWorld(loggedInUser, token) {
         feedLog:         (type, msg) => combat.feedLog?.(type, msg),
       });
     } catch (e) { console.warn('[world] smithing start:', e); }
+    // Sesión 50 — Plegaria (pestaña, orbe del HUD, altares). Debug: window.__prayer.state()
+    try {
+      prayer.start({
+        scene,
+        getPlayer:       () => player,
+        getCharacter:    () => character,
+        getSnapshot:     () => worldSnapshot.getSnapshot(),
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog:         (type, msg) => combat.feedLog?.(type, msg),
+      });
+    } catch (e) { console.warn('[world] prayer start:', e); }
     // Sesión 50 — Misiones (tutorial). Debug: window.__questsDebug()
     try {
       quests.start({
@@ -801,6 +814,7 @@ export function stopWorld() {
   try { mining.stop(); } catch {}
   try { smithing.stop(); } catch {}
   try { quests.stop(); } catch {}
+  try { prayer.stop(); } catch {}
   try { firemaking.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
@@ -1053,7 +1067,7 @@ function drawMinimap() {
 
   // Sesión 50 — Vetas de mineral y hornos/yunques en el minimapa.
   try {
-    for (const st of smithing.getStationsForMinimap()) {
+    for (const st of [...smithing.getStationsForMinimap(), ...prayer.getAltarsForMinimap()]) {
       const dx = st.x - px, dz = st.z - pz;
       if (dx * dx + dz * dz > RANGE_SQ) continue;
       ctx.fillStyle = st.color;
@@ -2479,6 +2493,7 @@ function openSkillMenuAt(clientX, clientY) {
   const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
   const openMenu = (title, rows, cx, cy) => npcRenderer.openGenericActionMenu(title, rows, cx, cy);
+  if (prayer.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
   if (smithing.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
   if (mining.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
 
@@ -2528,6 +2543,7 @@ function doCanvasTap(clientX, clientY) {
   try { mining.stopMining?.('tap_ground'); } catch {}
   try { woodcutting.stopChop?.('tap_ground'); } catch {}
   try { smithing.stopWork?.('tap_ground'); } catch {}
+  try { prayer.cancel?.(); } catch {}
 
   // Sesión 27 Bloque 3 — Tap PVP: ¿el tap impacta otro player?
   // Primero peers (PVP), después NPCs. Si el peer cae bajo el tap,
@@ -2547,6 +2563,9 @@ function doCanvasTap(clientX, clientY) {
 
   // Sesión 11b parcial — Tap edificio → placeholder (en 11c será "entrar")
   if (buildings.tryHandleTap(clientX, clientY)) return;
+
+  // 2a0) Tap altar → caminar + rezar (Sesión 50).
+  if (prayer.tryHandleTap(raycaster)) return;
 
   // 2a) Tap horno/yunque → caminar + abrir panel (Sesión 50).
   if (smithing.tryHandleTap(raycaster)) return;
@@ -2713,6 +2732,7 @@ function animate() {
   mining.update(dt);          // Sesión 50 — vetas + loop de picar
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
   quests.update(dt);          // Sesión 50 — misiones (tracker + haz)
+  prayer.update(dt);          // Sesión 50 — plegaria (HUD, altares, aura)
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior

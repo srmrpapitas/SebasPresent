@@ -623,3 +623,13 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
   (`give`) si no las tienes en mochila/equipo/banco. El cliente lee el progreso de
   `snapshot.me.quests` (sin polling extra).
 - Recompensas por paso y final se dan con `grantItem` (mochila o, si no cabe, banco).
+
+## 19. Sesión 50 — Plegaria
+
+- Datos en `client/src/shared/prayer.js` (huesos, 15 plegarias, altares, fórmula de gasto).
+- Estado en `combat_stats.prayer_points / prayer_updated_at / active_prayers`
+  (migración 003). Gasto perezoso: puntos − drain·tiempo; a 0 se apagan todas.
+- Una plegaria por grupo (def/str/atk/rng/mag/heal/protect).
+- combat_engine aplica: % a niveles efectivos (boostLvls), Protección cuerpo a
+  cuerpo (NPC 0 daño, PvP −40 %), Curación rápida (regen ×2).
+- Endpoints: POST /api/prayer/bury, /toggle, /recharge. Tocar huesos en la mochila = enterrar.

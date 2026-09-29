@@ -526,6 +526,17 @@ export async function miningMine(veinId) {
   });
 }
 
+/** Sesión 50 — Plegaria. */
+export async function prayerBury(slot) {
+  return apiFetch('/api/prayer/bury', { method: 'POST', auth: true, body: { slot } });
+}
+export async function prayerToggle(prayerId) {
+  return apiFetch('/api/prayer/toggle', { method: 'POST', auth: true, body: { prayer_id: prayerId } });
+}
+export async function prayerRecharge(altarId) {
+  return apiFetch('/api/prayer/recharge', { method: 'POST', auth: true, body: { altar_id: altarId } });
+}
+
 /** Sesión 50 — Misiones. */
 export async function questsGet() {
   return apiFetch('/api/quests', { auth: true });

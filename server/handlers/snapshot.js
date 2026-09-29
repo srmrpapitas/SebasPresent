@@ -396,6 +396,18 @@ export async function handleWorldSnapshot(request, env) {
       // tabla no existe → me.party_id queda null
     }
 
+    // Sesión 50 — plegaria (el cliente calcula el gasto en vivo con estos datos)
+    try {
+      const pr = await env.DB.prepare(
+        'SELECT prayer_points, prayer_updated_at, active_prayers FROM combat_stats WHERE user_id = ?'
+      ).bind(session.user_id).first();
+      if (pr) {
+        me.prayer_points = pr.prayer_points;
+        me.prayer_updated_at = pr.prayer_updated_at;
+        me.active_prayers = pr.active_prayers || '';
+      }
+    } catch { /* migración 003 pendiente */ }
+
     // Sesión 50 — progreso de misiones (solo lectura; se crean en GET /api/quests)
     try {
       const qr = await env.DB.prepare(

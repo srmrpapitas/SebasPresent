@@ -59,6 +59,7 @@ import * as cooking from './handlers/skills/cooking.js';          // Sesión 48 
 import * as mining from './handlers/skills/mining.js';            // Sesión 50 — minería
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
+import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -249,6 +250,12 @@ export default {
         response = await smithing.handleSmithingSmelt(request, env);
       } else if (path === '/api/smithing/smith' && method === 'POST') {
         response = await smithing.handleSmithingSmith(request, env);
+      } else if (path === '/api/prayer/bury' && method === 'POST') {
+        response = await prayer.handlePrayerBury(request, env);
+      } else if (path === '/api/prayer/toggle' && method === 'POST') {
+        response = await prayer.handlePrayerToggle(request, env);
+      } else if (path === '/api/prayer/recharge' && method === 'POST') {
+        response = await prayer.handlePrayerRecharge(request, env);
       } else if (path === '/api/quests' && method === 'GET') {
         response = await quests.handleQuestsGet(request, env);
       } else if (path === '/api/quests/skip' && method === 'POST') {

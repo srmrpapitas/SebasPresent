@@ -18,6 +18,7 @@ import * as api from './api.js';
 import { getItemIconHtml, getSkillIconHtml } from './item_icons.js';
 import { ORE_TIERS } from './shared/ore_veins.js';
 import { SMELT, MATERIALS, MATERIAL_NAMES } from './shared/smithing.js';
+import { PRAYERS } from './shared/prayer.js';
 
 const ROWS_PER_PAGE = 7;
 
@@ -57,7 +58,7 @@ const DESCRIPTIONS = {
   hitpoints:   'Tu vida máxima es igual a tu nivel de Vitalidad. Sube un poco con cualquier golpe que aciertes. Fuera de combate recuperas <strong>1 HP cada 20 s</strong>; la comida cura al instante.',
   ranged:      'Combate a distancia con arco y flechas (hasta ~10 m). Cada disparo gasta una flecha; con carcaj equipado el <strong>75 %</strong> se conservan.',
   magic:       'Lanza hechizos con un bastón equipado. Cada hechizo gasta maná, que se regenera solo (más rápido con bastón).',
-  prayer:      'Todavía no hay plegarias en el juego. <em>Próximamente.</em>',
+  prayer:      'Entierra <strong>huesos</strong> (tócalos en la mochila) para ganar XP. Tus puntos de plegaria = tu nivel; las plegarias activas los gastan y se recargan rezando en un <strong>altar</strong> (hay uno junto al Concejo y otro en el Templo de la Luz).',
   woodcutting: 'Tala árboles con un hacha para conseguir troncos. Toca un árbol y tu personaje irá hasta él. Algunos árboles dan varios troncos antes de caer.',
   fishing:     'Todavía no se puede pescar. <em>Próximamente.</em>',
   mining:      'Pica vetas de mineral con un pico. Las vetas brillan con el color de su mineral y salen en el minimapa. Cuando una veta se agota, reaparece al rato.',
@@ -181,6 +182,9 @@ async function buildUnlocks(skillId, lvl) {
       } catch { /* sin conexión: solo horno */ }
       return pages;
     }
+    case 'prayer':
+      return unlockPages('Plegarias', PRAYERS.map(p => ({ level: p.level, name: p.name, detail: `${p.desc} · ${p.drain} pts/min`, icon: p.icon })), lvl)
+        .concat([{ content: `<h2>Huesos</h2><p><strong>Huesos</strong>: 5 XP cada uno. Los sueltan casi todos los monstruos.</p><p class="sg-muted">Solo puedes tener activa una plegaria de cada tipo (una de Defensa, una de Fuerza...).</p>` }]);
     case 'magic':
       return unlockPages('Hechizos', SPELLS.map(([n, l, d]) => ({ level: l, name: n, detail: d, icon: '✨' })), lvl)
         .concat([{ content: `<h2>Maná</h2><p>Tu maná máximo crece con tu nivel de Magia; con bastón equipado tienes <strong>+100</strong> y se regenera más rápido.</p>` }]);

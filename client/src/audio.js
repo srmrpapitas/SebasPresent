@@ -236,7 +236,15 @@ export function synth(name, opts = {}) {
       o.start(t0 + start); o.stop(t0 + start + dur + 0.02);
     };
 
-    if (name === 'anvil') {
+    if (name === 'pray_on') {
+      tone(523, 0, 0.35, 0.16); tone(784, 0.05, 0.4, 0.14); tone(1046, 0.1, 0.5, 0.1);
+    } else if (name === 'pray_off') {
+      tone(784, 0, 0.25, 0.14); tone(523, 0.08, 0.35, 0.12);
+    } else if (name === 'bury') {
+      noiseBurst(0.3, 'lowpass', 600, 0.7, 0.8); tone(220, 0.05, 0.3, 0.08);
+    } else if (name === 'altar') {
+      tone(392, 0, 1.2, 0.12); tone(587, 0.1, 1.1, 0.1); tone(784, 0.2, 1.0, 0.09); tone(1175, 0.3, 0.9, 0.06);
+    } else if (name === 'anvil') {
       // martillazo: golpe metálico brillante con resonancia larga
       noiseBurst(0.04, 'highpass', 2500, 0.7, 0.8);
       tone(1250, 0, 0.6, 0.30, 'triangle');
