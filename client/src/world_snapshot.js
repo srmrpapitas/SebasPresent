@@ -449,6 +449,8 @@ function handleIncomingDeath(me) {
   try {
     if (typeof window.__feedLog === 'function') {
       window.__feedLog('death', 'Has muerto. Toca el botón para volver al spawn.');
+      // Sesión 50 — explicar dónde está el botín (antes parecía que no caía nada)
+      window.__feedLog('info', '💀 Lo que has perdido está en el suelo donde moriste (2 min). Si te mató un jugador, él lo ve en exclusiva el primer minuto; después cualquiera puede cogerlo.');
     }
   } catch {}
 }
