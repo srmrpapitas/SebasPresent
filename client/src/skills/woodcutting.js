@@ -205,6 +205,11 @@ export function startChopAt(treeType, tx, tz) {
   };
 }
 
+/** Sesión 50 — true si ya está talando (en rango, dando hachazos). */
+export function isBusy() { return !!(activeChop && activeChop.started); }
+/** Sesión 50 — true si hay una tala pendiente (caminando hacia el árbol o talando). */
+export function isEngaged() { return !!activeChop; }
+
 /** Para el loop actual. */
 export function stopChop(reason = 'user') {
   if (!activeChop) return;

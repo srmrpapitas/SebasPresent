@@ -1005,6 +1005,46 @@ function triggerNpcTap(npcId) {
 // ============================================================
 // Action menu (long-press) + Examine
 // ============================================================
+/**
+ * Sesión 50 — Menú contextual genérico estilo OSRS (mismo aspecto que el de
+ * NPCs). Lo usan las vetas de mineral y los árboles. Se cierra al tocar la
+ * pantalla (world.js → onTouchStart → closeActionMenu).
+ *   rows: [{ label, onPick, danger? }]
+ */
+export function openGenericActionMenu(title, rows, cx, cy) {
+  closeActionMenu();
+  ensureActionMenuCss();
+  const menu = document.createElement('div');
+  menu.className = 'osrs-action-menu';
+  let html = `<div class="osrs-action-menu-header">${escapeHtmlSafe(title)}</div>`;
+  rows.forEach((r, i) => {
+    html += `<div class="osrs-action-row${r.danger ? ' danger' : ''}" data-idx="${i}">${escapeHtmlSafe(r.label)}</div>`;
+  });
+  html += `<div class="osrs-action-row danger" data-idx="cancel">✕ Cancelar</div>`;
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = cx + 8, top = cy + 8;
+  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+  if (top + mh > window.innerHeight - 4) top = cy - mh - 8;
+  if (top < 4) top = 4;
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  actionMenuEl = menu;
+  menu.querySelectorAll('[data-idx]').forEach(row => {
+    row.addEventListener('pointerup', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const idx = row.getAttribute('data-idx');
+      closeActionMenu();
+      if (idx === 'cancel') return;
+      try { rows[Number(idx)]?.onPick?.(); } catch (e) { console.warn('[menu] onPick:', e); }
+    });
+  });
+  setTimeout(() => { if (actionMenuEl === menu) closeActionMenu(); }, 5000);
+  return true;
+}
+
 export function closeActionMenu() {
   if (!actionMenuEl) return;
   actionMenuEl.remove();

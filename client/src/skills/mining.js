@@ -123,6 +123,8 @@ function initResources() {
     glowTex,
     tiers: {},
     fragGeom: new THREE.TetrahedronGeometry(0.09, 0),
+    hitGeom: new THREE.CylinderGeometry(1.5, 1.5, 2.2, 8),
+    hitMat: new THREE.MeshBasicMaterial({ visible: false }),
   };
   for (const def of Object.values(ORE_TIERS)) {
     const glow = new THREE.Color(def.glow);
@@ -180,6 +182,12 @@ function buildVein(vein) {
   rock.userData = { kind: 'ore-vein', veinId: vein.id };
   group.add(rock);
 
+  // Hitbox invisible y generosa (dedos en móvil). Es lo único que se raycastea.
+  const hit = new THREE.Mesh(RES.hitGeom, RES.hitMat);
+  hit.position.y = 0.9;
+  hit.userData = { kind: 'ore-vein', veinId: vein.id };
+  group.add(hit);
+
   // Cristales (más y más grandes cuanto mayor el tier)
   const crystals = new THREE.Group();
   const nCrystals = 3 + Math.min(4, def.tier) + Math.floor(rnd() * 2);
@@ -221,8 +229,8 @@ function buildVein(vein) {
   group.add(sparkles);
 
   scene.add(group);
-  pickMeshes.push(rock);
-  const obj = { vein, def, group, rock, crystals, glow, sparkles, depleted: false, phase: rnd() * 6.28 };
+  pickMeshes.push(hit);
+  const obj = { vein, def, group, rock, hit, crystals, glow, sparkles, depleted: false, phase: rnd() * 6.28 };
   veinObjs.set(vein.id, obj);
   if (depletedIds.has(vein.id)) setDepleted(obj, true);
   return obj;
@@ -231,7 +239,7 @@ function buildVein(vein) {
 function disposeVein(obj) {
   scene?.remove(obj.group);
   obj.sparkles.geometry.dispose();
-  const i = pickMeshes.indexOf(obj.rock);
+  const i = pickMeshes.indexOf(obj.hit);
   if (i >= 0) pickMeshes.splice(i, 1);
   veinObjs.delete(obj.vein.id);
 }
@@ -335,29 +343,68 @@ export function getLoadedVeins() {
   return out;
 }
 
+function veinUnderRay(raycaster) {
+  if (!started || pickMeshes.length === 0) return null;
+  const hits = raycaster.intersectObjects(pickMeshes, false);
+  if (!hits.length) return null;
+  const id = hits[0].object.userData?.veinId;
+  return (id && veinObjs.get(id)) || null;
+}
+
+function examine(obj) {
+  const lvl = skills.getLevel?.('mining') ?? 1;
+  const req = lvl >= obj.def.level ? '' : ` (tienes ${lvl})`;
+  feedLog('info', `${obj.def.name}: requiere nivel ${obj.def.level} de Minería${req} · ${obj.def.xp} XP por mineral${obj.depleted ? ' · agotada' : ''}.`);
+}
+
 /**
- * Tap: si el rayo toca una veta, arranca a minar. Devuelve true si la consumió.
- * `examineOnly` = long-press → solo info.
+ * Tap: si el rayo toca una veta, camina hasta ella y la pica.
+ * Devuelve true si la consumió. `examineOnly` = solo info.
  */
 export function tryHandleTap(raycaster, examineOnly = false) {
-  if (!started || pickMeshes.length === 0) return false;
-  const hits = raycaster.intersectObjects(pickMeshes, false);
-  if (!hits.length) return false;
-  const id = hits[0].object.userData?.veinId;
-  const obj = id && veinObjs.get(id);
+  const obj = veinUnderRay(raycaster);
   if (!obj) return false;
-  const lvl = skills.getLevel?.('mining') ?? 1;
-  if (examineOnly) {
-    feedLog('info', `${obj.def.name} — nivel ${obj.def.level} de Minería · ${obj.def.xp} XP${obj.depleted ? ' (agotada)' : ''}`);
-    return true;
-  }
-  startMineAt(obj, lvl);
+  if (examineOnly) { examine(obj); return true; }
+  startMineAt(obj, skills.getLevel?.('mining') ?? 1);
   return true;
+}
+
+/**
+ * Pulsación larga: menú "Minar / Examinar". `openMenu(title, rows, cx, cy)`
+ * es npcRenderer.openGenericActionMenu. Devuelve true si había veta.
+ */
+export function openActionMenuAt(raycaster, cx, cy, openMenu) {
+  const obj = veinUnderRay(raycaster);
+  if (!obj) return false;
+  openMenu(obj.def.name, [
+    { label: '⛏ Minar', onPick: () => startMineAt(obj, skills.getLevel?.('mining') ?? 1) },
+    { label: '🔍 Examinar', onPick: () => examine(obj) },
+  ], cx, cy);
+  return true;
+}
+
+/** true si ya está picando (en rango, dando golpes). */
+export function isBusy() { return !!(active && active.started); }
+/** true si hay minado pendiente (caminando hacia la veta o picando). */
+export function isEngaged() { return !!active; }
+
+function walkToVein(obj) {
+  const player = getPlayer?.();
+  if (!player) return;
+  const dx = player.position.x - obj.vein.x;
+  const dz = player.position.z - obj.vein.z;
+  const d = Math.hypot(dx, dz);
+  if (d > APPROACH_DIST_M) {
+    const ux = d > 0 ? dx / d : 1, uz = d > 0 ? dz / d : 0;
+    setPlayerTargetCb(obj.vein.x + ux * APPROACH_DIST_M, obj.vein.z + uz * APPROACH_DIST_M);
+  }
 }
 
 function startMineAt(obj, lvl) {
   const player = getPlayer?.();
   if (!player) return;
+  // El personaje SIEMPRE camina hacia la veta; si no puede picarla, avisa.
+  walkToVein(obj);
   if (lvl < obj.def.level) {
     feedLog('error', `Necesitas nivel ${obj.def.level} de Minería para la ${obj.def.name.toLowerCase()}.`);
     return;
@@ -370,13 +417,6 @@ function startMineAt(obj, lvl) {
   if (!tool) {
     feedLog('error', 'Necesitas un pico. Lo venden en la tienda general.');
     return;
-  }
-  const dx = player.position.x - obj.vein.x;
-  const dz = player.position.z - obj.vein.z;
-  const d = Math.hypot(dx, dz);
-  if (d > APPROACH_DIST_M) {
-    const ux = d > 0 ? dx / d : 1, uz = d > 0 ? dz / d : 0;
-    setPlayerTargetCb(obj.vein.x + ux * APPROACH_DIST_M, obj.vein.z + uz * APPROACH_DIST_M);
   }
   if (!tool.alreadyEquipped) {
     try { getCharacter?.()?.attachToolForGather?.(tool.item_id, tool.weapon_type); } catch {}
