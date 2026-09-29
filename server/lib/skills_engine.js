@@ -61,13 +61,16 @@ export const SKILLS = [
   { id: 'ranged',      name: 'Distancia',   icon: '🏹', combat: true,  startLvl: 1  },
   { id: 'magic',       name: 'Magia',       icon: '✨', combat: true,  startLvl: 1  },
   { id: 'prayer',      name: 'Plegaria',    icon: '🙏', combat: true,  startLvl: 1  },
-  // Gathering / Craft (6)
+  // Gathering / Craft (8)
   { id: 'woodcutting', name: 'Tala',        icon: '🪓', gathering: true, startLvl: 1 },
   { id: 'fishing',     name: 'Pesca',       icon: '🎣', gathering: true, startLvl: 1 },
   { id: 'mining',      name: 'Minería',     icon: '⛏️', gathering: true, startLvl: 1 },
   { id: 'cooking',     name: 'Cocina',      icon: '🍳', gathering: true, startLvl: 1 },
   { id: 'firemaking',  name: 'Fuego',       icon: '🔥', gathering: true, startLvl: 1 },
   { id: 'smithing',    name: 'Herrería',    icon: '🔨', gathering: true, startLvl: 1 },
+  // Sesión 50
+  { id: 'fletching',   name: 'Flechería',   icon: '🏹', gathering: true, startLvl: 1 },
+  { id: 'crafting',    name: 'Artesanía',   icon: '🧵', gathering: true, startLvl: 1 },
 ];
 
 /** Mapa id → def para lookup rápido. */

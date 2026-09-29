@@ -619,3 +619,12 @@ export async function fishingFish(spotId) {
     body: { spot_id: spotId },
   });
 }
+
+// Sesión 50 — Flechería / Artesanía
+export async function craftingMake(recipeId) {
+  return apiFetch('/api/crafting/make', {
+    method: 'POST',
+    auth: true,
+    body: { recipe_id: recipeId },
+  });
+}

@@ -24,6 +24,7 @@
 
 import { EDIBLE_IDS, COOKABLE_IDS } from './shared/food.js';
 import { equipRequirement, requirementText } from './shared/equip_reqs.js';   // Sesión 50
+import { recipesUsing } from './shared/crafting.js';   // Sesión 50 — Flechería/Artesanía
 import * as api from './api.js';
 import * as equipment from './equipment.js';
 import { renderItemIcon, getItemIconHtml } from './item_icons.js';
@@ -500,6 +501,15 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
     html += `<div class="inv-context-row" data-act="cook">🍳 Cocinar</div>`;
     html += `<div class="inv-context-row" data-act="cook_all">🍳 Cocinar todo</div>`;
   }
+  // Sesión 50 — Flechería / Artesanía (tallar troncos, coser cuero...)
+  {
+    const rs = recipesUsing(item.item_id);
+    if (rs.length) {
+      const hasF = rs.some(r => r.skill === 'fletching'), hasC = rs.some(r => r.skill === 'crafting');
+      if (hasF) html += `<div class="inv-context-row" data-act="craft_f">🏹 Flechería</div>`;
+      if (hasC) html += `<div class="inv-context-row" data-act="craft_c">🧵 Artesanía</div>`;
+    }
+  }
   html += `<div class="inv-context-row" data-act="examine">🔍 Examinar</div>`;
   // Sesión 39 — Soltar (drop) el ítem al suelo. Los demás jugadores lo ven.
   html += `<div class="inv-context-row" data-act="drop">🗑 Soltar</div>`;
@@ -543,6 +553,8 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
           console.warn('[inventory] to_quiver err:', err);
           showError('No se pudo meter las flechas al carcaj.');
         }
+      } else if (act === 'craft_f' || act === 'craft_c') {
+        window.__crafting?.open?.(item.item_id, act === 'craft_f' ? 'fletching' : 'crafting');
       } else if (act === 'examine') {
         const req = equipRequirement(item);
         showError(item.name + (item.equip_slot ? ` · ${item.equip_slot}` : '') + (req ? ` · requiere ${requirementText(req)}` : '') + (item.stackable ? ` · stackable (x${item.quantity})` : ''));

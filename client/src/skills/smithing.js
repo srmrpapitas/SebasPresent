@@ -548,7 +548,7 @@ export function update(dt) {
 function escapeHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-function ensureCss() {
+export function ensureCss() {   // Sesión 50 — también la usa skills/crafting.js
   if (document.getElementById('smith-panel-css')) return;
   const style = document.createElement('style');
   style.id = 'smith-panel-css';

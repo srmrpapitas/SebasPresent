@@ -297,7 +297,32 @@ function resolveWeaponTransform(itemId, weaponType) {
  * @param {string} weaponId — item_id (ej. 'bow_oak', 'sword_bronze')
  * @returns {Promise<THREE.Object3D>}
  */
+// Sesión 50 — arcos de Flechería sin GLB propio: usan el modelo del arco
+// normal teñido del color de su madera.
+const WEAPON_MODEL_ALIAS = {
+  bow_willow: { model: 'bow_normal', tint: 0xd9c38a },
+  bow_maple:  { model: 'bow_normal', tint: 0xb8743a },
+  bow_yew:    { model: 'bow_normal', tint: 0x6e3f22 },
+  bow_magic:  { model: 'bow_normal', tint: 0x6f8fe0, glow: 0x3050c0 },
+};
+function tintWeapon(mesh, alias) {
+  mesh.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    const out = list.map(m => {
+      const c = m.clone();
+      if (c.color) c.color.multiply(new THREE.Color(alias.tint)).multiplyScalar(1.4);
+      if (alias.glow && c.emissive) { c.emissive.setHex(alias.glow); c.emissiveIntensity = 0.35; }
+      return c;
+    });
+    o.material = Array.isArray(o.material) ? out : out[0];
+  });
+  return mesh;
+}
+
 export async function loadWeaponMeshFromR2(weaponId) {
+  const alias = WEAPON_MODEL_ALIAS[weaponId];
+  if (alias) return tintWeapon(await loadWeaponMeshFromR2(alias.model), alias);
   if (_weaponMeshCache.has(weaponId)) {
     return _weaponMeshCache.get(weaponId).clone(true);
   }
@@ -935,6 +960,8 @@ export class Character {
    * cuando peers equipen las mismas armas).
    */
   async _loadWeaponMesh(weaponId) {
+    const alias = WEAPON_MODEL_ALIAS[weaponId];   // Sesión 50
+    if (alias) return tintWeapon(await this._loadWeaponMesh(alias.model), alias);
     if (_weaponMeshCache.has(weaponId)) {
       // Clone para que cada player tenga su instancia
       return _weaponMeshCache.get(weaponId).clone(true);

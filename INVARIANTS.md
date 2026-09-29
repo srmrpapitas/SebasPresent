@@ -675,3 +675,11 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 
 - `snapshot.players[].equip` = "slot:item,slot:item..." (subconsulta a user_equipment).
 - multiplayer.js: al clonar el personaje se quitan TODOS los objetos colgados de los huesos (`removeInheritedAttachments`: antes los peers heredaban la armadura del jugador local). `syncPeerArmor` monta/desmonta la armadura procedural del peer cuando cambia `equip`. El arma sigue por `weapon_item_id` (y ya soporta espadas procedurales).
+
+## 25. Flechería y Artesanía (Sesión 50)
+
+- Skills nuevas `fletching` (Flechería) y `crafting` (Artesanía) en server/lib/skills_engine.js y client/src/skills.js.
+- Recetas en `client/src/shared/crafting.js`; `POST /api/crafting/make { recipe_id }` hace una vez la receta (nivel, herramienta, materiales, cerrojo 900 ms por skill, todo en un batch). Eventos de misión 'fletch' / 'craft' con el item producido.
+- Se abre desde la mochila (menú del objeto → 🏹 Flechería / 🧵 Artesanía) → `window.__crafting.open(itemId, skill)`.
+- Armadura de cuero = material `cuero` en armor_procedural (mismas piezas, sin metal). Arcos nuevos usan el GLB de `bow_normal` teñido (`WEAPON_MODEL_ALIAS` en character.js).
+- Seed `server/seeds/006_crafting_s50.sql` (ejecutado). Misión `artesano`.

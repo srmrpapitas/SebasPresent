@@ -30,8 +30,10 @@ export const ARMOR_COLORS = {
   obsidiana: { base: 0x2a2433, trim: 0x6c5a8a, gem: 0xa36bff, metal: 0.5,  rough: 0.2 },
   basaltita: { base: 0x3a3f45, trim: 0x6c737b, gem: 0xff6a2a, metal: 0.55, rough: 0.5 },
   teiderio:  { base: 0x2f9e8f, trim: 0x7fe8d8, gem: 0x5fffe0, metal: 0.7,  rough: 0.25 },
+  // Sesión 50 — armadura de cuero (Artesanía)
+  cuero:     { base: 0x7a4a26, trim: 0x3e2412, gem: null,     metal: 0.0,  rough: 0.9 },
 };
-const TIER = { bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, basaltita: 5, teiderio: 6 };
+const TIER = { cuero: 0, bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, basaltita: 5, teiderio: 6 };
 const PROC_SLOTS = new Set(['helm', 'body', 'legs', 'boots', 'gloves', 'shield']);
 
 export function materialOf(itemId) {

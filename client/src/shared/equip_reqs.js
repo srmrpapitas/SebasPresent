@@ -20,7 +20,11 @@ const MELEE_TYPES = new Set(['1h_sword', '2h_sword']);
 
 // Items concretos sin material (o con requisito propio)
 const BY_ITEM = {
-  bow_oak: { skill: 'ranged', level: 10 },
+  bow_oak:    { skill: 'ranged', level: 10 },
+  bow_willow: { skill: 'ranged', level: 20 },   // Sesión 50 — arcos de Flechería
+  bow_maple:  { skill: 'ranged', level: 30 },
+  bow_yew:    { skill: 'ranged', level: 40 },
+  bow_magic:  { skill: 'ranged', level: 50 },
 };
 
 export function materialFromId(itemId) {

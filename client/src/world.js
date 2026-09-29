@@ -44,6 +44,7 @@ import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
 import * as woodcutting from './skills/woodcutting.js';
 import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as fishing from './skills/fishing.js'; // Sesión 50 — pesca
+import * as crafting from './skills/crafting.js'; // Sesión 50 — flechería/artesanía
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as quests from './quests.js';   // Sesión 50 — misiones
 import * as prayer from './prayer.js';   // Sesión 50 — plegaria
@@ -745,6 +746,9 @@ export async function startWorld(loggedInUser, token) {
         feedLog:         (type, msg) => combat.feedLog?.(type, msg),
       });
     } catch (e) { console.warn('[world] fishing start:', e); }
+    try {
+      crafting.start({ feedLog: (type, msg) => combat.feedLog?.(type, msg), getCharacter: () => character });
+    } catch (e) { console.warn('[world] crafting start:', e); }
     // Sesión 50 — Horno + yunque. Debug: window.__smithingDebug()
     try {
       smithing.start({
@@ -835,6 +839,7 @@ export function stopWorld() {
   try { woodcutting.stop(); } catch {}
   try { mining.stop(); } catch {}
   try { fishing.stop(); } catch {}
+  try { crafting.stop(); } catch {}
   try { smithing.stop(); } catch {}
   try { quests.stop(); } catch {}
   try { prayer.stop(); } catch {}
@@ -2581,6 +2586,7 @@ function doCanvasTap(clientX, clientY) {
   // Si el toque cae en otra veta/árbol, más abajo arranca la acción nueva.
   try { mining.stopMining?.('tap_ground'); } catch {}
   try { fishing.stopFishing?.('tap_ground'); } catch {}
+  try { crafting.stopWork?.('tap_ground'); } catch {}
   try { woodcutting.stopChop?.('tap_ground'); } catch {}
   try { smithing.stopWork?.('tap_ground'); } catch {}
   try { prayer.cancel?.(); } catch {}
@@ -2775,6 +2781,7 @@ function animate() {
   woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
   mining.update(dt);          // Sesión 50 — vetas + loop de picar
   fishing.update(dt);         // Sesión 50 — estanques + bancos + loop de pesca
+  crafting.update(dt);        // Sesión 50 — bucle de flechería/artesanía
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
   quests.update(dt);          // Sesión 50 — misiones (tracker + haz)
   prayer.update(dt);          // Sesión 50 — plegaria (HUD, altares, aura)

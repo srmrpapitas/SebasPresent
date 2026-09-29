@@ -356,6 +356,19 @@ const ICONS = {
 // un color dominante distinto para que el grid del tab Stats se vea
 // variado de un vistazo.
 const SKILL_ICONS = {
+  // Sesión 50 — Flechería: flecha con plumas sobre astil
+  fletching: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <line x1="6" y1="26" x2="24" y2="8" stroke="#8a5a2b" stroke-width="2.4" stroke-linecap="round"/>
+    <polygon points="22,5 28,4 27,10" fill="#b8b8c0" stroke="#000" stroke-width="0.8"/>
+    <polygon points="4,24 9,23 8,28" fill="#f0f0f0" stroke="#000" stroke-width="0.7"/>
+    <polygon points="6,21 11,21 9,25" fill="#e05050" stroke="#000" stroke-width="0.7"/></svg>`,
+  // Sesión 50 — Artesanía: aguja con hilo sobre cuero
+  crafting: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <path d="M5 9 Q16 4 27 9 L25 26 Q16 29 7 26 Z" fill="#8a5a30" stroke="#000" stroke-width="1"/>
+    <path d="M9 12 Q16 9 23 12" fill="none" stroke="#c89060" stroke-width="1" stroke-dasharray="2 1.5"/>
+    <line x1="8" y1="25" x2="25" y2="6" stroke="#dfe4ea" stroke-width="1.6"/>
+    <circle cx="24" cy="7" r="1.2" fill="none" stroke="#000" stroke-width="0.6"/>
+    <path d="M24 7 Q29 14 20 18 Q12 22 14 28" fill="none" stroke="#e8d070" stroke-width="1"/></svg>`,
   // Ataque — dos espadas cruzadas en X (bronce + plata)
   attack: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
     <g transform="rotate(45 16 16)">
@@ -582,6 +595,7 @@ const SKILL_ICONS = {
     obsidiana: { base: '#26222e', hi: '#6c5a8a', lo: '#0c0a10', gem: '#a36bff' },
     basaltita: { base: '#3a3f45', hi: '#6c737b', lo: '#1c1f22', gem: '#ff6a2a' },
     teiderio:  { base: '#2f9e8f', hi: '#7fe8d8', lo: '#15564d', gem: '#5fffe0' },
+    cuero:     { base: '#8a5a30', hi: '#b88050', lo: '#4a2e18', gem: '#c89060' },   // Sesión 50
   };
   const svg = (inner) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision">${inner}</svg>`;
   const S = 'stroke="#000" stroke-width="1" stroke-linejoin="round"';
@@ -652,6 +666,12 @@ const SKILL_ICONS = {
     ICONS[`sword_${m}`] = sword;
     ICONS[`sword_${m}_2h`] = sword2h;
     ICONS[`shield_${m}`] = shield;
+    // Sesión 50 — flechas por material (punta del color del metal)
+    add(`arrow_${m}`, svg(`
+      <line x1="5" y1="27" x2="23" y2="9" stroke="#8a5a2b" stroke-width="2.2" stroke-linecap="round"/>
+      <polygon points="21,6 28,4 26,11" fill="${c.hi}" ${S}/>
+      <polygon points="3,25 8,24 7,29" fill="#f0f0f0" stroke="#000" stroke-width="0.7"/>
+      <polygon points="5,22 10,22 8,26" fill="#e8e8e8" stroke="#000" stroke-width="0.7"/>`));
   }
 })();
 

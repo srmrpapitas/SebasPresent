@@ -42,6 +42,8 @@ export const SKILL_DEFS = [
   { id: 'cooking',     name: 'Cocina',    icon: '🍳', gathering: true, startLvl: 1  },
   { id: 'firemaking',  name: 'Fuego',     icon: '🔥', gathering: true, startLvl: 1  },
   { id: 'smithing',    name: 'Herrería',  icon: '🔨', gathering: true, startLvl: 1  },
+  { id: 'fletching',   name: 'Flechería', icon: '🏹', gathering: true, startLvl: 1  },   // Sesión 50
+  { id: 'crafting',    name: 'Artesanía', icon: '🧵', gathering: true, startLvl: 1  },   // Sesión 50
 ];
 
 export const SKILL_DEFS_BY_ID = Object.fromEntries(SKILL_DEFS.map(s => [s.id, s]));

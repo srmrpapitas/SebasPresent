@@ -19,7 +19,8 @@ import { getItemIconHtml, getSkillIconHtml } from './item_icons.js';
 import { ORE_TIERS } from './shared/ore_veins.js';
 import { SMELT, MATERIALS, MATERIAL_NAMES } from './shared/smithing.js';
 import { FISH, SPOT_TYPES } from './shared/fishing.js';   // Sesión 50
-import { EQUIP_LEVEL } from './shared/equip_reqs.js';     // Sesión 50
+import { EQUIP_LEVEL, equipRequirement } from './shared/equip_reqs.js';     // Sesión 50
+import { RECIPES } from './shared/crafting.js';           // Sesión 50
 import { PRAYERS } from './shared/prayer.js';
 
 const ROWS_PER_PAGE = 7;
@@ -68,6 +69,8 @@ const DESCRIPTIONS = {
   mining:      'Pica vetas de mineral con un pico. Las vetas brillan con el color de su mineral y salen en el minimapa. Cuando una veta se agota, reaparece al rato.',
   cooking:     'Cocina carne y pescado crudos sobre un fuego encendido. A más nivel, menos probabilidad de quemarla.',
   firemaking:  'Enciende fuegos con un yesquero y troncos. Los fuegos duran 5 minutos y sirven para cocinar.',
+  fletching:   'Con un <strong>cuchillo</strong> talla troncos en astiles y arcos. Junta 15 astiles con 15 plumas y ponles punta con un lingote para hacer flechas. Los arcos necesitan una cuerda (Artesanía). Se abre desde la mochila: toca unos troncos → <strong>🏹 Flechería</strong>.',
+  crafting:    'Curte las pieles de vaca para sacar cuero y cóselo con <strong>aguja</strong> e <strong>hilo</strong> para hacer armadura de cuero (buena para Distancia), cuerdas de arco y carcajes. Toca el cuero en la mochila → <strong>🧵 Artesanía</strong>. Aguja, hilo y cuchillo están en la tienda general.',
   smithing:    'Funde mineral en el <strong>horno</strong> para obtener lingotes, y forja armaduras en el <strong>yunque</strong>. Hay horno y yunque junto a la Cantera del Concejo (al noreste del spawn) y en la Mina Antigua.',
 };
 
@@ -246,8 +249,27 @@ async function buildUnlocks(skillId, lvl) {
         });
         return unlockPages('Armas', rows, lvl);
       }
+    case 'fletching':
+    case 'crafting': {
+      const groups = {};
+      for (const r of RECIPES.filter(x => x.skill === skillId)) (groups[r.group] ||= []).push(r);
+      const pages = [];
+      for (const [g, rs] of Object.entries(groups)) {
+        pages.push(...unlockPages(g, rs.map(r => ({
+          level: r.level, name: r.name, detail: `${r.xp} XP · ${r.in.map(([id, q]) => `${q} ${id.replace(/_/g, ' ')}`).join(' + ')}`,
+          icon: icon(r.out[0], '🛠'),
+        })), lvl));
+      }
+      return pages;
+    }
     case 'ranged':
       return unlockPages('Equipo', [
+        ...['bow_oak', 'bow_willow', 'bow_maple', 'bow_yew', 'bow_magic'].map((id, i) => ({
+          level: equipRequirement({ id, equip_slot: 'weapon', weapon_type: 'bow' })?.level || 1,
+          name: ['Arco de roble', 'Arco de sauce', 'Arco de arce', 'Arco de tejo', 'Arco mágico'][i],
+          detail: `+${[7, 12, 18, 26, 35][i]} distancia · se fabrica con Flechería`, icon: icon(id, '🏹'),
+        })),
+        { level: 1, name: 'Armadura de cuero', detail: 'Artesanía · algo de defensa y +distancia', icon: icon('body_cuero', '🛡') },
         { level: 1, name: 'Arco normal', detail: 'Dos manos · alcance ~10 m', icon: icon('bow_normal', '🏹') },
         { level: 1, name: 'Flecha de bronce', detail: 'Munición', icon: icon('arrow_bronze', '➳') },
         { level: 1, name: 'Carcaj de bronce', detail: 'Guarda flechas · conserva el 75 %', icon: icon('quiver_bronze', '🎯') },

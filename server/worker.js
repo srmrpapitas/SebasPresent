@@ -27,6 +27,7 @@
  *   POST /api/firemaking/light                                  → handlers/skills/firemaking.js (S30, movido S32)
  *   POST /api/mining/mine                                       → handlers/skills/mining.js (S50)
  *   POST /api/fishing/fish                                      → handlers/skills/fishing.js (S50)
+ *   POST /api/crafting/make                                     → handlers/skills/crafting.js (S50)
  *   GET  /api/smithing/recipes, POST /smelt /smith              → handlers/skills/smithing.js (S50)
  *   GET  /api/health
  *
@@ -59,6 +60,7 @@ import * as firemaking from './handlers/skills/firemaking.js';    // Sesión 30 
 import * as cooking from './handlers/skills/cooking.js';          // Sesión 48 — comer + cocinar
 import * as mining from './handlers/skills/mining.js';            // Sesión 50 — minería
 import * as fishing from './handlers/skills/fishing.js';          // Sesión 50 — pesca
+import * as crafting from './handlers/skills/crafting.js';        // Sesión 50 — flechería/artesanía
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
@@ -248,6 +250,8 @@ export default {
         response = await mining.handleMiningMine(request, env);
       } else if (path === '/api/fishing/fish' && method === 'POST') {
         response = await fishing.handleFishingFish(request, env);
+      } else if (path === '/api/crafting/make' && method === 'POST') {
+        response = await crafting.handleCraftingMake(request, env);
       } else if (path === '/api/smithing/recipes' && method === 'GET') {
         response = await smithing.handleSmithingRecipes(request, env);
       } else if (path === '/api/smithing/smelt' && method === 'POST') {

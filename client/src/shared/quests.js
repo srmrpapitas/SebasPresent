@@ -7,7 +7,7 @@
  * equipar). El cliente solo muestra el paso actual y dónde ir.
  *
  * Paso:
- *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip' | 'fish' | 'bury' | 'altar'
+ *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip' | 'fish' | 'bury' | 'altar' | 'fletch' | 'craft'
  *   match:  (opcional) lo que tiene que coincidir: item, npc def, mineral...
  *   count:  cuántas veces
  *   give:   herramientas que se entregan al empezar el paso SI no las tienes
@@ -76,8 +76,38 @@ export const QUESTS = {
     ],
     reward: { coins: 50, items: [['fishing_rod', 1], ['feather', 50]], text: '50 monedas, una caña de pescar y 50 plumas (cebo)' },
   },
+
+  // Sesión 50 — Flechería + Artesanía
+  artesano: {
+    id: 'artesano',
+    name: 'Manos de artesano',
+    summary: 'Aprende a tallar madera y a trabajar el cuero. Con esto podrás hacer tus propias flechas, arcos y armadura de cuero.',
+    steps: [
+      { id: 'shafts', event: 'fletch', match: 'arrow_shaft', count: 1, give: ['knife'],
+        text: 'Talla astiles con unos troncos.',
+        tip: 'En la mochila, toca unos troncos → "🏹 Flechería" → 15 astiles.',
+        reward: { coins: 10, items: [['feather', 15]] } },
+      { id: 'cow', event: 'kill', match: 'cow', count: 1, hint: { npc: 'cow' },
+        text: 'Mata una vaca para conseguir su piel.',
+        tip: 'Las vacas sueltan siempre piel de vaca.',
+        reward: { coins: 10 } },
+      { id: 'tan', event: 'craft', match: 'leather', count: 1,
+        text: 'Curte la piel de vaca.',
+        tip: 'Toca la piel de vaca en la mochila → "🧵 Artesanía" → Curtir.',
+        reward: { coins: 10 } },
+      { id: 'gloves', event: 'craft', match: 'gloves_cuero', count: 1, give: ['needle', 'thread'],
+        text: 'Cose unos guantes de cuero.',
+        tip: 'Toca el cuero → "🧵 Artesanía" → Guantes de cuero (aguja + hilo).',
+        reward: { coins: 15 } },
+      { id: 'equip', event: 'equip', match: 'gloves_cuero', count: 1,
+        text: 'Ponte los guantes de cuero.',
+        tip: 'En la mochila, toca los guantes → "Equipar".',
+        reward: { coins: 0 } },
+    ],
+    reward: { coins: 100, items: [['arrow_bronze', 50], ['thread', 20]], text: '100 monedas, 50 flechas de bronce y 20 de hilo' },
+  },
 };
 
-export const QUEST_ORDER = ['tutorial', 'pescador'];
+export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano'];
 
 export function getQuest(id) { return QUESTS[id] || null; }
