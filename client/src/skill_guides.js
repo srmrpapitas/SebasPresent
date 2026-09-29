@@ -19,6 +19,7 @@ import { getItemIconHtml, getSkillIconHtml } from './item_icons.js';
 import { ORE_TIERS } from './shared/ore_veins.js';
 import { SMELT, MATERIALS, MATERIAL_NAMES } from './shared/smithing.js';
 import { FISH, SPOT_TYPES } from './shared/fishing.js';   // Sesión 50
+import { EQUIP_LEVEL } from './shared/equip_reqs.js';     // Sesión 50
 import { PRAYERS } from './shared/prayer.js';
 
 const ROWS_PER_PAGE = 7;
@@ -223,12 +224,12 @@ async function buildUnlocks(skillId, lvl) {
     }
     case 'defence': {
       const sets = MATERIALS.map((m, i) => ({
-        level: 1, name: `Armadura de ${MATERIAL_NAMES[m]}`,
+        level: EQUIP_LEVEL[m], name: `Armadura de ${MATERIAL_NAMES[m]}`,
         detail: `Se forja con Herrería nv ${SMELT[m].level}`, icon: icon(m === 'bronze' ? 'chest_bronze' : `body_${m}`, '🛡'),
       }));
       const DEF = [3, 6, 9, 12, 15, 18, 21];
       const shields = MATERIALS.map((m, i) => ({
-        level: 1, name: `Escudo de ${MATERIAL_NAMES[m]}`,
+        level: EQUIP_LEVEL[m], name: `Escudo de ${MATERIAL_NAMES[m]}`,
         detail: `+${DEF[i]} defensa · Herrería ${SMELT[m].level + 2} (2 lingotes)`, icon: icon(`shield_${m}`, '🛡'),
       }));
       return [...unlockPages('Armaduras', sets, lvl), ...unlockPages('Escudos', shields, lvl)];
@@ -240,8 +241,8 @@ async function buildUnlocks(skillId, lvl) {
         const rows = [];
         MATERIALS.forEach((m, i) => {
           const n = MATERIAL_NAMES[m];
-          rows.push({ level: 1, name: `Espada de ${n}`, detail: `+${A1[i]} ataque · una mano · Herrería ${SMELT[m].level}`, icon: icon(`sword_${m}`, '⚔️') });
-          rows.push({ level: 1, name: `Espadón de ${n}`, detail: `+${A2[i]} ataque · dos manos · ×1,5 daño, 25 % crítico · Herrería ${SMELT[m].level + 4}`, icon: icon(`sword_${m}_2h`, '⚔') });
+          rows.push({ level: EQUIP_LEVEL[m], name: `Espada de ${n}`, detail: `+${A1[i]} ataque · una mano · Herrería ${SMELT[m].level}`, icon: icon(`sword_${m}`, '⚔️') });
+          rows.push({ level: EQUIP_LEVEL[m], name: `Espadón de ${n}`, detail: `+${A2[i]} ataque · dos manos · ×1,5 daño, 25 % crítico · Herrería ${SMELT[m].level + 4}`, icon: icon(`sword_${m}_2h`, '⚔') });
         });
         return unlockPages('Armas', rows, lvl);
       }

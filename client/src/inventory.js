@@ -23,6 +23,7 @@
  */
 
 import { EDIBLE_IDS, COOKABLE_IDS } from './shared/food.js';
+import { equipRequirement, requirementText } from './shared/equip_reqs.js';   // Sesión 50
 import * as api from './api.js';
 import * as equipment from './equipment.js';
 import { renderItemIcon, getItemIconHtml } from './item_icons.js';
@@ -543,7 +544,8 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
           showError('No se pudo meter las flechas al carcaj.');
         }
       } else if (act === 'examine') {
-        showError(item.name + (item.equip_slot ? ` · ${item.equip_slot}` : '') + (item.stackable ? ` · stackable (x${item.quantity})` : ''));
+        const req = equipRequirement(item);
+        showError(item.name + (item.equip_slot ? ` · ${item.equip_slot}` : '') + (req ? ` · requiere ${requirementText(req)}` : '') + (item.stackable ? ` · stackable (x${item.quantity})` : ''));
       } else if (act === 'light_fire') {
         // Sesión 30 — Encender fuego desde un log
         try {

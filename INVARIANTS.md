@@ -664,3 +664,9 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Ajuste in-game sin tocar código: `window.__procArmorTune = { helm: { y: 0.05, z: 0, s: 1.1 } }` y re-equipar.
 - Espadas (`1h_sword`/`2h_sword`) y escudos de los 7 materiales también son procedurales: `isProceduralWeapon` / `buildProceduralWeapon` (mano derecha, agarre calculado con los nudillos índice–meñique; peers vía `attachWeaponMeshToBone`) y el escudo en el antebrazo izquierdo (slot shield). Ya no se usan los GLB `sword_bronze`, `sword_bronze_2h`, `shield_bronze`. Ajuste: `__procArmorTune.sword / sword2h / shield`.
 - Items: `server/seeds/005_weapons_s50.sql` (ids `sword_<m>`, `sword_<m>_2h`, `shield_<m>`; forja 1/3/2 lingotes a nivel base / +4 / +2). Ejecutado en producción.
+
+## 23. Requisitos para equipar (Sesión 50)
+
+- `client/src/shared/equip_reqs.js` (compartido). Nivel por material: bronce 1, hierro 5, acero 10, oro 20, obsidiana 30, basaltita 40, teiderio 60.
+- Espadas/espadones → Ataque. Yelmo/pechera/grebas/botas/guantes/escudo → Defensa. `bow_oak` → Distancia 10 (tabla `BY_ITEM`).
+- El server lo valida en `POST /api/equipment/equip` (`level_too_low`, lee `combat_stats.<skill>_xp`). Lo ya equipado no se quita.

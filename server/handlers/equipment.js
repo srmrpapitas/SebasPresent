@@ -36,6 +36,8 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { questEvent } from '../lib/quests.js';   // Sesión 50
+import { xpToLevel } from '../lib/skills_engine.js';
+import { equipRequirement, requirementText } from '../../client/src/shared/equip_reqs.js';   // Sesión 50
 
 const INVENTORY_SLOTS = 20;
 // Sesión 34 — Agregado slot 'quiver' (Bloque 2). Container especial para
@@ -103,7 +105,7 @@ export async function handleEquip(request, env) {
 
   // 1. Leer item del inventario en ese slot (incluyendo weapon_type para la lógica 2H)
   const invItem = await env.DB.prepare(
-    `SELECT inv.item_id, inv.quantity, i.equip_slot, i.weapon_type, i.name
+    `SELECT inv.item_id, inv.quantity, i.equip_slot, i.weapon_type, i.name, i.material
      FROM user_inventory inv
      JOIN items i ON i.id = inv.item_id
      WHERE inv.user_id = ? AND inv.slot_index = ?`
@@ -115,6 +117,21 @@ export async function handleEquip(request, env) {
   }
   if (!VALID_EQUIP_SLOTS.includes(invItem.equip_slot)) {
     return json({ error: 'invalid_equip_slot' }, 500);
+  }
+
+  // Sesión 50 — requisito de nivel (Ataque para espadas, Defensa para armadura)
+  const req = equipRequirement(invItem);
+  if (req) {
+    const col = { attack: 'attack_xp', defence: 'defence_xp', ranged: 'ranged_xp', magic: 'magic_xp' }[req.skill];
+    const st = col ? await env.DB.prepare(`SELECT ${col} AS xp FROM combat_stats WHERE user_id = ?`).bind(session.user_id).first() : null;
+    const have = xpToLevel(st?.xp || 0);
+    if (have < req.level) {
+      return json({
+        error: 'level_too_low',
+        message: `Necesitas ${requirementText(req)} para equipar ${invItem.name} (tienes ${have}).`,
+        skill: req.skill, required_level: req.level, current_level: have,
+      }, 400);
+    }
   }
 
   const targetSlot = invItem.equip_slot;
