@@ -50,6 +50,7 @@ import * as sceneSetup    from './core/scene.js';
 import * as cameraOrbital from './core/camera.js';
 import * as combatHooks   from './core/combat_hooks.js';
 import { getSkillIconHtml } from './item_icons.js';
+import { openSkillGuide } from './skill_guides.js';   // Sesión 50 — libro por skill
 import {
   PALETTE, PLACES, BIOMES,
   WORLD_HALF, WILDERNESS_X, FOG_NEAR, FOG_FAR,
@@ -1937,7 +1938,8 @@ function renderSkillsPanel(pane) {
       if (ev.button !== undefined && ev.button !== 0) return;
       ev.preventDefault();
       ev.stopPropagation();
-      showSkillTooltip(slot.dataset.skillId, ev.clientX, ev.clientY);
+      // Sesión 50 — abrir el libro de la skill (qué desbloqueas y a qué nivel).
+      openSkillGuide(slot.dataset.skillId).catch?.(() => showSkillTooltip(slot.dataset.skillId, ev.clientX, ev.clientY));
     });
   });
 }
