@@ -3,7 +3,6 @@
  *
  * Endpoints:
  *   GET  /api/skills            → todos los skills del player
- *   POST /api/skills/grant      → suma XP a un skill (server-validated)
  *
  * Patrón sigue handlers/bank.js: requireSession, batch updates, json().
  *
@@ -23,7 +22,6 @@ import {
   totalLevel, combatLevel, MAX_XP,
 } from '../lib/skills_engine.js';
 
-const MAX_DELTA_PER_GRANT = 10000;
 
 /**
  * Devuelve el estado completo de skills del player. Si el player aún
@@ -80,66 +78,9 @@ export async function handleGetSkills(request, env) {
   });
 }
 
-/**
- * Suma XP a un skill. Body: { skill_id: string, xp: number }.
- * Validaciones:
- *   - skill_id existe en SKILLS
- *   - xp es entero positivo ≤ MAX_DELTA_PER_GRANT
- *   - el row de user_skills existe (sino lo crea)
- *
- * Respuesta: { ok, skill_id, xp, level, level_up, levels_gained, prev_level }
- */
-export async function handleGrantXp(request, env) {
-  const session = await requireSession(request, env);
-  if (!session) return json({ error: 'unauthorized' }, 401);
-
-  const body = await readJson(request);
-  if (!body) return json({ error: 'bad_request' }, 400);
-
-  const skillId = body.skill_id;
-  const delta = body.xp;
-
-  if (typeof skillId !== 'string' || !SKILLS_BY_ID[skillId]) {
-    return json({ error: 'invalid_skill', message: `skill_id desconocido: ${skillId}` }, 400);
-  }
-  if (!Number.isInteger(delta) || delta < 1 || delta > MAX_DELTA_PER_GRANT) {
-    return json({
-      error: 'invalid_xp',
-      message: `xp debe ser entero entre 1 y ${MAX_DELTA_PER_GRANT}.`,
-    }, 400);
-  }
-
-  const userId = session.user_id;
-  const now = Date.now();
-
-  const row = await env.DB.prepare(
-    'SELECT xp FROM user_skills WHERE user_id = ? AND skill_id = ?'
-  ).bind(userId, skillId).first();
-
-  const currentXp = row ? row.xp : startingXpFor(skillId);
-  const prevLevel = xpToLevel(currentXp);
-  const result = applyXpGrant(currentXp, delta);
-
-  if (row) {
-    await env.DB.prepare(
-      'UPDATE user_skills SET xp = ?, updated_at = ? WHERE user_id = ? AND skill_id = ?'
-    ).bind(result.newXp, now, userId, skillId).run();
-  } else {
-    await env.DB.prepare(
-      'INSERT INTO user_skills (user_id, skill_id, xp, updated_at) VALUES (?, ?, ?, ?)'
-    ).bind(userId, skillId, result.newXp, now).run();
-  }
-
-  return json({
-    ok: true,
-    skill_id: skillId,
-    xp: result.newXp,
-    level: result.newLevel,
-    prev_level: prevLevel,
-    level_up: result.levelUp,
-    levels_gained: result.levelsGained,
-  });
-}
+// Sesión 50 — Eliminado POST /api/skills/grant. Permitía a cualquier jugador
+// sumarse 10.000 XP por llamada a cualquier skill (el cliente no lo usaba).
+// La XP solo la otorgan los handlers de cada skill/combate, con valores fijos.
 
 /**
  * Inicializa los 13 skills de un usuario nuevo. Llamado desde handleRegister.

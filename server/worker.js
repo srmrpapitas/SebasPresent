@@ -18,7 +18,7 @@
  *   GET  /api/world/snapshot                                    → handlers/snapshot.js (Sesión 27)
  *   POST /api/magic/home_teleport (+ /cancel /finish)           → handlers/home_teleport.js
  *   GET  /api/ground_items, POST /pickup                        → handlers/ground_items.js
- *   GET  /api/skills, POST /api/skills/grant                    → handlers/skills.js   (Sesión 14)
+ *   GET  /api/skills, GET /api/skills/highscores               → handlers/skills.js   (Sesión 14)
  *   GET  /api/equipment, POST /equip /unequip                   → handlers/equipment.js (Sesión 22)
  *   GET  /api/party/state, POST /invite /accept /decline /leave /kick → handlers/party.js (S27)
  *   GET  /api/duel/state,  POST /challenge /accept /decline /cancel /leave → handlers/duel.js (S28)
@@ -198,8 +198,6 @@ export default {
         response = await skills.handleGetSkills(request, env);
       } else if (path === '/api/skills/highscores' && method === 'GET') {
         response = await skills.handleHighscores(request, env);
-      } else if (path === '/api/skills/grant' && method === 'POST') {
-        response = await skills.handleGrantXp(request, env);
 
       // ----- Equipment (Sesión 22) -----
       } else if (path === '/api/equipment' && method === 'GET') {
