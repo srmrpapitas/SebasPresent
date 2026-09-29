@@ -120,7 +120,9 @@ export async function handleWorldSnapshot(request, env) {
                 c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit, c.skulled_until,
                 pm.party_id,
                 ueq.item_id AS weapon_item_id,
-                wi.weapon_type AS weapon_type
+                wi.weapon_type AS weapon_type,
+                (SELECT group_concat(e2.slot_id || ':' || e2.item_id, ',')
+                   FROM user_equipment e2 WHERE e2.user_id = o.user_id) AS equip
          FROM online_users o
          LEFT JOIN combat_stats c ON c.user_id = o.user_id
          LEFT JOIN party_members pm ON pm.user_id = o.user_id
@@ -143,7 +145,9 @@ export async function handleWorldSnapshot(request, env) {
                 c.last_attack_at,
                 c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit, c.skulled_until,
                 ueq.item_id AS weapon_item_id,
-                wi.weapon_type AS weapon_type
+                wi.weapon_type AS weapon_type,
+                (SELECT group_concat(e2.slot_id || ':' || e2.item_id, ',')
+                   FROM user_equipment e2 WHERE e2.user_id = o.user_id) AS equip
          FROM online_users o
          LEFT JOIN combat_stats c ON c.user_id = o.user_id
          LEFT JOIN user_equipment ueq ON ueq.user_id = o.user_id AND ueq.slot_id = 'weapon'
@@ -206,6 +210,9 @@ export async function handleWorldSnapshot(request, env) {
           // Si no tiene nada equipado, ambos NULL → cliente lo renderiza unarmed.
           weapon_item_id: r.weapon_item_id || null,
           weapon_type:    r.weapon_type    || null,
+          // Sesión 50 — todo el equipo ("helm:helm_oro,body:body_oro,...")
+          // para que los demás vean la armadura en directo.
+          equip: r.equip || '',
           // Sesión 34 — B-001b extra: cuando un peer recibe damage, el cliente
           // dispara un hitsplat numeric sobre su cabeza. Se detecta por cambio
           // en last_hit_at (igual patrón que last_attack_at de S32).

@@ -670,3 +670,8 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - `client/src/shared/equip_reqs.js` (compartido). Nivel por material: bronce 1, hierro 5, acero 10, oro 20, obsidiana 30, basaltita 40, teiderio 60.
 - Espadas/espadones → Ataque. Yelmo/pechera/grebas/botas/guantes/escudo → Defensa. `bow_oak` → Distancia 10 (tabla `BY_ITEM`).
 - El server lo valida en `POST /api/equipment/equip` (`level_too_low`, lee `combat_stats.<skill>_xp`). Lo ya equipado no se quita.
+
+## 24. Equipo de otros jugadores en directo (Sesión 50)
+
+- `snapshot.players[].equip` = "slot:item,slot:item..." (subconsulta a user_equipment).
+- multiplayer.js: al clonar el personaje se quitan TODOS los objetos colgados de los huesos (`removeInheritedAttachments`: antes los peers heredaban la armadura del jugador local). `syncPeerArmor` monta/desmonta la armadura procedural del peer cuando cambia `equip`. El arma sigue por `weapon_item_id` (y ya soporta espadas procedurales).

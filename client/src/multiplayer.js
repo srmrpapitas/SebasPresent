@@ -49,6 +49,7 @@ import * as equipment from './equipment.js';  // Sesión 37 — engage range din
 // Sesión 34 — B-001b: peers ven el arma REAL que tiene cada uno equipada,
 // no la del local player heredada por SkeletonUtils.clone.
 import { attachWeaponMeshToBone, resolveWeaponHand } from './character.js';
+import { isProceduralArmor, buildProceduralArmor } from './armor_procedural.js';   // Sesión 50 — armadura de los peers
 
 // ============================================================
 // Constantes
@@ -779,6 +780,12 @@ function upsertPeer(p) {
     peer._peerWeaponItemId = p.weapon_item_id || null;
   }
 
+  // Sesión 50 — armadura del peer en directo (snapshot.players[].equip)
+  if (peer.meshRoot && typeof p.equip === 'string' && p.equip !== peer._equipStr) {
+    peer._equipStr = p.equip;
+    syncPeerArmor(peer, p.equip);
+  }
+
   // Nueva interpolación: from = posición visual actual, to = la del server
   peer.fromX = peer.group.position.x;
   peer.fromZ = peer.group.position.z;
@@ -950,6 +957,49 @@ function cleanupInheritedWeapons(clonedMesh) {
   return { left: leftHand, right: rightHand };
 }
 
+// ============================================================
+// Sesión 50 — Armadura de los peers
+// ============================================================
+const PEER_ARMOR_SLOTS = ['helm', 'body', 'legs', 'boots', 'gloves', 'shield'];
+
+/** Quita todo lo que cuelga de los huesos del clone que no sea hueso/malla del personaje. */
+function removeInheritedAttachments(root) {
+  const isRigNode = (o) => o.isBone || o.isSkinnedMesh || /^mixamorig/i.test(o.name || '');
+  const toRemove = [];
+  root.traverse(o => {
+    if (!isRigNode(o) || o.isSkinnedMesh) return;
+    for (const c of o.children) if (!isRigNode(c)) toRemove.push([o, c]);
+  });
+  for (const [parent, c] of toRemove) parent.remove(c);
+}
+
+/** equipStr = "helm:helm_oro,body:body_oro,..." */
+function syncPeerArmor(peer, equipStr) {
+  const want = {};
+  for (const pair of equipStr.split(',')) {
+    const i = pair.indexOf(':');
+    if (i > 0) want[pair.slice(0, i)] = pair.slice(i + 1);
+  }
+  for (const slot of PEER_ARMOR_SLOTS) {
+    const cur = peer._armorParts[slot];
+    const itemId = want[slot] || null;
+    if (cur && cur.itemId === itemId) continue;
+    if (cur) {
+      for (const pt of cur.parts) pt.bone.remove(pt.mesh);
+      delete peer._armorParts[slot];
+    }
+    if (!itemId || !isProceduralArmor(itemId, slot)) continue;
+    try {
+      const parts = buildProceduralArmor(itemId, slot, peer.meshRoot);
+      if (!parts) continue;
+      for (const pt of parts) pt.bone.add(pt.mesh);
+      peer._armorParts[slot] = { itemId, parts };
+    } catch (err) {
+      console.warn(`[multiplayer] armadura peer ${peer.userId} ${slot}:`, err.message);
+    }
+  }
+}
+
 /**
  * Si el peer tiene weapon equipada (según snapshot), carga su GLB real y la
  * attachea al hand bone correcto. Side effect: guarda peer._peerWeaponMesh
@@ -1004,6 +1054,7 @@ function createPeer(p) {
   // S34 — cache de los hand bones del clone para attachear armas reales
   // y para swaps posteriores (cuando el peer cambia de arma en runtime).
   let peerHandBonesCache = null;
+  let peerRoot = null;   // Sesión 50 — FBX clonado (para colgar la armadura)
 
   // Slice 5c.5 — Nico clonado: si el character principal está cargado,
   // clonamos su skeleton/mesh con SkeletonUtils para que cada peer se vea
@@ -1045,6 +1096,10 @@ function createPeer(p) {
         const handBones = cleanupInheritedWeapons(clonedMesh);
         // Cache de handBones en el peer para futuros swaps (sin re-traverse).
         peerHandBonesCache = handBones;
+        // Sesión 50 — el clone también copió la ARMADURA del jugador local
+        // (colgada de cabeza, columna, piernas...). Fuera: cada peer lleva la suya.
+        removeInheritedAttachments(clonedMesh);
+        peerRoot = clonedMesh;
       } catch (err) {
         console.warn('[multiplayer] cleanupInheritedWeapons failed:', err.message);
       }
@@ -1144,6 +1199,9 @@ function createPeer(p) {
     username: p.username,
     userId:  p.user_id,                   // S34 — útil para logs / detach
     handBones: peerHandBonesCache,        // S34 — para swap de weapon en runtime
+    meshRoot: peerRoot,                   // S50 — para la armadura
+    _equipStr: null,
+    _armorParts: {},
     // HP por defecto al 100% hasta que el server lo mande.
     hp:    typeof p.hp_current === 'number' ? p.hp_current : 10,
     hpMax: typeof p.hp_max     === 'number' ? p.hp_max     : 10,
