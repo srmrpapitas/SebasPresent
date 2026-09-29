@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { isProceduralArmor, buildProceduralArmor, materialOf, tintArmorMesh } from './armor_procedural.js';   // Sesión 50
 
 const CDN_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const ANIM_BASE = `${CDN_BASE}/animations`;
@@ -952,6 +953,26 @@ export class Character {
    */
   async attachArmor(itemId, slotId) {
     if (!this.loaded) return;
+    // Sesión 50 — equipment.onChange re-aplica TODOS los slots en cada cambio:
+    // si la pieza ya está puesta, no la reconstruimos.
+    if (itemId && this._equippedArmor[slotId]?.itemId === itemId) return;
+    // Si ya hay armor en ese slot, quitarlo primero
+    if (this._equippedArmor[slotId]) {
+      this.detachArmor(slotId);
+    }
+    if (!itemId) return;
+
+    // Sesión 50 — yelmo/grebas/botas/guanteletes de los 7 materiales: se
+    // generan (armor_procedural.js), no hay GLB en R2.
+    if (isProceduralArmor(itemId, slotId)) {
+      const parts = buildProceduralArmor(itemId, slotId, this.mesh);
+      if (!parts) { console.warn(`[character] armor procedural sin huesos: ${itemId}`); return; }
+      for (const p of parts) p.bone.add(p.mesh);
+      this._equippedArmor[slotId] = { parts, itemId };
+      window.__character = this;
+      return;
+    }
+
     const tf = ARMOR_TRANSFORMS[slotId];
     if (!tf) {
       console.warn(`[character] attachArmor: slot desconocido '${slotId}'`);
@@ -962,14 +983,15 @@ export class Character {
       console.warn(`[character] attachArmor: no hay bone para slot '${slotId}'`);
       return;
     }
-    // Si ya hay armor en ese slot, quitarlo primero
-    if (this._equippedArmor[slotId]) {
-      this.detachArmor(slotId);
-    }
-    if (!itemId) return;
 
     try {
-      const mesh = await this._loadArmorMesh(itemId);
+      // Sesión 50 — pecheras de otros materiales: reusar el GLB de la de
+      // bronce pintado del color del material.
+      let mesh;
+      const mat = slotId === 'body' ? materialOf(itemId) : null;
+      if (mat && mat !== 'bronze') mesh = tintArmorMesh(await this._loadArmorMesh('chest_bronze'), mat);
+      else mesh = await this._loadArmorMesh(itemId);
+      if (this._equippedArmor[slotId]) this.detachArmor(slotId);   // carrera: otro equip mientras cargaba
       mesh.scale.setScalar(tf.scale);
       mesh.position.set(tf.position[0], tf.position[1], tf.position[2]);
       mesh.rotation.set(tf.rotation[0], tf.rotation[1], tf.rotation[2]);
@@ -988,6 +1010,7 @@ export class Character {
     const cur = this._equippedArmor[slotId];
     if (!cur) return;
     if (cur.bone && cur.mesh) cur.bone.remove(cur.mesh);
+    if (cur.parts) for (const p of cur.parts) p.bone.remove(p.mesh);   // Sesión 50
     delete this._equippedArmor[slotId];
   }
 

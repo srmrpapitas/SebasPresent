@@ -654,3 +654,11 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Las vetas no aparecen dentro de los estanques (`NO_VEIN_ZONES` incluye `PONDS`) y no crecen árboles (keepouts). El jugador no puede pisar el agua de un estanque (fishing.update lo empuja a la orilla).
 - Misión `pescador` ("Anzuelo y sedal") va en paralelo al tutorial; el rastreador la muestra al terminar/saltar el tutorial.
 - Seed: `server/seeds/004_fishing_s50.sql` (ya ejecutado en producción).
+
+## 22. Armaduras procedurales (Sesión 50)
+
+- `client/src/armor_procedural.js`: yelmo, grebas, botas y guanteletes de los 7 materiales se GENERAN (no hay GLB en R2). Pecheras de otros materiales = GLB `chest_bronze` pintado (`tintArmorMesh`).
+- Se ajustan a la malla del personaje: vértices que mueve cada hueso en pose de reposo (`boneInverses`) → caja → tamaño de la pieza. "Delante" = (LeftUpLeg − RightUpLeg) × (Head − Hips). No depende de la escala ni del eje del FBX.
+- `character.attachArmor` desvía a lo procedural cuando `isProceduralArmor(itemId, slot)`; guarda `{ parts: [{bone, mesh}] }` y `detachArmor` los quita.
+- world.js `ARMOR_SLOTS` incluye legs/boots/gloves.
+- Ajuste in-game sin tocar código: `window.__procArmorTune = { helm: { y: 0.05, z: 0, s: 1.1 } }` y re-equipar.
