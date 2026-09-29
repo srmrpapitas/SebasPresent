@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS combat_stats (
   prayer_points REAL,                                  -- S50 (migración 003)
   prayer_updated_at INTEGER NOT NULL DEFAULT 0,
   active_prayers TEXT NOT NULL DEFAULT '',
+  skulled_until INTEGER NOT NULL DEFAULT 0,          -- S50 calavera (migración 004)
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_combat_stats_last_hit_at ON combat_stats(last_hit_at);

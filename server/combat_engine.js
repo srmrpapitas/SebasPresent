@@ -202,6 +202,13 @@ const PVP_DEATH_KEEP_TOP_N = 3;
 // tabla no existe, fallback al comportamiento S27 = bloqueo total).
 const WILDERNESS_X_BORDER = -1024;
 
+// Sesión 50 — CALAVERA (skull) estilo OSRS. Atacar a otro jugador en la
+// wilderness (sin que él te haya atacado antes) te marca 20 min. Si mueres
+// con calavera pierdes TODO (mochila + equipo), también contra monstruos.
+const SKULL_DURATION_MS = 20 * 60 * 1000;
+const SKULL_RETALIATE_WINDOW_MS = 20 * 60 * 1000;
+function isSkulled(stats, now) { return (stats?.skulled_until || 0) > now; }
+
 // Sesión 26 — HP regen pasiva
 //   - HP_REGEN_INTERVAL_MS: cada cuánto se gana 1 HP cuando está fuera de combate
 //   - HP_REGEN_COMBAT_LOCKOUT_MS: tras un ataque, el contador NO empieza
@@ -1191,13 +1198,19 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
         // Dropear inventario excedente (conserva top 3 slots). Donde
         // murió, no donde el NPC. El user X/Z lo tenemos en userPos.
         try {
-          await dropExcessInventoryOnDeath(
-            db, userId, userPos.x, userPos.z, now,
-            DEATH_KEEP_TOP_N_SLOTS, rng
-          );
+          if (isSkulled(stats, now)) {
+            // Sesión 50 — con calavera se pierde todo (mochila + equipo).
+            await dropAllExceptTopUnitsOnDeathPVP(db, userId, userPos.x, userPos.z, now, 0, rng, null);
+          } else {
+            await dropExcessInventoryOnDeath(
+              db, userId, userPos.x, userPos.z, now,
+              DEATH_KEEP_TOP_N_SLOTS, rng
+            );
+          }
         } catch (err) {
           console.error('[combat/death-drop]', err);
         }
+        stats.skulled_until = 0;   // morir quita la calavera
       } else {
         stats.hp_current = userHpAfter;
       }
@@ -1236,7 +1249,8 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
            ranged_xp = ?, magic_xp = ?,
            mana_current = ?, mana_updated_at = ?,
            spec_energy = ?, spec_updated_at = ?,
-           hp_current = ?, last_attack_at = ?, last_died_at = ?
+           hp_current = ?, last_attack_at = ?, last_died_at = ?,
+           skulled_until = ?
        WHERE user_id = ?`,
       [
         stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
@@ -1244,6 +1258,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
         persistMana, persistManaAt,
         persistSpec, persistSpecAt,
         stats.hp_current, stats.last_attack_at, stats.last_died_at,
+        stats.skulled_until || 0,
         userId,
       ]
     );
@@ -1440,6 +1455,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   //      automáticamente (entrar wild rompe la "burbuja" del duelo).
   //   2) Si alguno está FUERA wilderness → solo permitido si los dos
   //      tienen un duelo activo entre ellos. Si no, error.
+  let skulledNow = false;   // Sesión 50
   const attackerInWild = attackerPos.x < WILDERNESS_X_BORDER;
   const targetInWild   = targetPosServer.x < WILDERNESS_X_BORDER;
 
@@ -1449,6 +1465,21 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     const myDuel = await getActiveDuelForUser(db, attackerId);
     if (myDuel) {
       await closeDuelById(db, myDuel.id, now);
+    }
+    // Sesión 50 — calavera: si el target NO te atacó antes (no es defensa propia)
+    if (!isSkulled(attackerStats, now)) {
+      let retaliating = false;
+      try {
+        const prev = await db.first(
+          `SELECT 1 FROM combat_log WHERE attacker_type = 0 AND attacker_id = ? AND target_type = 0 AND target_id = ? AND ts > ? LIMIT 1`,
+          [targetId, attackerId, now - SKULL_RETALIATE_WINDOW_MS]
+        );
+        retaliating = !!prev;
+      } catch {}
+      if (!retaliating) {
+        attackerStats.skulled_until = now + SKULL_DURATION_MS;
+        skulledNow = true;
+      }
     }
   } else {
     // alguno fuera wild → exigir duelo activo entre los dos.
@@ -1674,8 +1705,9 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
           // Sesión 48 — killer = target (su contraataque te mató).
           await dropAllExceptTopUnitsOnDeathPVP(
             db, attackerId, attackerPos.x, attackerPos.z, now,
-            PVP_DEATH_KEEP_TOP_N, rng, targetId
+            isSkulled(attackerStats, now) ? 0 : PVP_DEATH_KEEP_TOP_N, rng, targetId
           );
+          attackerStats.skulled_until = 0;
         } catch (err) {
           console.error('[combat/pvp/attacker-death-drop]', err);
         }
@@ -1709,8 +1741,9 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     try {
       await dropAllExceptTopUnitsOnDeathPVP(
         db, targetId, targetPosServer.x, targetPosServer.z, now,
-        PVP_DEATH_KEEP_TOP_N, rng, attackerId
+        isSkulled(targetStats, now) ? 0 : PVP_DEATH_KEEP_TOP_N, rng, attackerId
       );
+      targetStats.skulled_until = 0;
     } catch (err) {
       console.error('[combat/pvp/target-death-drop]', err);
     }
@@ -1743,7 +1776,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
            mana_current = ?, mana_updated_at = ?,
            hp_current = ?, last_attack_at = ?, last_died_at = ?,
            last_hit_from_user_id = ?, last_hit_damage = ?,
-           last_hit_at = ?, last_hit_is_crit = ?
+           last_hit_at = ?, last_hit_is_crit = ?, skulled_until = ?
        WHERE user_id = ?`,
       [
         attackerStats.attack_xp, attackerStats.strength_xp,
@@ -1757,6 +1790,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         attackerStats.last_hit_damage ?? null,
         attackerStats.last_hit_at ?? null,
         attackerStats.last_hit_is_crit ?? null,
+        attackerStats.skulled_until || 0,
         attackerId,
       ]
     );
@@ -1788,7 +1822,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
        SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
            hp_current = ?, last_attack_at = ?, last_died_at = ?,
            last_hit_from_user_id = ?, last_hit_damage = ?,
-           last_hit_at = ?, last_hit_is_crit = ?
+           last_hit_at = ?, last_hit_is_crit = ?, skulled_until = ?
        WHERE user_id = ?`,
       [
         targetStats.attack_xp, targetStats.strength_xp,
@@ -1799,6 +1833,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         targetStats.last_hit_damage ?? null,
         targetStats.last_hit_at ?? null,
         targetStats.last_hit_is_crit ?? null,
+        targetStats.skulled_until || 0,
         targetId,
       ]
     );
@@ -1853,6 +1888,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     weapon_type:   weaponType,
     stance:        stanceKey,
     target_killed: targetKilled,
+    skulled: isSkulled(attackerStats, now),   // Sesión 50
+    skulled_now: skulledNow,
     target_hp:     targetStats.hp_current,
     target_hp_max: levelFromXp(targetStats.hp_xp),
     target_user_id: targetId,
@@ -2359,7 +2396,11 @@ const WANDER_BUCKET_MS = 3000;    // cada ~3s elige un nuevo destino random
  */
 // Adaptador mínimo env → db (tickNpcAggro recibe env, no db).
 function makeEnvDb(env) {
-  return { first: (sql, params = []) => env.DB.prepare(sql).bind(...params).first() };
+  return {
+    first: (sql, params = []) => env.DB.prepare(sql).bind(...params).first(),
+    all: async (sql, params = []) => (await env.DB.prepare(sql).bind(...params).all()).results || [],
+    run: (sql, params = []) => env.DB.prepare(sql).bind(...params).run(),
+  };
 }
 
 export async function tickNpcAggro(env, viewer, now, opts = {}) {
@@ -2513,6 +2554,17 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
             `UPDATE combat_stats SET last_died_at = ? WHERE user_id = ?`
           ).bind(now, viewer.user_id).run();
         } catch {}
+        // Sesión 50 — antes morir por un monstruo agresivo NO soltaba nada.
+        // Ahora igual que el resto: top 3 se conservan, o TODO se pierde con calavera.
+        try {
+          const edb = makeEnvDb(env);
+          if (isSkulled(viewerStats, now)) {
+            await dropAllExceptTopUnitsOnDeathPVP(edb, viewer.user_id, viewer.x, viewer.z, now, 0, rng, null);
+          } else {
+            await dropExcessInventoryOnDeath(edb, viewer.user_id, viewer.x, viewer.z, now, DEATH_KEEP_TOP_N_SLOTS, rng);
+          }
+          await env.DB.prepare('UPDATE combat_stats SET skulled_until = 0 WHERE user_id = ?').bind(viewer.user_id).run();
+        } catch (err) { console.warn('[npc-ai] death drop:', err?.message); }
       }
     }
 

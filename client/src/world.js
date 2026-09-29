@@ -46,6 +46,7 @@ import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as quests from './quests.js';   // Sesión 50 — misiones
 import * as prayer from './prayer.js';   // Sesión 50 — plegaria
+import * as skull from './skull.js';   // Sesión 50 — calavera PvP
 import * as firemaking  from './skills/firemaking.js';
 // Sesión 31 — extraído de world.js: setup de three.js + cámara orbital.
 import * as sceneSetup    from './core/scene.js';
@@ -753,6 +754,15 @@ export async function startWorld(loggedInUser, token) {
         feedLog:         (type, msg) => combat.feedLog?.(type, msg),
       });
     } catch (e) { console.warn('[world] prayer start:', e); }
+    // Sesión 50 — Calavera PvP sobre la cabeza.
+    try {
+      skull.start({
+        getSnapshot: () => worldSnapshot.getSnapshot(),
+        getPlayer:   () => player,
+        getCamera:   () => camera,
+        feedLog:     (type, msg) => combat.feedLog?.(type, msg),
+      });
+    } catch (e) { console.warn('[world] skull start:', e); }
     // Sesión 50 — Misiones (tutorial). Debug: window.__questsDebug()
     try {
       quests.start({
@@ -815,6 +825,7 @@ export function stopWorld() {
   try { smithing.stop(); } catch {}
   try { quests.stop(); } catch {}
   try { prayer.stop(); } catch {}
+  try { skull.stop(); } catch {}
   try { firemaking.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
@@ -2733,6 +2744,7 @@ function animate() {
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
   quests.update(dt);          // Sesión 50 — misiones (tracker + haz)
   prayer.update(dt);          // Sesión 50 — plegaria (HUD, altares, aura)
+  skull.update();             // Sesión 50 — calavera
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior

@@ -633,3 +633,13 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - combat_engine aplica: % a niveles efectivos (boostLvls), Protección cuerpo a
   cuerpo (NPC 0 daño, PvP −40 %), Curación rápida (regen ×2).
 - Endpoints: POST /api/prayer/bury, /toggle, /recharge. Tocar huesos en la mochila = enterrar.
+
+## 20. Sesión 50 — Calavera (skull)
+
+- `combat_stats.skulled_until` (migración 004). Atacar a un jugador en la wilderness
+  te da calavera 20 min, salvo que él te haya atacado antes (defensa propia, mira combat_log).
+- Morir con calavera (PvP, PvE o NPC agresivo) = pierdes TODO (mochila + equipo) → keepTopN 0.
+  Morir quita la calavera.
+- Snapshot: players[].skulled y me.skulled_until. Cliente: `skull.js` (propia) +
+  clase `.skulled` en el nameplate de los peers (multiplayer.js).
+- Arreglo incluido: morir por un NPC agresivo (tickNpcAggro) ahora suelta objetos (antes no).

@@ -796,6 +796,12 @@ function upsertPeer(p) {
 
   // Sesión 27 Bloque 3 — Niveles + combat_lvl
   if (typeof p.combat_lvl === 'number') peer.combatLvl = p.combat_lvl;
+  // Sesión 50 — calavera PvP sobre el nameplate del peer.
+  const sk = !!p.skulled;
+  if (peer.skulled !== sk) {
+    peer.skulled = sk;
+    try { peer.nameplate?.root?.classList.toggle('skulled', sk); } catch {}
+  }
   if (typeof p.attack_lvl === 'number') peer.attackLvl = p.attack_lvl;
   if (typeof p.strength_lvl === 'number') peer.strengthLvl = p.strength_lvl;
   if (typeof p.defence_lvl === 'number') peer.defenceLvl = p.defence_lvl;

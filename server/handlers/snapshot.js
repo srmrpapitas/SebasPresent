@@ -117,7 +117,7 @@ export async function handleWorldSnapshot(request, env) {
         `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
                 c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
                 c.last_attack_at,
-                c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit,
+                c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit, c.skulled_until,
                 pm.party_id,
                 ueq.item_id AS weapon_item_id,
                 wi.weapon_type AS weapon_type
@@ -141,7 +141,7 @@ export async function handleWorldSnapshot(request, env) {
         `SELECT o.user_id, o.username, o.x, o.z, o.yaw, o.state, o.last_seen,
                 c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
                 c.last_attack_at,
-                c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit,
+                c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit, c.skulled_until,
                 ueq.item_id AS weapon_item_id,
                 wi.weapon_type AS weapon_type
          FROM online_users o
@@ -212,6 +212,7 @@ export async function handleWorldSnapshot(request, env) {
           last_hit_damage:  typeof r.last_hit_damage === 'number' ? r.last_hit_damage : null,
           last_hit_at:      typeof r.last_hit_at === 'number'     ? r.last_hit_at     : null,
           last_hit_is_crit: r.last_hit_is_crit === 1,
+          skulled: (r.skulled_until || 0) > now,   // Sesión 50 — calavera
         };
       });
 
@@ -399,12 +400,13 @@ export async function handleWorldSnapshot(request, env) {
     // Sesión 50 — plegaria (el cliente calcula el gasto en vivo con estos datos)
     try {
       const pr = await env.DB.prepare(
-        'SELECT prayer_points, prayer_updated_at, active_prayers FROM combat_stats WHERE user_id = ?'
+        'SELECT prayer_points, prayer_updated_at, active_prayers, skulled_until FROM combat_stats WHERE user_id = ?'
       ).bind(session.user_id).first();
       if (pr) {
         me.prayer_points = pr.prayer_points;
         me.prayer_updated_at = pr.prayer_updated_at;
         me.active_prayers = pr.active_prayers || '';
+        me.skulled_until = pr.skulled_until || 0;   // Sesión 50 — calavera
       }
     } catch { /* migración 003 pendiente */ }
 
