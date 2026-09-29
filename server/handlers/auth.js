@@ -48,7 +48,7 @@ export async function handleRegister(request, env) {
 
   const userId = result.meta.last_row_id;
 
-  // Starter pack: hacha de bronce + yesquero + 25 monedas.
+  // Starter pack: hacha de bronce + yesquero + 25 monedas + pico de bronce (S50).
   // Sesión 32 — migrado de 'axe' a 'axe_bronze' (unificación de tiers).
   try {
     await env.DB.batch([
@@ -61,6 +61,11 @@ export async function handleRegister(request, env) {
       env.DB.prepare(
         'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, 2, ?, 25, ?)'
       ).bind(userId, 'coins', now),
+      // Sesión 50 — pico de bronce para la minería (antes había que comprarlo
+      // a 50gp teniendo solo 25).
+      env.DB.prepare(
+        'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, 3, ?, 1, ?)'
+      ).bind(userId, 'pickaxe_bronze', now),
     ]);
   } catch (err) {
     console.error('Starter pack failed for user', userId, err);

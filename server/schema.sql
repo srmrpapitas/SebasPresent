@@ -282,3 +282,10 @@ CREATE TABLE IF NOT EXISTS tree_state (
   PRIMARY KEY (x, z)
 );
 CREATE INDEX IF NOT EXISTS idx_tree_state_until ON tree_state(depleted_until);
+
+-- Sesión 50 — Minería (ver migrations/001_rock_state.sql)
+CREATE TABLE IF NOT EXISTS rock_state (
+  vein_id TEXT PRIMARY KEY,
+  depleted_until INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rock_state_until ON rock_state(depleted_until);

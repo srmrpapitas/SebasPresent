@@ -515,6 +515,18 @@ export async function wcChop(treeType, x, z) {
 }
 
 /**
+ * Sesión 50 — POST /api/mining/mine { vein_id }
+ * El server saca posición y mineral del generador compartido (shared/ore_veins.js).
+ */
+export async function miningMine(veinId) {
+  return apiFetch('/api/mining/mine', {
+    method: 'POST',
+    auth: true,
+    body: { vein_id: veinId },
+  });
+}
+
+/**
  * POST /api/firemaking/light { slot }
  *
  * Enciende un fuego en la pos del player consumiendo 1 log del `slot`

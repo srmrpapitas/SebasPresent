@@ -26,8 +26,8 @@
 
 import * as woodcutting from './woodcutting.js';
 import * as firemaking  from './firemaking.js';
+import * as mining      from './mining.js';   // Sesión 50
 // import * as cooking from './cooking.js';   // S32
-// import * as mining  from './mining.js';    // S33
 
 // Lista canónica de skills activas en este build.
 // El orden importa para start() — algunas pueden depender de que otras
@@ -36,12 +36,12 @@ const SKILL_MODULES = [
   { name: 'woodcutting', mod: woodcutting },
   { name: 'firemaking',  mod: firemaking  },
   // { name: 'cooking',   mod: cooking   },   // S32
-  // { name: 'mining',    mod: mining    },   // S33
+  { name: 'mining',      mod: mining      },   // Sesión 50 (solo cancel(); world.js lo arranca)
 ];
 
 // Re-exports para que world.js pueda importar la skill puntual si necesita
 // llamar funciones específicas (ej. woodcutting.startChopAt, firemaking.lightFireFromSlot).
-export { woodcutting, firemaking };
+export { woodcutting, firemaking, mining };
 
 /**
  * Inicia todas las skills. Pasa los mismos getters/callbacks a cada una.

@@ -182,6 +182,70 @@ export function sfx(name, opts = {}) {
   }
 }
 
+/**
+ * Sesión 50 — SFX sintetizados con Web Audio (no necesitan archivo en R2).
+ *   audio.synth('mine_hit')      golpe metálico del pico contra la roca
+ *   audio.synth('mine_ore')      campanita al conseguir mineral
+ *   audio.synth('vein_deplete')  la veta se desmorona
+ * opts.pitch multiplica la frecuencia; opts.volume (0-1).
+ */
+export function synth(name, opts = {}) {
+  if (!initialized) init();
+  const ctx = ensureAudioContext();
+  if (!ctx) return;
+  try {
+    if (ctx.state === 'suspended') ctx.resume?.();
+    const t0 = ctx.currentTime + 0.005;
+    const vol = (opts.volume ?? 1.0) * prefs.sfx * prefs.master;
+    const pitch = opts.pitch || 1;
+    const out = ctx.createGain();
+    out.gain.value = vol;
+    out.connect(ctx.destination);
+
+    const noiseBurst = (dur, filterType, freq, q, peak) => {
+      const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const f = ctx.createBiquadFilter();
+      f.type = filterType; f.frequency.value = freq; f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(peak, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      src.connect(f).connect(g).connect(out);
+      src.start(t0); src.stop(t0 + dur + 0.02);
+    };
+    const tone = (freq, start, dur, peak, type = 'sine') => {
+      const o = ctx.createOscillator();
+      o.type = type; o.frequency.value = freq * pitch;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0 + start);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+      o.connect(g).connect(out);
+      o.start(t0 + start); o.stop(t0 + start + dur + 0.02);
+    };
+
+    if (name === 'mine_hit') {
+      noiseBurst(0.06, 'bandpass', 3200 * pitch, 1.2, 0.9);
+      tone(1870, 0, 0.22, 0.28, 'triangle');
+      tone(2890, 0, 0.14, 0.16, 'sine');
+      tone(4120, 0, 0.08, 0.08, 'sine');
+    } else if (name === 'mine_ore') {
+      tone(1046, 0.00, 0.25, 0.22);
+      tone(1318, 0.07, 0.28, 0.20);
+      tone(1568, 0.14, 0.40, 0.18);
+    } else if (name === 'vein_deplete') {
+      noiseBurst(0.45, 'lowpass', 520, 0.7, 1.0);
+      tone(110, 0, 0.3, 0.2, 'sine');
+    }
+  } catch (err) {
+    console.warn(`[audio] synth '${name}' error:`, err);
+  }
+}
+
 // Sesión 13 — Tracking de fades activos para poder cancelarlos.
 // Cuando el user ajusta el slider de música, si hay un fade en curso
 // (cambio de bioma) sobreescribiría el nuevo valor cada 30ms.

@@ -120,4 +120,11 @@ export async function scheduledHandler(event, env, ctx) {
   } catch {
     // Tabla puede no existir — silencioso.
   }
+
+  // 8) rock_state cleanup: vetas cuyo respawn ya se cumplió (Sesión 50).
+  try {
+    await env.DB.prepare('DELETE FROM rock_state WHERE depleted_until <= ?').bind(Date.now()).run();
+  } catch {
+    // Tabla puede no existir — silencioso.
+  }
 }

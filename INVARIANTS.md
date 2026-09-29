@@ -577,3 +577,22 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 ---
 
 *Para Claude / IA: si un bug futuro coincide con un patrón en esta doc, probable que la causa esté acá descrita. No reescribas la solución, leé primero.*
+
+---
+
+## 16. Sesión 50 — Minería
+
+- Las vetas NO están en la D1: salen de `client/src/shared/ore_veins.js`, un
+  generador determinista que usan a la vez el cliente (para dibujar) y el
+  server (`server/handlers/skills/mining.js`, para validar). El cliente solo
+  manda `vein_id`; el server sabe posición y mineral.
+- ⚠️ Cambiar números del generador mueve todas las vetas. `biomeIdAt()` es copia
+  de `terrain.biomeAt()`: si cambias uno, cambia el otro.
+- Tabla `rock_state (vein_id, depleted_until)` — solo vetas agotadas; el cron
+  la limpia. Migración: `server/migrations/001_rock_state.sql`.
+- Ritmo anti-spam: UPDATE condicional sobre `user_skills.updated_at` del skill
+  `mining` (1 golpe cada 1500ms como mucho, aunque lleguen peticiones en paralelo).
+- Cantera de iniciación: vetas fijas s0–s5 en (121, -95), al NE del spawn.
+- SFX de minería sintetizados (`audio.synth`), no necesitan archivos en R2.
+- 7 tiers: bronce 1 · hierro 10 · acero 20 · oro 30 · obsidiana 40 · basaltita 55 · teiderio 70.
+

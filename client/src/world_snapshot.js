@@ -284,6 +284,7 @@ async function fetchSnapshot() {
       // server-side. Bug encontrado al debuggear el tocón que no aparecía.
       fires:           Array.isArray(data.fires)          ? data.fires          : [],
       depleted_trees:  Array.isArray(data.depleted_trees) ? data.depleted_trees : [],
+      depleted_veins:  Array.isArray(data.depleted_veins) ? data.depleted_veins : [],   // Sesión 50 — minería
       _sentAt: sentAt,
       _receivedAt: receivedAt,
       _serverLagMs: serverLagMs,

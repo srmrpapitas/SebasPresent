@@ -584,7 +584,20 @@ export async function handleWorldSnapshot(request, env) {
       }
     }
 
-    return json({ now, players, npcs, me, fires, depleted_trees });
+    // Sesión 50 — Vetas de mineral agotadas (tabla pequeña: solo guarda las
+    // agotadas y el cron borra las que ya reaparecieron).
+    let depleted_veins = [];
+    try {
+      const vr = await env.DB.prepare(
+        `SELECT vein_id, depleted_until FROM rock_state WHERE depleted_until > ? LIMIT 500`
+      ).bind(now).all();
+      depleted_veins = (vr.results || []).map(r => ({ id: r.vein_id, until: r.depleted_until }));
+    } catch (err) {
+      const msg = err?.message || '';
+      if (!msg.includes('no such table')) console.warn('[snapshot/rock_state]', msg);
+    }
+
+    return json({ now, players, npcs, me, fires, depleted_trees, depleted_veins });
   } catch (err) {
     console.error('[world/snapshot]', err);
     return json({ error: 'internal_error', message: err.message }, 500);

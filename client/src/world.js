@@ -42,6 +42,7 @@ import * as npcRenderer from './npc_renderer.js';
 import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
 // Sesión 31 — skills movidas a client/src/skills/. Mismo API, paths nuevos.
 import * as woodcutting from './skills/woodcutting.js';
+import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as firemaking  from './skills/firemaking.js';
 // Sesión 31 — extraído de world.js: setup de three.js + cámara orbital.
 import * as sceneSetup    from './core/scene.js';
@@ -233,6 +234,8 @@ export async function startWorld(loggedInUser, token) {
     ocean = sceneSetup.setupOcean({ scene, palette: PALETTE, worldHalf: WORLD_HALF });
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
+    // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
+    try { mining.registerKeepouts(terrain); } catch (e) { console.warn('[world] mining keepouts:', e); }
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
     // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
     // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
@@ -712,6 +715,17 @@ export async function startWorld(loggedInUser, token) {
         getSnapshot:    () => worldSnapshot.getSnapshot(),
       });
     } catch (e) { console.warn('[world] woodcutting start:', e); }
+    // Sesión 50 — Minería (vetas + loop). Debug: window.__miningDebug()
+    try {
+      mining.start({
+        scene,
+        getPlayer:       () => player,
+        getCharacter:    () => character,
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog:         (type, msg) => combat.feedLog?.(type, msg),
+        getSnapshot:     () => worldSnapshot.getSnapshot(),
+      });
+    } catch (e) { console.warn('[world] mining start:', e); }
     try {
       firemaking.start({
         scene,
@@ -761,6 +775,7 @@ export function stopWorld() {
 
   // Sesión 30 — woodcutting + firemaking cleanup
   try { woodcutting.stop(); } catch {}
+  try { mining.stop(); } catch {}
   try { firemaking.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
@@ -993,6 +1008,16 @@ function drawMinimap() {
       ctx.fillRect(sx - 1, sy - 1, 2, 2);
     }
   }
+
+  // Sesión 50 — Vetas de mineral en el minimapa (color del mineral).
+  try {
+    for (const v of mining.getLoadedVeins()) {
+      const dx = v.x - px, dz = v.z - pz;
+      if (dx * dx + dz * dz > RANGE_SQ) continue;
+      ctx.fillStyle = v.depleted ? '#6a6a6a' : v.color;
+      ctx.fillRect(cx + dx * scale - 1.5, cy + dz * scale - 1.5, 3, 3);
+    }
+  } catch {}
 
   // NPCs como puntos en el minimapa.
   // Sesión 27 Bloque 3 — NPCs en wilderness (x < WILDERNESS_X) salen
@@ -2437,6 +2462,12 @@ function doCanvasTap(clientX, clientY) {
   // Sesión 11b parcial — Tap edificio → placeholder (en 11c será "entrar")
   if (buildings.tryHandleTap(clientX, clientY)) return;
 
+  // 2b) Tap veta de mineral → caminar + picar (Sesión 50).
+  if (mining.tryHandleTap(raycaster)) {
+    try { woodcutting.stopChop?.('tap_ground'); } catch {}
+    return;
+  }
+
   // 3) Tap árbol → arrancar chop (Sesión 30).
   //    El raycast contra InstancedMesh devuelve `instanceId` que apunta al
   //    índice del árbol en userData.trees. Sacamos x,z reales y tipo, y le
@@ -2452,6 +2483,7 @@ function doCanvasTap(clientX, clientY) {
     const tree = (Array.isArray(ud?.trees) && idx != null) ? ud.trees[idx] : null;
     if (treeType && typeId && tree) {
       showTreeTooltip(treeType, clientX, clientY);
+      try { mining.stopMining?.('tap_ground'); } catch {}
       try { woodcutting.startChopAt(typeId, tree.x, tree.z); }
       catch (e) { console.warn('[world] startChopAt err:', e); }
       // Sesión 30 — ocultar tooltip rápido (~600ms) si el char ya está
@@ -2468,6 +2500,7 @@ function doCanvasTap(clientX, clientY) {
 
   // 4) Tap suelo → goto (cualquier tap al suelo cancela un chop activo)
   try { woodcutting.stopChop?.('tap_ground'); } catch {}
+  try { mining.stopMining?.('tap_ground'); } catch {}
   const hits = raycaster.intersectObjects(terrain.getTerrainMeshes());
   if (hits.length > 0) {
     const p = hits[0].point;
@@ -2485,6 +2518,7 @@ function tryExamineTreeAt(clientX, clientY) {
   const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
   const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
+  if (mining.tryHandleTap(raycaster, true)) return true;   // Sesión 50 — examinar veta
   const treeHits = raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
   if (treeHits.length > 0) {
     const treeType = treeHits[0].object.userData?.treeType;
@@ -2587,6 +2621,7 @@ function animate() {
   worldSnapshot.update(dt);   // Sesión 27 Bloque 1
   chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles
   woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
+  mining.update(dt);          // Sesión 50 — vetas + loop de picar
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
