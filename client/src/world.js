@@ -43,6 +43,7 @@ import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
 // Sesión 31 — skills movidas a client/src/skills/. Mismo API, paths nuevos.
 import * as woodcutting from './skills/woodcutting.js';
 import * as mining from './skills/mining.js';   // Sesión 50 — minería
+import * as fishing from './skills/fishing.js'; // Sesión 50 — pesca
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as quests from './quests.js';   // Sesión 50 — misiones
 import * as prayer from './prayer.js';   // Sesión 50 — plegaria
@@ -241,6 +242,7 @@ export async function startWorld(loggedInUser, token) {
     await terrain.start({ scene });
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
     try { mining.registerKeepouts(terrain); } catch (e) { console.warn('[world] mining keepouts:', e); }
+    try { fishing.registerKeepouts(terrain); } catch (e) { console.warn('[world] fishing keepouts:', e); }
     try { smithing.registerKeepouts(terrain); } catch (e) { console.warn('[world] smithing keepouts:', e); }
     try { prayer.registerKeepouts(terrain); } catch (e) { console.warn('[world] prayer keepouts:', e); }
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -733,6 +735,16 @@ export async function startWorld(loggedInUser, token) {
         getSnapshot:     () => worldSnapshot.getSnapshot(),
       });
     } catch (e) { console.warn('[world] mining start:', e); }
+    // Sesión 50 — Pesca (estanques + bancos). Debug: window.__fishingDebug()
+    try {
+      fishing.start({
+        scene,
+        getPlayer:       () => player,
+        getCharacter:    () => character,
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog:         (type, msg) => combat.feedLog?.(type, msg),
+      });
+    } catch (e) { console.warn('[world] fishing start:', e); }
     // Sesión 50 — Horno + yunque. Debug: window.__smithingDebug()
     try {
       smithing.start({
@@ -822,6 +834,7 @@ export function stopWorld() {
   // Sesión 30 — woodcutting + firemaking cleanup
   try { woodcutting.stop(); } catch {}
   try { mining.stop(); } catch {}
+  try { fishing.stop(); } catch {}
   try { smithing.stop(); } catch {}
   try { quests.stop(); } catch {}
   try { prayer.stop(); } catch {}
@@ -1078,6 +1091,20 @@ function drawMinimap() {
 
   // Sesión 50 — Vetas de mineral y hornos/yunques en el minimapa.
   try {
+    for (const pd of fishing.getPondsForMinimap()) {
+      const dx = pd.x - px, dz = pd.z - pz;
+      if (dx * dx + dz * dz > (RANGE_SQ * 1.5)) continue;
+      ctx.beginPath();
+      ctx.arc(cx + dx * scale, cy + dz * scale, Math.max(2, pd.r * scale), 0, Math.PI * 2);
+      ctx.fillStyle = pd.frozen ? '#cfe6f2' : '#3a7fb0';
+      ctx.fill();
+    }
+    for (const sp of fishing.getSpotsForMinimap()) {
+      const dx = sp.x - px, dz = sp.z - pz;
+      if (dx * dx + dz * dz > RANGE_SQ) continue;
+      ctx.fillStyle = '#9fe3ff';
+      ctx.beginPath(); ctx.arc(cx + dx * scale, cy + dz * scale, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
     for (const st of [...smithing.getStationsForMinimap(), ...prayer.getAltarsForMinimap()]) {
       const dx = st.x - px, dz = st.z - pz;
       if (dx * dx + dz * dz > RANGE_SQ) continue;
@@ -2507,6 +2534,7 @@ function openSkillMenuAt(clientX, clientY) {
   if (prayer.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
   if (smithing.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
   if (mining.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
+  if (fishing.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
 
   const treeHits = raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
   if (treeHits.length > 0) {
@@ -2552,6 +2580,7 @@ function doCanvasTap(clientX, clientY) {
   // Sesión 50 — Cada toque es una orden nueva: corta la tala/minería en curso.
   // Si el toque cae en otra veta/árbol, más abajo arranca la acción nueva.
   try { mining.stopMining?.('tap_ground'); } catch {}
+  try { fishing.stopFishing?.('tap_ground'); } catch {}
   try { woodcutting.stopChop?.('tap_ground'); } catch {}
   try { smithing.stopWork?.('tap_ground'); } catch {}
   try { prayer.cancel?.(); } catch {}
@@ -2580,6 +2609,9 @@ function doCanvasTap(clientX, clientY) {
 
   // 2a) Tap horno/yunque → caminar + abrir panel (Sesión 50).
   if (smithing.tryHandleTap(raycaster)) return;
+
+  // 2a1) Tap banco de peces → caminar a la orilla + pescar (Sesión 50).
+  if (fishing.tryHandleTap(raycaster)) return;
 
   // 2b) Tap veta de mineral → caminar + picar (Sesión 50).
   if (mining.tryHandleTap(raycaster)) {
@@ -2638,6 +2670,7 @@ function tryExamineTreeAt(clientX, clientY) {
   const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
   if (mining.tryHandleTap(raycaster, true)) return true;   // Sesión 50 — examinar veta
+  if (fishing.tryHandleTap(raycaster, true)) return true;  // Sesión 50 — examinar banco de peces
   const treeHits = raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
   if (treeHits.length > 0) {
     const treeType = treeHits[0].object.userData?.treeType;
@@ -2741,6 +2774,7 @@ function animate() {
   chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles
   woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
   mining.update(dt);          // Sesión 50 — vetas + loop de picar
+  fishing.update(dt);         // Sesión 50 — estanques + bancos + loop de pesca
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
   quests.update(dt);          // Sesión 50 — misiones (tracker + haz)
   prayer.update(dt);          // Sesión 50 — plegaria (HUD, altares, aura)

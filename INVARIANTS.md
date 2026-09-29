@@ -643,3 +643,14 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Snapshot: players[].skulled y me.skulled_until. Cliente: `skull.js` (propia) +
   clase `.skulled` en el nameplate de los peers (multiplayer.js).
 - Arreglo incluido: morir por un NPC agresivo (tickNpcAggro) ahora suelta objetos (antes no).
+
+## 21. Pesca (Sesión 50)
+
+- `client/src/shared/fishing.js` es la fuente de verdad (cliente + server): estanques (`PONDS`), bancos de peces (`SPOTS`), peces (`FISH`), herramientas (`TOOLS`).
+- Los bancos **se mueven**: `isSpotActive(spot, now)` usa turnos de 5 min y un hash determinista. El server rechaza con `spot_moved` si el banco ya no está activo.
+- `POST /api/fishing/fish { spot_id }` — el cliente solo manda el id. Distancia desde el heartbeat (≤ 5.5 m), herramienta en mochila o equipada, nivel mínimo del banco, cerrojo atómico 1500 ms.
+- Caña → gasta 1 pluma por pez con `UPDATE ... quantity >= 1`; si otra petición se llevó la última pluma se deshace el pez y la XP.
+- Peces NO apilables. `shared/food.js` junta comida/cocina (antes duplicada en `cooking.js` e `inventory.js`); añadir comida nueva SOLO ahí.
+- Las vetas no aparecen dentro de los estanques (`NO_VEIN_ZONES` incluye `PONDS`) y no crecen árboles (keepouts). El jugador no puede pisar el agua de un estanque (fishing.update lo empuja a la orilla).
+- Misión `pescador` ("Anzuelo y sedal") va en paralelo al tutorial; el rastreador la muestra al terminar/saltar el tutorial.
+- Seed: `server/seeds/004_fishing_s50.sql` (ya ejecutado en producción).

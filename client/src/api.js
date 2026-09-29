@@ -610,3 +610,12 @@ export async function cookFood(slot) {
 export async function getHighscores() {
   return apiFetch('/api/skills/highscores', { auth: true });
 }
+
+// Sesión 50 — Pesca
+export async function fishingFish(spotId) {
+  return apiFetch('/api/fishing/fish', {
+    method: 'POST',
+    auth: true,
+    body: { spot_id: spotId },
+  });
+}

@@ -22,6 +22,7 @@ import { requireSession } from '../../lib/auth.js';
 import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.js';
 import { tableExists } from './_shared.js';
 import { questEvent } from '../../lib/quests.js';   // Sesión 50
+import { EDIBLE, COOKABLE } from '../../../client/src/shared/food.js';
 
 const SKILL_ID = 'cooking';
 const FIRE_COOK_RADIUS_M = 5.0;   // Sesión 49 — subido de 2.5 (ver fix abajo)
@@ -29,26 +30,10 @@ const MAX_INV_SLOTS = 20;
 // Sesión 49 — cooldown de comida estilo OSRS: 1 pieza cada 2 ticks (1.8s).
 const EAT_COOLDOWN_MS = 1800;
 
-// Comestibles: heal = HP que cura al comer. (burnt_* NO están → no comestibles)
-const EDIBLE_DEFS = {
-  raw_chicken:    { name: 'Pollo crudo',       heal: 1 },
-  cooked_chicken: { name: 'Pollo cocinado',    heal: 3 },
-  raw_beef:       { name: 'Ternera cruda',     heal: 1 },
-  cooked_beef:    { name: 'Ternera cocinada',  heal: 5 },
-};
-
-// Cocinables: crudo → cocinado/quemado. cookLevel = nivel de Cocina requerido.
-// burnStop = nivel al que ya NUNCA se quema (req + 20 → 50% baja 2.5%/nivel).
-const COOKABLE_DEFS = {
-  raw_chicken: {
-    cooked: 'cooked_chicken', burnt: 'burnt_chicken',
-    cookLevel: 1,  xp: 30,
-  },
-  raw_beef: {
-    cooked: 'cooked_beef',    burnt: 'burnt_beef',
-    cookLevel: 5,  xp: 40,
-  },
-};
+// Sesión 50 — tablas movidas a client/src/shared/food.js (compartidas con el
+// cliente e incluyen los peces). burnt_* NO son comestibles.
+const EDIBLE_DEFS = EDIBLE;
+const COOKABLE_DEFS = COOKABLE;
 
 const BURN_BASE = 0.50;          // 50% en el nivel requerido
 const BURN_DROP_PER_LEVEL = 0.025; // -2.5% por nivel por encima del requerido

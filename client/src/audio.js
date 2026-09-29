@@ -273,6 +273,15 @@ export function synth(name, opts = {}) {
     } else if (name === 'vein_deplete') {
       noiseBurst(0.45, 'lowpass', 520, 0.7, 1.0);
       tone(110, 0, 0.3, 0.2, 'sine');
+    } else if (name === 'splash') {          // Sesión 50 — pesca: lanzar red/sedal
+      noiseBurst(0.35, 'lowpass', 1400 * pitch, 0.6, 0.8);
+      noiseBurst(0.18, 'bandpass', 3000 * pitch, 1.0, 0.35);
+    } else if (name === 'fish_bite') {       // tirón del pez
+      noiseBurst(0.12, 'bandpass', 1800 * pitch, 2.0, 0.6);
+      tone(620, 0, 0.08, 0.1, 'triangle');
+    } else if (name === 'fish_catch') {      // pez fuera del agua
+      noiseBurst(0.3, 'lowpass', 2200, 0.8, 0.6);
+      tone(880, 0.10, 0.18, 0.18); tone(1175, 0.18, 0.22, 0.16); tone(1568, 0.26, 0.35, 0.14);
     }
   } catch (err) {
     console.warn(`[audio] synth '${name}' error:`, err);

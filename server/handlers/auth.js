@@ -66,6 +66,10 @@ export async function handleRegister(request, env) {
       env.DB.prepare(
         'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, 3, ?, 1, ?)'
       ).bind(userId, 'pickaxe_bronze', now),
+      // Sesión 50 — red pequeña para la pesca
+      env.DB.prepare(
+        'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, 4, ?, 1, ?)'
+      ).bind(userId, 'small_net', now),
     ]);
   } catch (err) {
     console.error('Starter pack failed for user', userId, err);

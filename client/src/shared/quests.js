@@ -7,7 +7,7 @@
  * equipar). El cliente solo muestra el paso actual y dónde ir.
  *
  * Paso:
- *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip'
+ *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip' | 'fish' | 'bury' | 'altar'
  *   match:  (opcional) lo que tiene que coincidir: item, npc def, mineral...
  *   count:  cuántas veces
  *   give:   herramientas que se entregan al empezar el paso SI no las tienes
@@ -57,8 +57,27 @@ export const QUESTS = {
     ],
     reward: { coins: 150, items: [['sword_bronze', 1]], text: '150 monedas y una espada de bronce' },
   },
+
+  // Sesión 50 — Pesca. Se lleva en paralelo, pero el rastreador la enseña
+  // cuando terminas (o saltas) el tutorial.
+  pescador: {
+    id: 'pescador',
+    name: 'Anzuelo y sedal',
+    summary: 'Aprende a pescar en el Estanque del Concejo y cocina lo que saques. Al final te espera una caña de pescar.',
+    steps: [
+      { id: 'net',   event: 'fish', match: 'raw_shrimp', count: 5, give: ['small_net'], hint: { x: -70, z: -150 },
+        text: 'Pesca 5 gambas en el Estanque del Concejo.',
+        tip: 'Busca las burbujas en el agua y tócalas con la red pequeña en la mochila. Los bancos se mueven cada pocos minutos.',
+        reward: { coins: 15 } },
+      { id: 'cook',  event: 'cook', match: 'shrimp', count: 3,
+        text: 'Cocina 3 gambas en un fuego.',
+        tip: 'Enciende un fuego y toca las gambas crudas → "Cocinar".',
+        reward: { coins: 15 } },
+    ],
+    reward: { coins: 50, items: [['fishing_rod', 1], ['feather', 50]], text: '50 monedas, una caña de pescar y 50 plumas (cebo)' },
+  },
 };
 
-export const QUEST_ORDER = ['tutorial'];
+export const QUEST_ORDER = ['tutorial', 'pescador'];
 
 export function getQuest(id) { return QUESTS[id] || null; }

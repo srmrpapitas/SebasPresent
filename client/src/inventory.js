@@ -22,6 +22,7 @@
  *   getState()     — read-only snapshot of current slots
  */
 
+import { EDIBLE_IDS, COOKABLE_IDS } from './shared/food.js';
 import * as api from './api.js';
 import * as equipment from './equipment.js';
 import { renderItemIcon, getItemIconHtml } from './item_icons.js';
@@ -33,11 +34,11 @@ import { renderItemIcon, getItemIconHtml } from './item_icons.js';
 const SLOTS = 20; // 4 columns × 5 rows
 const LONG_PRESS_MS = 450;
 
-// Sesión 48 — comida. Debe matchear EDIBLE_DEFS / COOKABLE_DEFS del server
-// (handlers/skills/cooking.js). El server valida todo igualmente.
-const EDIBLE_ITEM_IDS = new Set(['raw_chicken', 'cooked_chicken', 'raw_beef', 'cooked_beef']);
+// Sesión 50 — comida: tablas compartidas con el server (shared/food.js,
+// incluye pescado). El server valida todo igualmente.
+const EDIBLE_ITEM_IDS = EDIBLE_IDS;
 const BURYABLE_ITEM_IDS = new Set(['bones']);   // Sesión 50 — Plegaria
-const COOKABLE_ITEM_IDS = new Set(['raw_chicken', 'raw_beef']);
+const COOKABLE_ITEM_IDS = COOKABLE_IDS;
 
 // ---------- State ----------
 /**

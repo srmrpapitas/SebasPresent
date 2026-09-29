@@ -23,6 +23,8 @@
 // ------------------------------------------------------------
 // Constantes del mundo (espejo de terrain.js — mantener en sync)
 // ------------------------------------------------------------
+import { PONDS } from './fishing.js';   // Sesión 50
+
 export const WORLD_HALF = 2048;
 export const WILDERNESS_X = -1024;
 export const CHUNK_SIZE = 64;
@@ -121,6 +123,8 @@ const NO_VEIN_ZONES = [
   [400, -900, 45], [0, -1200, 45], [1200, -1500, 30],
   [-1500, -500, 45], [-1700, 500, 45], [-1850, 0, 60],
   [-1700, -1700, 120], [-1800, 1500, 100], [800, -1850, 150],
+  // Sesión 50 — estanques/lagos de pesca (shared/fishing.js)
+  ...PONDS.map(p => [p.x, p.z, p.r + 8]),
 ];
 function inNoVeinZone(x, z) {
   for (const [px, pz, r] of NO_VEIN_ZONES) if (Math.hypot(x - px, z - pz) < r) return true;

@@ -18,6 +18,7 @@ import * as api from './api.js';
 import { getItemIconHtml, getSkillIconHtml } from './item_icons.js';
 import { ORE_TIERS } from './shared/ore_veins.js';
 import { SMELT, MATERIALS, MATERIAL_NAMES } from './shared/smithing.js';
+import { FISH, SPOT_TYPES } from './shared/fishing.js';   // Sesión 50
 import { PRAYERS } from './shared/prayer.js';
 
 const ROWS_PER_PAGE = 7;
@@ -43,6 +44,8 @@ const LOGS = [
 const COOKING = [
   ['Pollo cocinado', 1, 30, 'cooked_chicken', 'Cura 3 HP · crudo cura 1'],
   ['Ternera cocinada', 5, 40, 'cooked_beef', 'Cura 5 HP · cruda cura 1'],
+  // Sesión 50 — pescado (shared/fishing.js)
+  ...Object.values(FISH).map(f => [f.name, f.cookLevel, f.cookXp, f.cooked, `Cura ${f.heal} HP`]),
 ];
 const SPELLS = [
   ['Rayo de fuego', 1, 'Maná 10 · daño máx. base 4'],
@@ -60,9 +63,9 @@ const DESCRIPTIONS = {
   magic:       'Lanza hechizos con un bastón equipado. Cada hechizo gasta maná, que se regenera solo (más rápido con bastón).',
   prayer:      'Entierra <strong>huesos</strong> (tócalos en la mochila) para ganar XP. Tus puntos de plegaria = tu nivel; las plegarias activas los gastan y se recargan rezando en un <strong>altar</strong> (hay uno junto al Concejo y otro en el Templo de la Luz).',
   woodcutting: 'Tala árboles con un hacha para conseguir troncos. Toca un árbol y tu personaje irá hasta él. Algunos árboles dan varios troncos antes de caer.',
-  fishing:     'Todavía no se puede pescar. <em>Próximamente.</em>',
+  fishing:     'Busca las <strong>burbujas</strong> en estanques, lagos y en la costa y tócalas para pescar. Cada banco pide una herramienta: <strong>red</strong>, <strong>caña</strong> (gasta plumas de cebo) o <strong>arpón</strong>. Los bancos se mueven cada pocos minutos.',
   mining:      'Pica vetas de mineral con un pico. Las vetas brillan con el color de su mineral y salen en el minimapa. Cuando una veta se agota, reaparece al rato.',
-  cooking:     'Cocina carne cruda sobre un fuego encendido. A más nivel, menos probabilidad de quemarla.',
+  cooking:     'Cocina carne y pescado crudos sobre un fuego encendido. A más nivel, menos probabilidad de quemarla.',
   firemaking:  'Enciende fuegos con un yesquero y troncos. Los fuegos duran 5 minutos y sirven para cocinar.',
   smithing:    'Funde mineral en el <strong>horno</strong> para obtener lingotes, y forja armaduras en el <strong>yunque</strong>. Hay horno y yunque junto a la Cantera del Concejo (al noreste del spawn) y en la Mina Antigua.',
 };
@@ -167,6 +170,30 @@ async function buildUnlocks(skillId, lvl) {
             <li><strong>Obsidiana, Basaltita, Teiderio</strong> — Tierras Rotas (wilderness), cuanto más al fondo, mejor</li></ul>
             <p class="sg-muted">Las vetas salen en el minimapa con el color de su mineral.</p>` },
       ];
+    case 'fishing': {
+      const toolFor = { net: 'small_net', rod: 'fishing_rod', harpoon: 'harpoon' };
+      const toolName = { net: 'red', rod: 'caña + plumas', harpoon: 'arpón' };
+      const byFish = {};
+      for (const [tid, T] of Object.entries(SPOT_TYPES)) for (const f of T.fish) byFish[f] ||= T.tool;
+      return [
+        ...unlockPages('Herramientas', [
+          { level: 1,  name: 'Red pequeña', detail: 'Gambas · estanques y costa', icon: icon('small_net', '🥅') },
+          { level: 5,  name: 'Caña de pescar', detail: 'Ríos y lagos · usa plumas como cebo', icon: icon('fishing_rod', '🎣') },
+          { level: 35, name: 'Arpón', detail: 'Peces grandes · costa y lagos', icon: icon('harpoon', '🔱') },
+        ], lvl),
+        ...unlockPages('Peces', Object.entries(FISH).map(([id, f]) => ({
+          level: f.level, name: f.name, detail: `${f.xp} XP · ${toolName[byFish[id]] || ''} · cocinado cura ${f.heal}`, icon: icon(id, '🐟'),
+        })), lvl),
+        { content: `<h2>Dónde pescar</h2><ul>
+            <li><strong>Estanque del Concejo</strong> — al suroeste del spawn: gambas, sardina, arenque, trucha, salmón</li>
+            <li><strong>Laguna del Pantano</strong> — igual que el estanque</li>
+            <li><strong>Lago de Verdis</strong> (selva) — peces de río y atún / pez espada</li>
+            <li><strong>Lago Helado</strong> (tundra) — atún y pez espada con arpón</li>
+            <li><strong>Costa del Sur</strong> — gambas y peces grandes en la orilla de la playa</li>
+            <li><strong>Costa de las Tierras Rotas</strong> — ☠ aguas profundas: <strong>tiburón</strong> (nivel 76)</li></ul>
+            <p class="sg-muted">Los lagos salen en azul en el minimapa y los bancos activos como puntitos celestes.</p>` },
+      ];
+    }
     case 'smithing': {
       const pages = unlockPages('Horno: lingotes', MATERIALS.map(m => ({
         level: SMELT[m].level, name: `Lingote de ${MATERIAL_NAMES[m]}`, detail: `1 mineral · ${SMELT[m].xp} XP`, icon: icon(`bar_${m}`, '🧱'),
