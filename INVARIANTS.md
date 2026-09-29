@@ -600,3 +600,14 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
   (`items.stackable = 0`): 1 unidad = 1 slot. `findInventorySpotForItem` respeta
   el flag. En el banco sí se apilan; "Depositar X/Todo" recoge de todos los slots.
 - Tocar el mundo SIEMPRE corta la tala/minería en curso (no hay cola de acciones).
+
+## 17. Sesión 50 — Horno y yunque (Herrería)
+
+- Estaciones en `client/src/shared/smithing.js` (STATIONS), compartido con el
+  server. Horno/Yunque del Concejo junto a la cantera (≈100,-77) y en la Mina Antigua.
+- Recetas de forja = filas de `items` con `smith_level` + `bars_required`
+  (material/tier). Para añadir una pieza nueva basta con insertarla en la D1.
+- Fundir: 1 `ore_<m>` → 1 `bar_<m>`. XP/nivel en `SMELT`. Forjar: XP = lingotes × `SMITH_XP_PER_BAR`.
+- Endpoints: GET /api/smithing/recipes, POST /api/smithing/smelt, /smith (una acción
+  por petición, ritmo ≥1200ms con el mismo cerrojo que minería sobre user_skills 'smithing').
+- Iconos SVG de ore_/bar_/armaduras generados en `item_icons.js` (addMaterialIcons).

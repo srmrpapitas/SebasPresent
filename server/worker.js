@@ -26,6 +26,7 @@
  *   POST /api/woodcutting/chop                                  → handlers/skills/woodcutting.js (S30, movido S32)
  *   POST /api/firemaking/light                                  → handlers/skills/firemaking.js (S30, movido S32)
  *   POST /api/mining/mine                                       → handlers/skills/mining.js (S50)
+ *   GET  /api/smithing/recipes, POST /smelt /smith              → handlers/skills/smithing.js (S50)
  *   GET  /api/health
  *
  *   Cron (cada 1 min): GE matcher, NPC revive, ground_items cleanup,
@@ -56,6 +57,7 @@ import * as woodcutting from './handlers/skills/woodcutting.js';  // Sesión 30 
 import * as firemaking from './handlers/skills/firemaking.js';    // Sesión 30 (movido a skills/ en S32)
 import * as cooking from './handlers/skills/cooking.js';          // Sesión 48 — comer + cocinar
 import * as mining from './handlers/skills/mining.js';            // Sesión 50 — minería
+import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import { scheduledHandler } from './handlers/cron.js';
 
 export default {
@@ -240,6 +242,12 @@ export default {
       // ----- Minería (Sesión 50) -----
       } else if (path === '/api/mining/mine' && method === 'POST') {
         response = await mining.handleMiningMine(request, env);
+      } else if (path === '/api/smithing/recipes' && method === 'GET') {
+        response = await smithing.handleSmithingRecipes(request, env);
+      } else if (path === '/api/smithing/smelt' && method === 'POST') {
+        response = await smithing.handleSmithingSmelt(request, env);
+      } else if (path === '/api/smithing/smith' && method === 'POST') {
+        response = await smithing.handleSmithingSmith(request, env);
 
       // ----- Health + 404 -----
       } else if (path === '/api/health') {

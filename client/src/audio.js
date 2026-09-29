@@ -236,7 +236,20 @@ export function synth(name, opts = {}) {
       o.start(t0 + start); o.stop(t0 + start + dur + 0.02);
     };
 
-    if (name === 'wood_chop') {
+    if (name === 'anvil') {
+      // martillazo: golpe metálico brillante con resonancia larga
+      noiseBurst(0.04, 'highpass', 2500, 0.7, 0.8);
+      tone(1250, 0, 0.6, 0.30, 'triangle');
+      tone(1873, 0, 0.45, 0.16, 'sine');
+      tone(3120, 0, 0.25, 0.08, 'sine');
+    } else if (name === 'smelt') {
+      // horno: soplido grave + chisporroteo
+      noiseBurst(0.7, 'lowpass', 420 * pitch, 0.6, 0.9);
+      noiseBurst(0.25, 'bandpass', 3800, 3.0, 0.35);
+      tone(90, 0, 0.5, 0.12, 'sine');
+    } else if (name === 'craft_done') {
+      tone(784, 0.00, 0.18, 0.18); tone(988, 0.08, 0.2, 0.16); tone(1318, 0.16, 0.35, 0.16);
+    } else if (name === 'wood_chop') {
       noiseBurst(0.12, 'lowpass', 900 * pitch, 0.8, 1.0);
       noiseBurst(0.05, 'bandpass', 2200 * pitch, 1.5, 0.5);
       tone(140, 0, 0.12, 0.35, 'sine');

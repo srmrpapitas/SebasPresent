@@ -526,6 +526,17 @@ export async function miningMine(veinId) {
   });
 }
 
+/** Sesión 50 — Herrería: recetas + fundir + forjar. */
+export async function smithingRecipes() {
+  return apiFetch('/api/smithing/recipes', { auth: true });
+}
+export async function smithingSmelt(stationId, material) {
+  return apiFetch('/api/smithing/smelt', { method: 'POST', auth: true, body: { station_id: stationId, material } });
+}
+export async function smithingSmith(stationId, itemId) {
+  return apiFetch('/api/smithing/smith', { method: 'POST', auth: true, body: { station_id: stationId, item_id: itemId } });
+}
+
 /**
  * POST /api/firemaking/light { slot }
  *

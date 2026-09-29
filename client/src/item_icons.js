@@ -568,6 +568,68 @@ const SKILL_ICONS = {
   </svg>`,
 };
 
+// ============================================================
+// Sesión 50 — Iconos generados para minería/herrería (7 materiales)
+// ============================================================
+// ore_<m>, bar_<m> y piezas de armadura helm/body|chest/legs/boots/gloves_<m>.
+// Solo se añaden si no hay ya un icono hecho a mano con ese id.
+(function addMaterialIcons() {
+  const MATS = {
+    bronze:    { base: '#b87333', hi: '#e6a064', lo: '#6e4020', gem: '#ffb36b' },
+    hierro:    { base: '#7c7f84', hi: '#b9bdc3', lo: '#3c3e42', gem: '#c46a44' },
+    acero:     { base: '#aab4bd', hi: '#e8f0f6', lo: '#5c666e', gem: '#dff0ff' },
+    oro:       { base: '#d4af37', hi: '#ffe27a', lo: '#8a6c14', gem: '#fff1a8' },
+    obsidiana: { base: '#26222e', hi: '#6c5a8a', lo: '#0c0a10', gem: '#a36bff' },
+    basaltita: { base: '#3a3f45', hi: '#6c737b', lo: '#1c1f22', gem: '#ff6a2a' },
+    teiderio:  { base: '#2f9e8f', hi: '#7fe8d8', lo: '#15564d', gem: '#5fffe0' },
+  };
+  const svg = (inner) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision">${inner}</svg>`;
+  const S = 'stroke="#000" stroke-width="1" stroke-linejoin="round"';
+  for (const [m, c] of Object.entries(MATS)) {
+    const ore = svg(`
+      <polygon points="5,24 8,13 15,8 24,10 28,19 25,27 11,28" fill="#7d766e" ${S}/>
+      <polygon points="8,13 15,8 17,14 10,18" fill="#9a928a"/>
+      <polygon points="12,19 15,12 18,19 15,22" fill="${c.base}" ${S}/>
+      <polygon points="18,17 22,11 24,18 21,21" fill="${c.hi}" ${S}/>
+      <polygon points="9,23 11,18 14,24" fill="${c.lo}" ${S}/>
+      <circle cx="21" cy="13" r="1" fill="${c.gem}"/>`);
+    const bar = svg(`
+      <polygon points="4,20 10,13 28,13 22,20" fill="${c.hi}" ${S}/>
+      <polygon points="4,20 22,20 22,26 4,26" fill="${c.base}" ${S}/>
+      <polygon points="22,20 28,13 28,19 22,26" fill="${c.lo}" ${S}/>
+      <line x1="8" y1="17" x2="20" y2="17" stroke="#fff" stroke-opacity="0.45" stroke-width="1"/>`);
+    const helm = svg(`
+      <path d="M6 20 Q6 6 16 6 Q26 6 26 20 L26 25 L20 25 L20 18 L12 18 L12 25 L6 25 Z" fill="${c.base}" ${S}/>
+      <path d="M9 12 Q12 8 16 8" fill="none" stroke="${c.hi}" stroke-width="1.5"/>
+      <rect x="15" y="4" width="2" height="4" fill="${c.lo}" ${S}/>`);
+    const body = svg(`
+      <path d="M8 6 L13 5 Q16 8 19 5 L24 6 L28 12 L24 14 L24 27 L8 27 L8 14 L4 12 Z" fill="${c.base}" ${S}/>
+      <path d="M10 10 L14 10 L14 24 L10 24 Z" fill="${c.hi}" opacity="0.5"/>
+      <line x1="16" y1="9" x2="16" y2="26" stroke="${c.lo}" stroke-width="1"/>`);
+    const legs = svg(`
+      <path d="M8 5 L24 5 L25 28 L18 28 L16 13 L14 28 L7 28 Z" fill="${c.base}" ${S}/>
+      <rect x="8" y="5" width="16" height="3" fill="${c.lo}" ${S}/>
+      <line x1="10" y1="10" x2="10" y2="25" stroke="${c.hi}" stroke-width="1.2"/>`);
+    const boots = svg(`
+      <path d="M5 26 L5 10 L12 10 L12 20 L15 22 L15 26 Z" fill="${c.base}" ${S}/>
+      <path d="M17 26 L17 10 L24 10 L24 20 L28 22 L28 26 Z" fill="${c.base}" ${S}/>
+      <rect x="5" y="24" width="10" height="2" fill="${c.lo}"/><rect x="17" y="24" width="11" height="2" fill="${c.lo}"/>
+      <line x1="7" y1="12" x2="7" y2="20" stroke="${c.hi}" stroke-width="1"/><line x1="19" y1="12" x2="19" y2="20" stroke="${c.hi}" stroke-width="1"/>`);
+    const gloves = svg(`
+      <path d="M9 28 L9 17 L6 13 L8 11 L11 14 L11 6 L13.5 6 L14 13 L15 5 L17.5 5 L18 13 L19 6 L21.5 6 L22 14 L23 9 L25.5 9 L25 20 L22 28 Z" fill="${c.base}" ${S}/>
+      <rect x="9" y="24" width="13" height="4" fill="${c.lo}" ${S}/>
+      <line x1="14" y1="15" x2="14" y2="22" stroke="${c.hi}" stroke-width="1"/>`);
+    const add = (id, v) => { if (!Object.prototype.hasOwnProperty.call(ICONS, id)) ICONS[id] = v; };
+    add(`ore_${m}`, ore);
+    add(`bar_${m}`, bar);
+    add(`helm_${m}`, helm);
+    add(m === 'bronze' ? 'chest_bronze' : `body_${m}`, body);
+    add(`legs_${m}`, legs);
+    add(`boots_${m}`, boots);
+    add(`gloves_${m}`, gloves);
+  }
+})();
+
 /** Devuelve true si tenemos un SVG custom para este item_id. */
 export function hasCustomIcon(itemId) {
   return Object.prototype.hasOwnProperty.call(ICONS, itemId);

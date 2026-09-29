@@ -43,6 +43,7 @@ import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
 // Sesión 31 — skills movidas a client/src/skills/. Mismo API, paths nuevos.
 import * as woodcutting from './skills/woodcutting.js';
 import * as mining from './skills/mining.js';   // Sesión 50 — minería
+import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as firemaking  from './skills/firemaking.js';
 // Sesión 31 — extraído de world.js: setup de three.js + cámara orbital.
 import * as sceneSetup    from './core/scene.js';
@@ -236,6 +237,7 @@ export async function startWorld(loggedInUser, token) {
     await terrain.start({ scene });
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
     try { mining.registerKeepouts(terrain); } catch (e) { console.warn('[world] mining keepouts:', e); }
+    try { smithing.registerKeepouts(terrain); } catch (e) { console.warn('[world] smithing keepouts:', e); }
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
     // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
     // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
@@ -726,6 +728,16 @@ export async function startWorld(loggedInUser, token) {
         getSnapshot:     () => worldSnapshot.getSnapshot(),
       });
     } catch (e) { console.warn('[world] mining start:', e); }
+    // Sesión 50 — Horno + yunque. Debug: window.__smithingDebug()
+    try {
+      smithing.start({
+        scene,
+        getPlayer:       () => player,
+        getCharacter:    () => character,
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog:         (type, msg) => combat.feedLog?.(type, msg),
+      });
+    } catch (e) { console.warn('[world] smithing start:', e); }
     try {
       firemaking.start({
         scene,
@@ -776,6 +788,7 @@ export function stopWorld() {
   // Sesión 30 — woodcutting + firemaking cleanup
   try { woodcutting.stop(); } catch {}
   try { mining.stop(); } catch {}
+  try { smithing.stop(); } catch {}
   try { firemaking.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
@@ -1009,8 +1022,14 @@ function drawMinimap() {
     }
   }
 
-  // Sesión 50 — Vetas de mineral en el minimapa (color del mineral).
+  // Sesión 50 — Vetas de mineral y hornos/yunques en el minimapa.
   try {
+    for (const st of smithing.getStationsForMinimap()) {
+      const dx = st.x - px, dz = st.z - pz;
+      if (dx * dx + dz * dz > RANGE_SQ) continue;
+      ctx.fillStyle = st.color;
+      ctx.fillRect(cx + dx * scale - 2.5, cy + dz * scale - 2.5, 5, 5);
+    }
     for (const v of mining.getLoadedVeins()) {
       const dx = v.x - px, dz = v.z - pz;
       if (dx * dx + dz * dz > RANGE_SQ) continue;
@@ -2430,6 +2449,7 @@ function openSkillMenuAt(clientX, clientY) {
   const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
   const openMenu = (title, rows, cx, cy) => npcRenderer.openGenericActionMenu(title, rows, cx, cy);
+  if (smithing.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
   if (mining.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
 
   const treeHits = raycaster.intersectObjects(terrain.getInteractableMeshes(), false);
@@ -2477,6 +2497,7 @@ function doCanvasTap(clientX, clientY) {
   // Si el toque cae en otra veta/árbol, más abajo arranca la acción nueva.
   try { mining.stopMining?.('tap_ground'); } catch {}
   try { woodcutting.stopChop?.('tap_ground'); } catch {}
+  try { smithing.stopWork?.('tap_ground'); } catch {}
 
   // Sesión 27 Bloque 3 — Tap PVP: ¿el tap impacta otro player?
   // Primero peers (PVP), después NPCs. Si el peer cae bajo el tap,
@@ -2496,6 +2517,9 @@ function doCanvasTap(clientX, clientY) {
 
   // Sesión 11b parcial — Tap edificio → placeholder (en 11c será "entrar")
   if (buildings.tryHandleTap(clientX, clientY)) return;
+
+  // 2a) Tap horno/yunque → caminar + abrir panel (Sesión 50).
+  if (smithing.tryHandleTap(raycaster)) return;
 
   // 2b) Tap veta de mineral → caminar + picar (Sesión 50).
   if (mining.tryHandleTap(raycaster)) {
@@ -2657,6 +2681,7 @@ function animate() {
   chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles
   woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
   mining.update(dt);          // Sesión 50 — vetas + loop de picar
+  smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
