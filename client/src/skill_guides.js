@@ -226,13 +226,25 @@ async function buildUnlocks(skillId, lvl) {
         level: 1, name: `Armadura de ${MATERIAL_NAMES[m]}`,
         detail: `Se forja con Herrería nv ${SMELT[m].level}`, icon: icon(m === 'bronze' ? 'chest_bronze' : `body_${m}`, '🛡'),
       }));
-      return unlockPages('Armaduras', sets, lvl);
+      const DEF = [3, 6, 9, 12, 15, 18, 21];
+      const shields = MATERIALS.map((m, i) => ({
+        level: 1, name: `Escudo de ${MATERIAL_NAMES[m]}`,
+        detail: `+${DEF[i]} defensa · Herrería ${SMELT[m].level + 2} (2 lingotes)`, icon: icon(`shield_${m}`, '🛡'),
+      }));
+      return [...unlockPages('Armaduras', sets, lvl), ...unlockPages('Escudos', shields, lvl)];
     }
     case 'attack':
-      return unlockPages('Armas', [
-        { level: 1, name: 'Espada de bronce', detail: '+4 ataque · una mano', icon: icon('sword_bronze', '⚔️') },
-        { level: 1, name: 'Espadón de bronce', detail: '+8 ataque · dos manos · daño ×1,5 y 25 % de crítico', icon: icon('sword_bronze_2h', '⚔') },
-      ], lvl);
+      {
+        // Sesión 50 — espadas de los 7 materiales (se forjan en el yunque)
+        const A1 = [4, 8, 12, 16, 21, 26, 32], A2 = [8, 15, 22, 30, 39, 48, 58];
+        const rows = [];
+        MATERIALS.forEach((m, i) => {
+          const n = MATERIAL_NAMES[m];
+          rows.push({ level: 1, name: `Espada de ${n}`, detail: `+${A1[i]} ataque · una mano · Herrería ${SMELT[m].level}`, icon: icon(`sword_${m}`, '⚔️') });
+          rows.push({ level: 1, name: `Espadón de ${n}`, detail: `+${A2[i]} ataque · dos manos · ×1,5 daño, 25 % crítico · Herrería ${SMELT[m].level + 4}`, icon: icon(`sword_${m}_2h`, '⚔') });
+        });
+        return unlockPages('Armas', rows, lvl);
+      }
     case 'ranged':
       return unlockPages('Equipo', [
         { level: 1, name: 'Arco normal', detail: 'Dos manos · alcance ~10 m', icon: icon('bow_normal', '🏹') },

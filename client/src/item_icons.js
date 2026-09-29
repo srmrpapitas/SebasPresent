@@ -627,6 +627,31 @@ const SKILL_ICONS = {
     add(`legs_${m}`, legs);
     add(`boots_${m}`, boots);
     add(`gloves_${m}`, gloves);
+    // Sesión 50 — espada, espadón y escudo (se pisan también los de bronce
+    // para que todo tenga el mismo estilo que el modelo 3D procedural)
+    const gemOn = ['obsidiana', 'basaltita', 'teiderio'].includes(m);
+    const sword = svg(`
+      <polygon points="23,4 28,4 28,9 13,22 10,19" fill="${c.hi}" ${S}/>
+      <line x1="26" y1="6" x2="13" y2="19" stroke="${c.lo}" stroke-width="1"/>
+      <polygon points="7,17 9,15 17,23 15,25" fill="${c.base}" ${S}/>
+      <polygon points="11,21 13,23 8,28 6,26" fill="#5a3a20" ${S}/>
+      <circle cx="5.5" cy="28" r="2" fill="${c.base}" ${S}/>
+      ${gemOn ? `<circle cx="12" cy="20" r="1.3" fill="${c.gem}"/>` : ''}`);
+    const sword2h = svg(`
+      <polygon points="22,2 30,2 30,10 12,24 8,20" fill="${c.hi}" ${S}/>
+      <line x1="27" y1="5" x2="11" y2="21" stroke="${c.lo}" stroke-width="1.2"/>
+      <polygon points="4,17 7,14 18,25 15,28" fill="${c.base}" ${S}/>
+      <polygon points="9,22 12,25 5,31 2,28" fill="#5a3a20" ${S}/>
+      ${gemOn ? `<circle cx="11" cy="21" r="1.5" fill="${c.gem}"/>` : ''}`);
+    const shield = svg(`
+      <circle cx="16" cy="16" r="12.5" fill="${c.base}" ${S}/>
+      <circle cx="16" cy="16" r="10.5" fill="none" stroke="${c.lo}" stroke-width="1.2"/>
+      <path d="M8 11 Q12 6 18 6" fill="none" stroke="${c.hi}" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="4" fill="${c.hi}" ${S}/>
+      ${gemOn ? `<circle cx="16" cy="16" r="1.8" fill="${c.gem}"/>` : ''}`);
+    ICONS[`sword_${m}`] = sword;
+    ICONS[`sword_${m}_2h`] = sword2h;
+    ICONS[`shield_${m}`] = shield;
   }
 })();
 

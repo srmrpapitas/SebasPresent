@@ -32,10 +32,10 @@ export const ARMOR_COLORS = {
   teiderio:  { base: 0x2f9e8f, trim: 0x7fe8d8, gem: 0x5fffe0, metal: 0.7,  rough: 0.25 },
 };
 const TIER = { bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, basaltita: 5, teiderio: 6 };
-const PROC_SLOTS = new Set(['helm', 'body', 'legs', 'boots', 'gloves']);
+const PROC_SLOTS = new Set(['helm', 'body', 'legs', 'boots', 'gloves', 'shield']);
 
 export function materialOf(itemId) {
-  const m = String(itemId || '').split('_').pop();
+  const m = String(itemId || '').replace(/_2h$/, '').split('_').pop();
   return ARMOR_COLORS[m] ? m : null;
 }
 
@@ -592,6 +592,208 @@ function buildBody(root, matId) {
   return out.length ? out : null;
 }
 
+// ---------------- Escudo (antebrazo izquierdo) ----------------
+function buildShield(root, matId) {
+  const M = mats(matId), T = TIER[matId], tn = tune('shield');
+  const fore = findBone(root, 'LeftForeArm');
+  if (!fore) return null;
+  const hand = childNamed(fore, 'LeftHand') || findBone(root, 'LeftHand');
+  const len = hand ? hand.position.length() : fallbackLen(fore, 0.26);
+  const axis = hand ? hand.position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+  // Cara del escudo = dorso del antebrazo (arriba en pose T)
+  let n = boneBasis(root, fore).up.clone();
+  n.sub(axis.clone().multiplyScalar(n.dot(axis))).normalize();
+  const basis = orient(n, axis);        // y = normal del escudo, z = a lo largo del antebrazo
+  const box = fitBox(boneVerts(root, [fore], fore), orient(axis, n));
+  const armR = box ? Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2 : len * 0.2;
+
+  const R = len * 1.05 * tn.s;
+  const th = R * 0.07;
+  const g = framed(basis);
+  const u = new THREE.Group();
+  u.position.set(0, armR * 1.15 + th / 2 + len * tn.y, len * (0.52 + tn.z));
+  g.add(u);
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(R, R, th, 22), M.base);
+  u.add(disc);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(R, th * 0.75, 5, 26), M.trim);
+  rim.rotation.x = Math.PI / 2;
+  u.add(rim);
+  const boss = new THREE.Mesh(new THREE.SphereGeometry(R * 0.24, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M.trim);
+  boss.position.y = th / 2;
+  u.add(boss);
+  if (T >= 1) {   // hierro+: anillo interior
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R * 0.62, th * 0.35, 4, 22), M.dark);
+    ring.rotation.x = Math.PI / 2; ring.position.y = th / 2;
+    u.add(ring);
+  }
+  if (T >= 2) {   // acero+: cruz de refuerzo
+    for (const rot of [0, Math.PI / 2]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(R * 1.9, th * 0.5, R * 0.14), M.trim);
+      bar.rotation.y = rot; bar.position.y = th / 2 + th * 0.2;
+      u.add(bar);
+    }
+  }
+  if (T >= 3) {   // oro+: remaches en el borde
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const rv = new THREE.Mesh(new THREE.SphereGeometry(R * 0.05, 5, 4), M.trim);
+      rv.position.set(Math.cos(a) * R * 0.84, th / 2, Math.sin(a) * R * 0.84);
+      u.add(rv);
+    }
+  }
+  if (T >= 4) {   // obsidiana+: pincho central
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(R * 0.1, R * (0.4 + (T - 4) * 0.1), 6), M.dark);
+    spike.position.y = th / 2 + R * 0.24 + R * 0.18;
+    u.add(spike);
+  }
+  if (M.gem) {
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(R * 0.07, 0), M.gem);
+      gem.position.set(Math.cos(a) * R * 0.45, th / 2 + R * 0.03, Math.sin(a) * R * 0.45);
+      u.add(gem);
+    }
+  }
+  return [{ bone: fore, mesh: g }];
+}
+
+// ---------------- Espadas (mano derecha) ----------------
+function swordMats(matId) {
+  const key = 'sw_' + matId;
+  if (_mats.has(key)) return _mats.get(key);
+  const C = ARMOR_COLORS[matId];
+  const blade = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(C.base).lerp(new THREE.Color(0xffffff), 0.18), metalness: Math.min(1, C.metal + 0.1),
+    roughness: Math.max(0.12, C.rough - 0.12), flatShading: true,
+    emissive: C.gem || 0x000000, emissiveIntensity: C.gem ? 0.18 : 0,
+  });
+  const grip = new THREE.MeshStandardMaterial({ color: 0x4a2e1a, roughness: 0.9, flatShading: true });
+  const out = { blade, grip };
+  _mats.set(key, out);
+  return out;
+}
+
+/** Marco de agarre de la mano: { bone, basis (x filo, y hoja, z palma), center, L }. */
+function gripFrame(root, side, handBone) {
+  const hand = handBone || findBone(root, side + 'Hand');
+  if (!hand) return null;
+  const mid = childNamed(hand, side + 'HandMiddle1');
+  const idx = childNamed(hand, side + 'HandIndex1');
+  const pk = childNamed(hand, side + 'HandPinky1') || childNamed(hand, side + 'HandRing1');
+  const L = mid ? mid.position.length() : fallbackLen(hand, 0.09);
+  const fdir = mid ? mid.position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+  let across = (idx && pk) ? idx.position.clone().sub(pk.position) : boneBasis(root, hand).fwd.clone();
+  across.sub(fdir.clone().multiplyScalar(across.dot(fdir))).normalize();
+  // Palma: en pose T mira hacia abajo
+  const down = boneBasis(root, hand).up.clone().negate();
+  let palm = new THREE.Vector3().crossVectors(fdir, across).normalize();
+  if (palm.dot(down) < 0) palm.negate();
+  const y = across, z = palm;
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  const basis = new THREE.Matrix4().makeBasis(x, y, z);
+  const base = (idx && pk) ? idx.position.clone().add(pk.position).multiplyScalar(0.5) : fdir.clone().multiplyScalar(L);
+  const center = base.multiplyScalar(0.8).add(fdir.clone().multiplyScalar(L * 0.12)).add(palm.clone().multiplyScalar(L * 0.32));
+  return { bone: hand, basis, center, L };
+}
+
+function buildSword(root, matId, twoHanded, handBone) {
+  const gf = gripFrame(root, 'Right', handBone);
+  if (!gf) return null;
+  const M = mats(matId), SM = swordMats(matId), T = TIER[matId], tn = tune(twoHanded ? 'sword2h' : 'sword');
+  const L = gf.L * tn.s;
+  const u = new THREE.Group();
+  const gripLen = twoHanded ? 2.3 * L : 1.2 * L;
+  const bladeLen = (twoHanded ? 10.5 : 7.0) * L;
+  const w = (twoHanded ? 0.42 : 0.3) * L;
+  const thick = 0.09 * L;
+
+  // Empuñadura (la mano derecha va arriba, junto a la guarda)
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * L, 0.17 * L, gripLen, 7), SM.grip);
+  grip.position.y = 0.55 * L - gripLen / 2;
+  u.add(grip);
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.24 * L, 8, 6), M.trim);
+  pommel.position.y = 0.55 * L - gripLen - 0.15 * L;
+  u.add(pommel);
+  // Guarda
+  const guardW = (twoHanded ? 3.0 : 2.1) * L;
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(guardW, 0.2 * L, 0.3 * L), M.trim);
+  guard.position.y = 0.65 * L;
+  u.add(guard);
+  if (T >= 3) {   // oro+: puntas de la guarda hacia la hoja
+    for (const sx of [-1, 1]) {
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.11 * L, 0.45 * L, 5), M.trim);
+      tip.position.set(sx * guardW / 2, 0.82 * L, 0);
+      tip.rotation.z = -sx * 0.5;
+      u.add(tip);
+    }
+  }
+  // Hoja (perfil extruido con punta)
+  const tipLen = w * 2.4;
+  const sh = new THREE.Shape();
+  sh.moveTo(-w, 0);
+  sh.lineTo(w, 0);
+  sh.lineTo(w * 0.86, bladeLen - tipLen);
+  sh.lineTo(0, bladeLen);
+  sh.lineTo(-w * 0.86, bladeLen - tipLen);
+  sh.closePath();
+  const bladeGeo = new THREE.ExtrudeGeometry(sh, { depth: thick, bevelEnabled: true, bevelThickness: thick * 0.4, bevelSize: w * 0.12, bevelSegments: 1 });
+  bladeGeo.translate(0, 0, -thick / 2);
+  const blade = new THREE.Mesh(bladeGeo, SM.blade);
+  blade.position.y = 0.72 * L;
+  u.add(blade);
+  // Acanaladura (línea oscura) en las dos caras
+  for (const sz of [-1, 1]) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(w * 0.22, bladeLen * 0.62, thick * 0.3), M.dark);
+    f.position.set(0, 0.72 * L + bladeLen * 0.36, sz * (thick * 0.55 + thick * 0.4));
+    u.add(f);
+  }
+  if (M.gem) {
+    for (const sz of [-1, 1]) {
+      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.16 * L, 0), M.gem);
+      gem.position.set(0, 0.65 * L, sz * 0.17 * L);
+      u.add(gem);
+    }
+  }
+  u.position.set(tn.x * L, tn.y * L, tn.z * L);
+  const g = framed(gf.basis);
+  g.position.copy(gf.center);
+  g.add(u);
+  return { bone: gf.bone, mesh: g };
+}
+
+const PROC_WEAPON_TYPES = new Set(['1h_sword', '2h_sword']);
+
+export function isProceduralWeapon(itemId, weaponType) {
+  return PROC_WEAPON_TYPES.has(weaponType) && !!materialOf(itemId);
+}
+
+/** Raíz del personaje (el objeto que contiene la malla con esqueleto) a partir de un hueso. */
+function skinRootOf(bone) {
+  let p = bone;
+  while (p.parent) {
+    p = p.parent;
+    let ok = false;
+    p.traverse(o => { if (!ok && o.isSkinnedMesh && o.skeleton?.bones?.includes(bone)) ok = true; });
+    if (ok) return p;
+  }
+  return null;
+}
+
+/**
+ * Espada procedural. `root` = FBX del personaje; si no se tiene, pasar
+ * `handBone` (se busca la raíz subiendo por los padres — sirve para peers).
+ * Devuelve { bone, mesh } o null.
+ */
+export function buildProceduralWeapon(itemId, weaponType, root, handBone = null) {
+  const matId = materialOf(itemId);
+  if (!matId) return null;
+  const r = root || (handBone && skinRootOf(handBone));
+  if (!r) return null;
+  const out = buildSword(r, matId, weaponType === '2h_sword', handBone);
+  if (out) out.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+  return out;
+}
+
 /**
  * Construye la pieza y devuelve [{ bone, mesh }] (sin añadir aún a los huesos).
  * `root` = el FBX del personaje (character.mesh).
@@ -602,6 +804,7 @@ export function buildProceduralArmor(itemId, slot, root) {
   let parts = null;
   if (slot === 'helm') parts = buildHelm(root, matId);
   else if (slot === 'body') parts = buildBody(root, matId);
+  else if (slot === 'shield') parts = buildShield(root, matId);
   else if (slot === 'legs') parts = buildLegs(root, matId);
   else if (slot === 'boots') parts = buildBoots(root, matId);
   else if (slot === 'gloves') parts = buildGloves(root, matId);

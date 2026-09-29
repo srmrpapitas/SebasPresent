@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { isProceduralArmor, buildProceduralArmor } from './armor_procedural.js';   // Sesión 50
+import { isProceduralArmor, buildProceduralArmor, isProceduralWeapon, buildProceduralWeapon } from './armor_procedural.js';   // Sesión 50
 
 const CDN_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const ANIM_BASE = `${CDN_BASE}/animations`;
@@ -332,6 +332,13 @@ export async function loadWeaponMeshFromR2(weaponId) {
  */
 export async function attachWeaponMeshToBone(bone, weaponId, weaponType) {
   if (!bone || !weaponId) return null;
+  // Sesión 50 — espadas procedurales (el hueso es la mano derecha del peer)
+  if (isProceduralWeapon(weaponId, weaponType)) {
+    const w = buildProceduralWeapon(weaponId, weaponType, null, bone);
+    if (!w) return null;
+    bone.add(w.mesh);
+    return w.mesh;
+  }
   const tf = resolveWeaponTransform(weaponId, weaponType);
   try {
     const mesh = await loadWeaponMeshFromR2(weaponId);
@@ -818,6 +825,19 @@ export class Character {
       this.detachWeapon();
     }
     if (!weaponId) return;
+
+    // Sesión 50 — espadas de los 7 materiales: procedurales (armor_procedural.js)
+    if (isProceduralWeapon(weaponId, weaponType)) {
+      const w = buildProceduralWeapon(weaponId, weaponType, this.mesh, this._rightHandBone);
+      if (!w) return;
+      w.bone.add(w.mesh);
+      this._equippedWeaponMesh = w.mesh;
+      this._equippedWeaponId = weaponId;
+      this._equippedWeaponHand = 'right';
+      this._equippedWeaponType = weaponType;
+      window.__character = this;
+      return;
+    }
 
     try {
       const mesh = await this._loadWeaponMesh(weaponId);
