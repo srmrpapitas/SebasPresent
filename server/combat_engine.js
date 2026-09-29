@@ -270,9 +270,11 @@ function effectiveLevel(level) {
   return level + 8;
 }
 
-function calcHitChance(attackerAtkLvl, defenderDefLvl) {
-  const attackRoll = effectiveLevel(attackerAtkLvl) * 64;
-  const defenceRoll = effectiveLevel(defenderDefLvl) * 64;
+// Sesión 50 — atkMult/defMult: multiplicadores por equipo y estilo
+// (equipBonusMult). 1 = sin bonus, igual que antes.
+function calcHitChance(attackerAtkLvl, defenderDefLvl, atkMult = 1, defMult = 1) {
+  const attackRoll = effectiveLevel(attackerAtkLvl) * 64 * atkMult;
+  const defenceRoll = effectiveLevel(defenderDefLvl) * 64 * defMult;
   if (attackRoll > defenceRoll) {
     return 1 - (defenceRoll + 2) / (2 * (attackRoll + 1));
   }
@@ -301,17 +303,17 @@ function calcMaxHitRanged(rangedLvl, rangedBonus) {
   return Math.floor((eff + rangedBonus + 5) / 10);
 }
 
-function calcHitChanceRanged(rangedLvl, defenderDefLvl, rangedBonus) {
+function calcHitChanceRanged(rangedLvl, defenderDefLvl, rangedBonus, defMult = 1) {
   const attackRoll  = effectiveLevel(rangedLvl) * 64 + rangedBonus * 4;
-  const defenceRoll = effectiveLevel(defenderDefLvl) * 64;
+  const defenceRoll = effectiveLevel(defenderDefLvl) * 64 * defMult;
   if (attackRoll > defenceRoll) {
     return 1 - (defenceRoll + 2) / (2 * (attackRoll + 1));
   }
   return attackRoll / (2 * (defenceRoll + 1));
 }
 
-function rollHitRanged(rng, rangedLvl, defenderDefLvl, rangedBonus, maxHit) {
-  const chance = calcHitChanceRanged(rangedLvl, defenderDefLvl, rangedBonus);
+function rollHitRanged(rng, rangedLvl, defenderDefLvl, rangedBonus, maxHit, defMult = 1) {
+  const chance = calcHitChanceRanged(rangedLvl, defenderDefLvl, rangedBonus, defMult);
   const r1 = rng();
   if (r1 >= chance) return { hit: false, damage: 0 };
   const r2 = rng();
@@ -323,8 +325,8 @@ function rollHitRanged(rng, rangedLvl, defenderDefLvl, rangedBonus, maxHit) {
 // (rollHit melee continúa)
 // ============================================================
 
-function rollHit(rng, attackerAtkLvl, defenderDefLvl, maxHit) {
-  const chance = calcHitChance(attackerAtkLvl, defenderDefLvl);
+function rollHit(rng, attackerAtkLvl, defenderDefLvl, maxHit, atkMult = 1, defMult = 1) {
+  const chance = calcHitChance(attackerAtkLvl, defenderDefLvl, atkMult, defMult);
   const r1 = rng();
   if (r1 >= chance) return { hit: false, damage: 0 };
   const r2 = rng();
@@ -438,6 +440,31 @@ function detectLevelUps(before, after) {
   if (after.ranged   > before.ranged)   ups.push('ranged');
   if (after.magic    > before.magic)    ups.push('magic');   // Sesión 41
   return ups;
+}
+
+// ============================================================
+// Sesión 50 — Bonus de equipo (antes solo se mostraban, no hacían nada)
+// ============================================================
+// Suma attack_bonus / defence_bonus de todo lo equipado. Estilo OSRS:
+//   roll = nivelEfectivo × (64 + bonus)  →  multiplicador (64 + bonus) / 64.
+// El estilo "Defensivo" (block) suma además su defense_bonus (+5 %).
+async function getEquipBonuses(db, userId) {
+  try {
+    const row = await db.first(
+      `SELECT COALESCE(SUM(i.attack_bonus), 0) AS atk, COALESCE(SUM(i.defence_bonus), 0) AS def
+         FROM user_equipment ue JOIN items i ON i.id = ue.item_id
+        WHERE ue.user_id = ?`,
+      [userId]
+    );
+    return { atk: Math.max(0, row?.atk | 0), def: Math.max(0, row?.def | 0) };
+  } catch {
+    return { atk: 0, def: 0 };
+  }
+}
+function atkMultOf(eq) { return (64 + (eq?.atk || 0)) / 64; }
+function defMultOf(eq, stanceKey) {
+  const st = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
+  return ((64 + (eq?.def || 0)) / 64) * (1 + (st.defense_bonus || 0));
 }
 
 function dist(ax, az, bx, bz) {
@@ -1010,6 +1037,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   // ---- User hit ----
   const userLvls = levelsOf(stats);
+  const userEq = await getEquipBonuses(db, userId);   // Sesión 50
   // Sesion 46 — restaurado el SPECIAL ATTACK en attackNpc (se habia perdido
   // al regenerar el engine para el quiver). Mismo patron que attackPlayer:
   // valida energia, hace DOS rolls independientes, descuenta la barra.
@@ -1028,7 +1056,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
       : isRanged
       ? rollHitRanged(rng, userLvls.ranged, npc.defence_lvl,
           totalRangedBonus, calcMaxHitRanged(userLvls.ranged, totalRangedBonus))
-      : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength))
+      : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength), atkMultOf(userEq), 1)
   );
   const userHit = doRoll();
 
@@ -1126,7 +1154,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     const npcMeleeRange = Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE);
     const userInNpcRange = d <= npcMeleeRange;
     if (npcReady && userInNpcRange) {
-      npcCounterHit = rollHit(rng, npc.attack_lvl, userLvls.defence, npc.max_hit);
+      npcCounterHit = rollHit(rng, npc.attack_lvl, userLvls.defence, npc.max_hit, 1, defMultOf(userEq, stanceKey));
       dmgToUser = Math.min(npcCounterHit.damage, stats.hp_current);
       const userHpAfter = stats.hp_current - dmgToUser;
       if (userHpAfter <= 0) {
@@ -1435,7 +1463,10 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const isRanged = (weaponType === 'bow');
   // Sesion 46 — isMagicPvp se calcula ACA (antes estaba despues del rango ->
   // el staff usaba rango de melé y daba out_of_range si no estabas pegado).
-  const isMagicPvp = (weaponType === 'staff' || !!opts.spellId);
+  // Sesión 50 — igual que contra NPCs: magia SOLO con bastón + hechizo. Antes
+  // cualquier arma + spell_id lanzaba hechizos, y el bastón sin hechizo pegaba
+  // cuerpo a cuerpo a 10 m.
+  const isMagicPvp = (weaponType === 'staff' && !!opts.spellId);
   const PVP_PLAYER_BASE_RANGE = 2.5;
   const PVP_MELEE_MAX_RANGE   = 4.0;
   // Ranged y magia: rango largo (~10m). Melé: hasta 3.3m.
@@ -1503,15 +1534,22 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // -------- User hit --------
   const attackerLvls = levelsOf(attackerStats);
   const targetLvls   = levelsOf(targetStats);
+  // Sesión 50 — bonus de equipo de ambos + estilo defensivo del target.
+  const attackerEq = await getEquipBonuses(db, attackerId);
+  const targetEq   = await getEquipBonuses(db, targetId);
+  const targetStanceKey = STYLE_TO_STANCE[await dbGetUserCombatStyle(db, targetId)] || 'smash';
+  const targetDefMult   = defMultOf(targetEq, targetStanceKey);
+  const attackerDefMult = defMultOf(attackerEq, stanceKey);
 
   const doRollPvp = () => (
     isMagicPvp && spellPvp
-      ? magic.rollHitMagic(rng, magicLevelPvp, targetLvls.defence,
+      ? magic.rollHitMagic(rng, magicLevelPvp, Math.round(targetLvls.defence * targetDefMult),
           magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, 0))
       : isRanged
       ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
-          totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp))
-      : rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength))
+          totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp), targetDefMult)
+      : rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength),
+          atkMultOf(attackerEq), targetDefMult)
   );
   const userHit = doRollPvp();
 
@@ -1566,7 +1604,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   // -------- XP attacker --------
   const xpBefore = levelsOf(attackerStats);
-  const xpGained = awardXp(attackerStats, dmgToTarget, attackerStyle);
+  // Sesión 50 — la XP va a la skill correcta (arco → Distancia, hechizo → Magia).
+  const xpGained = awardXp(attackerStats, dmgToTarget, attackerStyle, weaponType, isMagicPvp && !!spellPvp);
   const xpAfter = levelsOf(attackerStats);
   const levelUps = detectLevelUps(xpBefore, xpAfter);
 
@@ -1592,7 +1631,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       // El target da un golpe defensivo (style: defensive simulado).
       // Usamos su strength real pero stance "neutra".
       const targetMaxHit = calcMaxHit(targetLvls.strength);
-      targetCounterHit = rollHit(rng, targetLvls.attack, attackerLvls.defence, targetMaxHit);
+      targetCounterHit = rollHit(rng, targetLvls.attack, attackerLvls.defence, targetMaxHit,
+        atkMultOf(targetEq), attackerDefMult);
       dmgToAttacker = Math.min(targetCounterHit.damage, attackerStats.hp_current);
       const attackerHpAfter = attackerStats.hp_current - dmgToAttacker;
       if (attackerHpAfter <= 0) {
@@ -1669,6 +1709,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     await db.run(
       `UPDATE combat_stats
        SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
+           ranged_xp = ?, magic_xp = ?,
            spec_energy = ?, spec_updated_at = ?,
            mana_current = ?, mana_updated_at = ?,
            hp_current = ?, last_attack_at = ?, last_died_at = ?,
@@ -1678,6 +1719,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       [
         attackerStats.attack_xp, attackerStats.strength_xp,
         attackerStats.defence_xp, attackerStats.hp_xp,
+        attackerStats.ranged_xp || 0, attackerStats.magic_xp || 0,
         persistSpecPvp, persistSpecAtPvp,
         persistManaPvp, persistManaAtPvp,
         attackerStats.hp_current, attackerStats.last_attack_at,
@@ -2286,6 +2328,11 @@ const WANDER_BUCKET_MS = 3000;    // cada ~3s elige un nuevo destino random
  * @param now         Date.now()
  * @param opts        { rng } opcional para tests
  */
+// Adaptador mínimo env → db (tickNpcAggro recibe env, no db).
+function makeEnvDb(env) {
+  return { first: (sql, params = []) => env.DB.prepare(sql).bind(...params).first() };
+}
+
 export async function tickNpcAggro(env, viewer, now, opts = {}) {
   const rng = opts.rng || Math.random;
   const changes = new Map();
@@ -2324,6 +2371,13 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
   if (!viewerStats || viewerStats.hp_current <= 0) return changes; // muerto: no agro
 
   const viewerDefLvl = viewerStats.defence_xp != null ? levelFromXp(viewerStats.defence_xp) : 1;
+  // Sesión 50 — la armadura y el estilo defensivo del jugador cuentan.
+  let viewerDefMult = 1;
+  try {
+    const eq = await getEquipBonuses(makeEnvDb(env), viewer.user_id);
+    const st = await env.DB.prepare('SELECT combat_style FROM users WHERE id = ?').bind(viewer.user_id).first();
+    viewerDefMult = defMultOf(eq, STYLE_TO_STANCE[st?.combat_style] || 'smash');
+  } catch {}
   let viewerHp = viewerStats.hp_current;
 
   for (const npc of rows) {
@@ -2382,7 +2436,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
         const cooldownMs = (npc.attack_speed_ticks || 4) * TICK_MS;
         const ready = !npc.last_attack_at || (now - npc.last_attack_at) >= cooldownMs;
         if (ready && viewerHp > 0) {
-          const roll = rollHit(rng, npc.attack_lvl, viewerDefLvl, npc.max_hit);
+          const roll = rollHit(rng, npc.attack_lvl, viewerDefLvl, npc.max_hit, 1, viewerDefMult);
           dmg = Math.min(roll.damage, viewerHp);
           attacked = true;
         }
