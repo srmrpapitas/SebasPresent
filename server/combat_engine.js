@@ -30,6 +30,7 @@
 
 import * as magic from './magic.js';   // Sesión 41 — sistema de mago
 import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.js';   // Sesión 50
+import { hasSpecialAttack } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
 // tengan stats de maná/magia propios (llega con smithing/crafting). Base 20 +
@@ -560,6 +561,15 @@ async function dbGetUserCombatStyle(db, userId) {
  *
  * Valores esperados: 'unarmed' | '1h_sword' | '2h_sword' | 'bow' | 'staff'
  */
+// Sesión 50 — item del arma equipada (para saber si tiene ataque especial)
+async function getUserWeaponItemId(db, userId) {
+  try {
+    const row = await db.first(
+      `SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = 'weapon'`, [userId]);
+    return row?.item_id || null;
+  } catch { return null; }
+}
+
 async function getUserWeaponType(db, userId) {
   try {
     const row = await db.first(
@@ -1070,7 +1080,8 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // Sesion 46 — restaurado el SPECIAL ATTACK en attackNpc (se habia perdido
   // al regenerar el engine para el quiver). Mismo patron que attackPlayer:
   // valida energia, hace DOS rolls independientes, descuenta la barra.
-  const specCost = SPEC_COSTS[weaponType];
+  // Sesión 50 — solo las armas buenas tienen especial
+  const specCost = hasSpecialAttack(await getUserWeaponItemId(db, userId)) ? SPEC_COSTS[weaponType] : null;
   let specActive = false;
   let specEnergyNow = null;
   if (opts.useSpecial && !isMagic && specCost) {
@@ -1537,7 +1548,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   }
 
   // -------- Spec: validar energia ANTES de consumir flechas --------
-  const specCostPvp = SPEC_COSTS[weaponType];
+  const specCostPvp = hasSpecialAttack(await getUserWeaponItemId(db, attackerId)) ? SPEC_COSTS[weaponType] : null;   // Sesión 50
   let specActivePvp = false;
   let specEnergyNowPvp = null;
   if (opts.useSpecial && !isMagicPvp && specCostPvp) {

@@ -19,7 +19,7 @@ import { getItemIconHtml, getSkillIconHtml } from './item_icons.js';
 import { ORE_TIERS } from './shared/ore_veins.js';
 import { SMELT, MATERIALS, MATERIAL_NAMES } from './shared/smithing.js';
 import { FISH, SPOT_TYPES } from './shared/fishing.js';   // Sesión 50
-import { EQUIP_LEVEL, equipRequirement } from './shared/equip_reqs.js';     // Sesión 50
+import { EQUIP_LEVEL, equipRequirement, hasSpecialAttack } from './shared/equip_reqs.js';     // Sesión 50
 import { RECIPES } from './shared/crafting.js';           // Sesión 50
 import { PRAYERS } from './shared/prayer.js';
 
@@ -244,8 +244,8 @@ async function buildUnlocks(skillId, lvl) {
         const rows = [];
         MATERIALS.forEach((m, i) => {
           const n = MATERIAL_NAMES[m];
-          rows.push({ level: EQUIP_LEVEL[m], name: `Espada de ${n}`, detail: `+${A1[i]} ataque · una mano · Herrería ${SMELT[m].level}`, icon: icon(`sword_${m}`, '⚔️') });
-          rows.push({ level: EQUIP_LEVEL[m], name: `Espadón de ${n}`, detail: `+${A2[i]} ataque · dos manos · ×1,5 daño, 25 % crítico · Herrería ${SMELT[m].level + 4}`, icon: icon(`sword_${m}_2h`, '⚔') });
+          rows.push({ level: EQUIP_LEVEL[m], name: `Espada de ${n}`, detail: `+${A1[i]} ataque · una mano${hasSpecialAttack(`sword_${m}`) ? ' · ⚡ especial' : ''} · Herrería ${SMELT[m].level}`, icon: icon(`sword_${m}`, '⚔️') });
+          rows.push({ level: EQUIP_LEVEL[m], name: `Espadón de ${n}`, detail: `+${A2[i]} ataque · dos manos · ×1,5 daño, 25 % crítico${hasSpecialAttack(`sword_${m}_2h`) ? ' · ⚡ especial' : ''} · Herrería ${SMELT[m].level + 4}`, icon: icon(`sword_${m}_2h`, '⚔') });
         });
         return unlockPages('Armas', rows, lvl);
       }
@@ -267,7 +267,7 @@ async function buildUnlocks(skillId, lvl) {
         ...['bow_oak', 'bow_willow', 'bow_maple', 'bow_yew', 'bow_magic'].map((id, i) => ({
           level: equipRequirement({ id, equip_slot: 'weapon', weapon_type: 'bow' })?.level || 1,
           name: ['Arco de roble', 'Arco de sauce', 'Arco de arce', 'Arco de tejo', 'Arco mágico'][i],
-          detail: `+${[7, 12, 18, 26, 35][i]} distancia · se fabrica con Flechería`, icon: icon(id, '🏹'),
+          detail: `+${[7, 12, 18, 26, 35][i]} distancia${hasSpecialAttack(id) ? ' · ⚡ especial' : ''} · se fabrica con Flechería`, icon: icon(id, '🏹'),
         })),
         { level: 1, name: 'Armadura de cuero', detail: 'Artesanía · algo de defensa y +distancia', icon: icon('body_cuero', '🛡') },
         { level: 1, name: 'Arco normal', detail: 'Dos manos · alcance ~10 m', icon: icon('bow_normal', '🏹') },

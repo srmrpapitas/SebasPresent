@@ -497,6 +497,28 @@ function injectStyles() {
     }
     .equip-footer-row b { color: #ffd060; }
 
+    /* Sesión 50 — compacto: todo el equipo cabe en el panel sin scroll y se
+       estira con él (móvil / PC). Las filas se reparten la altura. */
+    .osrs-tab-pane[data-tab="equipment"].active { height: 100%; overflow: hidden; display: flex !important; flex-direction: column; }
+    .osrs-tab-pane[data-tab="equipment"] .equip-panel { flex: 1 1 auto; min-height: 0; padding: 0; gap: 4px; height: auto; }
+    .osrs-tab-pane[data-tab="equipment"] .equip-panel-title { font-size: 11px; line-height: 1.1; }
+    .osrs-tab-pane[data-tab="equipment"] .equip-grid {
+      flex: 1 1 auto; min-height: 0; max-width: none; gap: 4px;
+      grid-template-rows: repeat(5, minmax(0, 1fr));
+    }
+    .osrs-tab-pane[data-tab="equipment"] .equip-slot {
+      aspect-ratio: auto; min-height: 0; height: 100%; border-width: 1.5px; overflow: hidden;
+    }
+    .osrs-tab-pane[data-tab="equipment"] .equip-slot-icon-wrap,
+    .osrs-tab-pane[data-tab="equipment"] .equip-slot-empty-svg {
+      height: 72%; width: auto; aspect-ratio: 1; max-width: 80%;
+    }
+    .osrs-tab-pane[data-tab="equipment"] .equip-slot-icon { font-size: 18px; }
+    .osrs-tab-pane[data-tab="equipment"] .equip-slot-label { display: none; }
+    .osrs-tab-pane[data-tab="equipment"] .equip-footer {
+      margin: 0; padding: 3px 0 0; display: flex; justify-content: space-around; gap: 4px; font-size: 11px; flex: 0 0 auto;
+    }
+
     .equip-tooltip {
       position: fixed;
       z-index: 200;
@@ -618,11 +640,12 @@ function renderPanel() {
   }
   html += '</div>';
 
+  // Sesión 50 — bonus en una sola línea (el panel entero cabe sin scroll)
   html += `
     <div class="equip-footer">
-      <div class="equip-footer-row"><span>Bonus Ataque:</span><b>+${attackBonus}</b></div>
-      <div class="equip-footer-row"><span>Bonus Defensa:</span><b>+${defenceBonus}</b></div>
-      ${rangedBonus > 0 ? `<div class="equip-footer-row"><span>Bonus Distancia:</span><b>+${rangedBonus}</b></div>` : ''}
+      <span title="Ataque">⚔ <b>+${attackBonus}</b></span>
+      <span title="Defensa">🛡 <b>+${defenceBonus}</b></span>
+      <span title="Distancia">🏹 <b>+${rangedBonus}</b></span>
     </div>
   `;
   html += '</div>';

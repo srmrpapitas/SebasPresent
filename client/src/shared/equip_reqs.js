@@ -53,3 +53,17 @@ export function equipRequirement(item) {
 export function requirementText(req) {
   return req ? `nivel ${req.level} de ${SKILL_NAMES[req.skill] || req.skill}` : '';
 }
+
+// ------------------------------------------------------------
+// Sesión 50 — Ataque especial SOLO en armas buenas (estilo OSRS)
+//   Espadas/espadones de oro, obsidiana, basaltita y teiderio.
+//   Arcos de arce, tejo y mágico.
+// ------------------------------------------------------------
+const SPECIAL_MATERIALS = new Set(['oro', 'obsidiana', 'basaltita', 'teiderio']);
+const SPECIAL_ITEMS = new Set(['bow_maple', 'bow_yew', 'bow_magic']);
+
+export function hasSpecialAttack(itemId) {
+  if (!itemId) return false;
+  if (SPECIAL_ITEMS.has(itemId)) return true;
+  return /^sword_/.test(itemId) && SPECIAL_MATERIALS.has(materialFromId(itemId));
+}

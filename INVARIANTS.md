@@ -683,3 +683,8 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Se abre desde la mochila (menú del objeto → 🏹 Flechería / 🧵 Artesanía) → `window.__crafting.open(itemId, skill)`.
 - Armadura de cuero = material `cuero` en armor_procedural (mismas piezas, sin metal). Arcos nuevos usan el GLB de `bow_normal` teñido (`WEAPON_MODEL_ALIAS` en character.js).
 - Seed `server/seeds/006_crafting_s50.sql` (ejecutado). Misión `artesano`.
+
+## 26. Tabs compactos + especial solo en armas buenas (Sesión 50)
+
+- Tabs Combate y Equipo: sin scroll, se reparten la altura del panel (`.osrs-tab-pane[data-tab=...].active { height:100%; overflow:hidden }`). El tab de combate ya no lista NPCs cercanos.
+- `hasSpecialAttack(itemId)` (shared/equip_reqs.js): espadas/espadones de oro, obsidiana, basaltita, teiderio + arcos de arce, tejo y mágico. El server lo exige (specCost = null si el arma no tiene especial) y el cliente solo muestra la barra con esas armas.

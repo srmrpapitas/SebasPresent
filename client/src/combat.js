@@ -41,6 +41,7 @@ import * as multiplayer from './multiplayer.js';   // Sesión 27 Bloque 3 — PV
 import * as worldSnapshot from './world_snapshot.js'; // Sesión 27 Bloque 3 — auto-retaliate
 import * as audio from './audio.js';               // Sesión 32 — SFX de combat
 import * as combatStyles from './combat_styles.js'; // Sesión 33 día 2 — selector de estilo
+import { hasSpecialAttack } from './shared/equip_reqs.js';   // Sesión 50
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -1228,12 +1229,23 @@ function render() {
     uiSelectedStance = uiStanceFromServer(weaponKey, serverStance);
   }
   const combatLvl = computeCombatLvl(s);
+  ensureCompactCss();
+
+  // Sesión 50 — el especial solo aparece con armas buenas (shared/equip_reqs.js)
+  const specOk = weapon.hasSpecial && hasSpecialAttack(equippedWeaponItem?.item_id);
+  if (!specOk) specArmed = false;
+  const specPct = Math.max(0, Math.min(100, Math.round(s.spec_energy ?? 100)));
+  const specialHtml = specOk ? `
+      <div class="combat-osrs-special ${specArmed ? 'armed' : ''}" data-action="toggle-special">
+        <div class="combat-osrs-special-label">⚡ Especial ${specPct}%${specArmed ? ' · ARMADO' : ''}</div>
+        <div class="combat-osrs-special-bar"><div class="combat-osrs-special-fill" style="width:${specPct}%"></div></div>
+      </div>` : '';
 
   panelEl.innerHTML = `
     <div class="combat-osrs">
       <div class="combat-osrs-header">
         <div class="combat-osrs-weapon">${escapeHtml(weaponDisplayName)}</div>
-        <div class="combat-osrs-cb-level">Combat Lvl: <b>${combatLvl}</b></div>
+        <div class="combat-osrs-cb-level">Nv. combate <b>${combatLvl}</b></div>
       </div>
 
       <div class="combat-osrs-hp-row">
@@ -1242,6 +1254,8 @@ function render() {
           <div class="combat-osrs-hp-text">${s.hp_current} / ${s.hp_max}</div>
         </div>
       </div>
+
+      ${specialHtml}
 
       ${dead ? '<button class="combat-respawn" data-action="respawn">⚱ Respawn</button>' : ''}
 
@@ -1262,21 +1276,41 @@ function render() {
         Auto Retaliate (${autoRetaliate ? 'On' : 'Off'})
       </button>
 
-      ${weapon.hasSpecial ? (() => {
-        const specPct = Math.max(0, Math.min(100, Math.round(s.spec_energy ?? 100)));
-        return `
-        <div class="combat-osrs-special ${specArmed ? 'armed' : ''}" data-action="toggle-special">
-          <div class="combat-osrs-special-label">Special Attack: ${specPct}%${specArmed ? ' ⚡ ARMADO' : ''}</div>
-          <div class="combat-osrs-special-bar"><div class="combat-osrs-special-fill" style="width:${specPct}%"></div></div>
-        </div>`;
-      })() : ''}
-
-      <div class="combat-osrs-category">Category: ${weapon.category}</div>
-
-      <div class="combat-osrs-npcs-label">Cerca de ti</div>
-      <div class="combat-osrs-npcs">${renderNpcs(state.npcs)}</div>
     </div>`;
   attachHandlers();
+}
+
+// Sesión 50 — Tab compacto: todo cabe sin scroll y se estira con el panel
+// (en móvil y en PC). Sin lista de NPCs (se ataca tocándolos en el mundo).
+function ensureCompactCss() {
+  if (typeof document === 'undefined' || document.getElementById('combat-compact-css')) return;
+  const st = document.createElement('style');
+  st.id = 'combat-compact-css';
+  st.textContent = `
+    .osrs-tab-pane[data-tab="combat"].active { height: 100%; overflow: hidden; display: flex !important; flex-direction: column; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs { flex: 1 1 auto; min-height: 0; padding: 0; gap: 5px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 0 0 3px; text-align: left; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-weapon { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-cb-level { font-size: 10px; margin: 0; white-space: nowrap; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-hp-row { padding: 0; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-hp-bar { height: 12px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-hp-text { font-size: 9px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-special { margin: 0; padding: 2px 3px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-special-label { font-size: 10px; margin-bottom: 2px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-special-bar { height: 8px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-stances { flex: 1 1 auto; min-height: 0; gap: 4px; grid-auto-rows: 1fr; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-stance { min-height: 0; padding: 2px; gap: 2px; border-width: 1.5px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-stance-icon { font-size: 18px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-stance-label { font-size: 9px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-retaliate { padding: 5px 6px; font-size: 10px; gap: 5px; border-width: 1.5px; flex: 0 0 auto; }
+    .osrs-tab-pane[data-tab="combat"] .combat-osrs-retaliate-icon { font-size: 12px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-respawn { padding: 5px; font-size: 11px; }
+    .osrs-tab-pane[data-tab="combat"] .combat-mage-hint,
+    .osrs-tab-pane[data-tab="combat"] .combat-mage-next { display: none; }
+    .osrs-tab-pane[data-tab="combat"] .combat-mage-cast { margin: 0; padding: 0; }
+    .osrs-tab-pane[data-tab="combat"] .combat-mage-cast-label { font-size: 9px; margin: 0 0 2px; }
+  `;
+  document.head.appendChild(st);
 }
 
 // Combat level OSRS-style. Replica skills_engine.combatLevel pero local
