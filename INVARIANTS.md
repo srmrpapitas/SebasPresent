@@ -657,8 +657,8 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 
 ## 22. Armaduras procedurales (Sesión 50)
 
-- `client/src/armor_procedural.js`: yelmo, grebas, botas y guanteletes de los 7 materiales se GENERAN (no hay GLB en R2). Pecheras de otros materiales = GLB `chest_bronze` pintado (`tintArmorMesh`).
+- `client/src/armor_procedural.js`: yelmo, pechera (peto + faja + cinturón con faldones + hombreras), grebas, botas y guanteletes de los 7 materiales se GENERAN. El GLB antiguo `chest_bronze` ya NO se usa (todo con el mismo estilo). El escudo sigue siendo GLB.
 - Se ajustan a la malla del personaje: vértices que mueve cada hueso en pose de reposo (`boneInverses`) → caja → tamaño de la pieza. "Delante" = (LeftUpLeg − RightUpLeg) × (Head − Hips). No depende de la escala ni del eje del FBX.
 - `character.attachArmor` desvía a lo procedural cuando `isProceduralArmor(itemId, slot)`; guarda `{ parts: [{bone, mesh}] }` y `detachArmor` los quita.
-- world.js `ARMOR_SLOTS` incluye legs/boots/gloves.
+- world.js `ARMOR_SLOTS` incluye legs/boots/gloves. Slots procedurales: helm, body, legs, boots, gloves.
 - Ajuste in-game sin tocar código: `window.__procArmorTune = { helm: { y: 0.05, z: 0, s: 1.1 } }` y re-equipar.

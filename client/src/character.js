@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { isProceduralArmor, buildProceduralArmor, materialOf, tintArmorMesh } from './armor_procedural.js';   // Sesión 50
+import { isProceduralArmor, buildProceduralArmor } from './armor_procedural.js';   // Sesión 50
 
 const CDN_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const ANIM_BASE = `${CDN_BASE}/animations`;
@@ -962,8 +962,8 @@ export class Character {
     }
     if (!itemId) return;
 
-    // Sesión 50 — yelmo/grebas/botas/guanteletes de los 7 materiales: se
-    // generan (armor_procedural.js), no hay GLB en R2.
+    // Sesión 50 — yelmo/pechera/grebas/botas/guanteletes de los 7 materiales:
+    // se generan (armor_procedural.js). La pechera GLB antigua ya no se usa.
     if (isProceduralArmor(itemId, slotId)) {
       const parts = buildProceduralArmor(itemId, slotId, this.mesh);
       if (!parts) { console.warn(`[character] armor procedural sin huesos: ${itemId}`); return; }
@@ -985,12 +985,7 @@ export class Character {
     }
 
     try {
-      // Sesión 50 — pecheras de otros materiales: reusar el GLB de la de
-      // bronce pintado del color del material.
-      let mesh;
-      const mat = slotId === 'body' ? materialOf(itemId) : null;
-      if (mat && mat !== 'bronze') mesh = tintArmorMesh(await this._loadArmorMesh('chest_bronze'), mat);
-      else mesh = await this._loadArmorMesh(itemId);
+      const mesh = await this._loadArmorMesh(itemId);
       if (this._equippedArmor[slotId]) this.detachArmor(slotId);   // carrera: otro equip mientras cargaba
       mesh.scale.setScalar(tf.scale);
       mesh.position.set(tf.position[0], tf.position[1], tf.position[2]);
