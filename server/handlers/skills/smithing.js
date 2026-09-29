@@ -22,6 +22,7 @@ import { getPlayerPosition, isWithinDistance } from './_shared.js';
 import {
   MATERIALS, MATERIAL_NAMES, SMELT, SMITH_XP_PER_BAR, getStation, STATION_USE_DIST_M,
 } from '../../../client/src/shared/smithing.js';
+import { questEvent } from '../../lib/quests.js';
 
 const SKILL_ID = 'smithing';
 const INVENTORY_SLOTS = 20;
@@ -189,6 +190,7 @@ export async function handleSmithingSmelt(request, env) {
   if (t.error) return errorResponse(t);
   if (!(await gate(env, c.userId, now))) return json({ error: 'too_fast' }, 429);
   const r = await finish(env, c.userId, t.stmts, rule.xp, c.xp);
+  await questEvent(env, c.userId, 'smelt', material);
   return json({ ok: true, action: 'smelt', material, consumed: { item_id: ore, qty: 1 }, produced: bar, skill_id: SKILL_ID, ...r });
 }
 
@@ -216,5 +218,6 @@ export async function handleSmithingSmith(request, env) {
   if (!(await gate(env, c.userId, now))) return json({ error: 'too_fast' }, 429);
   const xp = recipe.bars_required * (SMITH_XP_PER_BAR[recipe.material] || 10);
   const r = await finish(env, c.userId, t.stmts, xp, c.xp);
+  await questEvent(env, c.userId, 'smith', recipe.id);
   return json({ ok: true, action: 'smith', consumed: { item_id: bar, qty: recipe.bars_required }, produced: recipe.id, produced_name: recipe.name, skill_id: SKILL_ID, ...r });
 }

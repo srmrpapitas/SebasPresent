@@ -44,6 +44,7 @@ import * as worldSnapshot from './world_snapshot.js';   // Sesión 27 Bloque 1
 import * as woodcutting from './skills/woodcutting.js';
 import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
+import * as quests from './quests.js';   // Sesión 50 — misiones
 import * as firemaking  from './skills/firemaking.js';
 // Sesión 31 — extraído de world.js: setup de three.js + cámara orbital.
 import * as sceneSetup    from './core/scene.js';
@@ -739,6 +740,15 @@ export async function startWorld(loggedInUser, token) {
         feedLog:         (type, msg) => combat.feedLog?.(type, msg),
       });
     } catch (e) { console.warn('[world] smithing start:', e); }
+    // Sesión 50 — Misiones (tutorial). Debug: window.__questsDebug()
+    try {
+      quests.start({
+        scene,
+        getPlayer:   () => player,
+        getSnapshot: () => worldSnapshot.getSnapshot(),
+        feedLog:     (type, msg) => combat.feedLog?.(type, msg),
+      });
+    } catch (e) { console.warn('[world] quests start:', e); }
     try {
       firemaking.start({
         scene,
@@ -790,6 +800,7 @@ export function stopWorld() {
   try { woodcutting.stop(); } catch {}
   try { mining.stop(); } catch {}
   try { smithing.stop(); } catch {}
+  try { quests.stop(); } catch {}
   try { firemaking.stop(); } catch {}
 
   // Sesión 3 refactor — detener multiplayer (limpia peers, name tags, timers)
@@ -1022,6 +1033,23 @@ function drawMinimap() {
       ctx.fillRect(sx - 1, sy - 1, 2, 2);
     }
   }
+
+  // Sesión 50 — Objetivo de la misión: rombo dorado (pegado al borde si está lejos).
+  try {
+    const h = quests.getHintPos();
+    if (h) {
+      let dx = (h.x - px) * scale, dz = (h.z - pz) * scale;
+      const lim = Math.min(W, H) / 2 - 7;
+      const d = Math.hypot(dx, dz);
+      if (d > lim) { dx = dx / d * lim; dz = dz / d * lim; }
+      const hx = cx + dx, hy = cy + dz;
+      ctx.fillStyle = '#ffd35a';
+      ctx.strokeStyle = '#000';
+      ctx.beginPath();
+      ctx.moveTo(hx, hy - 5); ctx.lineTo(hx + 4, hy); ctx.lineTo(hx, hy + 5); ctx.lineTo(hx - 4, hy); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+  } catch {}
 
   // Sesión 50 — Vetas de mineral y hornos/yunques en el minimapa.
   try {
@@ -2684,6 +2712,7 @@ function animate() {
   woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
   mining.update(dt);          // Sesión 50 — vetas + loop de picar
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
+  quests.update(dt);          // Sesión 50 — misiones (tracker + haz)
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior

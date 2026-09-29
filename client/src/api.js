@@ -526,6 +526,14 @@ export async function miningMine(veinId) {
   });
 }
 
+/** Sesión 50 — Misiones. */
+export async function questsGet() {
+  return apiFetch('/api/quests', { auth: true });
+}
+export async function questsSkip(questId) {
+  return apiFetch('/api/quests/skip', { method: 'POST', auth: true, body: { quest_id: questId } });
+}
+
 /** Sesión 50 — Herrería: recetas + fundir + forjar. */
 export async function smithingRecipes() {
   return apiFetch('/api/smithing/recipes', { auth: true });

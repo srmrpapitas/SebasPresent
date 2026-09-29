@@ -20,6 +20,7 @@ import { json, readJson } from '../../lib/db.js';
 import { requireSession } from '../../lib/auth.js';
 import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.js';
 import { tableExists, hasItemAvailable } from './_shared.js';
+import { questEvent } from '../../lib/quests.js';   // Sesión 50
 
 // Logs encendibles. fmLevel = nivel firemaking requerido. xp = ganancia.
 const LOG_DEFS = {
@@ -134,6 +135,7 @@ export async function handleFiremakingLight(request, env) {
   ).bind(fireX, fireZ, invRow.item_id, userId, now, expiresAt).run();
 
   const fireId = fireResult?.meta?.last_row_id ?? null;
+  await questEvent(env, userId, 'fire', invRow.item_id);   // Sesión 50 — misiones
 
   return json({
     ok: true,

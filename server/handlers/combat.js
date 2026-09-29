@@ -19,6 +19,7 @@ import {
   getCombatState, attackNpc, attackPlayer, respawnUser,
   VALID_STYLES,
 } from '../combat_engine.js';
+import { questEvent } from '../lib/quests.js';   // Sesión 50
 export async function handleCombatState(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
@@ -63,6 +64,7 @@ export async function handleCombatAttack(request, env) {
   const db = makeDbAdapter(env);
   try {
     const result = await attackNpc(db, session.user_id, npcId, opts);
+    if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
     if (result.error) {
       const knownClient = new Set([
         'npc_not_found', 'npc_dead', 'on_cooldown',

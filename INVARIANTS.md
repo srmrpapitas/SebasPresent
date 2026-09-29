@@ -611,3 +611,15 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Endpoints: GET /api/smithing/recipes, POST /api/smithing/smelt, /smith (una acción
   por petición, ritmo ≥1200ms con el mismo cerrojo que minería sobre user_skills 'smithing').
 - Iconos SVG de ore_/bar_/armaduras generados en `item_icons.js` (addMaterialIcons).
+
+## 18. Sesión 50 — Misiones
+
+- Definiciones en `client/src/shared/quests.js` (compartido). Progreso en la tabla
+  `user_quests` (migración 002). El SERVER avanza los pasos: los handlers llaman
+  `questEvent(env, userId, evento, match)` (server/lib/quests.js) tras cada acción real.
+- Eventos: chop (talar) · fire · kill (npc def) · cook (item cocinado) · mine (tier) ·
+  smelt (material) · smith (item) · equip (item).
+- `GET /api/quests` crea el tutorial si falta y entrega las herramientas del paso
+  (`give`) si no las tienes en mochila/equipo/banco. El cliente lee el progreso de
+  `snapshot.me.quests` (sin polling extra).
+- Recompensas por paso y final se dan con `grantItem` (mochila o, si no cabe, banco).

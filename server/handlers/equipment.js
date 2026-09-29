@@ -35,6 +35,7 @@
 
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
+import { questEvent } from '../lib/quests.js';   // Sesión 50
 
 const INVENTORY_SLOTS = 20;
 // Sesión 34 — Agregado slot 'quiver' (Bloque 2). Container especial para
@@ -226,6 +227,7 @@ export async function handleEquip(request, env) {
   }
 
   await env.DB.batch(ops);
+  await questEvent(env, session.user_id, 'equip', invItem.item_id);   // Sesión 50 — misiones
 
   return json({
     ok: true,

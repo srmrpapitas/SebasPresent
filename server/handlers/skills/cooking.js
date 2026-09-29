@@ -21,6 +21,7 @@ import { json, readJson } from '../../lib/db.js';
 import { requireSession } from '../../lib/auth.js';
 import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.js';
 import { tableExists } from './_shared.js';
+import { questEvent } from '../../lib/quests.js';   // Sesión 50
 
 const SKILL_ID = 'cooking';
 const FIRE_COOK_RADIUS_M = 5.0;   // Sesión 49 — subido de 2.5 (ver fix abajo)
@@ -275,6 +276,7 @@ export async function handleCookingCook(request, env) {
   let xpGained = 0;
   let newLevel = currentLevel;
   let levelUp = false;
+  if (!burnt) await questEvent(env, userId, 'cook', resultItemId);   // Sesión 50 — misiones
   if (!burnt) {
     const xpResult = applyXpGrant(currentXp, def.xp);
     xpGained = def.xp;

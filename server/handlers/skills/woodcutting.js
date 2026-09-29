@@ -23,6 +23,7 @@ import {
   getPlayerPosition,
   isWithinDistance,
 } from './_shared.js';
+import { questEvent } from '../../lib/quests.js';   // Sesión 50
 
 // Catálogo de árboles — INVARIANTE: tiene que coincidir con TREE_TYPES en
 // client/src/terrain.js. Si tocás uno, tocá el otro.
@@ -203,6 +204,7 @@ export async function handleWoodcuttingChop(request, env) {
   }
 
   await env.DB.batch(stmts);
+  await questEvent(env, userId, 'chop', def.logItem);   // Sesión 50 — misiones
 
   return json({
     ok: true,

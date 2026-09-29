@@ -1286,6 +1286,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     spec_energy: specActive ? specAfter : computeSpecEnergy(stats, now),
     spec_max: SPEC_MAX,
     npc_killed: npcKilled,
+    npc_def_id: npc.def_id,           // Sesión 50 — misiones ("mata un pollo")
     npc_hp: npcKilled ? 0 : npcHpAfter,
     npc_max_hp: npc.max_hp,
     xp_gained: xpGained,

@@ -396,6 +396,14 @@ export async function handleWorldSnapshot(request, env) {
       // tabla no existe → me.party_id queda null
     }
 
+    // Sesión 50 — progreso de misiones (solo lectura; se crean en GET /api/quests)
+    try {
+      const qr = await env.DB.prepare(
+        'SELECT quest_id, step, progress, status FROM user_quests WHERE user_id = ?'
+      ).bind(session.user_id).all();
+      me.quests = qr.results || [];
+    } catch { /* tabla aún no creada */ }
+
     // Sesión 28 — duelo activo + invites
     // Defensivo: si tabla `duels` no existe (migración no corrida), todo
     // queda en null/[] y el cliente no muestra HUD de duelo.

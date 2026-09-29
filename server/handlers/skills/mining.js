@@ -28,6 +28,7 @@ import {
   tableExists, findInventorySpotForItem, getPlayerPosition, isWithinDistance,
 } from './_shared.js';
 import { getVeinById, ORE_TIERS, miningSuccessRate } from '../../../client/src/shared/ore_veins.js';
+import { questEvent } from '../../lib/quests.js';
 
 const SKILL_ID = 'mining';
 const MAX_MINE_DIST_M = 3.8;     // cliente usa 3.0 (más estricto)
@@ -140,6 +141,7 @@ export async function handleMiningMine(request, env) {
     ).bind(vein.id, depletedUntil));
   }
   await env.DB.batch(stmts);
+  await questEvent(env, userId, 'mine', vein.tier);   // misiones
 
   const after = await env.DB.prepare(
     'SELECT xp FROM user_skills WHERE user_id = ? AND skill_id = ?'
