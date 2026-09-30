@@ -202,11 +202,17 @@ export async function placeOrder(db, userId, { itemId, side, price, qty }) {
   const withdrawQty = side === SIDE_BUY ? price * qty : qty;
 
   const inv = await loadInventoryState(db, userId);
-  const availableInInv = sumInventory(inv, withdrawItemId);
+  // Sesión 50 — al vender, las NOTAS del objeto cuentan como el objeto
+  // (se gastan primero, así puedes vender 100 troncos de golpe).
+  const noteId = side === SIDE_SELL ? `${itemId}_note` : null;
+  const notesInInv = noteId ? sumInventory(inv, noteId) : 0;
+  const availableInInv = sumInventory(inv, withdrawItemId) + notesInInv;
   if (availableInInv < withdrawQty) {
     throw makeErr(side === SIDE_BUY ? 'insufficient_coins' : 'insufficient_items');
   }
-  removeFromInventory(stmts, inv, userId, withdrawItemId, withdrawQty, now);
+  const fromNotes = Math.min(notesInInv, withdrawQty);
+  if (fromNotes > 0) removeFromInventory(stmts, inv, userId, noteId, fromNotes, now);
+  if (withdrawQty - fromNotes > 0) removeFromInventory(stmts, inv, userId, withdrawItemId, withdrawQty - fromNotes, now);
 
   const coinEscrow = side === SIDE_BUY ? price * qty : 0;
   const itemEscrow = side === SIDE_SELL ? qty : 0;

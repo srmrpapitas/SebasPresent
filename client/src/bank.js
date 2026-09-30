@@ -113,6 +113,7 @@ export async function init() {
         <button class="bank-qty-btn" data-qty="x">X</button>
         <button class="bank-qty-btn" data-qty="all">Todo</button>
       </div>
+      <button class="bank-note-btn" id="bankNoteBtn" title="Sacar como nota: los objetos que no se apilan salen en un solo hueco">📜 Sacar como nota: <b>NO</b></button>
 
       <div class="bank-section-label">Banco</div>
       <div class="bank-grid" id="bankGrid"></div>
@@ -137,6 +138,16 @@ export async function init() {
     slotEl.addEventListener('pointerdown', onSlotPointerDown);
     invMirrorEl.appendChild(slotEl);
   }
+
+  // Sesión 50 — interruptor de notas de banco
+  const noteBtn = document.getElementById('bankNoteBtn');
+  noteBtn?.addEventListener('pointerup', (ev) => {
+    ev.preventDefault();
+    withdrawAsNote = !withdrawAsNote;
+    noteBtn.classList.toggle('on', withdrawAsNote);
+    noteBtn.innerHTML = `📜 Sacar como nota: <b>${withdrawAsNote ? 'SÍ' : 'NO'}</b>`;
+  });
+  ensureNoteCss();
 
   // Listeners del selector de cantidad
   qtyButtonsEl.querySelectorAll('.bank-qty-btn').forEach(btn => {
@@ -571,12 +582,29 @@ async function doDeposit(invSlot, qty) {
   }
 }
 
+// Sesión 50 — notas de banco
+let withdrawAsNote = false;
+function ensureNoteCss() {
+  if (document.getElementById('bank-note-css')) return;
+  const st = document.createElement('style');
+  st.id = 'bank-note-css';
+  st.textContent = `
+    .bank-note-btn { display: block; width: 100%; margin: 2px 0 4px; padding: 5px 6px; font-family: 'IM Fell English', serif;
+      font-size: 11px; color: rgba(200,170,120,0.85); background: rgba(60,45,30,0.55); border: 1px solid #3a2a1a;
+      border-radius: 3px; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    .bank-note-btn b { color: #d8c89a; }
+    .bank-note-btn.on { background: rgba(120,90,50,0.85); border-color: #c8a043; color: #f0e0b0; }
+    .bank-note-btn.on b { color: #ffe27a; }
+  `;
+  document.head.appendChild(st);
+}
+
 async function doWithdraw(bankSlot, qty, targetInvSlot) {
   const data = bankSlots.find(s => s.slot === bankSlot);
   if (!data) return;
 
   try {
-    await api.withdrawFromBank(bankSlot, qty, targetInvSlot);
+    await api.withdrawFromBank(bankSlot, qty, targetInvSlot, withdrawAsNote);
     await refresh();
     await inventory.refresh();
   } catch (err) {

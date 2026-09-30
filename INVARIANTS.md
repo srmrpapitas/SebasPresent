@@ -697,3 +697,9 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Con el WebSocket conectado: no hay heartbeat HTTP y el snapshot va a 1.5 s (0.6 s en combate). Sin WebSocket todo funciona como antes (plan B).
 - La vida SIEMPRE se valida en el server con D1 (el WebSocket solo muestra).
 - Polls reducidos: suelo 2 s, chat 4 s, grupo 10 s, pestaña de combate 5 s. Índice nuevo `idx_npc_instances_pos` (migración 005, ejecutada).
+
+## 28. Cofres de banco y notas (Sesión 50)
+
+- `client/src/shared/banks.js`: 21 cofres (ciudades, pueblos, minas, lagos; ninguno en la wilderness). `client/src/bank_chests.js` los dibuja (solo los de ≤260 m), tap = caminar + abrir el banco de siempre (`openBankOverlay`). Minimapa: moneda dorada "$".
+- Notas: `client/src/shared/notes.js` (id `<item>_note`). `POST /api/bank/withdraw { as_note: true }` crea la fila de la nota si falta (`ensureNoteItem`) y la da apilada. Depositar una nota la guarda como el objeto real. En el GE, al vender, las notas cuentan como el objeto (se gastan primero) y la orden siempre es del objeto base.
+- Eventos de misión: 'bank' (depositar), 'note' (sacar nota), 'ge_sell'. Misión `banquero`. Pista `hint: { bank: true }` = cofre más cercano.

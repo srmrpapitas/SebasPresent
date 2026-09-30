@@ -7,7 +7,7 @@
  * equipar). El cliente solo muestra el paso actual y dónde ir.
  *
  * Paso:
- *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip' | 'fish' | 'bury' | 'altar' | 'fletch' | 'craft'
+ *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip' | 'fish' | 'bury' | 'altar' | 'fletch' | 'craft' | 'bank' | 'note' | 'ge_sell'
  *   match:  (opcional) lo que tiene que coincidir: item, npc def, mineral...
  *   count:  cuántas veces
  *   give:   herramientas que se entregan al empezar el paso SI no las tienes
@@ -108,6 +108,28 @@ export const QUESTS = {
   },
 };
 
-export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano'];
+// Sesión 50 — Bancos, notas y GE
+QUESTS.banquero = {
+  id: 'banquero',
+  name: 'El banquero',
+  summary: 'Por todo el mapa hay cofres de banco (el icono dorado del minimapa). Todos abren TU banco. Aprende a guardar, a sacar notas y a vender en el Mercado.',
+  steps: [
+    { id: 'deposit', event: 'bank', count: 1, hint: { bank: true },
+      text: 'Guarda algo en un cofre de banco.',
+      tip: 'Sigue el haz dorado hasta el cofre más cercano, tócalo y toca un objeto de tu mochila.',
+      reward: { coins: 20 } },
+    { id: 'note', event: 'note', count: 1, hint: { bank: true },
+      text: 'Saca un objeto como NOTA.',
+      tip: 'En el banco activa "📜 Sacar como nota" y saca algo que no se apile (troncos, mineral…). Ocupa un solo hueco.',
+      reward: { coins: 20 } },
+    { id: 'ge', event: 'ge_sell', count: 1, hint: { x: -80, z: -80 },
+      text: 'Pon algo a la venta en el Mercado (GE).',
+      tip: 'Habla con el banquero del castillo → Mercado. Las notas cuentan como el objeto.',
+      reward: { coins: 0 } },
+  ],
+  reward: { coins: 150, text: '150 monedas' },
+};
+
+export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero'];
 
 export function getQuest(id) { return QUESTS[id] || null; }

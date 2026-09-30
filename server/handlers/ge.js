@@ -7,6 +7,8 @@
  * formatear respuesta.
  */
 
+import { baseOfNote } from '../../client/src/shared/notes.js';   // Sesión 50
+import { questEvent } from '../lib/quests.js';                    // Sesión 50
 import { json, readJson, makeDbAdapter, geErrorResponse } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import {
@@ -109,12 +111,15 @@ export async function handleGePlace(request, env) {
 
   const db = makeDbAdapter(env);
   try {
+    // Sesión 50 — si eligen una NOTA para vender, la orden es del objeto real
+    const itemId = baseOfNote(body.item_id);
     const result = await placeOrder(db, session.user_id, {
-      itemId: body.item_id,
+      itemId,
       side,
       price: body.price,
       qty: body.qty,
     });
+    if (side === SIDE_SELL) await questEvent(env, session.user_id, 'ge_sell', itemId);   // Sesión 50
     return json({ orderId: result.orderId, escrowMoved: result.escrowMoved });
   } catch (err) {
     return geErrorResponse(err);

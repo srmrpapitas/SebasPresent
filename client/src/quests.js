@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import * as api from './api.js';
 import * as audio from './audio.js';
 import { QUESTS, QUEST_ORDER } from './shared/quests.js';
+import { nearestBankChest } from './shared/banks.js';   // Sesión 50
 
 let scene = null, getSnapshot = () => null, getPlayer = () => null, feedLog = () => {};
 let started = false;
@@ -215,6 +216,11 @@ function computeHint() {
       if (d < bd) { bd = d; best = n; }
     }
     return best ? { x: best.x, z: best.z } : null;
+  }
+  if (h.bank) {   // Sesión 50 — el cofre de banco más cercano
+    const p = getPlayer?.();
+    const b = p ? nearestBankChest(p.position.x, p.position.z) : null;
+    return b ? { x: b.x, z: b.z } : null;
   }
   return null;
 }

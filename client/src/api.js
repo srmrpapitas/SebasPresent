@@ -166,8 +166,9 @@ export async function depositToBank(invSlot, quantity) {
   });
 }
 
-export async function withdrawFromBank(bankSlot, quantity, targetInvSlot) {
+export async function withdrawFromBank(bankSlot, quantity, targetInvSlot, asNote = false) {
   const body = { bank_slot: bankSlot, quantity };
+  if (asNote) body.as_note = true;   // Sesión 50 — notas de banco
   if (targetInvSlot !== undefined && targetInvSlot !== null) {
     body.target_inv_slot = targetInvSlot;
   }

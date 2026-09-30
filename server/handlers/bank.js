@@ -11,6 +11,18 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { INVENTORY_SLOTS, pickInvSlot } from './inventory.js';
+import { isNote, baseOfNote, noteOf } from '../../client/src/shared/notes.js';   // Sesión 50
+import { questEvent } from '../lib/quests.js';                                    // Sesión 50
+
+/** Sesión 50 — crea la fila de la nota del item si todavía no existe. */
+async function ensureNoteItem(env, baseId) {
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO items (id, name, icon, stackable, description, created_at, base_price)
+     SELECT id || '_note', name || ' (nota)', icon, 1,
+            'Nota de banco. En cualquier banco se cambia por el objeto.', ?, base_price
+       FROM items WHERE id = ? AND stackable = 0`
+  ).bind(Date.now(), baseId).run();
+}
 
 export const BANK_MAX_SLOTS = 1200;
 
@@ -96,9 +108,11 @@ export async function handleBankDeposit(request, env) {
     if (qty > available) qty = available;
   }
 
+  // Sesión 50 — una nota se guarda en el banco como el objeto real.
+  const bankItemId = isNote(itemId) ? baseOfNote(itemId) : itemId;
   const bankRow = await env.DB.prepare(
     'SELECT slot_index, quantity FROM user_bank WHERE user_id = ? AND item_id = ?'
-  ).bind(session.user_id, itemId).first();
+  ).bind(session.user_id, bankItemId).first();
 
   const stmts = [];
 
@@ -116,7 +130,7 @@ export async function handleBankDeposit(request, env) {
     }
     stmts.push(env.DB.prepare(
       'INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(session.user_id, nextSlot, itemId, qty, now));
+    ).bind(session.user_id, nextSlot, bankItemId, qty, now));
   }
 
   if (unitSlots) {
@@ -138,7 +152,8 @@ export async function handleBankDeposit(request, env) {
   }
 
   await env.DB.batch(stmts);
-  return json({ ok: true, deposited: qty });
+  await questEvent(env, session.user_id, 'bank', bankItemId);   // Sesión 50
+  return json({ ok: true, deposited: qty, unnoted: bankItemId !== itemId });
 }
 
 export async function handleBankWithdraw(request, env) {
@@ -179,8 +194,11 @@ export async function handleBankWithdraw(request, env) {
   if (qty === -1) qty = available;
   if (qty > available) qty = available;
 
-  const itemId = bankRow.item_id;
-  const isStackable = bankRow.stackable === 1;
+  // Sesión 50 — sacar como NOTA (solo objetos que no se apilan)
+  const asNote = body.as_note === true && bankRow.stackable !== 1 && !isNote(bankRow.item_id);
+  if (asNote) await ensureNoteItem(env, bankRow.item_id);
+  const itemId = asNote ? noteOf(bankRow.item_id) : bankRow.item_id;
+  const isStackable = asNote || bankRow.stackable === 1;
   const now = Date.now();
 
   const invRes = await env.DB.prepare(
@@ -243,7 +261,8 @@ export async function handleBankWithdraw(request, env) {
   }
 
   await env.DB.batch(stmts);
-  return json({ ok: true });
+  if (asNote) await questEvent(env, session.user_id, 'note', bankRow.item_id);   // Sesión 50
+  return json({ ok: true, as_note: asNote, item_id: itemId, withdrawn: qty });
 }
 
 export async function handleBankSwap(request, env) {

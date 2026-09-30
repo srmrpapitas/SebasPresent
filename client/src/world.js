@@ -46,6 +46,7 @@ import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as fishing from './skills/fishing.js'; // Sesión 50 — pesca
 import * as crafting from './skills/crafting.js'; // Sesión 50 — flechería/artesanía
 import * as realtime from './realtime.js';        // Sesión 50 — WebSocket (PvP en vivo, menos peticiones)
+import * as bankChests from './bank_chests.js';  // Sesión 50 — cofres de banco por el mapa
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as quests from './quests.js';   // Sesión 50 — misiones
 import * as prayer from './prayer.js';   // Sesión 50 — plegaria
@@ -247,6 +248,7 @@ export async function startWorld(loggedInUser, token) {
     try { fishing.registerKeepouts(terrain); } catch (e) { console.warn('[world] fishing keepouts:', e); }
     try { smithing.registerKeepouts(terrain); } catch (e) { console.warn('[world] smithing keepouts:', e); }
     try { prayer.registerKeepouts(terrain); } catch (e) { console.warn('[world] prayer keepouts:', e); }
+    try { bankChests.registerKeepouts(terrain); } catch (e) { console.warn('[world] bank keepouts:', e); }
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
     // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
     // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
@@ -780,6 +782,20 @@ export async function startWorld(loggedInUser, token) {
         feedLog:         (type, msg) => combat.feedLog?.(type, msg),
       });
     } catch (e) { console.warn('[world] prayer start:', e); }
+    // Sesión 50 — Cofres de banco por el mapa
+    try {
+      bankChests.start({
+        scene,
+        getPlayer:       () => player,
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog:         (type, msg) => combat.feedLog?.(type, msg),
+        onOpenBank: () => {
+          try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
+          try { audio.sfx('coins'); } catch {}
+          openBankOverlay();
+        },
+      });
+    } catch (e) { console.warn('[world] bank chests start:', e); }
     // Sesión 50 — Calavera PvP sobre la cabeza.
     try {
       skull.start({
@@ -842,6 +858,7 @@ export function stopWorld() {
   // Sesión 27 Bloque 1 — world_snapshot cleanup
   try { worldSnapshot.stop(); } catch {}
   try { realtime.stop(); } catch {}
+  try { bankChests.stop(); } catch {}
 
   // Sesión 29 — chat cleanup (quita root DOM + bubbles + polling)
   try { chat.stop(); } catch {}
@@ -1121,6 +1138,18 @@ function drawMinimap() {
       ctx.fillStyle = '#9fe3ff';
       ctx.beginPath(); ctx.arc(cx + dx * scale, cy + dz * scale, 1.8, 0, Math.PI * 2); ctx.fill();
     }
+    // Sesión 50 — cofres de banco: moneda dorada
+    for (const b of bankChests.getBanksForMinimap()) {
+      const dx = b.x - px, dz = b.z - pz;
+      if (dx * dx + dz * dz > RANGE_SQ) continue;
+      const bx = cx + dx * scale, by = cy + dz * scale;
+      ctx.beginPath(); ctx.arc(bx, by, 3.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffd24a'; ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = '#5a3c00'; ctx.stroke();
+      ctx.fillStyle = '#5a3c00'; ctx.font = 'bold 6px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('$', bx, by + 0.3);
+    }
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
     for (const st of [...smithing.getStationsForMinimap(), ...prayer.getAltarsForMinimap()]) {
       const dx = st.x - px, dz = st.z - pz;
       if (dx * dx + dz * dz > RANGE_SQ) continue;
@@ -2271,6 +2300,7 @@ function closeBankOverlay() {
 
   // Notificar al módulo del banco que se cierra (limpia drag a medias, etc.)
   try { bank.onClose?.(); } catch (e) { console.warn('[world] bank.onClose:', e); }
+  try { bankChests.onBankClosed(); } catch {}
 }
 
 // ============================================================
@@ -2547,6 +2577,7 @@ function openSkillMenuAt(clientX, clientY) {
   const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
   const openMenu = (title, rows, cx, cy) => npcRenderer.openGenericActionMenu(title, rows, cx, cy);
+  if (bankChests.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;   // Sesión 50
   if (prayer.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
   if (smithing.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
   if (mining.openActionMenuAt(raycaster, clientX, clientY, openMenu)) return true;
@@ -2601,6 +2632,7 @@ function doCanvasTap(clientX, clientY) {
   try { woodcutting.stopChop?.('tap_ground'); } catch {}
   try { smithing.stopWork?.('tap_ground'); } catch {}
   try { prayer.cancel?.(); } catch {}
+  try { bankChests.cancel?.(); } catch {}
 
   // Sesión 27 Bloque 3 — Tap PVP: ¿el tap impacta otro player?
   // Primero peers (PVP), después NPCs. Si el peer cae bajo el tap,
@@ -2620,6 +2652,9 @@ function doCanvasTap(clientX, clientY) {
 
   // Sesión 11b parcial — Tap edificio → placeholder (en 11c será "entrar")
   if (buildings.tryHandleTap(clientX, clientY)) return;
+
+  // 2a-) Tap cofre de banco → caminar + abrir banco (Sesión 50).
+  if (bankChests.tryHandleTap(raycaster)) return;
 
   // 2a0) Tap altar → caminar + rezar (Sesión 50).
   if (prayer.tryHandleTap(raycaster)) return;
@@ -2794,6 +2829,7 @@ function animate() {
   mining.update(dt);          // Sesión 50 — vetas + loop de picar
   fishing.update(dt);         // Sesión 50 — estanques + bancos + loop de pesca
   crafting.update(dt);        // Sesión 50 — bucle de flechería/artesanía
+  bankChests.update(dt);      // Sesión 50 — cofres de banco
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
   quests.update(dt);          // Sesión 50 — misiones (tracker + haz)
   prayer.update(dt);          // Sesión 50 — plegaria (HUD, altares, aura)

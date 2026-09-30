@@ -688,9 +688,23 @@ export function hasCustomIcon(itemId) {
  *
  * Limpia el contenido previo del elemento antes de pintar.
  */
+// Sesión 50 — Notas de banco: papel amarillento con el objeto en pequeño.
+function noteIconHtml(itemId, fallbackEmoji) {
+  const base = itemId.slice(0, -5);
+  const inner = hasCustomIcon(base)
+    ? ICONS[base].replace('<svg ', '<svg x="7" y="8" width="18" height="18" ')
+    : `<text x="16" y="22" font-size="13" text-anchor="middle">${String(fallbackEmoji || '?').replace(/[<&>]/g, '')}</text>`;
+  return `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 5 L26 3 L28 27 L6 29 Z" fill="#efe0b0" stroke="#6a5530" stroke-width="1"/>
+    <path d="M4 5 L26 3 L26.3 7 L4.3 9 Z" fill="#d9c58a"/>
+    ${inner}
+  </svg>`;
+}
+
 export function renderItemIcon(el, itemId, fallbackEmoji) {
   if (!el) return;
   el.innerHTML = '';
+  if (typeof itemId === 'string' && itemId.endsWith('_note')) { el.innerHTML = noteIconHtml(itemId, fallbackEmoji); return; }
   if (hasCustomIcon(itemId)) {
     el.innerHTML = ICONS[itemId];
   } else {
@@ -703,6 +717,7 @@ export function renderItemIcon(el, itemId, fallbackEmoji) {
  * SVG si hay custom, span con emoji escapado si no.
  */
 export function getItemIconHtml(itemId, fallbackEmoji) {
+  if (typeof itemId === 'string' && itemId.endsWith('_note')) return noteIconHtml(itemId, fallbackEmoji);
   if (hasCustomIcon(itemId)) {
     return ICONS[itemId];
   }
