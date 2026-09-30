@@ -8,7 +8,7 @@
  * (-Z del mundo), 180 → al sur (+Z). Solo usamos 0/180.
  */
 export const CASTLES = [
-  { id: 'castillo_laguna',   name: 'Castillo de La Laguna',        x:  -80, z:  -80, rotDeg: 0,   banker: 'Gerardo' },
+  // (el de La Laguna, junto al altar, se quitó: se veía mal)
   { id: 'castillo_sancris',  name: 'Castillo de San Cristóbal',    x: 1620, z: -720, rotDeg: 0,   banker: 'Dácil' },
   { id: 'casa_fuerte_adeje', name: 'Casa Fuerte de Adeje',         x: 1080, z: 1130, rotDeg: 180, banker: 'Acaymo' },
   { id: 'fortaleza_cristianos', name: 'Fortaleza de Los Cristianos', x: -220, z: 1640, rotDeg: 180, banker: 'Cathaysa' },

@@ -118,4 +118,4 @@ Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o ven
   - cofre: tu banco;
   - altar: recarga la plegaria.
   El server lo valida como "estás en una urbanización y tu casa tiene ese mueble", porque dentro de la casa el cliente no manda su posición.
-- **Castillos** (mismo modelo que el de La Laguna, `shared/castles.js`): Castillo de La Laguna (Gerardo), Castillo de San Cristóbal en Santa Cruz (Dácil), Casa Fuerte de Adeje (Acaymo) y Fortaleza de Los Cristianos (Cathaysa). Cada banquero tiene Banco, Mercado (GE) y Tienda.
+- **Castillos** (mismo modelo que el de La Laguna, `shared/castles.js`): Castillo de San Cristóbal en Santa Cruz (Dácil), Casa Fuerte de Adeje (Acaymo) y Fortaleza de Los Cristianos (Cathaysa). Cada banquero tiene Banco, Mercado (GE) y Tienda.
