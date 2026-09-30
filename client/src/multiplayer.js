@@ -941,6 +941,12 @@ function onRealtime(m, myId) {
       target._lastAttackAtSeen = Math.max(target._lastAttackAtSeen || 0, m.at || 0);
       triggerPeerAttackAnim(target);
     }
+  } else if (m.t === 'ann') {
+    // Sesión 50 — anuncios del reino (jefes y piezas de dragón)
+    try {
+      if (m.k === 'drop') window.__feedLog?.('levelup', `🐉 ¡${m.u} ha conseguido ${m.item} de ${m.boss}!`);
+      else window.__feedLog?.('info', `⚔ ${m.u} ha derrotado a ${m.boss}.`);
+    } catch {}
   } else if (m.t === 'pr') {
     const peer = m.id !== myId ? mpLastPeerMap.get(m.id) : null;
     if (peer) { peer.ovh = m.o || null; peer._ovhAt = Date.now(); renderPeerOverhead(peer); }

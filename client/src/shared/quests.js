@@ -296,9 +296,106 @@ QUESTS.primer_viaje = {
   reward: { coins: 40, items: [['tele_concejo', 3], ['tele_robledal', 1]], text: '3 tabletas del Concejo · 1 de Robledal · 40 monedas' },
 };
 
+// ============================================================
+// Sesión 50 — Misiones de aventura: tabletas, cazas, jefes y la Fosa
+// ============================================================
+Object.assign(QUESTS, {
+  viaje_relampago: {
+    id: 'viaje_relampago', name: 'Viaje relámpago', giver: 'morgana_maga',
+    summary: 'Morgana quiere comprobar que sus tabletas funcionan en los confines del reino.',
+    offer: ['Mis tabletas nuevas llevan a los rincones más lejanos… en teoría.', 'Rompe una de Picoblanco, otra de Solquemado y otra de Puerto Sirena, y cuéntame qué tal.'],
+    accept: 'Probaré tus tabletas.', doing: 'Rompe las tabletas de Picoblanco, Solquemado y Puerto Sirena (se venden en mi tienda).',
+    thanks: '¡Funcionan todas! Toma, para tus viajes. Y un poco de mi sabiduría.',
+    steps: [
+      { id: 'tele1', event: 'teleport', match: 'tele_picoblanco', count: 1, hint: { talk: 'morgana_maga' }, text: 'Rompe una tableta de Picoblanco.', tip: 'Cómprala en la tienda de Morgana y tócala en la mochila.' },
+      { id: 'tele2', event: 'teleport', match: 'tele_solquemado', count: 1, hint: { talk: 'morgana_maga' }, text: 'Rompe una tableta de Solquemado.', tip: 'El desierto del este.' },
+      { id: 'tele3', event: 'teleport', match: 'tele_sirena', count: 1, hint: { talk: 'morgana_maga' }, text: 'Rompe una tableta de Puerto Sirena.', tip: 'La costa del sur.' },
+      talkBack('morgana_maga', 'Vuelve con Morgana al Concejo (una tableta del Concejo te ayuda).'),
+    ],
+    reward: { coins: 600, items: [['tele_concejo', 5], ['tele_mina', 2], ['tele_verdis', 2]], xp: { magic: 1500 }, text: '9 tabletas · 600 monedas · 1.500 XP Magia' },
+  },
+  huesos_ruinas: {
+    id: 'huesos_ruinas', name: 'Huesos inquietos', giver: 'explorador_herido',
+    summary: 'Los esqueletos de las Ruinas de Antaño no descansan. Recomendado: combate 45 (¡wilderness!).',
+    offer: ['Volvía de las Ruinas de Antaño y los esqueletos me dieron una paliza…', 'Si acabas con 8 de ellos podré recuperar mi mochila. Ojo: allí otros jugadores pueden atacarte.'],
+    accept: 'Me encargo de esos esqueletos.', doing: 'Mata 8 esqueletos en las Ruinas de Antaño, al oeste.',
+    thanks: '¡Gracias! Mi mochila sigue entera. Toma lo que encontré dentro.',
+    steps: [
+      { id: 'kill', event: 'kill', match: 'skeleton', count: 8, hint: { x: -1500, z: -500 }, text: 'Mata 8 esqueletos en las Ruinas de Antaño.', tip: 'Al oeste de la Avanzada del Olvido. Lleva comida y guarda lo valioso en el banco.' },
+      talkBack('explorador_herido', 'Vuelve con el explorador herido en la Avanzada del Olvido.'),
+    ],
+    reward: { coins: 2500, items: [['shark', 5], ['tele_ruinas', 2]], xp: { prayer: 2000, attack: 2500 }, text: '2.500 monedas · 5 tiburones · 2 tabletas · XP de Plegaria y Ataque' },
+  },
+  rey_de_las_cumbres: {
+    id: 'rey_de_las_cumbres', name: 'El Rey de las Cumbres', giver: 'sven_guardia',
+    summary: 'El Rey Yeti Grom baja de las cumbres. Estrategia: trábalo detrás de una roca. Recomendado: combate 60.',
+    offer: ['Aquel yeti no era más que un cachorro… su REY ha despertado.', 'Grom solo pega de cerca y es torpe: si pones una roca entre los dos, no podrá alcanzarte. Usa flechas o magia.', 'Viaja hasta Picoblanco y sube a las cumbres del norte.'],
+    accept: 'Derrotaré al Rey Yeti.', doing: 'Grom vive en las cumbres, al norte de Picoblanco. Trábalo en una roca y atácale de lejos.',
+    thanks: '¡El Rey de las Cumbres ha caído! Te has ganado el respeto de todo el norte.',
+    steps: [
+      { id: 'tele', event: 'teleport', match: 'tele_picoblanco', count: 1, hint: { talk: 'morgana_maga' }, text: 'Usa una tableta de Picoblanco para llegar rápido.', tip: 'Morgana las vende en el Concejo.' },
+      { id: 'kill', event: 'kill', match: 'rey_yeti', count: 1, hint: { x: 480, z: -1900 }, text: 'Derrota al Rey Yeti Grom.', tip: 'Ponte detrás de una roca: él no puede rodearla. Dispárale o lánzale hechizos.' },
+      talkBack('sven_guardia', 'Vuelve con Sven al Pueblo de los Vientos.'),
+    ],
+    reward: { coins: 6000, items: [['shark', 10]], xp: { ranged: 4000, magic: 4000, defence: 3000 }, text: '6.000 monedas · 10 tiburones · XP de Distancia, Magia y Defensa' },
+  },
+  terror_mareas: {
+    id: 'terror_mareas', name: 'El terror de las mareas', giver: 'irene_farera',
+    summary: 'Algo enorme hunde los barcos cerca de Puerto Sirena. Estrategia: cambia tu protección según su color.',
+    offer: ['Desde el faro lo he visto: una serpiente de mar gigante. El Leviatán.', 'Cuando brilla VERDE escupe agua como flechas; cuando brilla AZUL, lanza magia. Protégete de lo que toque.'],
+    accept: 'Me enfrentaré al Leviatán.', doing: 'El Leviatán acecha en la playa al este de Puerto Sirena.',
+    thanks: 'Los barcos vuelven a navegar tranquilos. ¡Eres una leyenda de la costa!',
+    steps: [
+      { id: 'tele', event: 'teleport', match: 'tele_sirena', count: 1, hint: { talk: 'morgana_maga' }, text: 'Usa una tableta de Puerto Sirena.', tip: 'Morgana las vende en el Concejo.' },
+      { id: 'kill', event: 'kill', match: 'leviatan', count: 1, hint: { x: -450, z: 1950 }, text: 'Derrota al Leviatán.', tip: 'Verde = Protección contra proyectiles. Azul = Protección contra magia.' },
+      talkBack('irene_farera', 'Vuelve con Irene al Faro del Sur.'),
+    ],
+    reward: { coins: 6000, items: [['shark', 10]], xp: { prayer: 3000, hitpoints: 3000 }, text: '6.000 monedas · 10 tiburones · XP de Plegaria y Vitalidad' },
+  },
+  bruja_niebla: {
+    id: 'bruja_niebla', name: 'La bruja de la niebla', giver: 'samir_mercader',
+    summary: 'Morgath, la Bruja del Pantano, maldice las caravanas. Estrategia: Protección contra magia y sal de los círculos.',
+    offer: ['Mis caravanas cruzan el pantano y vuelven… malditas.', 'Morgath lanza magia: protégete de ella. Y cuando veas un círculo morado a tus pies, ¡muévete!'],
+    accept: 'Acabaré con la bruja.', doing: 'Morgath vive en el pantano al oeste de la Aldea del Cruce.',
+    thanks: 'Las maldiciones se han roto. Toma: la mejor mercancía de mi caravana.',
+    steps: [
+      { id: 'kill', event: 'kill', match: 'bruja_pantano', count: 1, hint: { x: -640, z: 760 }, text: 'Derrota a Morgath, la Bruja del Pantano.', tip: 'Protección contra magia. Sal de los círculos morados.' },
+      talkBack('samir_mercader', 'Vuelve con Samir a Solquemado.'),
+    ],
+    reward: { coins: 6000, items: [['tele_solquemado', 3]], xp: { magic: 5000 }, text: '6.000 monedas · 3 tabletas · 5.000 XP Magia' },
+  },
+  la_fosa: {
+    id: 'la_fosa', name: 'Bautismo de fuego', giver: 'kargath',
+    summary: 'Kargath te reta a bajar a la Fosa de Fuego.',
+    offer: ['¿Crees que eres fuerte? Demuéstralo ahí abajo.', 'Baja a la Fosa y acaba con 5 diablillos de lava. Luego hablamos.'],
+    accept: 'Acepto el reto.', doing: 'Baja a la Fosa (háblame) y mata 5 diablillos de lava.',
+    thanks: 'No está mal para un novato. Vuelve cuando quieras llegar hasta Ignaroth.',
+    steps: [
+      { id: 'enter', event: 'fosa_start', count: 1, hint: { talk: 'kargath' }, text: 'Habla con Kargath y baja a la Fosa.', tip: 'Elige "Quiero bajar a la Fosa".' },
+      { id: 'kill', event: 'kill', match: 'fosa_diablillo', count: 5, hint: { x: 1860, z: -340 }, text: 'Mata 5 diablillos de lava.', tip: 'Aparecen en las primeras rondas.' },
+      talkBack('kargath', 'Vuelve a hablar con Kargath.'),
+    ],
+    reward: { coins: 1500, items: [['shark', 5]], xp: { hitpoints: 2000 }, text: '1.500 monedas · 5 tiburones · 2.000 XP Vitalidad' },
+  },
+  matadragones: {
+    id: 'matadragones', name: 'Matadragones', giver: 'eldric_mago',
+    summary: 'Vermithrax, el Dragón Rojo, ha despertado en el Corazón Roto. Recomendado: combate 70 (¡wilderness!).',
+    offer: ['Los libros lo advertían: cuando el cielo se tiñe de rojo, Vermithrax despierta.', 'Su aliento es MAGIA: Protección contra magia. Y esquiva la lluvia de fuego.', 'Se dice que en su guarida duerme una pechera de escamas…'],
+    accept: 'Mataré al dragón.', doing: 'Vermithrax está en el Corazón Roto, en lo más profundo de las Tierras Rotas.',
+    thanks: '¡Un Matadragones! Tu nombre se escribirá en los libros de la Torre.',
+    steps: [
+      { id: 'kill', event: 'kill', match: 'dragon_rojo', count: 1, hint: { x: -1850, z: 40 }, text: 'Derrota a Vermithrax, el Dragón Rojo.', tip: 'Protección contra magia, comida y cuidado con otros jugadores.' },
+      talkBack('eldric_mago', 'Vuelve con Eldric a la Torre del Mago.'),
+    ],
+    reward: { coins: 20000, items: [['shark', 15]], xp: { attack: 8000, strength: 8000, ranged: 8000, magic: 8000 }, text: '20.000 monedas · 15 tiburones · 8.000 XP en Ataque, Fuerza, Distancia y Magia' },
+  },
+});
+
 export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'primer_viaje',
   'ratas_granero', 'guiso_abuela', 'faro_apagado', 'aranas_robledal', 'aullidos',
-  'mago_huesos', 'encargo_herrera', 'escorpiones', 'golems_mina', 'bestia_blanca'];
+  'mago_huesos', 'encargo_herrera', 'escorpiones', 'golems_mina', 'bestia_blanca',
+  // Sesión 50
+  'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {

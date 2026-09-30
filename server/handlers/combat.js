@@ -21,6 +21,7 @@ import {
 } from '../combat_engine.js';
 import { questEvent } from '../lib/quests.js';   // Sesión 50
 import { pushRealtime } from '../lib/realtime.js';   // Sesión 50
+import { BOSSES } from '../../client/src/shared/bosses.js';   // Sesión 50 — anuncios
 export async function handleCombatState(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
@@ -76,6 +77,17 @@ export async function handleCombatAttack(request, env) {
       });
     }
     if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
+    // Sesión 50 — ¡pieza de dragón! Se anuncia a todo el reino.
+    if (result?.npc_killed && BOSSES[result.npc_def_id]) {
+      try {
+        const drop = await env.DB.prepare(
+          `SELECT g.item_id, i.name FROM ground_items g JOIN items i ON i.id = g.item_id
+            WHERE g.dropped_by_user = ? AND g.dropped_at >= ? AND i.material = 'dragon' LIMIT 1`
+        ).bind(session.user_id, Date.now() - 5000).first();
+        const who = await env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(session.user_id).first();
+        await pushRealtime(env, { t: 'ann', k: drop ? 'drop' : 'boss', u: who?.username || '?', item: drop?.name || null, boss: BOSSES[result.npc_def_id].name });
+      } catch {}
+    }
     if (result.error) {
       const knownClient = new Set([
         'npc_not_found', 'npc_dead', 'on_cooldown',
