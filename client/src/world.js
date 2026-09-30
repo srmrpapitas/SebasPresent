@@ -26,6 +26,7 @@ import * as homeTele from './home_teleport.js';
 import * as spellbook from './spellbook.js';   // Sesión 41 — hechizos de combate
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
+import * as mapRender from './map_render.js';   // Sesión 50 — minimapa/mapa nuevos
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
 import * as bank from './bank.js';
@@ -1074,7 +1075,7 @@ function setupMinimap() {
     // al player a la dirección equivocada (o ni se movía).
     const W = rect.width;
     const H = rect.height;
-    const RANGE = 900;
+    const RANGE = mmRange();
     const scale = (W / 2) / RANGE;
     const dx = (cx - W / 2) / scale;
     const dz = (cy - H / 2) / scale;
@@ -1082,6 +1083,8 @@ function setupMinimap() {
     const tz = player.position.z + dz;
     setPlayerTarget(tx, tz);
   });
+
+  try { setupMinimapZoomButtons(); } catch (e) { console.warn('[world] mm zoom:', e); }
 
   // Botón aparte abajo-derecha del minimapa para abrir el mapa grande
   const openMapBtn = document.getElementById('minimapOpenMap');
@@ -1095,63 +1098,161 @@ function setupMinimap() {
   }
 }
 
+// Sesión 50 — Minimapa nuevo: vista local (≈110 m) con el terreno pintado
+// (biomas suaves, agua, plazas), árboles como en OSRS, iconos y zoom.
+const MM_ZOOMS = [55, 110, 220, 450];
+let mmZoomIdx = 1;
+let mmTex = null;          // { canvas, x0, z0, mpp, range }
+function mmRange() { return MM_ZOOMS[mmZoomIdx]; }
+function ensureMinimapTexture(px, pz, range) {
+  if (mmTex && mmTex.range === range) {
+    const cxm = mmTex.x0 + mmTex.size * mmTex.mpp / 2, czm = mmTex.z0 + mmTex.size * mmTex.mpp / 2;
+    if (Math.abs(px - cxm) < range * 0.35 && Math.abs(pz - czm) < range * 0.35) return mmTex;
+  }
+  const mpp = range / 70;
+  const size = 196;
+  const half = size * mpp / 2;
+  const x0 = px - half, z0 = pz - half;
+  mmTex = { canvas: mapRender.renderRegion(x0, z0, size, size, mpp), x0, z0, mpp, size, range };
+  return mmTex;
+}
+
 function drawMinimap() {
   if (!minimapCtx || !player) return;
-  // Sesión 11c-1 — vista distinta para interior (no tiene sentido dibujar
-  // biomas/PLACES/NPCs porque el player está en coords (10000,10000) muy
-  // lejos del mundo real).
   if (interiors.isActive()) {
     drawMinimapInterior();
     return;
   }
+  // Nitidez en pantallas retina: resolución interna = tamaño CSS × DPR
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  const cssW = minimapCanvas.clientWidth || 130;
+  if (minimapCanvas.width !== Math.round(cssW * dpr)) {
+    minimapCanvas.width = Math.round(cssW * dpr);
+    minimapCanvas.height = Math.round(cssW * dpr);
+  }
   const ctx = minimapCtx;
-  const W = minimapCanvas.width;
-  const H = minimapCanvas.height;
-  const RANGE = 900;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = cssW, H = cssW;
+  const RANGE = mmRange();
   const cx = W / 2, cy = H / 2;
   const scale = (W / 2) / RANGE;
   const px = player.position.x;
   const pz = player.position.z;
 
+  ctx.clearRect(0, 0, W, H);
   ctx.save();
   ctx.beginPath();
-  ctx.arc(cx, cy, W / 2 - 2, 0, Math.PI * 2);
+  ctx.arc(cx, cy, W / 2 - 1, 0, Math.PI * 2);
   ctx.clip();
 
-  const pb = biomeAt(px, pz);
-  ctx.fillStyle = '#' + pb.base.toString(16).padStart(6, '0');
-  ctx.fillRect(0, 0, W, H);
+  // Terreno
+  const tex = ensureMinimapTexture(px, pz, RANGE);
+  ctx.imageSmoothingEnabled = true;
+  const tScale = tex.mpp * scale;   // px de pantalla por px de textura
+  ctx.drawImage(tex.canvas, cx + (tex.x0 - px) * scale, cy + (tex.z0 - pz) * scale, tex.size * tScale, tex.size * tScale);
 
-  const wildScreenX = cx + (WILDERNESS_X - px) * scale;
-  if (wildScreenX > 0) {
-    ctx.fillStyle = 'rgba(180, 30, 30, 0.35)';
-    ctx.fillRect(0, 0, Math.min(W, wildScreenX), H);
-  }
-  ctx.fillStyle = 'rgba(40, 80, 120, 0.65)';
-  const leftEdgeX = cx + (-WORLD_HALF - px) * scale;
-  if (leftEdgeX > 0) ctx.fillRect(0, 0, leftEdgeX, H);
-  const rightEdgeX = cx + (WORLD_HALF - px) * scale;
-  if (rightEdgeX < W) ctx.fillRect(rightEdgeX, 0, W - rightEdgeX, H);
-  const topEdgeY = cy + (-WORLD_HALF - pz) * scale;
-  if (topEdgeY > 0) ctx.fillRect(0, 0, W, topEdgeY);
-  const bottomEdgeY = cy + (WORLD_HALF - pz) * scale;
-  if (bottomEdgeY < H) ctx.fillRect(0, bottomEdgeY, W, H - bottomEdgeY);
+  const RANGE_SQ = RANGE * RANGE * 1.1;
+  const inView = (x, z) => { const dx = x - px, dz = z - pz; return dx * dx + dz * dz <= RANGE_SQ; };
+  const S = (x, z) => [cx + (x - px) * scale, cy + (z - pz) * scale];
 
-  const RANGE_SQ = RANGE * RANGE;
-  ctx.fillStyle = '#3a7a2a';
+  // Árboles (bolitas verdes con brillo, como en OSRS)
+  const tr = Math.max(1.1, 1.4 * scale);
   for (const m of terrain.getInteractableMeshes()) {
     const list = m.userData?.trees;
     if (!list || m.userData?.kind !== 'tree-trunk') continue;
+    const bush = /bush/.test(m.userData.typeId || '');
+    const dead = m.userData.typeId === 'dead';
     for (const t of list) {
-      const dx = t.x - px, dz = t.z - pz;
-      if (dx * dx + dz * dz > RANGE_SQ) continue;
-      const sx = cx + dx * scale;
-      const sy = cy + dz * scale;
-      ctx.fillRect(sx - 1, sy - 1, 2, 2);
+      if (!inView(t.x, t.z)) continue;
+      const [sx, sy] = S(t.x, t.z);
+      const r = bush ? tr * 0.7 : tr;
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = dead ? '#5a4030' : (bush ? '#3f6a28' : '#23461a'); ctx.fill();
+      if (r > 1.5) {
+        ctx.beginPath(); ctx.arc(sx - r * 0.3, sy - r * 0.3, r * 0.45, 0, Math.PI * 2);
+        ctx.fillStyle = dead ? '#7a5a40' : '#4f8a34'; ctx.fill();
+      }
     }
   }
 
-  // Sesión 50 — Objetivo de la misión: rombo dorado (pegado al borde si está lejos).
+  // Vetas de mineral
+  try {
+    for (const v of mining.getLoadedVeins()) {
+      if (!inView(v.x, v.z)) continue;
+      const [sx, sy] = S(v.x, v.z);
+      ctx.fillStyle = '#3a3a3a'; ctx.fillRect(sx - 2.2, sy - 2.2, 4.4, 4.4);
+      ctx.fillStyle = v.depleted ? '#777' : v.color; ctx.fillRect(sx - 1.3, sy - 1.3, 2.6, 2.6);
+    }
+  } catch {}
+
+  const IR = 5.2;   // radio de los iconos
+  try {
+    for (const sp of fishing.getSpotsForMinimap()) {
+      if (!inView(sp.x, sp.z)) continue;
+      const [sx, sy] = S(sp.x, sp.z);
+      mapRender.drawIcon(ctx, 'fish', sx, sy, IR * 0.8);
+    }
+    for (const b of bankChests.getBanksForMinimap()) {
+      if (!inView(b.x, b.z)) continue;
+      const [sx, sy] = S(b.x, b.z);
+      mapRender.drawIcon(ctx, 'bank', sx, sy, IR);
+    }
+    for (const st of smithing.getStationsForMinimap()) {
+      if (!inView(st.x, st.z)) continue;
+      const [sx, sy] = S(st.x, st.z);
+      mapRender.drawIcon(ctx, st.kind === 'furnace' ? 'furnace' : 'anvil', sx, sy, IR);
+    }
+    for (const a of prayer.getAltarsForMinimap()) {
+      if (!inView(a.x, a.z)) continue;
+      const [sx, sy] = S(a.x, a.z);
+      mapRender.drawIcon(ctx, 'altar', sx, sy, IR);
+    }
+  } catch {}
+
+  // NPCs (amarillo en la wilderness, blanco fuera) — como OSRS
+  const NPC_RAD_SQ = Math.min(RANGE_SQ, NPC_MINIMAP_RADIUS * NPC_MINIMAP_RADIUS);
+  for (const npc of npcRenderer.getNpcDataList()) {
+    const dx = npc.x - px, dz = npc.z - pz;
+    if (dx * dx + dz * dz > NPC_RAD_SQ) continue;
+    const [sx, sy] = S(npc.x, npc.z);
+    ctx.beginPath(); ctx.arc(sx, sy, 1.9, 0, Math.PI * 2);
+    ctx.fillStyle = (npc.x < WILDERNESS_X) ? '#ffd040' : '#ffff60'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 0.7; ctx.stroke();
+  }
+  // Habitantes: punto amarillo / "!" / "?"
+  try {
+    for (const m of townNpcs.getMinimapMarks()) {
+      if (!inView(m.x, m.z)) continue;
+      const [mx, my] = S(m.x, m.z);
+      if (m.mark === 'offer' || m.mark === 'turnin') mapRender.drawIcon(ctx, 'quest', mx, my, 4.2, { mark: m.mark });
+      else {
+        ctx.beginPath(); ctx.arc(mx, my, 1.9, 0, Math.PI * 2);
+        ctx.fillStyle = m.mark === 'doing' ? '#d0d0d0' : '#ffff40'; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 0.7; ctx.stroke();
+      }
+    }
+  } catch {}
+
+  // Otros jugadores: blanco (verde si es de tu grupo)
+  const myPartyId = party.getMyPartyId();
+  for (const peer of multiplayer.getPeerPositions()) {
+    if (!inView(peer.x, peer.z)) continue;
+    const [sx, sy] = S(peer.x, peer.z);
+    const sameParty = myPartyId != null && peer.party_id === myPartyId;
+    ctx.beginPath(); ctx.arc(sx, sy, 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = sameParty ? '#4adc4a' : '#ffffff'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // Lugares (icono + nombre)
+  for (const p of PLACES) {
+    const [sx, sy] = S(p.x, p.z);
+    if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+    mapRender.drawIcon(ctx, mapRender.placeIconKind(p), sx, sy, 6, { color: '#' + (p.color >>> 0).toString(16).padStart(6, '0') });
+    mapRender.label(ctx, p.name, sx, sy + 12, 9, '#fff8d0', true);
+  }
+
+  // Objetivo de la misión: rombo dorado (pegado al borde si está lejos)
   try {
     const h = quests.getHintPos();
     if (h) {
@@ -1161,186 +1262,73 @@ function drawMinimap() {
       if (d > lim) { dx = dx / d * lim; dz = dz / d * lim; }
       const hx = cx + dx, hy = cy + dz;
       ctx.fillStyle = '#ffd35a';
-      ctx.strokeStyle = '#000';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.moveTo(hx, hy - 5); ctx.lineTo(hx + 4, hy); ctx.lineTo(hx, hy + 5); ctx.lineTo(hx - 4, hy); ctx.closePath();
       ctx.fill(); ctx.stroke();
     }
   } catch {}
 
-  // Sesión 50 — Vetas de mineral y hornos/yunques en el minimapa.
-  try {
-    for (const pd of fishing.getPondsForMinimap()) {
-      const dx = pd.x - px, dz = pd.z - pz;
-      if (dx * dx + dz * dz > (RANGE_SQ * 1.5)) continue;
-      ctx.beginPath();
-      ctx.arc(cx + dx * scale, cy + dz * scale, Math.max(2, pd.r * scale), 0, Math.PI * 2);
-      ctx.fillStyle = pd.frozen ? '#cfe6f2' : '#3a7fb0';
-      ctx.fill();
-    }
-    for (const sp of fishing.getSpotsForMinimap()) {
-      const dx = sp.x - px, dz = sp.z - pz;
-      if (dx * dx + dz * dz > RANGE_SQ) continue;
-      ctx.fillStyle = '#9fe3ff';
-      ctx.beginPath(); ctx.arc(cx + dx * scale, cy + dz * scale, 1.8, 0, Math.PI * 2); ctx.fill();
-    }
-    // Sesión 50 — habitantes: punto amarillo (OSRS) y "!" / "?" si hay misión
-    for (const m of townNpcs.getMinimapMarks()) {
-      const dx = m.x - px, dz = m.z - pz;
-      if (dx * dx + dz * dz > RANGE_SQ) continue;
-      const mx = cx + dx * scale, my = cy + dz * scale;
-      if (m.mark === 'offer' || m.mark === 'turnin') {
-        ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3; ctx.strokeStyle = '#000';
-        const t = m.mark === 'offer' ? '!' : '?';
-        ctx.strokeText(t, mx, my); ctx.fillStyle = '#ffd24a'; ctx.fillText(t, mx, my);
-      } else {
-        ctx.beginPath(); ctx.arc(mx, my, 1.8, 0, Math.PI * 2);
-        ctx.fillStyle = m.mark === 'doing' ? '#d0d0d0' : '#ffff40'; ctx.fill();
-      }
-    }
-    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
-    // Sesión 50 — cofres de banco: moneda dorada
-    for (const b of bankChests.getBanksForMinimap()) {
-      const dx = b.x - px, dz = b.z - pz;
-      if (dx * dx + dz * dz > RANGE_SQ) continue;
-      const bx = cx + dx * scale, by = cy + dz * scale;
-      ctx.beginPath(); ctx.arc(bx, by, 3.6, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffd24a'; ctx.fill();
-      ctx.lineWidth = 1; ctx.strokeStyle = '#5a3c00'; ctx.stroke();
-      ctx.fillStyle = '#5a3c00'; ctx.font = 'bold 6px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('$', bx, by + 0.3);
-    }
-    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
-    for (const st of [...smithing.getStationsForMinimap(), ...prayer.getAltarsForMinimap()]) {
-      const dx = st.x - px, dz = st.z - pz;
-      if (dx * dx + dz * dz > RANGE_SQ) continue;
-      ctx.fillStyle = st.color;
-      ctx.fillRect(cx + dx * scale - 2.5, cy + dz * scale - 2.5, 5, 5);
-    }
-    for (const v of mining.getLoadedVeins()) {
-      const dx = v.x - px, dz = v.z - pz;
-      if (dx * dx + dz * dz > RANGE_SQ) continue;
-      ctx.fillStyle = v.depleted ? '#6a6a6a' : v.color;
-      ctx.fillRect(cx + dx * scale - 1.5, cy + dz * scale - 1.5, 3, 3);
-    }
-  } catch {}
-
-  // NPCs como puntos en el minimapa.
-  // Sesión 27 Bloque 3 — NPCs en wilderness (x < WILDERNESS_X) salen
-  // en AMARILLO (zona hostil / PVE-PVP mixto). Fuera de wilderness,
-  // siguen blancos como antes.
-  const NPC_RAD_SQ = NPC_MINIMAP_RADIUS * NPC_MINIMAP_RADIUS;
-  for (const npc of npcRenderer.getNpcDataList()) {
-    const dx = npc.x - px, dz = npc.z - pz;
-    if (dx * dx + dz * dz > NPC_RAD_SQ) continue;
-    const sx = cx + dx * scale, sy = cy + dz * scale;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 2, 0, Math.PI * 2);
-    ctx.fillStyle = (npc.x < WILDERNESS_X) ? '#ffd040' : '#fff';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-  }
-
-  // Otros players como puntos en el minimapa.
-  // Sesión 27 Bloque 3 — Color según relación:
-  //   - Mi party → verde brillante.
-  //   - Otros (PVP rivals / desconocidos) → azul (default).
-  const myPartyId = party.getMyPartyId();
-  for (const peer of multiplayer.getPeerPositions()) {
-    const dx = peer.x - px, dz = peer.z - pz;
-    if (dx * dx + dz * dz > NPC_RAD_SQ) continue;
-    const sx = cx + dx * scale, sy = cy + dz * scale;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 3, 0, Math.PI * 2);
-    const sameParty = myPartyId != null && peer.party_id === myPartyId;
-    ctx.fillStyle = sameParty ? '#4adc4a' : '#4090ff';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
-  for (const p of PLACES) {
-    const sx = cx + (p.x - px) * scale, sy = cy + (p.z - pz) * scale;
-    if (sx < -10 || sx > W + 10 || sy < -10 || sy > H + 10) continue;
-    let r, fillC;
-    if (p.type === 'city') { r = 6; fillC = '#ffd060'; }
-    else if (p.type === 'village') { r = 4.5; fillC = '#c8a043'; }
-    else if (p.type === 'boss') { r = 5.5; fillC = '#ff3030'; }
-    else if (p.type === 'tower') { r = 4.5; fillC = '#7090d0'; }
-    else if (p.type === 'mine') { r = 4.5; fillC = '#808080'; }
-    else if (p.type === 'temple') { r = 4.5; fillC = '#fff4d0'; }
-    else if (p.type === 'altar') { r = 4.5; fillC = '#a040c0'; }
-    else if (p.type === 'ruins') { r = 4; fillC = '#9090c0'; }
-    else { r = 4; fillC = '#9090c0'; }
-    ctx.beginPath();
-    ctx.arc(sx, sy, r + 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI * 2);
-    ctx.fillStyle = fillC;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#000';
-    ctx.stroke();
-    const distSq = (p.x - px) ** 2 + (p.z - pz) ** 2;
-    if (distSq < 350 * 350) {
-      ctx.font = 'bold 9px serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
-      ctx.fillText(p.name, sx + 1, sy + r + 9);
-      ctx.fillStyle = '#fff8d0';
-      ctx.fillText(p.name, sx, sy + r + 8);
-    }
-  }
-
-  const others = (typeof window !== 'undefined' && Array.isArray(window.__otherPlayers))
-    ? window.__otherPlayers : [];
-  for (const op of others) {
-    if (typeof op?.x !== 'number' || typeof op?.z !== 'number') continue;
-    const dx = op.x - px, dz = op.z - pz;
-    if (dx * dx + dz * dz > RANGE_SQ) continue;
-    const sx = cx + dx * scale, sy = cy + dz * scale;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = '#000';
-    ctx.stroke();
-  }
-
+  // Viñeta suave en el borde
+  const vg = ctx.createRadialGradient(cx, cy, W * 0.36, cx, cy, W / 2);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   ctx.restore();
 
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = '#000';
-  ctx.stroke();
-  const ang = player.rotation.y;
-  const ax = cx + Math.sin(ang) * 9, ay = cy + Math.cos(ang) * 9;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(ax, ay);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = '#e8c560';
-  ctx.font = 'bold 12px serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('N', cx, 14);
+  // Tú: flecha blanca
+  mapRender.drawPlayerArrow(ctx, cx, cy, player.rotation.y, 5.5);
+
+  // Aro dorado + brújula
+  ctx.beginPath(); ctx.arc(cx, cy, W / 2 - 1, 0, Math.PI * 2);
+  ctx.lineWidth = 2; ctx.strokeStyle = '#8a6a30'; ctx.stroke();
+  mapRender.label(ctx, 'N', cx, 9, 11, '#ff5040', true);
+  // Zoom actual
+  ctx.save();
+  ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,240,200,0.85)';
+  ctx.fillText(`${RANGE * 2} m`, cx, H - 6);
+  ctx.restore();
+}
+
+function setupMinimapZoomButtons() {
+  if (document.getElementById('mmZoomIn')) return;
+  const host = minimapCanvas?.parentElement;
+  if (!host) return;
+  if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+  const css = document.createElement('style');
+  css.textContent = `.mm-zoom{position:absolute;width:22px;height:22px;border-radius:50%;border:1.5px solid #8a6a30;
+    background:rgba(30,20,10,0.9);color:#f0d890;font:bold 15px/18px sans-serif;padding:0;pointer-events:auto;z-index:3;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation}.mm-zoom:active{background:#6a4a20}`;
+  document.head.appendChild(css);
+  const mk = (id, txt, dir) => {
+    const b = document.createElement('button');
+    b.id = id; b.className = 'mm-zoom'; b.textContent = txt;
+    addL(b, 'pointerup', (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      mmZoomIdx = Math.max(0, Math.min(MM_ZOOMS.length - 1, mmZoomIdx + dir));
+    });
+    addL(b, 'pointerdown', (ev) => ev.stopPropagation());
+    host.appendChild(b);
+    return b;
+  };
+  const place = () => {
+    const r = minimapCanvas.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    const left = r.left - hr.left, top = r.top - hr.top;
+    zin.style.left = (left - 4) + 'px'; zin.style.top = (top + r.height - 22) + 'px';
+    zout.style.left = (left + 18) + 'px'; zout.style.top = (top + r.height - 8) + 'px';
+  };
+  const zin = mk('mmZoomIn', '+', -1);
+  const zout = mk('mmZoomOut', '−', +1);
+  place();
+  addL(window, 'resize', place);
+  setTimeout(place, 500);
 }
 
 // Sesión 11c-1 — minimap minimalista para cuando estamos en interior.
 // No tiene sentido dibujar biomas/PLACES/NPCs reales (player en 10000,10000).
 function drawMinimapInterior() {
   const ctx = minimapCtx;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   const W = minimapCanvas.width;
   const H = minimapCanvas.height;
   const cx = W / 2, cy = H / 2;
@@ -1373,11 +1361,18 @@ function drawMinimapInterior() {
 //                       Full-map modal
 // ============================================================
 
+// Sesión 50 — Mapa grande nuevo: se arrastra y se hace zoom (pellizco,
+// rueda o botones), terreno pintado con biomas suaves, iconos, nombres,
+// tu flecha, jugadores, misión y leyenda.
+const fm = { cx: 0, cz: 0, ppm: 0.2, base: null, pointers: new Map(), pinch: null, drag: null, timer: null, raf: 0 };
+const FM_MIN_PPM = 0.08, FM_MAX_PPM = 4;
+
 function setupFullMap() {
   fullMapOverlay = document.getElementById('fullMapOverlay');
   fullMapCanvas = document.getElementById('worldFullMap');
   if (!fullMapOverlay || !fullMapCanvas) { console.warn('Full map elements not found'); return; }
   fullMapCtx = fullMapCanvas.getContext('2d');
+  ensureFullMapCss();
   const closeBtn = document.getElementById('fullMapClose');
   if (closeBtn) {
     addL(closeBtn, 'pointerup', (ev) => {
@@ -1385,109 +1380,240 @@ function setupFullMap() {
       ev.preventDefault();
       closeFullMap();
     });
+    // Botones de zoom junto a la ✕
+    if (!document.getElementById('fmZoomIn')) {
+      const bar = document.createElement('div');
+      bar.className = 'fm-btns';
+      bar.innerHTML = '<button id="fmCenter" title="Centrar en mí">⌖</button><button id="fmZoomOut">−</button><button id="fmZoomIn">+</button>';
+      closeBtn.parentElement.insertBefore(bar, closeBtn);
+      addL(bar, 'pointerup', (ev) => {
+        const b = ev.target.closest('button'); if (!b) return;
+        ev.preventDefault();
+        if (b.id === 'fmZoomIn') fmZoomAt(1.6);
+        else if (b.id === 'fmZoomOut') fmZoomAt(1 / 1.6);
+        else if (b.id === 'fmCenter' && player) { fm.cx = player.position.x; fm.cz = player.position.z; fm.ppm = Math.max(fm.ppm, 0.9); }
+        requestFullMapDraw();
+      });
+    }
   }
+  const footer = fullMapOverlay.querySelector('.osrs-fullmap-footer');
+  if (footer) {
+    footer.innerHTML = [
+      ['bank', 'Banco'], ['quest', 'Misión'], ['anvil', 'Herrería'], ['altar', 'Altar'], ['fish', 'Pesca'], ['boss', 'Jefe'],
+    ].map(([k, t]) => `<span class="fm-leg"><canvas data-ic="${k}" width="36" height="36"></canvas>${t}</span>`).join('')
+      + '<span class="fm-leg fm-hint">Arrastra para moverte · pellizca para zoom</span>';
+    for (const c of footer.querySelectorAll('canvas[data-ic]')) {
+      const g = c.getContext('2d');
+      mapRender.drawIcon(g, c.dataset.ic, 18, 18, 13, { mark: 'offer' });
+    }
+  }
+  const cv = fullMapCanvas;
+  cv.style.touchAction = 'none';
+  addL(cv, 'pointerdown', (ev) => {
+    cv.setPointerCapture?.(ev.pointerId);
+    fm.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (fm.pointers.size === 1) fm.drag = { x: ev.clientX, y: ev.clientY, cx: fm.cx, cz: fm.cz };
+    if (fm.pointers.size === 2) {
+      const [a, b] = [...fm.pointers.values()];
+      fm.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ppm: fm.ppm };
+      fm.drag = null;
+    }
+  });
+  addL(cv, 'pointermove', (ev) => {
+    if (!fm.pointers.has(ev.pointerId)) return;
+    fm.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (fm.pinch && fm.pointers.size >= 2) {
+      const [a, b] = [...fm.pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      fm.ppm = Math.max(FM_MIN_PPM, Math.min(FM_MAX_PPM, fm.pinch.ppm * d / Math.max(10, fm.pinch.d)));
+      requestFullMapDraw();
+    } else if (fm.drag) {
+      fm.cx = fm.drag.cx - (ev.clientX - fm.drag.x) / fm.ppm;
+      fm.cz = fm.drag.cz - (ev.clientY - fm.drag.y) / fm.ppm;
+      clampFullMap();
+      requestFullMapDraw();
+    }
+  });
+  const up = (ev) => {
+    fm.pointers.delete(ev.pointerId);
+    if (fm.pointers.size < 2) fm.pinch = null;
+    if (fm.pointers.size === 1) {
+      const [a] = [...fm.pointers.values()];
+      fm.drag = { x: a.x, y: a.y, cx: fm.cx, cz: fm.cz };
+    } else if (fm.pointers.size === 0) fm.drag = null;
+  };
+  addL(cv, 'pointerup', up);
+  addL(cv, 'pointercancel', up);
+  addL(cv, 'wheel', (ev) => { ev.preventDefault(); fmZoomAt(ev.deltaY < 0 ? 1.25 : 0.8); }, { passive: false });
   addL(fullMapOverlay, 'click', (e) => { if (e.target === fullMapOverlay) closeFullMap(); });
+  addL(window, 'resize', () => { if (fullMapVisible) { sizeFullMap(); requestFullMapDraw(); } });
+}
+
+function ensureFullMapCss() {
+  if (document.getElementById('fm-css')) return;
+  const st = document.createElement('style');
+  st.id = 'fm-css';
+  st.textContent = `
+    .osrs-fullmap-frame { width: min(96vw, 980px); height: min(88vh, 900px); box-sizing: border-box; display: flex; flex-direction: column; padding: 8px !important; }
+    #worldFullMap { flex: 1; min-height: 0; width: 100%; height: 100%; cursor: grab; }
+    .osrs-fullmap-header { padding: 0 2px 6px !important; margin-bottom: 6px !important; gap: 6px; }
+    .fm-btns { display: flex; gap: 6px; margin-left: auto; }
+    .fm-btns button { width: 32px; height: 32px; background: rgba(60,30,20,0.95); border: 2px solid #c8a043; color: #e8c560;
+      font-size: 18px; font-weight: bold; border-radius: 4px; padding: 0; -webkit-tap-highlight-color: transparent; }
+    .fm-btns button:active { transform: scale(0.9); }
+    .osrs-fullmap-footer { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center; align-items: center; }
+    .fm-leg { display: inline-flex; align-items: center; gap: 3px; color: #e8d8a8; font-size: 11px; }
+    .fm-leg canvas { width: 16px; height: 16px; }
+    .fm-hint { color: rgba(200,160,67,0.7); }
+  `;
+  document.head.appendChild(st);
+}
+
+function sizeFullMap() {
+  const r = fullMapCanvas.getBoundingClientRect();
+  const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+  const w = Math.max(100, Math.round(r.width * dpr)), h = Math.max(100, Math.round(r.height * dpr));
+  if (fullMapCanvas.width !== w || fullMapCanvas.height !== h) { fullMapCanvas.width = w; fullMapCanvas.height = h; }
+}
+function clampFullMap() {
+  const L = WORLD_HALF + 200;
+  fm.cx = Math.max(-L, Math.min(L, fm.cx));
+  fm.cz = Math.max(-L, Math.min(L, fm.cz));
+}
+function fmZoomAt(f) {
+  fm.ppm = Math.max(FM_MIN_PPM, Math.min(FM_MAX_PPM, fm.ppm * f));
+  requestFullMapDraw();
+}
+function requestFullMapDraw() {
+  if (fm.raf) return;
+  fm.raf = requestAnimationFrame(() => { fm.raf = 0; drawFullMap(); });
 }
 
 function openFullMap() {
   if (!fullMapOverlay || !fullMapCanvas) return;
   fullMapOverlay.classList.add('visible');
   fullMapVisible = true;
+  sizeFullMap();
+  if (player) { fm.cx = player.position.x; fm.cz = player.position.z; }
+  // Zoom inicial: ~1.2 km de ancho alrededor tuyo
+  const r = fullMapCanvas.getBoundingClientRect();
+  fm.ppm = Math.max(FM_MIN_PPM, r.width / 1200);
+  mapRender.getWorldBase().then(b => { fm.base = b; requestFullMapDraw(); });
   drawFullMap();
+  clearInterval(fm.timer);
+  fm.timer = setInterval(() => { if (fullMapVisible) requestFullMapDraw(); }, 500);
 }
 
 function closeFullMap() {
   if (!fullMapOverlay) return;
   fullMapOverlay.classList.remove('visible');
   fullMapVisible = false;
+  clearInterval(fm.timer); fm.timer = null;
 }
 
 function drawFullMap() {
-  if (!fullMapCtx || !player) return;
+  if (!fullMapCtx || !player || !fullMapVisible) return;
   const ctx = fullMapCtx;
-  const W = fullMapCanvas.width;
-  const H = fullMapCanvas.height;
-  const worldToScreen = (wx, wz) => ({
-    x: ((wx + WORLD_HALF) / (WORLD_HALF * 2)) * W,
-    y: ((wz + WORLD_HALF) / (WORLD_HALF * 2)) * H,
-  });
-  ctx.fillStyle = '#4a7896'; ctx.fillRect(0, 0, W, H);
-  const SAMPLES = 100;
-  const cellW = W / SAMPLES, cellH = H / SAMPLES;
-  for (let i = 0; i < SAMPLES; i++) {
-    for (let j = 0; j < SAMPLES; j++) {
-      const wx = -WORLD_HALF + ((i + 0.5) / SAMPLES) * (WORLD_HALF * 2);
-      const wz = -WORLD_HALF + ((j + 0.5) / SAMPLES) * (WORLD_HALF * 2);
-      const b = biomeAt(wx, wz);
-      ctx.fillStyle = '#' + b.base.toString(16).padStart(6, '0');
-      ctx.fillRect(i * cellW, j * cellH, cellW + 1, cellH + 1);
+  const dpr = fullMapCanvas.width / Math.max(1, fullMapCanvas.getBoundingClientRect().width);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = fullMapCanvas.width / dpr, H = fullMapCanvas.height / dpr;
+  const ppm = fm.ppm;
+  const S = (x, z) => [W / 2 + (x - fm.cx) * ppm, H / 2 + (z - fm.cz) * ppm];
+  const vis = (x, z, m = 30) => { const [sx, sy] = S(x, z); return sx > -m && sx < W + m && sy > -m && sy < H + m; };
+
+  ctx.fillStyle = '#26496e'; ctx.fillRect(0, 0, W, H);
+  if (fm.base) {
+    const b = fm.base;
+    ctx.imageSmoothingEnabled = ppm < 1.2;
+    const [bx, by] = S(b.x0, b.z0);
+    const sz = b.canvas.width * b.mpp * ppm;
+    ctx.drawImage(b.canvas, bx, by, sz, sz);
+  } else {
+    mapRender.label(ctx, 'Dibujando el mapa…', W / 2, H / 2, 16, '#e8c560', true);
+  }
+
+  // Cerca: árboles cargados (como el minimapa)
+  if (ppm >= 1.2) {
+    for (const m of terrain.getInteractableMeshes()) {
+      const list = m.userData?.trees;
+      if (!list || m.userData?.kind !== 'tree-trunk') continue;
+      for (const t of list) {
+        if (!vis(t.x, t.z, 5)) continue;
+        const [sx, sy] = S(t.x, t.z);
+        ctx.beginPath(); ctx.arc(sx, sy, Math.max(1.5, 1.4 * ppm), 0, Math.PI * 2);
+        ctx.fillStyle = m.userData.typeId === 'dead' ? '#5a4030' : '#23461a'; ctx.fill();
+      }
     }
   }
-  const wildEdgeScreen = worldToScreen(WILDERNESS_X, 0).x;
-  ctx.fillStyle = 'rgba(180, 30, 30, 0.28)';
-  ctx.fillRect(0, 0, wildEdgeScreen, H);
-  ctx.strokeStyle = 'rgba(220, 60, 60, 0.7)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(wildEdgeScreen, 0);
-  ctx.lineTo(wildEdgeScreen, H);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(255, 100, 80, 0.9)';
-  ctx.font = 'bold 14px "Cinzel", serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('TIERRAS ROTAS', wildEdgeScreen / 2, 28);
 
+  // Tierras Rotas: rótulo
+  {
+    const [wx] = S(WILDERNESS_X, 0);
+    if (wx > 40) mapRender.label(ctx, 'TIERRAS ROTAS', Math.min(wx / 2, wx - 70), 22, 14, '#ff7060', true);
+  }
+
+  const IR = Math.max(5, Math.min(9, 4 + ppm * 3));
+  // Servicios (aparecen al acercar)
+  if (ppm >= 0.18) {
+    try {
+      for (const b of bankChests.getBanksForMinimap()) if (vis(b.x, b.z)) mapRender.drawIcon(ctx, 'bank', ...S(b.x, b.z), IR);
+      for (const st of smithing.getStationsForMinimap()) if (vis(st.x, st.z)) mapRender.drawIcon(ctx, st.kind === 'furnace' ? 'furnace' : 'anvil', ...S(st.x, st.z), IR);
+      for (const a of prayer.getAltarsForMinimap()) if (vis(a.x, a.z)) mapRender.drawIcon(ctx, 'altar', ...S(a.x, a.z), IR);
+      for (const pd of fishing.getPondsForMinimap()) if (vis(pd.x, pd.z)) mapRender.drawIcon(ctx, 'fish', ...S(pd.x, pd.z + pd.r + 6), IR * 0.9);
+      for (const m of townNpcs.getMinimapMarks()) {
+        if (!vis(m.x, m.z)) continue;
+        if (m.mark === 'offer' || m.mark === 'turnin') mapRender.drawIcon(ctx, 'quest', ...S(m.x, m.z - 6), IR * 0.9, { mark: m.mark });
+      }
+    } catch {}
+  }
+
+  // Lugares
   for (const p of PLACES) {
-    const s = worldToScreen(p.x, p.z);
-    let r, fillC;
-    if (p.type === 'city') { r = 7; fillC = '#ffd060'; }
-    else if (p.type === 'village') { r = 5; fillC = '#c8a043'; }
-    else if (p.type === 'boss') { r = 6; fillC = '#ff3030'; }
-    else if (p.type === 'tower') { r = 5; fillC = '#7090d0'; }
-    else if (p.type === 'mine') { r = 5; fillC = '#808080'; }
-    else if (p.type === 'temple') { r = 5; fillC = '#fff4d0'; }
-    else if (p.type === 'altar') { r = 5; fillC = '#a040c0'; }
-    else if (p.type === 'ruins') { r = 4.5; fillC = '#9090c0'; }
-    else { r = 4; fillC = '#9090c0'; }
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = fillC;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#000';
-    ctx.stroke();
-    ctx.font = (p.type === 'city' ? 'bold 11px' : '10px') + ' "IM Fell English", serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillText(p.name, s.x + 1, s.y + r + 11);
-    ctx.fillStyle = p.type === 'city' ? '#fff8d0' : '#e8d8a8';
-    ctx.fillText(p.name, s.x, s.y + r + 10);
+    if (!vis(p.x, p.z, 80)) continue;
+    const [sx, sy] = S(p.x, p.z);
+    const big = p.type === 'city';
+    const r = big ? IR + 2 : IR;
+    mapRender.drawIcon(ctx, mapRender.placeIconKind(p), sx, sy, r, { color: '#' + (p.color >>> 0).toString(16).padStart(6, '0') });
+    if (big || ppm >= 0.14) mapRender.label(ctx, p.name, sx, sy + r + 9, big ? 13 : 11, big ? '#fff3c0' : '#e8d8a8', big);
   }
-  const ps = worldToScreen(player.position.x, player.position.z);
-  const grad = ctx.createRadialGradient(ps.x, ps.y, 0, ps.x, ps.y, 14);
-  grad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-  grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(ps.x, ps.y, 14, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(ps.x, ps.y, 5, 0, Math.PI * 2);
-  ctx.fillStyle = '#fff'; ctx.fill();
-  ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
-  if (user) {
-    ctx.font = 'bold 12px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(0,0,0,0.9)';
-    ctx.fillText(user.username, ps.x + 1, ps.y - 9);
-    ctx.fillStyle = '#fff8d0';
-    ctx.fillText(user.username, ps.x, ps.y - 10);
+
+  // Otros jugadores
+  const myPartyId = party.getMyPartyId();
+  for (const peer of multiplayer.getPeerPositions()) {
+    if (!vis(peer.x, peer.z)) continue;
+    const [sx, sy] = S(peer.x, peer.z);
+    ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+    ctx.fillStyle = (myPartyId != null && peer.party_id === myPartyId) ? '#4adc4a' : '#ffffff'; ctx.fill();
+    ctx.lineWidth = 1.2; ctx.strokeStyle = '#000'; ctx.stroke();
+    if (peer.username && ppm >= 0.3) mapRender.label(ctx, peer.username, sx, sy - 10, 10);
   }
-  ctx.fillStyle = '#e8c560';
-  ctx.font = 'bold 14px "Cinzel", serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('N ↑', 10, 18);
+
+  // Objetivo de misión
+  try {
+    const h = quests.getHintPos();
+    if (h) {
+      const [hx, hy] = S(h.x, h.z);
+      ctx.fillStyle = '#ffd35a'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(hx, hy - 8); ctx.lineTo(hx + 6, hy); ctx.lineTo(hx, hy + 8); ctx.lineTo(hx - 6, hy); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+  } catch {}
+
+  // Tú
+  const [ps, pz] = S(player.position.x, player.position.z);
+  const grad = ctx.createRadialGradient(ps, pz, 0, ps, pz, 18);
+  grad.addColorStop(0, 'rgba(255,255,255,0.55)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ps, pz, 18, 0, Math.PI * 2); ctx.fill();
+  mapRender.drawPlayerArrow(ctx, ps, pz, player.rotation.y, 8);
+  if (user) mapRender.label(ctx, user.username, ps, pz - 16, 12, '#fff8d0', true);
+
+  // Brújula + escala
+  mapRender.label(ctx, 'N ↑', 22, 16, 14, '#e8c560', true);
+  const meters = [50, 100, 250, 500, 1000][[50, 100, 250, 500, 1000].findIndex(m => m * ppm > 60)] || 1000;
+  const bw = meters * ppm;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W - bw - 18, H - 22, bw + 10, 14);
+  ctx.fillStyle = '#e8d8a8'; ctx.fillRect(W - bw - 13, H - 16, bw, 3);
+  mapRender.label(ctx, `${meters} m`, W - bw / 2 - 13, H - 28, 10);
 }
 
 // ============================================================
@@ -2906,7 +3032,7 @@ function animate() {
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
-  drawMinimap();
+  try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   renderer.render(scene, camera);
 }

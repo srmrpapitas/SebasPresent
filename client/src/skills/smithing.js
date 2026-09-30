@@ -279,7 +279,7 @@ export function stop() {
 }
 
 export function getStationsForMinimap() {
-  return STATIONS.map(s => ({ x: s.x, z: s.z, color: s.type === 'furnace' ? '#ff8a3a' : '#c0c6cc' }));
+  return STATIONS.map(s => ({ x: s.x, z: s.z, kind: s.type, color: s.type === 'furnace' ? '#ff8a3a' : '#c0c6cc' }));
 }
 
 function stationUnderRay(raycaster) {
