@@ -132,3 +132,18 @@ Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o ven
   - que un bicho te persiga no te baja;
   - atacar, recoger recursos, entrar en un interior o en la Fosa te baja de la montura.
 - Los demás jugadores ven tu montura: el Realm manda `m` en el mensaje `p`.
+
+
+## Entre jugadores
+- Si mantienes pulsado sobre otro jugador salen **🤝 Comerciar** y **👣 Seguir**. Las dos opciones funcionan también montado.
+- **Comercio** (`server/handlers/trade.js`):
+  - Tú lo pides y al otro le sale un aviso; si los dos se lo piden a la vez, se abre directamente.
+  - Lo ofrecido queda retenido en el servidor.
+  - Hay dos pantallas: aceptar y confirmar.
+  - Cualquier cambio en las ofertas quita los "aceptar" y avisa de que la oferta ha cambiado.
+  - Si a alguien no le cabe lo que recibe, no se completa.
+  - Al cancelar, todo vuelve a su dueño; si no le cabe en la mochila, va al banco.
+- **Seguir:** vas detrás del otro jugador a 2 m. Se deja de seguir al tocar la pantalla o usar el joystick.
+- **Pestaña 👥**, con dos subpestañas:
+  - Amigos: añadir por nombre, ver quién está conectado y dónde, y los jugadores que tienes cerca.
+  - Monturas: tu colección; tocas una para llamarla, como en WoW.

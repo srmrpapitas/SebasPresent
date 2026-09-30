@@ -412,6 +412,8 @@ export function openActionMenuAt(cx, cy) {
   menu.className = 'pvp-action-menu';
   menu.innerHTML = `
     <div class="pvp-action-menu-header">${escapeHtmlSafe(peer.username || 'Jugador')} <span class="pvp-action-lvl">(lvl ${lvl})</span></div>
+    <div class="pvp-action-row" data-act="trade">🤝 Comerciar</div>
+    <div class="pvp-action-row" data-act="follow">👣 Seguir</div>
     <div class="pvp-action-row danger" data-act="attack">⚔ Atacar</div>
     ${showDuel ? `<div class="pvp-action-row" data-act="duel">🤺 Retar a duelo</div>` : ''}
     ${showInvite ? `<div class="pvp-action-row" data-act="invite">👥 Invitar a grupo</div>` : ''}
@@ -435,6 +437,8 @@ export function openActionMenuAt(cx, cy) {
       const act = row.getAttribute('data-act');
       closeActionMenu();
       if (act === 'attack')        triggerPeerTap(peer.user_id);
+      else if (act === 'trade')    window.__trade?.request?.(peer.user_id, peer.username);   // Sesión 50
+      else if (act === 'follow')   window.__follow?.follow?.(peer.user_id, peer.username);   // Sesión 50
       else if (act === 'examine')  examinePeer(peer);
       else if (act === 'invite')   party.inviteUser?.(peer.user_id, peer.username);
       else if (act === 'duel')     duel.challengeUser?.(peer.user_id, peer.username);

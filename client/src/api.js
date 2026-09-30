@@ -685,3 +685,8 @@ export async function mountsGet() {
 export async function mountsBuy(mount) {
   return apiFetch('/api/mounts/buy', { method: 'POST', auth: true, body: { mount } });
 }
+
+// Sesión 50 — comercio y amigos (ruta + cuerpo; sin cuerpo = GET)
+export async function tradeCall(path, body) {
+  return apiFetch(path, body === undefined ? { auth: true } : { method: 'POST', auth: true, body });
+}

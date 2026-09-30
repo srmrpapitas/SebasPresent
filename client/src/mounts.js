@@ -205,6 +205,7 @@ export function riderLift(id, altitude = 0) {
 // Jugador local
 // ============================================================
 export function id() { return current; }
+export function getOwned() { return owned.slice(); }
 export function isMounted() { return !!current; }
 export function isFlying() { return current === 'pardela' && alt > 0.5; }
 export function canFly() { return combatLevel >= MOUNTS.pardela.flyLevel; }

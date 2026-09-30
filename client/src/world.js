@@ -34,6 +34,9 @@ import * as guancheVillage from './guanche_village.js';   // Sesión 50 — pobl
 import * as houses from './houses.js';                     // Sesión 50 — casas de jugador
 import * as roadsRender from './roads_render.js';          // Sesión 50 — caminos y postes
 import * as mounts from './mounts.js';                     // Sesión 50 — monturas
+import * as trade from './trade.js';                       // Sesión 50 — comercio entre jugadores
+import * as follow from './follow.js';                     // Sesión 50 — seguir a un jugador
+import * as social from './social.js';                     // Sesión 50 — pestaña Amigos / Monturas
 import { insideFosa } from './shared/fosa.js';
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
@@ -905,6 +908,16 @@ export async function startWorld(loggedInUser, token) {
         },
       });
     } catch (e) { console.warn('[world] mounts start:', e); }
+    try {
+      const fl = (type, msg) => combat.feedLog?.(type, msg);
+      trade.start({ userId: user?.id, feedLog: fl, onInventoryChanged: () => { try { inventory.refresh(); } catch {} } });
+      follow.start({ getPlayer: () => player, setPlayerTarget: (x, z) => setPlayerTarget(x, z), getPeers: () => multiplayer.getPeerPositions(), feedLog: fl });
+      social.start({
+        getPlayer: () => player, getPeers: () => multiplayer.getPeerPositions(), feedLog: fl,
+        onFollow: (id, name) => follow.follow(id, name),
+        onTrade: (id, name) => trade.requestTrade(id, name),
+      });
+    } catch (e) { console.warn('[world] trade/follow/social:', e); }
     try { potions.start({ getSnapshot: () => worldSnapshot.getSnapshot(), feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] potions start:', e); }
     // Sesión 50 — La Fosa de Guayota (oleadas)
     try {
@@ -1048,6 +1061,7 @@ export function stopWorld() {
   try { roadsRender.stop(); } catch {}
   try { houses.stop(); } catch {}
   try { mounts.stop(); } catch {}
+  try { trade.stop(); social.stop(); follow.stop(true); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';
   if (fullMapOverlay) fullMapOverlay.classList.remove('visible');
   ['worldTooltip', 'worldRegion', 'worldBanner'].forEach(id => {
@@ -2932,6 +2946,7 @@ function doCanvasTap(clientX, clientY) {
   try { smithing.stopWork?.('tap_ground'); } catch {}
   try { prayer.cancel?.(); } catch {}
   try { houses.cancel?.(); } catch {}
+  try { follow.stop(); } catch {}   // Sesión 50 — tocar en cualquier sitio deja de seguir
   try { bankChests.cancel?.(); } catch {}
   try { townNpcs.cancel?.(); } catch {}
 
@@ -3141,6 +3156,7 @@ function animate() {
   try { potions.update(dt); } catch {}
   try { guancheVillage.update(dt); } catch {}
   try { houses.update(dt); } catch {}
+  try { follow.update(dt); } catch {}
   try { mounts.update(dt); } catch (e) { if (!window.__mtErr) { window.__mtErr = e; console.warn('[mounts]', e); } }
   try { fosa.update(dt); } catch (e) { if (!window.__fosaErr) { window.__fosaErr = e; console.warn('[fosa]', e); } }
   townNpcs.update(dt);        // Sesión 50 — habitantes
@@ -3251,6 +3267,7 @@ function updatePlayer(dt) {
   }
 
   if (joyState.active && (Math.abs(joyState.x) > 0.15 || Math.abs(joyState.y) > 0.15)) {
+    try { follow.stop(); } catch {}   // Sesión 50 — el joystick corta el "seguir"
     // User mueve con joystick → cancela cualquier auto-engage pendiente
     npcRenderer.cancelAutoEngage();
     multiplayer.cancelAutoEngage?.();   // Sesión 27 Bloque 3 — también peer
