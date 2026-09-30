@@ -21,6 +21,8 @@ import { SMELT, MATERIALS, MATERIAL_NAMES } from './shared/smithing.js';
 import { FISH, SPOT_TYPES } from './shared/fishing.js';   // Sesión 50
 import { EQUIP_LEVEL, equipRequirement, hasSpecialAttack } from './shared/equip_reqs.js';     // Sesión 50
 import { RECIPES } from './shared/crafting.js';           // Sesión 50
+import { TABLETS } from './shared/teleports.js';          // Sesión 50
+import { QUESTS } from './shared/quests.js';              // Sesión 50
 import { PRAYERS } from './shared/prayer.js';
 
 const ROWS_PER_PAGE = 7;
@@ -218,7 +220,12 @@ async function buildUnlocks(skillId, lvl) {
         .concat([{ content: `<h2>Huesos</h2><p><strong>Huesos</strong>: 5 XP cada uno. Los sueltan casi todos los monstruos.</p><p class="sg-muted">Solo puedes tener activa una plegaria de cada tipo (una de Defensa, una de Fuerza...).</p>` }]);
     case 'magic':
       return unlockPages('Hechizos', SPELLS.map(([n, l, d]) => ({ level: l, name: n, detail: d, icon: '✨' })), lvl)
-        .concat([{ content: `<h2>Maná</h2><p>Tu maná máximo crece con tu nivel de Magia; con bastón equipado tienes <strong>+100</strong> y se regenera más rápido.</p>` }]);
+        .concat([{ content: `<h2>Maná</h2><p>Tu maná máximo crece con tu nivel de Magia; con bastón equipado tienes <strong>+100</strong> y se regenera más rápido.</p>` }])
+        // Sesión 50 — tabletas de teletransporte
+        .concat(unlockPages('Tabletas de teletransporte', Object.entries(TABLETS).map(([id, t]) => ({
+          level: 1, name: t.name, icon: icon(id, '🪨'),
+          detail: t.quest ? `Misión cerca: ${QUESTS[t.quest]?.name || ''}` : (t.wild ? '¡En la wilderness!' : 'Se compra a Morgana (Concejo)'),
+        })), lvl));
     case 'strength': {
       const rows = [1, 7, 17, 27, 37, 47, 57, 67, 77, 87, 97].map(l => ({
         level: l, name: `Golpe máximo ${Math.floor((l + 13) / 10)}`, detail: 'Con arma de una mano · espadón ×1,5', icon: '💥',

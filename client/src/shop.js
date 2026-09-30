@@ -43,9 +43,13 @@ export function init(opts) {
   injectStyles();
 }
 
+// Sesión 50 — varias tiendas
+const SHOP_TITLES = { general_store: '🛒 Tienda', magic_store: '🔮 Tienda de magia' };
+
 export async function open(shopId = 'general_store') {
   currentShopId = shopId;
   if (!overlay) buildOverlay();
+  try { overlay.querySelector('.shop-title').textContent = SHOP_TITLES[shopId] || SHOP_TITLES.general_store; } catch {}
   overlay.style.display = 'flex';
   await refresh();
 }

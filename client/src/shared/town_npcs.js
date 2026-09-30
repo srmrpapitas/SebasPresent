@@ -41,6 +41,14 @@ export const TOWN_NPCS = [
       'Un buen cuchillo y una buena aguja valen más que una espada. Bueno… casi.',
       'Las vacas del sur sueltan piel. Curte la piel y tendrás cuero para coser.',
     ] },
+  { id: 'morgana_maga', name: 'Morgana', title: 'Tienda de magia', x: -14, z: -19, rotY: 0.6, role: '🔮',
+    look: { skin: 0xf0d0b0, shirt: 0x5a2a7a, pants: 0x3a1a4a, hair: 0x1a1a2a, acc: 'wizard' },
+    actions: ['shop:magic_store'],
+    lines: [
+      'Bienvenido a mi tienda. Tabletas de teletransporte a todos los rincones del reino.',
+      'Rompe la tableta y ¡zas!, estás allí. Pero en lo profundo de las Tierras Rotas la magia no responde.',
+      'Cada tableta te deja cerca de alguien que necesita ayuda. Aprovecha el viaje.',
+    ] },
   { id: 'pregonero', name: 'Pregonero', title: 'Anuncios del reino', x: 8, z: 22, rotY: 3.3, role: '📣',
     look: { skin: 0xe0b08a, shirt: 0xa0782a, pants: 0x3a2a1a, hair: 0x5a3a1a, acc: 'hat' },
     lines: [
@@ -130,6 +138,7 @@ export const TOWN_NPCS = [
     ] },
   { id: 'eldric_mago', name: 'Eldric', title: 'Mago de la Torre', x: 410, z: -888, rotY: 0.4, role: '🔮',
     look: { skin: 0xe8c8a8, shirt: 0x3a3a8a, pants: 0x3a3a8a, hair: 0xe0e0e0, acc: 'wizard' },
+    actions: ['shop:magic_store'],
     lines: [
       'La magia no es más que paciencia con buen gusto.',
       'Con un bastón equipado tu maná se regenera más rápido.',

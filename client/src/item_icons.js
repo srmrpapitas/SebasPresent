@@ -675,6 +675,20 @@ const SKILL_ICONS = {
   }
 })();
 
+// Sesión 50 — Tabletas de teletransporte: losa de piedra con runa del color del destino
+import { TABLETS as _TABLETS } from './shared/teleports.js';
+for (const [id, t] of Object.entries(_TABLETS)) {
+  if (Object.prototype.hasOwnProperty.call(ICONS, id)) continue;
+  ICONS[id] = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <path d="M7 4 L25 4 L27 27 L5 27 Z" fill="#8a7f72" stroke="#000" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M7 4 L25 4 L25.4 8 L6.6 8 Z" fill="#a89c8e"/>
+    <circle cx="16" cy="17" r="6.5" fill="none" stroke="${t.color}" stroke-width="2"/>
+    <path d="M16 11.5 L16 22.5 M11 17 L21 17 M12.5 13.5 L19.5 20.5" stroke="${t.color}" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="16" cy="17" r="1.6" fill="#f0e0ff"/>
+    ${t.wild ? '<text x="24" y="10" font-size="7">☠</text>' : ''}
+  </svg>`;
+}
+
 /** Devuelve true si tenemos un SVG custom para este item_id. */
 export function hasCustomIcon(itemId) {
   return Object.prototype.hasOwnProperty.call(ICONS, itemId);

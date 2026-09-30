@@ -640,3 +640,8 @@ export async function npcTalk(npcId) {
 export async function npcDeliver(npcId) {
   return apiFetch('/api/npc/deliver', { method: 'POST', auth: true, body: { npc_id: npcId } });
 }
+
+// Sesión 50 — tabletas de teletransporte
+export async function tabletBreak(slot) {
+  return apiFetch('/api/magic/tablet', { method: 'POST', auth: true, body: { slot } });
+}

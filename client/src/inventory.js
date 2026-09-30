@@ -25,6 +25,7 @@
 import { EDIBLE_IDS, COOKABLE_IDS } from './shared/food.js';
 import { equipRequirement, requirementText } from './shared/equip_reqs.js';   // Sesión 50
 import { recipesUsing } from './shared/crafting.js';   // Sesión 50 — Flechería/Artesanía
+import { isTablet, TABLETS } from './shared/teleports.js';   // Sesión 50 — tabletas
 import * as api from './api.js';
 import * as equipment from './equipment.js';
 import { renderItemIcon, getItemIconHtml } from './item_icons.js';
@@ -361,6 +362,8 @@ function onPointerUp(ev) {
       eatInstant(fromSlot);
     } else if (selectedSlot === null && data && BURYABLE_ITEM_IDS.has(data.item_id)) {
       window.__prayer?.buryFromSlot?.(fromSlot);   // Sesión 50 — tocar huesos = enterrar
+    } else if (selectedSlot === null && data && isTablet(data.item_id)) {
+      window.__tablets?.breakTablet?.(fromSlot, data.item_id);   // Sesión 50 — tocar tableta = romperla
     } else if (selectedSlot === null && isEquipableItem(data)) {
       doEquip(fromSlot);
     } else if (selectedSlot === null) {
@@ -494,6 +497,9 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
     html += `<div class="inv-context-row" data-act="eat">🍗 Comer</div>`;
   }
   // Sesión 50 — Plegaria: enterrar huesos.
+  if (isTablet(item.item_id)) {   // Sesión 50
+    html += `<div class="inv-context-row" data-act="tablet">💥 Romper (ir a ${TABLETS[item.item_id].name})</div>`;
+  }
   if (BURYABLE_ITEM_IDS.has(item.item_id)) {
     html += `<div class="inv-context-row" data-act="bury">⚱ Enterrar</div>`;
   }
@@ -565,6 +571,8 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
         } catch (err) {
           console.warn('[inventory] light_fire err:', err);
         }
+      } else if (act === 'tablet') {
+        window.__tablets?.breakTablet?.(slotIdx, item.item_id);
       } else if (act === 'bury') {
         await window.__prayer?.buryFromSlot?.(slotIdx);
       } else if (act === 'eat') {

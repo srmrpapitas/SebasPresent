@@ -711,3 +711,10 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Misiones con `giver`: NO se crean solas (ensureQuests las salta); se aceptan en el diálogo → `POST /api/quests/start` (hay que estar a ≤9 m del NPC según la posición del server).
 - Pasos nuevos: `talk` (POST /api/npc/talk → questEvent 'talk') y `deliver` (POST /api/npc/deliver: comprueba y quita los objetos REALES de la mochila, las notas no valen). Recompensas con `xp: { skill: n }` (`grantXp`: combat_stats + user_skills).
 - El rastreador muestra la misión fijada (toque en su tarjeta) o la última que avanzó.
+
+## 30. Tabletas de teletransporte y tienda de magia (Sesión 50)
+
+- `client/src/shared/teleports.js`: 14 tabletas (`tele_*`, apilables), cada una deja cerca de un NPC con misión. No sirven al oeste de x = -1229 (wilderness profunda).
+- `POST /api/magic/tablet { slot }`: gasta 1 tableta (condicional), el server decide el destino y guarda la posición en online_users + users. Evento de misión 'teleport'.
+- Tienda `magic_store` (shop_stock): la abren Morgana (Concejo, nueva) y Eldric (Torre del Mago) desde el diálogo (`actions: ['shop:magic_store']`). Seed 007 (ejecutado).
+- Cliente: `client/src/teleport_tablets.js` (efecto + mover), tocar la tableta en la mochila = romperla. Misión `primer_viaje` (Morgana).

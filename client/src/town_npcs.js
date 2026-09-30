@@ -24,7 +24,7 @@ const VIEW_DIST = 180;
 const LOOK_DIST = 9;
 const APPROACH = 1.6;
 
-let scene = null, getPlayer = null, setPlayerTargetCb = null, feedLog = () => {}, onOpenBank = () => {};
+let scene = null, getPlayer = null, setPlayerTargetCb = null, feedLog = () => {}, onOpenBank = () => {}, onOpenShop = () => {};
 let started = false;
 let timeAcc = 0, syncTimer = 0, markTimer = 0;
 const objs = new Map();
@@ -278,6 +278,11 @@ async function talkTo(o) {
     for (const q of info.offer) opts.push({ label: `❗ ${q.name}`, run: () => offerQuest(d, n, q) });
     for (const t of info.doing) opts.push({ label: `📜 ${t.q.name}`, run: () => aboutQuest(d, t) });
     if (n.actions?.includes('bank')) opts.push({ label: '🏦 Quiero usar el banco', run: async () => { d.end(); onOpenBank(); } });
+    for (const a of n.actions || []) {
+      if (!a.startsWith('shop:')) continue;
+      const shopId = a.slice(5);
+      opts.push({ label: shopId === 'magic_store' ? '🔮 Ver la tienda de magia' : '🛒 Ver la tienda', run: async () => { d.end(); onOpenShop(shopId); } });
+    }
     if ((n.lines?.length || 0) > 1) opts.push({ label: '💬 ¿Qué me cuentas?', run: () => d.npc(n.lines[1 + Math.floor(Math.random() * (n.lines.length - 1))]) });
     opts.push({ label: '👋 Adiós', run: async () => { await d.player('Adiós.'); d.end(); } });
     const i = await d.choose(opts.map(x => x.label), `Hablando con ${n.name}`);
@@ -339,6 +344,7 @@ export function start(opts) {
   setPlayerTargetCb = opts.setPlayerTarget || (() => {});
   feedLog = opts.feedLog || (() => {});
   onOpenBank = opts.onOpenBank || (() => {});
+  onOpenShop = opts.onOpenShop || (() => {});
   started = true;
   syncTimer = 99;
   if (typeof window !== 'undefined') window.__townNpcs = () => [...objs.values()].map(o => ({ id: o.n.id, mark: o.mark }));

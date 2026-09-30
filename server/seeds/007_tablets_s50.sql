@@ -1,0 +1,32 @@
+-- Sesión 50 — Tabletas de teletransporte + Tienda de magia (Morgana / Eldric)
+INSERT OR IGNORE INTO items (id,name,icon,stackable,description,created_at,base_price) VALUES
+ ('tele_concejo','Tableta: Concejo Central','🪨',1,'Rómpela para ir a Concejo Central.',1791000000000,30),
+ ('tele_robledal','Tableta: Robledal','🪨',1,'Rómpela para ir a Robledal.',1791000000000,60),
+ ('tele_cazador','Tableta: Cabaña del Cazador','🪨',1,'Rómpela para ir a Cabaña del Cazador.',1791000000000,60),
+ ('tele_cruce','Tableta: Aldea del Cruce','🪨',1,'Rómpela para ir a Aldea del Cruce.',1791000000000,60),
+ ('tele_faro','Tableta: Faro del Sur','🪨',1,'Rómpela para ir a Faro del Sur.',1791000000000,90),
+ ('tele_sirena','Tableta: Puerto Sirena','🪨',1,'Rómpela para ir a Puerto Sirena.',1791000000000,90),
+ ('tele_torre','Tableta: Torre del Mago','🪨',1,'Rómpela para ir a Torre del Mago.',1791000000000,70),
+ ('tele_picoblanco','Tableta: Picoblanco','🪨',1,'Rómpela para ir a Picoblanco.',1791000000000,100),
+ ('tele_vientos','Tableta: Pueblo de los Vientos','🪨',1,'Rómpela para ir a Pueblo de los Vientos.',1791000000000,100),
+ ('tele_mina','Tableta: Mina Antigua','🪨',1,'Rómpela para ir a Mina Antigua.',1791000000000,120),
+ ('tele_solquemado','Tableta: Solquemado','🪨',1,'Rómpela para ir a Solquemado.',1791000000000,110),
+ ('tele_verdis','Tableta: Verdis','🪨',1,'Rómpela para ir a Verdis.',1791000000000,110),
+ ('tele_marpiedra','Tableta: Marpiedra','🪨',1,'Rómpela para ir a Marpiedra.',1791000000000,120),
+ ('tele_ruinas','Tableta: Ruinas de Antaño','🪨',1,'Rómpela para ir a Ruinas de Antaño. ¡Cuidado: está en la wilderness!',1791000000000,150);
+INSERT OR REPLACE INTO shop_stock (shop_id,item_id,current_qty,max_qty,buy_price,sell_price,last_restock_at) VALUES
+ ('magic_store','tele_concejo',200,200,12,30,0),
+ ('magic_store','tele_robledal',100,100,24,60,0),
+ ('magic_store','tele_cazador',100,100,24,60,0),
+ ('magic_store','tele_cruce',100,100,24,60,0),
+ ('magic_store','tele_faro',100,100,36,90,0),
+ ('magic_store','tele_sirena',100,100,36,90,0),
+ ('magic_store','tele_torre',100,100,28,70,0),
+ ('magic_store','tele_picoblanco',100,100,40,100,0),
+ ('magic_store','tele_vientos',100,100,40,100,0),
+ ('magic_store','tele_mina',100,100,48,120,0),
+ ('magic_store','tele_solquemado',100,100,44,110,0),
+ ('magic_store','tele_verdis',100,100,44,110,0),
+ ('magic_store','tele_marpiedra',100,100,48,120,0),
+ ('magic_store','tele_ruinas',100,100,60,150,0),
+ ('magic_store','staff_normal',5,5,40,100,0);

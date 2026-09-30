@@ -48,6 +48,7 @@ import * as crafting from './skills/crafting.js'; // Sesión 50 — flechería/a
 import * as realtime from './realtime.js';        // Sesión 50 — WebSocket (PvP en vivo, menos peticiones)
 import * as bankChests from './bank_chests.js';  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
+import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as quests from './quests.js';   // Sesión 50 — misiones
 import * as prayer from './prayer.js';   // Sesión 50 — plegaria
@@ -810,8 +811,36 @@ export async function startWorld(loggedInUser, token) {
           try { audio.sfx('coins'); } catch {}
           openBankOverlay();
         },
+        onOpenShop: (shopId) => {
+          try { audio.sfx('coins'); } catch {}
+          try { shop.open(shopId); } catch (e) { console.warn('[world] shop.open:', e); }
+        },
       });
     } catch (e) { console.warn('[world] town npcs start:', e); }
+    // Sesión 50 — tabletas de teletransporte (se rompen desde la mochila)
+    try {
+      tablets.start({
+        scene,
+        getPlayer: () => player,
+        feedLog:   (type, msg) => combat.feedLog?.(type, msg),
+        onBeforeTeleport: () => {
+          try { window.__playerExitCombat?.(); } catch {}
+          try { npcRenderer.cancelAutoEngage?.(); } catch {}
+          try { multiplayer.cancelAutoEngage?.(); } catch {}
+          try { mining.stopMining?.('teleport'); } catch {}
+          try { fishing.stopFishing?.('teleport'); } catch {}
+          try { woodcutting.stopChop?.('teleport'); } catch {}
+          try { smithing.stopWork?.('teleport'); } catch {}
+          try { crafting.stopWork?.('teleport'); } catch {}
+          playerTarget = null;
+        },
+        onTeleported: () => {
+          try { if (interiors.isActive()) interiors.forceLeave(); } catch {}
+          try { terrain.primeChunks(player.position.x, player.position.z); } catch {}
+          playerTarget = null;
+        },
+      });
+    } catch (e) { console.warn('[world] tablets start:', e); }
     // Sesión 50 — Calavera PvP sobre la cabeza.
     try {
       skull.start({
@@ -2869,6 +2898,7 @@ function animate() {
   crafting.update(dt);        // Sesión 50 — bucle de flechería/artesanía
   bankChests.update(dt);      // Sesión 50 — cofres de banco
   townNpcs.update(dt);        // Sesión 50 — habitantes
+  tablets.update(dt);         // Sesión 50 — efecto de teletransporte
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
   quests.update(dt);          // Sesión 50 — misiones (tracker + haz)
   prayer.update(dt);          // Sesión 50 — plegaria (HUD, altares, aura)

@@ -7,7 +7,7 @@
  * equipar). El cliente solo muestra el paso actual y dónde ir.
  *
  * Paso:
- *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip' | 'fish' | 'bury' | 'altar' | 'fletch' | 'craft' | 'bank' | 'note' | 'ge_sell' | 'talk' | 'deliver'
+ *   event:  'chop' | 'fire' | 'kill' | 'cook' | 'mine' | 'smelt' | 'smith' | 'equip' | 'fish' | 'bury' | 'altar' | 'fletch' | 'craft' | 'bank' | 'note' | 'ge_sell' | 'talk' | 'deliver' | 'teleport'
  *   match:  (opcional) lo que tiene que coincidir: item, npc def, mineral...
  *   count:  cuántas veces
  *   give:   herramientas que se entregan al empezar el paso SI no las tienes
@@ -282,7 +282,21 @@ Object.assign(QUESTS, {
   },
 });
 
-export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero',
+// Sesión 50 — tabletas de teletransporte
+QUESTS.primer_viaje = {
+  id: 'primer_viaje', name: 'Primer viaje mágico', giver: 'morgana_maga',
+  summary: 'Morgana vende tabletas de teletransporte. Aprende a usarlas para moverte rápido por el reino.',
+  offer: ['¿Todavía vas andando a todas partes? Qué cansado.', 'Cómprame una tableta, rómpela y apareces donde quieras. Si lo pruebas, te regalo unas cuantas.'],
+  accept: 'Quiero probarlo.', doing: 'Compra una tableta en mi tienda y, en tu mochila, tócala para romperla.',
+  thanks: '¿A que es cómodo? Toma, unas tabletas de regalo para volver a casa.',
+  steps: [
+    { id: 'tele', event: 'teleport', count: 1, hint: { talk: 'morgana_maga' },
+      text: 'Compra una tableta a Morgana y rómpela.', tip: 'Morgana está en el Concejo. En la mochila, toca la tableta para romperla.' },
+  ],
+  reward: { coins: 40, items: [['tele_concejo', 3], ['tele_robledal', 1]], text: '3 tabletas del Concejo · 1 de Robledal · 40 monedas' },
+};
+
+export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'primer_viaje',
   'ratas_granero', 'guiso_abuela', 'faro_apagado', 'aranas_robledal', 'aullidos',
   'mago_huesos', 'encargo_herrera', 'escorpiones', 'golems_mina', 'bestia_blanca'];
 
