@@ -15,7 +15,10 @@
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as audio from './audio.js';
-import { QUESTS, QUEST_ORDER } from './shared/quests.js';
+import { QUESTS, QUEST_ORDER, checkReqs, questDifficulty } from './shared/quests.js';
+import { combatLevelFrom } from './shared/mounts.js';   // Sesión 50
+import { getRegionInfo } from './terrain.js';
+import * as skills from './skills.js';
 import { nearestBankChest } from './shared/banks.js';   // Sesión 50
 import { TOWN_NPCS_BY_ID } from './shared/town_npcs.js';  // Sesión 50
 
@@ -51,6 +54,7 @@ export async function start(opts) {
   }
   render();
   if (typeof window !== 'undefined') window.__questsDebug = () => ({ state, hintPos });
+  try { skills.onLevelUp?.(() => renderTab()); } catch {}   // Sesión 50 — requisitos al día
 }
 
 export function stop() {
@@ -81,6 +85,7 @@ function activeQuest() {
 
 /** Sesión 50 — estado de una misión: null (sin empezar) | { step, progress, status } */
 export function getQuestState(id) { return state[id] || null; }
+export function getAllStates() { return { ...state }; }
 /** Sesión 50 — aplicar filas que devuelve el server tras hablar/aceptar/entregar. */
 export function applyServerRows(rows) { applyRows(rows || [], true); }
 /** Sesión 50 — fijar misión en el rastreador. */
@@ -161,61 +166,93 @@ function celebrate(text) {
   pulse();
 }
 
+// Sesión 50 — Lista estilo OSRS: título coloreado (rojo sin empezar, amarillo
+// en curso, verde hecha). Al tocarlo se despliega: con quién y dónde se
+// empieza, requisitos (✓/✗: niveles y misiones previas), dificultad, pasos y
+// recompensa.
+const openIds = new Set();
+function myLevels() {
+  const lv = {};
+  try { Object.assign(lv, skills.getAllLevels()); } catch {}
+  lv.combat = combatLevelFrom(lv.attack || 1, lv.strength || 1, lv.defence || 1, lv.hitpoints || 10);
+  return lv;
+}
 function renderTab() {
   const pane = document.querySelector('.osrs-tab-pane[data-tab="quest"]');
   if (!pane) return;
-  let html = '<div class="quest-tab">';
+  const keepScroll = pane.scrollTop;
   const act = activeQuest();
-  // Orden: en curso → sin empezar → terminadas
-  const rank = (id) => (state[id]?.status === 0 ? 0 : !state[id] ? 1 : 2);
-  const ids = QUEST_ORDER.slice().sort((a, b) => rank(a) - rank(b));
-  const nDone = QUEST_ORDER.filter(id => state[id]?.status === 1).length;
-  html += `<div class="qtab-count">Misiones completadas: <b>${nDone}/${QUEST_ORDER.length}</b></div>`;
-  for (const id of ids) {
-    const q = QUESTS[id];
+  const lv = myLevels();
+  const done = new Set(QUEST_ORDER.filter(id => state[id]?.status === 1));
+  const nDone = done.size;
+  let html = `<div class="quest-tab"><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
+    <div class="qtab-legend"><span class="c-new">■</span> sin empezar <span class="c-cur">■</span> en curso <span class="c-done">■</span> hecha</div>`;
+  for (const id of QUEST_ORDER) {
+    const q = QUESTS[id]; if (!q) continue;
     const s = state[id];
-    const done = s?.status === 1;
-    if (!s) {
-      // Sin empezar (Sesión 50): dónde conseguirla
-      const giver = TOWN_NPCS_BY_ID[q.giver];
-      html += `<div class="qtab-card qtab-new"><div class="qtab-name">❗ ${esc(q.name)}</div>
-        <div class="qtab-sum">${esc(q.summary)}</div>
-        <div class="qtab-giver">Habla con <b>${esc(giver?.name || '?')}</b>${giver?.title ? ` (${esc(giver.title)})` : ''} para empezarla.</div></div>`;
-      continue;
-    }
+    const isDone = s?.status === 1, isCur = s && !isDone;
+    const reqs = checkReqs(id, lv, done);
+    const canStart = reqs.every(r => r.ok);
+    const cls = isDone ? 'done' : isCur ? 'cur' : 'new';
+    const open = openIds.has(id);
     const isTracked = act && act.q.id === id;
-    html += `<div class="qtab-card${done ? ' qtab-done' : ''}${isTracked ? ' qtab-tracked' : ''}" data-track="${done ? '' : id}"><div class="qtab-name">${done ? '✅' : isTracked ? '📍' : '📜'} ${esc(q.name)}</div>
-      <div class="qtab-sum">${esc(q.summary)}</div><ol class="qtab-steps">`;
-    q.steps.forEach((st, i) => {
-      const cls = done || (s && i < s.step) ? 'done' : (s && i === s.step ? 'cur' : '');
-      const mark = cls === 'done' ? '✓' : cls === 'cur' ? '►' : '○';
-      const prog = cls === 'cur' && st.count > 1 ? ` (${s.progress}/${st.count})` : '';
-      html += `<li class="${cls}"><span>${mark}</span> ${esc(st.text)}${prog}</li>`;
-    });
-    html += `</ol><div class="qtab-rew">🎁 ${esc(q.reward?.text || '')}</div>`;
-    if (s && !done && id === 'tutorial') html += `<button class="qtab-skip" data-skip="${id}">Saltar tutorial</button>`;
+    html += `<div class="qrow ${cls}${open ? ' open' : ''}">
+      <div class="qrow-title" data-toggle="${id}"><span class="qrow-arrow">${open ? '▾' : '▸'}</span>${esc(q.name)}${isTracked ? ' <span class="qrow-pin">📍</span>' : ''}${!s && !canStart ? ' <span class="qrow-lock">🔒</span>' : ''}</div>`;
+    if (open) {
+      html += '<div class="qrow-body">';
+      html += `<div class="qtab-sum">${esc(String(q.summary || '').replace(/\s*Recomendado:[^.]*\.?/g, '').replace(/\s*\(¡wilderness!\)/g, ''))}</div>`;
+      // Dónde y con quién
+      const giver = q.giver ? TOWN_NPCS_BY_ID[q.giver] : null;
+      if (giver) {
+        const where = getRegionInfo(giver.x, giver.z)?.name || 'la isla';
+        html += `<div class="qrow-k">Empieza:</div><div class="qrow-v">Habla con <b>${esc(giver.name)}</b>${giver.title ? `, ${esc(giver.title)},` : ''} en <b>${esc(where)}</b>.</div>`;
+      } else {
+        html += `<div class="qrow-k">Empieza:</div><div class="qrow-v">Automáticamente al entrar al juego.</div>`;
+      }
+      html += `<div class="qrow-k">Dificultad:</div><div class="qrow-v">${questDifficulty(id)}</div>`;
+      // Requisitos
+      html += `<div class="qrow-k">Requisitos:</div>`;
+      html += reqs.length
+        ? `<ul class="qrow-reqs">${reqs.map(r => `<li class="${r.ok ? 'ok' : 'no'}">${r.ok ? '✓' : '✗'} ${esc(r.label)}</li>`).join('')}</ul>`
+        : `<div class="qrow-v">Ninguno.</div>`;
+      // Pasos (si ya la empezaste)
+      if (s) {
+        html += `<div class="qrow-k">Progreso:</div><ol class="qtab-steps">`;
+        q.steps.forEach((st, i) => {
+          const c = isDone || i < s.step ? 'done' : i === s.step ? 'cur' : '';
+          const mark = c === 'done' ? '✓' : c === 'cur' ? '►' : '○';
+          const prog = c === 'cur' && st.count > 1 ? ` (${s.progress}/${st.count})` : '';
+          html += `<li class="${c}"><span>${mark}</span> ${esc(st.text)}${prog}</li>`;
+        });
+        html += '</ol>';
+      }
+      html += `<div class="qtab-rew">🎁 ${esc(q.reward?.text || '')}</div>`;
+      if (isCur && !isTracked) html += `<button class="qrow-btn" data-track="${id}">📍 Seguir esta misión</button>`;
+      if (isCur && id === 'tutorial') html += `<button class="qtab-skip" data-skip="${id}">Saltar tutorial</button>`;
+      html += '</div>';
+    }
     html += '</div>';
   }
   html += '</div>';
   pane.innerHTML = html;
-  pane.querySelectorAll('[data-track]').forEach(card => {
-    if (!card.dataset.track) return;
-    card.addEventListener('pointerup', (ev) => {
-      if (ev.target.closest('[data-skip]')) return;
-      track(card.dataset.track);
+  pane.scrollTop = keepScroll;
+  if (!pane.dataset.qbound) {
+    pane.dataset.qbound = '1';
+    pane.addEventListener('pointerup', async (ev) => {
+      const tg = ev.target.closest('[data-toggle]');
+      if (tg) { const id = tg.dataset.toggle; if (openIds.has(id)) openIds.delete(id); else openIds.add(id); renderTab(); return; }
+      const tr = ev.target.closest('[data-track]');
+      if (tr) { ev.stopPropagation(); track(tr.dataset.track); return; }
+      const sk = ev.target.closest('[data-skip]');
+      if (sk) {
+        ev.preventDefault(); ev.stopPropagation();
+        if (!confirm('¿Saltar el tutorial? No recibirás la recompensa final.')) return;
+        try { const r = await api.questsSkip(sk.dataset.skip); applyRows(r?.quests || [], false); } catch {}
+      }
     });
-  });
-  const btn = pane.querySelector('[data-skip]');
-  btn?.addEventListener('pointerup', async (ev) => {
-    ev.preventDefault(); ev.stopPropagation();
-    if (!confirm('¿Saltar el tutorial? No recibirás la recompensa final.')) return;
-    try { const r = await api.questsSkip(btn.dataset.skip); applyRows(r?.quests || [], false); } catch {}
-  });
+  }
 }
 
-// ------------------------------------------------------------
-// Haz de luz del objetivo
-// ------------------------------------------------------------
 function buildBeam() {
   if (!scene) return;
   const group = new THREE.Group();
@@ -333,6 +370,20 @@ function ensureCss() {
     .qtab-steps li.done { opacity: 0.75; color: #9fe07a; text-decoration: line-through; }
     .qtab-steps li.cur { opacity: 1; color: #fff0c8; font-weight: 700; }
     .qtab-rew { font-size: 12px; margin-top: 6px; color: #e8c560; }
+    .qtab-legend { font-size: 10px; color: #a89070; text-align: center; margin-bottom: 6px; }
+    .qtab-legend .c-new, .qrow.new .qrow-title { color: #ff5a4a; }
+    .qtab-legend .c-cur, .qrow.cur .qrow-title { color: #ffe35a; }
+    .qtab-legend .c-done, .qrow.done .qrow-title { color: #5ae05a; }
+    .qrow { border-bottom: 1px solid rgba(106,80,40,0.45); }
+    .qrow-title { padding: 6px 2px; font: bold 13px 'Cinzel', serif; cursor: pointer; text-shadow: 1px 1px 0 #000; }
+    .qrow-arrow { display: inline-block; width: 14px; color: #c8a043; }
+    .qrow-lock, .qrow-pin { font-size: 11px; }
+    .qrow-body { padding: 2px 4px 10px 16px; font-size: 12px; color: #e8d8b0; }
+    .qrow-k { color: #e8c560; font-weight: bold; margin-top: 6px; font-size: 11.5px; }
+    .qrow-v { color: #e8d8b0; }
+    .qrow-reqs { list-style: none; padding: 0; margin: 2px 0; }
+    .qrow-reqs li.ok { color: #5ae05a; } .qrow-reqs li.no { color: #ff6a5a; }
+    .qrow-btn { margin-top: 8px; background: #3a2f1c; border: 1px solid #c8a043; color: #ffe8a0; border-radius: 4px; padding: 5px 10px; font-size: 12px; }
     .qtab-skip { margin-top: 8px; background: none; border: 1px solid #7a6030; color: #bba878; border-radius: 4px; padding: 4px 8px; font-size: 11px; }
   `;
   document.head.appendChild(st);

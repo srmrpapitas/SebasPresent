@@ -15,7 +15,9 @@ import { LORE } from './shared/lore.js';   // Sesión 50 — Crónicas de Achine
 import * as THREE from 'three';
 import * as api from './api.js';
 import { HOUSE_TIERS, HOUSE_TIER_LIST, upgradeCost } from './shared/houses.js';   // Sesión 50
-import { MOUNTS, MOUNT_LIST } from './shared/mounts.js';   // Sesión 50
+import { MOUNTS, MOUNT_LIST, combatLevelFrom } from './shared/mounts.js';   // Sesión 50
+import { checkReqs } from './shared/quests.js';
+import * as skills from './skills.js';
 import * as inventory from './inventory.js';
 import * as quests from './quests.js';
 import * as audio from './audio.js';
@@ -503,6 +505,15 @@ async function asoDoor(d) {
 
 async function offerQuest(d, n, q) {
   for (const line of q.offer || []) { await d.npc(line); if (d.closed) return; }
+  // Sesión 50 — requisitos (como en OSRS)
+  const lv = {}; try { Object.assign(lv, skills.getAllLevels()); } catch {}
+  lv.combat = combatLevelFrom(lv.attack || 1, lv.strength || 1, lv.defence || 1, lv.hitpoints || 10);
+  const done = new Set(Object.entries(quests.getAllStates?.() || {}).filter(([, s]) => s?.status === 1).map(([id]) => id));
+  const miss = checkReqs(q.id, lv, done).filter(r => !r.ok);
+  if (miss.length) {
+    await d.npc(`Todavía no estás preparado para esto. Te falta: ${miss.map(r => r.label).join(', ')}.`);
+    return;
+  }
   const pick = await d.choose([q.accept || 'Acepto.', 'Ahora no, gracias.'], q.name);
   if (pick !== 0) { if (pick === 1) await d.npc('Si cambias de idea, aquí estaré.'); return; }
   await d.player(q.accept || 'Acepto.');

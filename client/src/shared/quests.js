@@ -463,3 +463,57 @@ export function questsOfNpc(npcId) {
 }
 
 export function getQuest(id) { return QUESTS[id] || null; }
+
+// ============================================================
+// Sesión 50 — Requisitos, como en OSRS: niveles y misiones previas.
+// El server los comprueba al empezar; la pestaña los muestra con ✓/✗.
+// `combat` = nivel de combate (shared/mounts.js → combatLevelFrom).
+// ============================================================
+export const QUEST_REQS = {
+  ratas_granero:      { combat: 3 },
+  aranas_robledal:    { combat: 10, quests: ['ratas_granero'] },
+  aullidos:           { combat: 15, quests: ['aranas_robledal'] },
+  guiso_abuela:       { levels: { cooking: 5 } },
+  faro_apagado:       { levels: { woodcutting: 5, firemaking: 5 } },
+  encargo_herrera:    { levels: { mining: 15, smithing: 15 } },
+  mago_huesos:        { levels: { prayer: 5 } },
+  golems_mina:        { combat: 40, levels: { mining: 20 } },
+  escorpiones:        { combat: 25 },
+  bestia_blanca:      { combat: 50, quests: ['aullidos'] },
+  viaje_relampago:    { quests: ['primer_viaje'] },
+  huesos_ruinas:      { combat: 45 },
+  rey_de_las_cumbres: { combat: 60, quests: ['bestia_blanca'] },
+  terror_mareas:      { combat: 55, levels: { prayer: 40 }, quests: ['faro_apagado'] },
+  bruja_niebla:       { combat: 50, levels: { prayer: 37 }, quests: ['escorpiones'] },
+  la_fosa:            { combat: 50, levels: { prayer: 40 } },
+  matadragones:       { combat: 70, quests: ['rey_de_las_cumbres', 'huesos_ruinas'] },
+  dia_de_pierna:      { levels: { herblore: 8 }, quests: ['primeras_pociones'] },
+  el_tagoror:         { combat: 35 },
+  sombra_cabildo:     { combat: 60, levels: { herblore: 35, prayer: 37 }, quests: ['primeras_pociones', 'bruja_niebla'] },
+};
+
+export const SKILL_NAMES = {
+  attack: 'Ataque', strength: 'Fuerza', defence: 'Defensa', hitpoints: 'Vitalidad', ranged: 'Distancia', magic: 'Magia',
+  prayer: 'Plegaria', woodcutting: 'Tala', fishing: 'Pesca', mining: 'Minería', cooking: 'Cocina', firemaking: 'Fuego',
+  smithing: 'Herrería', fletching: 'Flechería', herblore: 'Herbología', crafting: 'Artesanía',
+};
+
+/** Dificultad orientativa según el combate que pide. */
+export function questDifficulty(id) {
+  const c = QUEST_REQS[id]?.combat || 0;
+  return c >= 60 ? 'Maestro' : c >= 40 ? 'Experimentado' : c >= 15 ? 'Intermedio' : 'Novato';
+}
+
+/**
+ * Lista de requisitos con si se cumplen.
+ * levels: { skillId: nivel, combat: nivel }, done: Set de misiones terminadas.
+ * → [{ label, ok }]
+ */
+export function checkReqs(id, levels = {}, done = new Set()) {
+  const R = QUEST_REQS[id]; if (!R) return [];
+  const out = [];
+  if (R.combat) out.push({ label: `Nivel de combate ${R.combat}`, ok: (levels.combat || 0) >= R.combat });
+  for (const [sk, n] of Object.entries(R.levels || {})) out.push({ label: `${n} de ${SKILL_NAMES[sk] || sk}`, ok: (levels[sk] || 1) >= n });
+  for (const q of R.quests || []) out.push({ label: `Misión: ${QUESTS[q]?.name || q}`, ok: done.has(q) });
+  return out;
+}

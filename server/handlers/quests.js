@@ -3,6 +3,9 @@
  *   GET  /api/quests              → crea las que falten (tutorial) y devuelve el estado
  *   POST /api/quests/skip { quest_id } → marca una misión como terminada (sin recompensa final)
  */
+import { QUEST_REQS, checkReqs } from '../../client/src/shared/quests.js';   // Sesión 50
+import { combatLevelFrom } from '../../client/src/shared/mounts.js';
+import { levelFromXp } from '../combat_engine.js';
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { ensureQuests, getUserQuests, startQuest, deliverToNpc, questEvent } from '../lib/quests.js';
@@ -34,6 +37,19 @@ export async function handleQuestsSkip(request, env) {
 // ============================================================
 // Sesión 50 — Hablar con NPCs / aceptar misiones / entregar objetos
 // ============================================================
+// Sesión 50 — niveles (user_skills es la fuente única, combate incluido) y misiones hechas
+async function playerLevels(env, uid) {
+  const rows = (await env.DB.prepare('SELECT skill_id, xp FROM user_skills WHERE user_id = ?').bind(uid).all()).results || [];
+  const lv = {};
+  for (const r of rows) lv[r.skill_id] = levelFromXp(r.xp || 0);
+  lv.combat = combatLevelFrom(lv.attack || 1, lv.strength || 1, lv.defence || 1, lv.hitpoints || 10);
+  return lv;
+}
+async function doneQuests(env, uid) {
+  const rows = (await env.DB.prepare('SELECT quest_id FROM user_quests WHERE user_id = ? AND status = 1').bind(uid).all()).results || [];
+  return new Set(rows.map(r => r.quest_id));
+}
+
 async function nearNpc(env, userId, npcId) {
   const npc = TOWN_NPCS_BY_ID[npcId];
   if (!npc) return { error: 'invalid_npc' };
@@ -64,6 +80,11 @@ export async function handleQuestStart(request, env) {
   if (!q || !q.giver) return json({ error: 'invalid_quest' }, 400);
   const near = await nearNpc(env, session.user_id, q.giver);
   if (near.error) return json(near, 400);
+  // Sesión 50 — requisitos (niveles y misiones previas)
+  if (QUEST_REQS[q.id]) {
+    const miss = checkReqs(q.id, await playerLevels(env, session.user_id), await doneQuests(env, session.user_id)).filter(r => !r.ok);
+    if (miss.length) return json({ error: 'reqs', message: `Te falta: ${miss.map(r => r.label).join(', ')}.`, missing: miss.map(r => r.label) }, 400);
+  }
   const started = await startQuest(env, session.user_id, q.id);
   return json({ ok: true, started, quests: await getUserQuests(env, session.user_id) });
 }
