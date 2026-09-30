@@ -64,7 +64,8 @@ import * as crafting from './handlers/skills/crafting.js';        // Sesión 50 
 import * as teleport from './handlers/teleport.js';               // Sesión 50 — tabletas
 import * as potions from './handlers/potions.js';                 // Sesión 50 — pociones
 import * as aso from './handlers/aso.js';
-import * as house from './handlers/house.js';                     // Sesión 50 — casas                         // Sesión 50 — socios de La ASO
+import * as house from './handlers/house.js';
+import * as mounts from './handlers/mounts.js';                   // Sesión 50 — monturas                     // Sesión 50 — casas                         // Sesión 50 — socios de La ASO
 import * as fosa from './handlers/minigame.js';                   // Sesión 50 — Fosa de Guayota
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
@@ -280,6 +281,10 @@ export default {
         response = await crafting.handleCraftingMake(request, env);
       } else if (path === '/api/magic/tablet' && method === 'POST') {
         response = await teleport.handleTabletBreak(request, env);
+      } else if (path === '/api/mounts' && method === 'GET') {
+        response = await mounts.handleMountsGet(request, env);
+      } else if (path === '/api/mounts/buy' && method === 'POST') {
+        response = await mounts.handleMountsBuy(request, env);
       } else if (path === '/api/house' && method === 'GET') {
         response = await house.handleHouseGet(request, env);
       } else if (path === '/api/house/buy' && method === 'POST') {

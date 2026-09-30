@@ -677,3 +677,11 @@ export async function houseBuy(tier) {
 export async function houseRest() {
   return apiFetch('/api/house/rest', { method: 'POST', auth: true });
 }
+
+// Sesión 50 — monturas
+export async function mountsGet() {
+  return apiFetch('/api/mounts', { auth: true });
+}
+export async function mountsBuy(mount) {
+  return apiFetch('/api/mounts/buy', { method: 'POST', auth: true, body: { mount } });
+}

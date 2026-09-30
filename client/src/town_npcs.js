@@ -15,6 +15,7 @@ import { LORE } from './shared/lore.js';   // Sesión 50 — Crónicas de Achine
 import * as THREE from 'three';
 import * as api from './api.js';
 import { HOUSE_TIERS, HOUSE_TIER_LIST, upgradeCost } from './shared/houses.js';   // Sesión 50
+import { MOUNTS, MOUNT_LIST } from './shared/mounts.js';   // Sesión 50
 import * as inventory from './inventory.js';
 import * as quests from './quests.js';
 import * as audio from './audio.js';
@@ -26,7 +27,7 @@ const VIEW_DIST = 180;
 const LOOK_DIST = 9;
 const APPROACH = 1.6;
 
-let scene = null, getPlayer = null, setPlayerTargetCb = null, feedLog = () => {}, onOpenBank = () => {}, onOpenShop = () => {};
+let scene = null, getPlayer = null, setPlayerTargetCb = null, feedLog = () => {}, onOpenBank = () => {}, onOpenShop = () => {}, onOpenGE = () => {};
 let started = false;
 let timeAcc = 0, syncTimer = 0, markTimer = 0;
 const objs = new Map();
@@ -347,8 +348,10 @@ async function talkTo(o) {
         for (const page of L.pages) { await d.npc(page); if (d.closed) return; }
       } });
     }
+    if (n.actions?.includes('mounts')) opts.push({ label: '🐎 Quiero una montura', run: () => stableAgent(d) });   // Sesión 50
     if (n.actions?.includes('house')) opts.push({ label: '🏠 Quiero una casa', run: () => houseAgent(d) });   // Sesión 50
     if (n.actions?.includes('bank')) opts.push({ label: '🏦 Quiero usar el banco', run: async () => { d.end(); onOpenBank(); } });
+    if (n.actions?.includes('ge')) opts.push({ label: '🏛️ Mercado (GE)', run: async () => { d.end(); onOpenGE(); } });   // Sesión 50
     // Sesión 50 — La Fosa de Guayota
     if (n.actions?.includes('fosa')) {
       opts.push({ label: '🔥 Quiero bajar a la Fosa', run: async () => {
@@ -377,6 +380,45 @@ async function talkTo(o) {
   }
   talking = null;
   for (const obj of objs.values()) updateMark(obj);
+}
+
+// Sesión 50 — Tanausú vende monturas
+async function stableAgent(d) {
+  let st;
+  try { st = await api.mountsGet(); } catch { await d.npc('Los animales están comiendo. Vuelve en un ratito.'); return; }
+  const owned = new Set(st?.owned || []);
+  const lvl = st?.combat_level || 3;
+  const avail = MOUNT_LIST.filter(id => !owned.has(id));
+  if (!avail.length) { await d.npc('Ya tienes el caballo y el guirre. ¡Más que el mencey!'); return; }
+  await d.npc(owned.size ? '¿Otra montura? Tú sí que sabes.' : 'Tengo dos animales buenos. Tú eliges.');
+  if (d.closed) return;
+  const labels = [...avail.map(id => {
+    const M = MOUNTS[id];
+    return `${M.icon} ${M.name} — ${M.price.toLocaleString('es-ES')} monedas (nivel ${M.level})${lvl < M.level ? ' 🔒' : ''}`;
+  }), '📋 ¿Cómo es cada uno?', 'Ahora no'];
+  while (!d.closed) {
+    const k = await d.choose(labels, 'La cuadra de Tanausú');
+    if (k < 0 || d.closed || k === labels.length - 1) return;
+    if (k === labels.length - 2) {
+      for (const id of MOUNT_LIST) { await d.npc(`${MOUNTS[id].icon} ${MOUNTS[id].name}: ${MOUNTS[id].blurb}`); if (d.closed) return; }
+      continue;
+    }
+    const M = MOUNTS[avail[k]];
+    if (lvl < M.level) { await d.npc(`Tú todavía eres muy flojito pa'l ${M.name}, mi niño. Vuelve con nivel de combate ${M.level} (tienes ${lvl}).`); continue; }
+    await d.player(`Me llevo el ${M.name}.`);
+    try {
+      await api.mountsBuy(M.id);
+      try { audio.synth?.('craft_done', { volume: 0.7 }); } catch {}
+      feedLog('info', `${M.icon} ¡Ya tienes ${M.name}! Pulsa el botón ${M.icon} junto a la vida para montar.`);
+      await d.npc(M.fly ? '¡Cuídamelo! Súbete y vuela por encima de lo que quieras. Pero si te pegan, al suelo.' : '¡Todo tuyo! Pulsa el botón de la montura y a correr por los caminos.');
+      try { window.__mounts?.refresh?.(); } catch {}
+    } catch (err) {
+      await d.npc(err?.code === 'not_enough_coins' ? '¿Y las perras? Sin monedas no hay animal, mi niño.'
+        : err?.code === 'low_level' ? 'Todavía no estás preparado pa\' ese animal.'
+        : err?.code === 'too_far' ? 'Arrímate, que no te oigo.' : 'Algo ha fallado. Prueba otra vez.');
+    }
+    return;
+  }
 }
 
 // Sesión 50 — Nauzet vende casas
@@ -511,6 +553,7 @@ export function start(opts) {
   feedLog = opts.feedLog || (() => {});
   onOpenBank = opts.onOpenBank || (() => {});
   onOpenShop = opts.onOpenShop || (() => {});
+  onOpenGE = opts.onOpenGE || (() => {});
   started = true;
   syncTimer = 99;
   if (typeof window !== 'undefined') window.__townNpcs = () => [...objs.values()].map(o => ({ id: o.n.id, mark: o.mark }));

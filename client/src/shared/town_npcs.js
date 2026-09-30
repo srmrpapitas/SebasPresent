@@ -18,6 +18,22 @@
 export const TALK_DIST_M = 3.0;        // cliente
 export const TALK_DIST_SERVER_M = 9.0; // server (posición del heartbeat con algo de retraso)
 
+import { CASTLES, bankerSpot } from './castles.js';
+const CASONA_LOOK = {
+  banquera_dacil:    { name: 'Dácil',    title: 'Banquera de Santa Cruz',     look: { skin: 0xc8946a, shirt: 0x2a4a6a, pants: 0x1f1f24, hair: 0x1a1008, acc: 'apron' } },
+  banquero_acaymo:   { name: 'Acaymo',   title: 'Banquero de Adeje',          look: { skin: 0xb07a52, shirt: 0x5a1f2a, pants: 0x1f1f24, hair: 0x1a1a1a, acc: 'hat' } },
+  banquera_cathaysa: { name: 'Cathaysa', title: 'Banquera de Los Cristianos', look: { skin: 0xd9a57a, shirt: 0x2f6a3a, pants: 0x1f1f24, hair: 0x3a2010, acc: 'apron' } },
+};
+const CASONA_BANKERS = CASTLES.map(c => {
+  const s = bankerSpot(c), L = CASONA_LOOK[c.banker];
+  return { id: c.banker, name: L.name, title: L.title, x: s.x, z: s.z, rotY: s.rotY, role: '🏦', look: L.look,
+    actions: ['bank', 'ge', 'shop:general_store'],
+    lines: [
+      `Bienvenido a la ${c.name}. Banco, Mercado y tienda, todo en la misma puerta.`,
+      'Lo que guardas aquí lo tienes en cualquier banco de la isla.',
+    ] };
+});
+
 export const TOWN_NPCS = [
   // ----------------------------------------------------- La Laguna
   { id: 'guia_aldric', name: 'Aldric', title: 'Guía de La Laguna', x: 12, z: -14, rotY: 2.4, role: '🧭',
@@ -194,6 +210,28 @@ export const TOWN_NPCS = [
     lines: [
       'Mis cabras suben hasta el páramo de Erjos… y algunas no vuelven. Dicen que allí vive la bruja Chona.',
       'Por las noches se ven luces rojas en el monte de Las Mercedes. Gente con capucha. Yo no me acerco.',
+    ] },
+  // Sesión 50 — banqueros de las casonas del banco (shared/castles.js)
+  ...CASONA_BANKERS,
+  // Sesión 50 — Arico, el pueblo blanco
+  { id: 'alcalde_faustino', name: 'Don Faustino', title: 'Alcalde de Arico', x: 1088, z: 612, rotY: 2.4, role: '🏛️',
+    look: { skin: 0xc8946a, shirt: 0xf4f0e6, pants: 0x2a2a2a, hair: 0x8a8a8a, acc: 'hat' },
+    lines: [
+      'Bienvenido a Arico. Aquí todas las casas son blancas: lo firmé yo mismo el primer día.',
+      'Blanco en las paredes, verde en puertas y ventanas, piedra negra del volcán abajo. El que pinta de otro color, repinta.',
+      'Nada de edificios altos ni carteles chillones. La casa tiene que parecer que nació del paisaje, no que se lo come.',
+      'Las chimeneas redondas y las azoteas son de toda la vida. Y un cactus o una palmera en cada jardín, que el desierto también es bonito.',
+      'Dicen que en Lanzarote lo hicieron así primero. Yo solo copié lo bueno.',
+    ] },
+  // Sesión 50 — monturas
+  { id: 'tanausu_cuadra', name: 'Tanausú', title: 'Cuadrero', x: -38, z: 38, rotY: 2.3, role: '🐎',
+    look: { skin: 0xb07a52, shirt: 0x6a4a2a, pants: 0x2a2a2a, hair: 0x1a1a1a, acc: 'hat' },
+    actions: ['mounts'],
+    lines: [
+      '¡Epa! Tanausú, de la cuadra. ¿Cansado de patear la isla? Súbete a un caballo, mi niño.',
+      'Por los caminos se va rápido. Sigue los postes y no te pierdes: cada flecha dice cuánto falta.',
+      'Si te pegan, te caes del caballo. Y si te atacan, el animal se asusta: espera un poquito antes de volver a montar.',
+      'El guirre es el buitre de aquí. Casi no quedan… pero los que hay vuelan por encima del Teide como si nada.',
     ] },
   // Sesión 50 — casas de jugador
   { id: 'nauzet_inmobiliaria', name: 'Nauzet', title: 'Agente inmobiliario', x: 50, z: 50, rotY: 0.8, role: '🏠',

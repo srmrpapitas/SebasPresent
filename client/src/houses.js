@@ -16,6 +16,8 @@
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as interiors from './interiors.js';
+import { CASTLES, CASONA_W, CASONA_D } from './shared/castles.js';   // casonas del banco
+import { puebloHouses } from './shared/pueblo_blanco.js';          // Arico, el pueblo blanco
 import {
   HOUSE_PORTALS, HOUSE_TIERS, HOUSE_CENTER, HOUSE_PORTAL_USE_M,
 } from './shared/houses.js';
@@ -54,6 +56,7 @@ function mats() {
   M.cloth = L(0xb8342e); M.clothB = L(0x2e4e8a); M.white = L(0xf4f0e6); M.straw = L(0xc8a860);
   M.gold = new THREE.MeshStandardMaterial({ color: 0xe0b040, metalness: 0.8, roughness: 0.35, flatShading: true });
   M.iron = L(0x33353a); M.leaf = L(0x3f7a2e); M.pot = L(0xa4552e); M.fire = new THREE.MeshBasicMaterial({ color: 0xffa030 });
+  M.blue = L(0x2a5a9a); M.blueD = L(0x1c3e6a); M.lava = L(0x2a2624); M.cactus = L(0x4a7a3a); M.palm = L(0x7a5a36);
   M.glow = new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.7 });
   M.hit = new THREE.MeshBasicMaterial({ visible: false });
   return M;
@@ -75,30 +78,44 @@ function signTexture(text, sub) {
 // ============================================================
 // Casa canaria (fachada al +Z local)
 // ============================================================
-function buildCasa({ w = 8, d = 7, h = 3.4, balcony = false, twoFloors = false, color = null, sign = null } = {}) {
+export function buildCasa({ w = 8, d = 7, h = 3.4, balcony = false, twoFloors = false, color = null, sign = null,
+  roof = 'teja', trim = 'green', base = 'stone', chimney = false } = {}) {
   mats();
   const g = new THREE.Group();
   const H = twoFloors ? h * 1.8 : h;
   const wallM = color ? new THREE.MeshLambertMaterial({ color, flatShading: true }) : M.wall;
+  const TR = trim === 'blue' ? [M.blue, M.blueD] : [M.green, M.greenD];
+  const baseM = base === 'lava' ? M.lava : M.stone;
   const body = box(w, H, d, wallM, 0, H / 2, 0); g.add(body);
-  g.add(box(w + 0.2, 0.35, d + 0.2, M.stone, 0, 0.17, 0));                   // zócalo de piedra
-  for (const sx of [-1, 1]) g.add(box(0.5, H, 0.5, M.stone, sx * (w / 2 - 0.1), H / 2, d / 2 - 0.1));   // esquinas de cantería
-  // Tejado a cuatro aguas de teja
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2 + 0.5, 1.9, 4), M.teja);
-  roof.rotation.y = Math.PI / 4; roof.scale.set(w / Math.hypot(w, d) * 1.45, 1, d / Math.hypot(w, d) * 1.45);
-  roof.position.y = H + 0.95; g.add(roof);
-  g.add(box(w + 0.5, 0.18, d + 0.5, M.tejaD, 0, H + 0.05, 0));
+  g.add(box(w + 0.2, base === 'lava' ? 0.6 : 0.35, d + 0.2, baseM, 0, base === 'lava' ? 0.3 : 0.17, 0));   // zócalo
+  if (base !== 'lava') for (const sx of [-1, 1]) g.add(box(0.5, H, 0.5, M.stone, sx * (w / 2 - 0.1), H / 2, d / 2 - 0.1));   // esquinas de cantería
+  if (roof === 'flat') {
+    // Azotea con pretil y chimenea redonda (estilo Lanzarote)
+    g.add(box(w + 0.1, 0.12, d + 0.1, wallM, 0, H + 0.06, 0));
+    for (const [pw, pd, px, pz] of [[w + 0.1, 0.25, 0, d / 2], [w + 0.1, 0.25, 0, -d / 2], [0.25, d + 0.1, w / 2, 0], [0.25, d + 0.1, -w / 2, 0]])
+      g.add(box(pw, 0.45, pd, wallM, px, H + 0.3, pz));
+    if (chimney) {
+      const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 1.2, 10), wallM); ch.position.set(w / 2 - 1.1, H + 0.7, -d / 2 + 1.1); g.add(ch);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), wallM); cap.position.set(w / 2 - 1.1, H + 1.3, -d / 2 + 1.1); g.add(cap);
+    }
+  } else {
+    // Tejado a cuatro aguas de teja
+    const roofM = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2 + 0.5, 1.9, 4), M.teja);
+    roofM.rotation.y = Math.PI / 4; roofM.scale.set(w / Math.hypot(w, d) * 1.45, 1, d / Math.hypot(w, d) * 1.45);
+    roofM.position.y = H + 0.95; g.add(roofM);
+    g.add(box(w + 0.5, 0.18, d + 0.5, M.tejaD, 0, H + 0.05, 0));
+  }
   // Puerta verde
   const doorW = 1.3, doorH = 2.3;
   g.add(box(doorW + 0.3, doorH + 0.25, 0.14, M.stone, 0, doorH / 2 + 0.1, d / 2 + 0.03));
-  const door = box(doorW, doorH, 0.12, M.green, 0, doorH / 2 + 0.05, d / 2 + 0.09); g.add(door);
-  for (const yy of [0.6, 1.5]) g.add(box(doorW * 0.8, 0.07, 0.03, M.greenD, 0, yy, d / 2 + 0.16));
+  const door = box(doorW, doorH, 0.12, TR[0], 0, doorH / 2 + 0.05, d / 2 + 0.09); g.add(door);
+  for (const yy of [0.6, 1.5]) g.add(box(doorW * 0.8, 0.07, 0.03, TR[1], 0, yy, d / 2 + 0.16));
   g.add(box(0.08, 0.08, 0.08, M.gold, 0.45, 1.15, d / 2 + 0.17));
   // Ventanas con contraventanas
   const win = (x, y) => {
     g.add(box(1.0, 1.2, 0.1, M.glass, x, y, d / 2 + 0.04));
-    g.add(box(0.5, 1.2, 0.08, M.green, x - 0.78, y, d / 2 + 0.06));
-    g.add(box(0.5, 1.2, 0.08, M.green, x + 0.78, y, d / 2 + 0.06));
+    g.add(box(0.5, 1.2, 0.08, TR[0], x - 0.78, y, d / 2 + 0.06));
+    g.add(box(0.5, 1.2, 0.08, TR[0], x + 0.78, y, d / 2 + 0.06));
     g.add(box(1.3, 0.12, 0.25, M.stone, x, y - 0.66, d / 2 + 0.12));
   };
   win(-w / 4 - 0.3, 1.8); win(w / 4 + 0.3, 1.8);
@@ -174,6 +191,39 @@ function buildExterior() {
     const street = box(34, 0.04, 6, M.stoneD, 0, 0.02, 8.5);
     place(street, p, 0, 8.5); street.position.y = 0.02; exterior.add(street);
   });
+  // Casonas del banco (sustituyen a los castillos GLB)
+  for (const c of CASTLES) {
+    const k = buildCasa({ w: CASONA_W, d: CASONA_D, twoFloors: true, balcony: true, sign: ['🏦 Banco', c.name.replace('Casona del banco de ', '')] });
+    k.group.position.set(c.x, 0, c.z); k.group.rotation.y = c.dir;
+    exterior.add(k.group);
+    addOBB(c.x, c.z, c.dir, CASONA_W / 2 + 0.3, CASONA_D / 2 + 0.3);
+    // porche con toldo delante de la puerta (donde está el banquero)
+    const aw = new THREE.Group(); aw.position.set(c.x, 0, c.z); aw.rotation.y = c.dir; exterior.add(aw);
+    aw.add(box(3.6, 0.12, 2.6, M.cloth, 0, 3.0, CASONA_D / 2 + 1.3));
+    for (const sx of [-1.7, 1.7]) aw.add(box(0.14, 3.0, 0.14, M.woodD, sx, 1.5, CASONA_D / 2 + 2.5));
+    aw.add(box(2.8, 1.0, 0.5, M.wood, 0, 0.5, CASONA_D / 2 + 1.9));   // mostrador (el banquero, detrás)
+  }
+  // Arico, el pueblo blanco
+  for (const h of puebloHouses()) {
+    const k = buildCasa({ w: h.w, d: h.d, twoFloors: h.twoFloors, roof: 'flat', trim: h.trim, base: 'lava', chimney: true, color: 0xfbfaf6 });
+    k.group.position.set(h.x, 0, h.z); k.group.rotation.y = h.dir;
+    exterior.add(k.group);
+    addOBB(h.x, h.z, h.dir, h.w / 2 + 0.3, h.d / 2 + 0.3);
+    // jardín: muro bajo de piedra negra, cactus o palmera
+    const gd = new THREE.Group(); gd.position.set(h.x, 0, h.z); gd.rotation.y = h.dir; exterior.add(gd);
+    const gx = h.w / 2 + 1.4;
+    gd.add(box(0.35, 0.6, h.d * 0.7, M.lava, gx + 0.9, 0.3, 0));
+    if ((Math.round(h.x) + Math.round(h.z)) % 2) {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 4.2, 6), M.palm); trunk.position.set(gx, 2.1, 0); gd.add(trunk);
+      for (let i = 0; i < 7; i++) {
+        const fr = box(0.35, 0.05, 1.9, M.leaf, gx, 4.2, 0); fr.rotation.set(0.5, i / 7 * Math.PI * 2, 0); fr.translateZ(0.8); gd.add(fr);
+      }
+    } else {
+      for (let i = 0; i < 3; i++) {
+        const c1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 1.2 + i * 0.3, 7), M.cactus); c1.position.set(gx + (i - 1) * 0.5, 0.6 + i * 0.15, (i - 1) * 0.6); gd.add(c1);
+      }
+    }
+  }
   scene.add(exterior);
 }
 
@@ -521,7 +571,7 @@ export function applyCollision(x0, z0, x1, z1) {
   const R = 0.35;
   for (const c of colliders) {
     const dx = x - c.x, dz = z - c.z;
-    if (Math.abs(dx) > 12 || Math.abs(dz) > 12) continue;
+    if (Math.abs(dx) > 14 || Math.abs(dz) > 14) continue;
     // al espacio local de la casa (inversa de la rotación de three)
     let lx = dx * c.c - dz * c.s, lz = dx * c.s + dz * c.c;
     const px = c.hx + R - Math.abs(lx), pz = c.hz + R - Math.abs(lz);
@@ -537,10 +587,15 @@ export function registerKeepouts(terrain) {
   for (const p of HOUSE_PORTALS) {
     try { terrain.addKeepout?.(p.x, p.z, 26); terrain.clearTreesNear?.(p.x, p.z, 26); } catch {}
   }
+  for (const c of CASTLES) { try { terrain.addKeepout?.(c.x, c.z, 14); terrain.clearTreesNear?.(c.x, c.z, 14); } catch {} }
+  for (const h of puebloHouses()) { try { terrain.addKeepout?.(h.x, h.z, 8); terrain.clearTreesNear?.(h.x, h.z, 8); } catch {} }
 }
 
 export function getMapIcons() {
-  return HOUSE_PORTALS.map(p => ({ x: p.x, z: p.z, kind: 'house', name: p.name }));
+  return [
+    ...HOUSE_PORTALS.map(p => ({ x: p.x, z: p.z, kind: 'house', name: p.name })),
+    ...CASTLES.map(c => ({ x: c.x, z: c.z, kind: 'bank', name: c.name })),
+  ];
 }
 
 export function start(opts) {
