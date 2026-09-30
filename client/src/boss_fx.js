@@ -275,7 +275,9 @@ export function update(dt) {
     try { window.__getNpcProc?.(n.id)?.attack?.(); } catch {}
     if (from && to && window.__worldFireProjectile) {
       window.__worldFireProjectile({ x: from.x, y: 0, z: from.z }, { x: to.x, y: 0, z: to.z },
-        { type: 'spell', spellId: n.style === 'magic' ? (n.def_id === 'acolito_cabildo' ? 'fire_strike' : 'thunderbolt') : 'entangle', windupMs: 150 });
+        { type: 'spell', spellId: n.def_id === 'guanche_hondero' ? 'stone' : n.def_id === 'guanche_faycan' ? 'sunbolt'
+            : n.style === 'magic' ? (n.def_id === 'acolito_cabildo' ? 'fire_strike' : 'thunderbolt') : 'entangle',
+          windupMs: 150, arcHeight: n.def_id === 'guanche_hondero' ? 0.8 : undefined });
     }
   }
 

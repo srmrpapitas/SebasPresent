@@ -272,6 +272,7 @@ export function drawIcon(ctx, kind, x, y, r = 6, extra = {}) {
 /** Tipo de icono para un PLACE. */
 export function placeIconKind(p) {
   if (p.type === 'city' || p.type === 'village' || p.type === 'boss') return p.type;
+  if (p.type === 'poblado') return 'village';
   if (p.type === 'mine') return 'mine';
   if (p.type === 'temple' || p.type === 'altar') return 'altar';
   return 'landmark';

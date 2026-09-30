@@ -429,12 +429,24 @@ const SPELL_STYLE = {
   ice_spear:   { color: 0x7fd8ff, trail: [0xe8fbff, 0x9fe3ff, 0x4aa8e8], rate: 2, spread: 0.08, rise: -0.3 },
   thunderbolt: { color: 0xfff27a, trail: [0xffffff, 0xfff27a, 0x9fb8ff], rate: 2, spread: 0.2, rise: 0 },
   entangle:    { color: 0x59d34a, trail: [0xb8ff8a, 0x59d34a, 0x2a7a20], rate: 2, spread: 0.1, rise: 0.1 },
+  stone:       { color: 0x8a8070, trail: [0xb0a890, 0x8a8070], rate: 1, spread: 0.05, rise: 0 },   // Sesión 50 — honda guanche
+  sunbolt:     { color: 0xffd040, trail: [0xfff4b0, 0xffd040, 0xff9a20], rate: 2, spread: 0.1, rise: 0.3 },   // Sesión 50 — faycán (Magec)
 };
 
 function buildSpellFx(spellId, colorOverride) {
   const st = SPELL_STYLE[spellId] || { ...SPELL_STYLE.fire_strike, color: colorOverride ?? 0xff6622 };
   const root = new THREE.Group();
   const fx = { obj: root, color: st.color, style: st, spellId, trailAcc: 0 };
+  if (spellId === 'stone') {
+    root.add(new THREE.Mesh(new THREE.DodecahedronGeometry(0.1, 0), new THREE.MeshLambertMaterial({ color: 0x7a7266, flatShading: true })));
+    fx.tick = (t) => { root.children[0].rotation.set(t * 20, t * 14, 0); };
+    return fx;
+  }
+  if (spellId === 'sunbolt') {
+    root.add(new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff4c0 })));
+    root.add(glowSprite(0xffc030, 0.9, 0.9));
+    return fx;
+  }
   if (spellId === 'ice_spear') {
     const spear = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.9, 6), new THREE.MeshBasicMaterial({ color: 0xcff4ff }));
     spear.rotation.x = Math.PI / 2;   // punta hacia +Z

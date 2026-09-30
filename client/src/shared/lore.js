@@ -124,4 +124,15 @@ export const LORE = {
       'La retama del Teide calma el espíritu y devuelve la fe: por eso los del Cabildo la quieren toda. Sin fe, nadie puede rezar contra sus hechizos.',
     ],
   },
+  // Capítulo XII — Los guanches de Chinamada
+  yeray_pastor: {
+    label: '📖 ¿Quiénes viven en Chinamada?',
+    pages: [
+      'Al noroeste, en los riscos de Chinamada, sigue viviendo un pueblo guanche que nunca bajó a las ciudades.',
+      'Viven como sus abuelos: casas de piedra seca, pieles de cabra, gofio y leche. Pelean con banot y lanzan piedras con la honda mejor que nadie.',
+      'Se reúnen en el tagoror, el círculo de piedras, y los manda un mencey. Sus faycanes, los sacerdotes, rezan a Magec y lanzan su luz como un rayo.',
+      'Son fieles a Achamán y odian al Cabildo: dicen que los magos les quitaron sus tierras. Por eso atacan a cualquier forastero que se acerque al poblado.',
+      'Si vas, ve preparado. Y respeta a las cabras, que son lo que más quieren.',
+    ],
+  },
 };

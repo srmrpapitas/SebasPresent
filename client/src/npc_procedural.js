@@ -21,6 +21,7 @@ export const PROC_NPC_HEIGHTS = {
   rey_yeti: 4.6, coloso_obsidiana: 5.0, reina_escorpion: 2.4, bruja_pantano: 2.6, leviatan: 5.5,
   rey_esqueleto: 3.3, dragon_rojo: 5.2, dragon_negro: 6.2,
   acolito_cabildo: 2.3, magister_cabildo: 3.2,
+  guanche_guerrero: 1.8, guanche_hondero: 1.75, guanche_faycan: 1.8, guanche_mencey: 2.1, cabra: 0.9,
   // Sesión 50 — Fosa de Guayota
   fosa_diablillo: 1.2, fosa_escupefuego: 1.3, fosa_espiritu: 1.9, fosa_bruto: 2.6, fosa_ignaroth: 5.2,
 };
@@ -569,6 +570,84 @@ function ignaroth() {
   return v;
 }
 
+
+// ---------------- Guanches (Sesión 50) ----------------
+// Humano con tamarco (túnica de piel de cabra), pelo largo, cinta, y su arma:
+// 'banot' (lanza de madera), 'sling' (honda y piedra), 'staff' (faycán), 'anepa' (bastón del mencey)
+function guanche(o) {
+  const root = new THREE.Group();
+  const body = new THREE.Group(); root.add(body);
+  const skin = mat(o.skin ?? 0xb57a4a), hide = mat(o.hide ?? 0x8a6a42), fur = mat(o.fur ?? 0xd8c8a0), hair = mat(0x1e140c),
+    wood = mat(0x6a4a24), band = mat(o.band ?? 0xa02a1a);
+  // Tamarco (túnica de piel) con ribete de pelo
+  const tunic = cyl(0.26, 0.38, 0.95, hide, 8); tunic.position.y = 1.02; body.add(tunic);
+  const hem = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.05, 4, 10), fur); hem.rotation.x = Math.PI / 2; hem.position.y = 0.56; body.add(hem);
+  const shoulder = sph(0.3, fur, 0); shoulder.scale.set(1.3, 0.5, 1); shoulder.position.y = 1.46; body.add(shoulder);
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.035, 4, 10), mat(0x3a2410)); belt.rotation.x = Math.PI / 2; belt.position.y = 0.98; body.add(belt);
+  // Cabeza
+  const head = sph(0.19, skin, 1); head.scale.set(0.95, 1.1, 1); head.position.y = 1.73; body.add(head);
+  const hairTop = sph(0.2, hair, 1); hairTop.scale.set(1, 0.7, 1.05); hairTop.position.set(0, 1.8, -0.03); body.add(hairTop);
+  const hairBack = box(0.3, 0.35, 0.1, hair); hairBack.position.set(0, 1.6, -0.14); body.add(hairBack);
+  const hb = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.025, 4, 12), band); hb.rotation.x = Math.PI / 2; hb.position.y = 1.8; body.add(hb);
+  if (o.beard) { const b = cone(0.12, 0.22, hair, 5); b.rotation.x = Math.PI; b.position.set(0, 1.58, 0.12); body.add(b); }
+  for (const sx of [-1, 1]) { const e = box(0.035, 0.03, 0.02, mat(0x111111)); e.position.set(sx * 0.07, 1.76, 0.18); body.add(e); }
+  if (o.feathers) for (let k = 0; k < 5; k++) { const f = cone(0.03, 0.3, mat(k % 2 ? 0xf0f0e8 : 0x2a2a2a), 3); f.position.set(-0.12 + k * 0.06, 1.98, -0.08); f.rotation.x = -0.3; body.add(f); }
+  // Brazos y piernas
+  const arms = [], legs = [];
+  for (const sx of [-1, 1]) {
+    const a = leg(0.62, 0.09, skin, sx * 0.34, 1.46, 0); body.add(a); arms.push(a);
+    const L = leg(0.56, 0.11, skin, sx * 0.13, 0.56, 0); body.add(L); legs.push(L);
+    const foot = box(0.12, 0.05, 0.2, mat(0x5a3a1c)); foot.position.set(0, -0.56, 0.04); L.add(foot);   // majos (calzado de piel)
+  }
+  // Arma en la mano derecha
+  const hand = arms[1];
+  if (o.weapon === 'banot') {
+    const sp = cyl(0.025, 0.03, 2.0, wood, 5); sp.position.set(0, -0.45, 0.35); sp.rotation.x = 1.2; hand.add(sp);
+    const tip = cone(0.04, 0.2, mat(0x3a2a1a), 4); tip.position.set(0, -0.08, 1.28); tip.rotation.x = Math.PI / 2; hand.add(tip);
+  } else if (o.weapon === 'sling') {
+    const cord = cyl(0.01, 0.01, 0.5, mat(0xc8b890), 3); cord.position.set(0, -0.8, 0); hand.add(cord);
+    const stone = sph(0.07, mat(0x6a6a6a), 0); stone.position.set(0, -1.05, 0); hand.add(stone);
+    // Bolsa de piedras
+    const bag = sph(0.12, hide, 0); bag.position.set(-0.28, 0.9, 0.1); body.add(bag);
+  } else if (o.weapon === 'staff' || o.weapon === 'anepa') {
+    const st = cyl(0.03, 0.035, 1.8, o.weapon === 'anepa' ? mat(0x2a1a0a) : wood, 5); st.position.set(0, -0.35, 0.12); hand.add(st);
+    const topM = o.weapon === 'anepa' ? mat(0xe8dcc0) : mat(0xffd060, { emissive: 0xc08000 });
+    const top = o.weapon === 'anepa' ? box(0.24, 0.06, 0.06, topM) : sph(0.08, topM, 1);
+    top.position.set(0, 0.55, 0.12); hand.add(top);
+  }
+  if (o.shield) { const sh = cyl(0.26, 0.26, 0.05, mat(0x7a5a30), 10); sh.rotation.x = Math.PI / 2; sh.position.set(0, -0.5, 0.12); arms[0].add(sh); }
+  if (o.scale) root.scale.setScalar(o.scale);
+  let ph = Math.random() * 6, atkT = 0;
+  return {
+    root,
+    attack() { atkT = 0.45; },
+    animate(dt, moving) {
+      ph += dt * (moving ? 9 : 1.5);
+      const sw = moving ? 0.6 : 0;
+      legs[0].rotation.x = Math.sin(ph) * sw; legs[1].rotation.x = -Math.sin(ph) * sw;
+      arms[0].rotation.x = -Math.sin(ph) * sw * 0.6;
+      let ra = Math.sin(ph) * sw * 0.6;
+      if (atkT > 0) {
+        atkT -= dt;
+        const k = Math.sin(Math.max(0, atkT) / 0.45 * Math.PI);
+        ra = o.weapon === 'sling' ? -2.6 * k : -1.2 * k;   // honda: brazo por encima de la cabeza
+      }
+      arms[1].rotation.x = ra;
+      body.position.y = moving ? Math.abs(Math.sin(ph)) * 0.04 : Math.sin(ph) * 0.008;
+    },
+  };
+}
+function goat() {
+  const m = mat(0x7a5a3a), eyeM = mat(0x1a1a1a);
+  const out = quadruped({ m, eyeM, snoutM: mat(0xd8c8a8), bw: 0.32, bh: 0.34, bl: 0.75, hs: 0.26, legLen: 0.36, lt: 0.07, ears: true, tailLen: 0.12, gait: 12 });
+  const horn = mat(0x4a3a2a);
+  out.root.traverse(o => { if (o.isMesh && o.material === m && o.geometry.parameters?.width === 0.26) o.userData.head = true; });
+  // Cuernos curvos y barba
+  for (const sx of [-1, 1]) { const h = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.025, 4, 8, Math.PI), horn); h.position.set(sx * 0.08, 0.86, 0.36); h.rotation.set(0, Math.PI / 2, 0.4); out.root.add(h); }
+  const beard = cone(0.04, 0.14, mat(0xe8e0d0), 4); beard.rotation.x = Math.PI; beard.position.set(0, 0.6, 0.62); out.root.add(beard);
+  return out;
+}
+
 Object.assign(BUILDERS, {
   rey_yeti: () => variant('yeti', 1.8, (m) => { if (m.color.getHex() === 0xe8eef2) m.color.setHex(0xd8e8f8); }, (r) => {
     crown(r, 2.62, 0.3, 0x9fe3ff);
@@ -599,6 +678,12 @@ Object.assign(BUILDERS, {
   magister_cabildo: () => witch({ robe: 0x1a0a0a, robe2: 0x5a0a0a, skin: 0xc89070, hat: 0x8a0a0a, glow: 0xff2a2a, glowE: 0xff0000, hood: true, crown: true, scale: 1.35 }),
   leviatan,
   dragon_rojo: () => dragon({ s: 1.0, c1: 0xa3161a, c2: 0xe8a060, c3: 0x3a0a08, wing: 0xc0302a, eye: 0xffd040 }),
+  // Sesión 50 — Guanches
+  guanche_guerrero: () => guanche({ weapon: 'banot', shield: true }),
+  guanche_hondero: () => guanche({ weapon: 'sling', hide: 0x9a7a4a, band: 0x2a5a8a }),
+  guanche_faycan: () => guanche({ weapon: 'staff', hide: 0xe8e0c8, fur: 0xfff8e8, band: 0xd8b030, beard: true, skin: 0xa86a40 }),
+  guanche_mencey: () => guanche({ weapon: 'anepa', hide: 0x5a3a20, fur: 0xf0e8d0, band: 0xc02020, beard: true, feathers: true, shield: true, scale: 1.15 }),
+  cabra: goat,
   fosa_diablillo: imp,
   fosa_escupefuego: spitter,
   fosa_espiritu: fireSpirit,

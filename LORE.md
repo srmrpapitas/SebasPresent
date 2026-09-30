@@ -87,3 +87,13 @@ Los NPC de `client/src/shared/lore.js` tienen en su diálogo la opción "📖 Cu
 - Irene: el mar.
 - Samir: el desierto.
 - Gus: las minas.
+- Yeray: los guanches de Chinamada.
+
+## Los guanches de Chinamada
+En los riscos del noroeste (Poblado de Chinamada, -620, 140) sigue viviendo un pueblo guanche que nunca bajó a las ciudades: casas de piedra seca, tagoror (círculo del consejo), corral de cabras. Fieles a Achamán, enemigos del Cabildo, atacan a los forasteros.
+- **Guerrero guanche** (cuerpo a cuerpo, banot y escudo).
+- **Hondero guanche** (proyectiles: piedras con honda).
+- **Faycán** (magia: rayo de Magec).
+- **Mencey de Chinamada** (jefe del poblado, en el tagoror).
+- **Cabras** (pasivas).
+Misión: *El tagoror de Chinamada* (Yeray, pastor de Vilaflor).

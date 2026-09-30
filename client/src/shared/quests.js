@@ -419,6 +419,20 @@ Object.assign(QUESTS, {
     ],
     reward: { coins: 800, items: [['gofio', 5]], xp: { strength: 3000, herblore: 800 }, text: '800 monedas · 5 gofios · 3.000 XP Fuerza · 800 XP Herbología' },
   },
+  el_tagoror: {
+    id: 'el_tagoror', name: 'El tagoror de Chinamada', giver: 'yeray_pastor',
+    summary: 'Los guanches de Chinamada le roban cabras a Yeray. Recomendado: combate 35.',
+    offer: ['Los guanches de Chinamada bajan de noche y se llevan mis cabras.', 'No quiero guerra con ellos… pero su mencey no atiende a razones. Si le demuestras que eres más fuerte, quizá nos dejen en paz.'],
+    accept: 'Iré al poblado.', doing: 'El poblado está en los riscos del noroeste. Cuidado con los honderos.',
+    thanks: '¡Han devuelto las cabras! Y el mencey dice que te respeta. Toma, esto era de mi abuelo.',
+    steps: [
+      { id: 'warriors', event: 'kill', match: 'guanche_guerrero', count: 4, hint: { x: -620, z: 140 }, text: 'Vence a 4 guerreros guanches.', tip: 'Pelean cuerpo a cuerpo con banot.' },
+      { id: 'slingers', event: 'kill', match: 'guanche_hondero', count: 3, hint: { x: -620, z: 140 }, text: 'Vence a 3 honderos guanches.', tip: 'Lanzan piedras de lejos: Protección contra proyectiles.' },
+      { id: 'mencey', event: 'kill', match: 'guanche_mencey', count: 1, hint: { x: -619, z: 144 }, text: 'Vence al Mencey en el tagoror.', tip: 'Pega fuerte. Lleva comida y pociones de defensa.' },
+      talkBack('yeray_pastor', 'Vuelve con Yeray, el pastor de Vilaflor.'),
+    ],
+    reward: { coins: 2500, items: [['gofio', 10], ['hierba_tajinaste', 3]], xp: { attack: 4000, defence: 4000 }, text: '2.500 monedas · 10 gofios · 3 tajinastes · 4.000 XP Ataque y Defensa' },
+  },
   sombra_cabildo: {
     id: 'sombra_cabildo', name: 'La sombra del Cabildo', giver: 'alma_sacerdotisa',
     summary: 'El Cabildo esconde una orden de magos que quiere liberar a Guayota. Recomendado: combate 60.',
@@ -441,7 +455,7 @@ export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'pri
   'mago_huesos', 'encargo_herrera', 'escorpiones', 'golems_mina', 'bestia_blanca',
   // Sesión 50
   'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones',
-  'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo'];
+  'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {

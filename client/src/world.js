@@ -30,6 +30,7 @@ import * as mapRender from './map_render.js';   // Sesión 50 — minimapa/mapa 
 import * as bossFx from './boss_fx.js';         // Sesión 50 — jefes
 import * as fosa from './fosa.js';              // Sesión 50 — Fosa de Guayota
 import * as potions from './potions.js';        // Sesión 50 — pociones
+import * as guancheVillage from './guanche_village.js';   // Sesión 50 — poblado guanche
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
@@ -258,6 +259,7 @@ export async function startWorld(loggedInUser, token) {
     try { bankChests.registerKeepouts(terrain); } catch (e) { console.warn('[world] bank keepouts:', e); }
     try { townNpcs.registerKeepouts(terrain); } catch (e) { console.warn('[world] npc keepouts:', e); }
     try { fosa.registerKeepouts(terrain); } catch {}
+    try { guancheVillage.registerKeepouts(terrain); } catch {}
     // Sesión 50 — guaridas de jefes sin árboles
     try { for (const b of Object.values(BOSSES)) { terrain.addKeepout?.(b.x, b.z, b.lairR + 2); terrain.clearTreesNear?.(b.x, b.z, b.lairR + 2); } } catch {}
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -859,6 +861,7 @@ export async function startWorld(loggedInUser, token) {
         },
       });
     } catch (e) { console.warn('[world] tablets start:', e); }
+    try { guancheVillage.start({ scene }); } catch (e) { console.warn('[world] poblado:', e); }
     try { potions.start({ getSnapshot: () => worldSnapshot.getSnapshot(), feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] potions start:', e); }
     // Sesión 50 — La Fosa de Guayota (oleadas)
     try {
@@ -998,6 +1001,7 @@ export function stopWorld() {
 
   try { bossFx.stop(); } catch {}
   try { fosa.stop(); } catch {}
+  try { guancheVillage.stop(); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';
   if (fullMapOverlay) fullMapOverlay.classList.remove('visible');
   ['worldTooltip', 'worldRegion', 'worldBanner'].forEach(id => {
@@ -3079,6 +3083,7 @@ function animate() {
   bankChests.update(dt);      // Sesión 50 — cofres de banco
   try { bossFx.update(dt); } catch (e) { if (!window.__bossErr) { window.__bossErr = e; console.warn('[boss]', e); } }
   try { potions.update(dt); } catch {}
+  try { guancheVillage.update(dt); } catch {}
   try { fosa.update(dt); } catch (e) { if (!window.__fosaErr) { window.__fosaErr = e; console.warn('[fosa]', e); } }
   townNpcs.update(dt);        // Sesión 50 — habitantes
   tablets.update(dt);         // Sesión 50 — efecto de teletransporte
@@ -3169,7 +3174,8 @@ function updatePlayer(dt) {
     const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
     const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
     const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);   // Sesión 50 — rocas de jefes
-    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
+    const a4 = guancheVillage.applyCollision(player.position.x, player.position.z, a3.x, a3.z);   // casas guanches
+    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a4.x, a4.z);
     player.position.x = adjusted.x;
     player.position.z = adjusted.z;
     moveWx = wx;
@@ -3198,7 +3204,8 @@ function updatePlayer(dt) {
         const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
         const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
         const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
-        return interiors.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
+        const a4 = guancheVillage.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
+        return interiors.applyCollision(player.position.x, player.position.z, a4.x, a4.z);
       })();
       const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
       if (moved < 0.01) {
