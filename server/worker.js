@@ -63,7 +63,8 @@ import * as fishing from './handlers/skills/fishing.js';          // Sesión 50 
 import * as crafting from './handlers/skills/crafting.js';        // Sesión 50 — flechería/artesanía
 import * as teleport from './handlers/teleport.js';               // Sesión 50 — tabletas
 import * as potions from './handlers/potions.js';                 // Sesión 50 — pociones
-import * as aso from './handlers/aso.js';                         // Sesión 50 — socios de La ASO
+import * as aso from './handlers/aso.js';
+import * as house from './handlers/house.js';                     // Sesión 50 — casas                         // Sesión 50 — socios de La ASO
 import * as fosa from './handlers/minigame.js';                   // Sesión 50 — Fosa de Guayota
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
@@ -279,6 +280,12 @@ export default {
         response = await crafting.handleCraftingMake(request, env);
       } else if (path === '/api/magic/tablet' && method === 'POST') {
         response = await teleport.handleTabletBreak(request, env);
+      } else if (path === '/api/house' && method === 'GET') {
+        response = await house.handleHouseGet(request, env);
+      } else if (path === '/api/house/buy' && method === 'POST') {
+        response = await house.handleHouseBuy(request, env);
+      } else if (path === '/api/house/rest' && method === 'POST') {
+        response = await house.handleHouseRest(request, env);
       } else if (path === '/api/aso' && method === 'GET') {
         response = await aso.handleAsoStatus(request, env);
       } else if (path === '/api/aso/join' && method === 'POST') {

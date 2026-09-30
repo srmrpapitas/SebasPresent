@@ -14,6 +14,7 @@
 import { LORE } from './shared/lore.js';   // Sesión 50 — Crónicas de Achinech
 import * as THREE from 'three';
 import * as api from './api.js';
+import { HOUSE_TIERS, HOUSE_TIER_LIST, upgradeCost } from './shared/houses.js';   // Sesión 50
 import * as inventory from './inventory.js';
 import * as quests from './quests.js';
 import * as audio from './audio.js';
@@ -120,6 +121,10 @@ function buildModel(n) {
     ring.position.y = 0.44; head.add(ring);
   } else if (L.acc === 'bandana') {
     head.add(box(0.32, 0.07, 0.3, 0xa02a2a, 0, 0.36, 0));
+  } else if (L.acc === 'glasses') {   // Sesión 50 — Nauzet
+    head.add(box(0.1, 0.07, 0.02, 0x101010, -0.075, 0.25, 0.16));
+    head.add(box(0.1, 0.07, 0.02, 0x101010, 0.075, 0.25, 0.16));
+    head.add(box(0.06, 0.02, 0.02, 0x101010, 0, 0.26, 0.16));
   }
   torso.add(head);
 
@@ -342,6 +347,7 @@ async function talkTo(o) {
         for (const page of L.pages) { await d.npc(page); if (d.closed) return; }
       } });
     }
+    if (n.actions?.includes('house')) opts.push({ label: '🏠 Quiero una casa', run: () => houseAgent(d) });   // Sesión 50
     if (n.actions?.includes('bank')) opts.push({ label: '🏦 Quiero usar el banco', run: async () => { d.end(); onOpenBank(); } });
     // Sesión 50 — La Fosa de Guayota
     if (n.actions?.includes('fosa')) {
@@ -371,6 +377,47 @@ async function talkTo(o) {
   }
   talking = null;
   for (const obj of objs.values()) updateMark(obj);
+}
+
+// Sesión 50 — Nauzet vende casas
+async function houseAgent(d) {
+  let st;
+  try { st = await api.houseGet(); } catch { await d.npc('Uy, se me colgó el ordenador. Vuelve en un ratito.'); return; }
+  const cur = st?.tier ? HOUSE_TIERS[st.tier] : null;
+  await d.npc(cur ? `Ya tienes tu ${cur.name}. ¿Quieres algo más grande? Te descuento lo que ya pagaste, que yo soy legal.`
+                  : 'Tres opciones, mi niño. Todas con vistas… a algo.');
+  if (d.closed) return;
+  const opts = [];
+  for (const id of HOUSE_TIER_LIST) {
+    const T = HOUSE_TIERS[id];
+    const cost = upgradeCost(st?.tier || null, id);
+    if (cost == null) continue;
+    opts.push({ id, label: `${T.name} — ${cost.toLocaleString('es-ES')} monedas` });
+  }
+  if (!opts.length) { await d.npc('Ya tienes la mejor casa de la isla. Ni el presidente del Cabildo vive así.'); return; }
+  const labels = [...opts.map(o => o.label), '📋 ¿Qué tiene cada casa?', 'Ahora no'];
+  while (!d.closed) {
+    const k = await d.choose(labels, 'Inmobiliaria Achinech');
+    if (k < 0 || d.closed || k === labels.length - 1) return;
+    if (k === labels.length - 2) {
+      for (const id of HOUSE_TIER_LIST) { await d.npc(`${HOUSE_TIERS[id].name}: ${HOUSE_TIERS[id].blurb}`); if (d.closed) return; }
+      continue;
+    }
+    const o = opts[k];
+    await d.player(`Me quedo la ${HOUSE_TIERS[o.id].name}.`);
+    try {
+      await api.houseBuy(o.id);
+      try { audio.synth?.('craft_done', { volume: 0.7 }); } catch {}
+      feedLog('info', `🏠 ¡Ya tienes tu ${HOUSE_TIERS[o.id].name}! Entra desde cualquier urbanización (🏠 en el mapa).`);
+      await d.npc('¡Firmado! Aquí tienes la llave. Entras por la puerta verde de cualquier urbanización de la isla. La de aquí está al lado.');
+      try { window.__houses?.refresh?.(); } catch {}
+    } catch (err) {
+      await d.npc(err?.code === 'not_enough_coins' ? 'Mmm… con eso no te llega ni pa\' la fianza. Vuelve cuando tengas las perras.'
+        : err?.code === 'too_far' ? 'Arrímate, que no te oigo.'
+        : 'Algo ha fallado con el papeleo. Inténtalo otra vez.');
+    }
+    return;
+  }
 }
 
 // Sesión 50 — La ASO: pa' comprar hay que ser socio

@@ -104,3 +104,18 @@ Carmita habla en canario de la calle. Para comprar hay que ser socio:
 - venir con un socio conectado al lado (gratis), o
 - pagar **5 pavos**. El juego no lo explica, pero 1 pavo = 100 monedas, así que son 500. Si preguntas "¿Pavos?", te llama godo y te lo traduce.
 Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o venta en la tienda `aso` de quien no sea socio.
+
+
+## Casas y castillos
+- **Nauzet** (Inmobiliaria Achinech, junto a la urbanización de La Laguna) vende casas:
+  - Casa cueva: 5.000 monedas. Tiene cama.
+  - Casa terrera: 30.000. Cama y cofre del banco.
+  - Casona canaria: 120.000. Cama, cofre y altar de Chaxiraxi.
+  Si mejoras, pagas solo la diferencia.
+- **Urbanizaciones** (🏠 en el mapa): La Laguna, La Orotava, Güímar, Adeje, Los Cristianos, Santa Cruz, Vilaflor e Icod. La casita del cartel "Tu casa" es la puerta a TU casa. Sales por el mismo sitio.
+- **Muebles de la casa:**
+  - cama: vida al máximo, cada 5 min, fuera de combate;
+  - cofre: tu banco;
+  - altar: recarga la plegaria.
+  El server lo valida como "estás en una urbanización y tu casa tiene ese mueble", porque dentro de la casa el cliente no manda su posición.
+- **Castillos** (mismo modelo que el de La Laguna, `shared/castles.js`): Castillo de La Laguna (Gerardo), Castillo de San Cristóbal en Santa Cruz (Dácil), Casa Fuerte de Adeje (Acaymo) y Fortaleza de Los Cristianos (Cathaysa). Cada banquero tiene Banco, Mercado (GE) y Tienda.

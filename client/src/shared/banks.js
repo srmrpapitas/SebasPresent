@@ -5,6 +5,7 @@
  * donde abrir TU banco (es el mismo en todos). En la wilderness no hay.
  * MÓDULO COMPARTIDO (cliente dibuja; el server podrá validar distancias).
  */
+import { CASTLES, CASTLE_BANK_R } from './castles.js';   // Sesión 50
 import { TOWN_NPCS } from './town_npcs.js';
 
 export const BANK_USE_DIST_M = 3.2;
@@ -57,7 +58,6 @@ export function nearestBankChest(x, z) {
 // ------------------------------------------------------------
 export const BANK_USE_DIST_SERVER_M = 10;
 const EXTRA_BANK_POINTS = [
-  { x: -80, z: -80, r: 14 },            // banquero del castillo (castle.js)
   { x: 10000, z: 10000, r: 30 },        // sala del banco (interiors.js)
   // Edificios del banco (buildings.js). Dentro de la sala el cliente NO manda
   // su posición (10000,10000 está fuera del mapa y el Realm la descarta), así
@@ -68,6 +68,7 @@ const EXTRA_BANK_POINTS = [
 ];
 
 export function isNearAnyBank(x, z) {
+  // (castillos: shared/castles.js)
   if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
   const R = BANK_USE_DIST_SERVER_M;
   for (const b of BANK_CHESTS) if (Math.hypot(b.x - x, b.z - z) <= R) return true;
@@ -75,5 +76,6 @@ export function isNearAnyBank(x, z) {
     if (n.actions?.includes('bank') && Math.hypot(n.x - x, n.z - z) <= R) return true;
   }
   for (const p of EXTRA_BANK_POINTS) if (Math.hypot(p.x - x, p.z - z) <= p.r) return true;
+  for (const c of CASTLES) if (Math.hypot(c.x - x, c.z - z) <= CASTLE_BANK_R) return true;
   return false;
 }

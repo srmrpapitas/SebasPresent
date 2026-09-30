@@ -31,6 +31,8 @@ import * as bossFx from './boss_fx.js';         // Sesión 50 — jefes
 import * as fosa from './fosa.js';              // Sesión 50 — Fosa de Guayota
 import * as potions from './potions.js';        // Sesión 50 — pociones
 import * as guancheVillage from './guanche_village.js';   // Sesión 50 — poblado guanche
+import * as castle from './castle.js';                     // Sesión 50 — castillos (banco/GE/tienda)
+import * as houses from './houses.js';                     // Sesión 50 — casas de jugador
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
@@ -260,6 +262,8 @@ export async function startWorld(loggedInUser, token) {
     try { townNpcs.registerKeepouts(terrain); } catch (e) { console.warn('[world] npc keepouts:', e); }
     try { fosa.registerKeepouts(terrain); } catch {}
     try { guancheVillage.registerKeepouts(terrain); } catch {}
+    try { castle.registerKeepouts(terrain); } catch {}
+    try { houses.registerKeepouts(terrain); } catch {}
     // Sesión 50 — guaridas de jefes sin árboles
     try { for (const b of Object.values(BOSSES)) { terrain.addKeepout?.(b.x, b.z, b.lairR + 2); terrain.clearTreesNear?.(b.x, b.z, b.lairR + 2); } } catch {}
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -348,11 +352,11 @@ export async function startWorld(loggedInUser, token) {
         // arriba (pitch→1.3), va a clipar el techo, pero la geometría
         // probablemente es one-sided (visible desde dentro, invisible desde
         // afuera/arriba), así que no debería verse "agujereado".
-        cameraOrbital.pushInteriorOverrides({ dist: 14, pitch: 0.55 });
+        cameraOrbital.pushInteriorOverrides(buildingId === 'house' ? { dist: 11, pitch: 0.8 } : { dist: 14, pitch: 0.55 });
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
-        if (el) { el.textContent = 'Interior'; el.style.opacity = '1'; }
+        if (el) { el.textContent = buildingId === 'house' ? '🏠 Tu casa' : 'Interior'; el.style.opacity = '1'; }
         // Sesión 13 — SFX puerta al entrar; pausar música ambient
         try { audio.sfx('door_open'); audio.music(null); } catch {}
       },
@@ -862,6 +866,30 @@ export async function startWorld(loggedInUser, token) {
       });
     } catch (e) { console.warn('[world] tablets start:', e); }
     try { guancheVillage.start({ scene }); } catch (e) { console.warn('[world] poblado:', e); }
+    // Sesión 50 — castillos y casas de jugador
+    const openBankHere = () => {
+      try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
+      try { audio.sfx('coins'); } catch {}
+      openBankOverlay();
+    };
+    try {
+      houses.start({
+        scene, camera, canvas,
+        getPlayer: () => player,
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog: (type, msg) => combat.feedLog?.(type, msg),
+        onOpenBank: openBankHere,
+      });
+    } catch (e) { console.warn('[world] houses start:', e); }
+    castle.setWalker((x, z) => setPlayerTarget(x, z));
+    castle.start({
+      scene, camera, canvas,
+      getPlayer: () => player,
+      feedLog: (type, msg) => combat.feedLog?.(type, msg),
+      onOpenBank: openBankHere,
+      onOpenGE: () => { try { audio.sfx('book_open'); } catch {} try { ge.openOverlay?.(); } catch (e) { console.warn(e); } },
+      onOpenShop: () => { try { audio.sfx('coins'); } catch {} try { shop.open('general_store'); } catch (e) { console.warn(e); } },
+    }).catch(e => console.warn('[world] castle start:', e));
     try { potions.start({ getSnapshot: () => worldSnapshot.getSnapshot(), feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] potions start:', e); }
     // Sesión 50 — La Fosa de Guayota (oleadas)
     try {
@@ -1002,6 +1030,8 @@ export function stopWorld() {
   try { bossFx.stop(); } catch {}
   try { fosa.stop(); } catch {}
   try { guancheVillage.stop(); } catch {}
+  try { castle.stop(); } catch {}
+  try { houses.stop(); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';
   if (fullMapOverlay) fullMapOverlay.classList.remove('visible');
   ['worldTooltip', 'worldRegion', 'worldBanner'].forEach(id => {
@@ -1237,6 +1267,11 @@ function drawMinimap() {
       const [sx, sy] = S(b.x, b.z);
       mapRender.drawIcon(ctx, 'bank', sx, sy, IR);
     }
+    for (const m of [...castle.getMapIcons(), ...houses.getMapIcons()]) {   // Sesión 50
+      if (!inView(m.x, m.z)) continue;
+      const [sx, sy] = S(m.x, m.z);
+      mapRender.drawIcon(ctx, m.kind, sx, sy, IR * 1.1);
+    }
     for (const st of smithing.getStationsForMinimap()) {
       if (!inView(st.x, st.z)) continue;
       const [sx, sy] = S(st.x, st.z);
@@ -1447,7 +1482,7 @@ function setupFullMap() {
   const footer = fullMapOverlay.querySelector('.osrs-fullmap-footer');
   if (footer) {
     footer.innerHTML = [
-      ['bank', 'Banco'], ['quest', 'Misión'], ['anvil', 'Herrería'], ['altar', 'Altar'], ['fish', 'Pesca'], ['boss', 'Jefe'],
+      ['bank', 'Banco'], ['castle', 'Castillo'], ['house', 'Tu casa'], ['quest', 'Misión'], ['anvil', 'Herrería'], ['altar', 'Altar'], ['fish', 'Pesca'], ['boss', 'Jefe'],
     ].map(([k, t]) => `<span class="fm-leg"><canvas data-ic="${k}" width="36" height="36"></canvas>${t}</span>`).join('')
       + '<span class="fm-leg fm-hint">Arrastra para moverte · pellizca para zoom</span>';
     for (const c of footer.querySelectorAll('canvas[data-ic]')) {
@@ -1605,6 +1640,7 @@ function drawFullMap() {
   if (ppm >= 0.18) {
     try {
       for (const b of bankChests.getBanksForMinimap()) if (vis(b.x, b.z)) mapRender.drawIcon(ctx, 'bank', ...S(b.x, b.z), IR);
+      for (const m of [...castle.getMapIcons(), ...houses.getMapIcons()]) if (vis(m.x, m.z)) mapRender.drawIcon(ctx, m.kind, ...S(m.x, m.z), IR * 1.15);
       for (const st of smithing.getStationsForMinimap()) if (vis(st.x, st.z)) mapRender.drawIcon(ctx, st.kind === 'furnace' ? 'furnace' : 'anvil', ...S(st.x, st.z), IR);
       for (const a of prayer.getAltarsForMinimap()) if (vis(a.x, a.z)) mapRender.drawIcon(ctx, 'altar', ...S(a.x, a.z), IR);
       for (const pd of fishing.getPondsForMinimap()) if (vis(pd.x, pd.z)) mapRender.drawIcon(ctx, 'fish', ...S(pd.x, pd.z + pd.r + 6), IR * 0.9);
@@ -2879,6 +2915,7 @@ function doCanvasTap(clientX, clientY) {
   try { woodcutting.stopChop?.('tap_ground'); } catch {}
   try { smithing.stopWork?.('tap_ground'); } catch {}
   try { prayer.cancel?.(); } catch {}
+  try { houses.cancel?.(); castle.cancel?.(); } catch {}
   try { bankChests.cancel?.(); } catch {}
   try { townNpcs.cancel?.(); } catch {}
 
@@ -2903,6 +2940,10 @@ function doCanvasTap(clientX, clientY) {
 
   // 2a--) Tap habitante → caminar + hablar (Sesión 50).
   if (townNpcs.tryHandleTap(raycaster)) return;
+
+  // Sesión 50 — banquero de un castillo / puerta de tu casa.
+  try { if (castle.tryHandleTapRay(raycaster)) return; } catch (e) { console.warn('[castle] tap', e); }
+  try { if (houses.tryHandleTap(raycaster)) return; } catch (e) { console.warn('[houses] tap', e); }
 
   // 2a-) Tap cofre de banco → caminar + abrir banco (Sesión 50).
   if (bankChests.tryHandleTap(raycaster)) return;
@@ -3084,6 +3125,8 @@ function animate() {
   try { bossFx.update(dt); } catch (e) { if (!window.__bossErr) { window.__bossErr = e; console.warn('[boss]', e); } }
   try { potions.update(dt); } catch {}
   try { guancheVillage.update(dt); } catch {}
+  try { castle.update(dt); castle.updatePending(); } catch {}
+  try { houses.update(dt); } catch {}
   try { fosa.update(dt); } catch (e) { if (!window.__fosaErr) { window.__fosaErr = e; console.warn('[fosa]', e); } }
   townNpcs.update(dt);        // Sesión 50 — habitantes
   tablets.update(dt);         // Sesión 50 — efecto de teletransporte
@@ -3175,7 +3218,9 @@ function updatePlayer(dt) {
     const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
     const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);   // Sesión 50 — rocas de jefes
     const a4 = guancheVillage.applyCollision(player.position.x, player.position.z, a3.x, a3.z);   // casas guanches
-    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a4.x, a4.z);
+    const a5 = castle.applyCollision(player.position.x, player.position.z, a4.x, a4.z);          // murallas de castillos
+    const a6 = houses.applyCollision(player.position.x, player.position.z, a5.x, a5.z);          // urbanizaciones
+    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a6.x, a6.z);
     player.position.x = adjusted.x;
     player.position.z = adjusted.z;
     moveWx = wx;
@@ -3205,7 +3250,9 @@ function updatePlayer(dt) {
         const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
         const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
         const a4 = guancheVillage.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
-        return interiors.applyCollision(player.position.x, player.position.z, a4.x, a4.z);
+        const a5 = castle.applyCollision(player.position.x, player.position.z, a4.x, a4.z);
+        const a6 = houses.applyCollision(player.position.x, player.position.z, a5.x, a5.z);
+        return interiors.applyCollision(player.position.x, player.position.z, a6.x, a6.z);
       })();
       const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
       if (moved < 0.01) {

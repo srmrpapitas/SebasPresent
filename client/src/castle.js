@@ -27,6 +27,11 @@
  *   window.__bankerPos(x, z)          → mover al banquero dentro del castillo
  *   window.__castleBox()              → ver el AABB de colisión calculado
  *
+ * Sesión 50 — VARIOS CASTILLOS: el GLB se carga una vez y se clona en cada
+ * sitio de shared/castles.js. Cada uno con su banquero. Los tuners
+ * window.__castle* actúan sobre el castillo elegido con window.__castleSel(i)
+ * (por defecto el 0, La Laguna).
+ *
  * Patrón estándar del proyecto: start({...}) / stop(). applyCollision() se
  * encadena desde world.js igual que buildings.applyCollision.
  *
@@ -37,6 +42,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as terrain from './terrain.js';   // Sesión 40 — keep-out de árboles
+import { CASTLES } from './shared/castles.js';   // Sesión 50 — varios castillos
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 const CASTLE_URL = `${R2_BASE}/buildings/castle.glb`;
@@ -87,20 +93,35 @@ let feedLog = () => {};
 let raycaster = null;
 let started = false;
 
-let castleGroup = null;     // mesh del castillo (escalado, posicionado)
-let mountainGroup = null;   // montaña procedural detrás del castillo
-let skirtGroup = null;      // faldón de roca que tapa el hueco bajo el castillo
-let doorGroup = null;       // puerta de madera en el hueco de entrada
-let bankerGroup = null;     // banquero (grupo simple)
-let doorOpen = false;
+let template = null;        // GLB mergeado (se clona por castillo)
 let aabbLocal = null;       // { minX,maxX,minZ,maxZ } del castillo en local (sin rotación)
-let cfg = { ...DEFAULTS };
 let wallsOn = true;
 let menuEl = null;
+const castles = [];         // instancias
+let sel = 0;                // castillo que tocan los tuners __castle*
 
-// ============================================================
-// Carga + merge por material (mismo enfoque que buildings.js)
-// ============================================================
+// Una instancia: su cfg + sus grupos.
+function makeInstance(def) {
+  const inst = {
+    def,
+    cfg: { ...DEFAULTS, x: def.x, z: def.z, rotDeg: def.rotDeg || 0 },
+    castleGroup: null, mountainGroup: null, skirtGroup: null, doorGroup: null, bankerGroup: null,
+    doorL: null, doorR: null, doorAngle: 0, doorOpen: false,
+  };
+  inst.castleGroup = template.clone();
+  inst.bankerGroup = makeBanker(def.banker);
+  if (inst.cfg.mountain) inst.mountainGroup = makeMountain(inst);
+  if (inst.cfg.skirt) inst.skirtGroup = makeSkirt(inst);
+  if (inst.cfg.door) inst.doorGroup = makeDoor(inst);
+  for (const k of ['skirtGroup', 'castleGroup', 'mountainGroup', 'doorGroup', 'bankerGroup']) if (inst[k]) scene.add(inst[k]);
+  applyTransforms(inst);
+  try {
+    terrain.addKeepout?.(inst.cfg.x, inst.cfg.z, inst.cfg.treeKeepoutR);
+    terrain.clearTreesNear?.(inst.cfg.x, inst.cfg.z, inst.cfg.treeKeepoutR);
+  } catch (e) { console.warn('[castle] keepout:', e); }
+  return inst;
+}
+
 async function loadAndMergeCastle(url, targetHeight) {
   const loader = new GLTFLoader();
   let gltf;
@@ -169,97 +190,76 @@ export async function start(opts = {}) {
   onOpenGE = opts.onOpenGE || (() => {});
   onOpenShop = opts.onOpenShop || (() => {});
   feedLog = opts.feedLog || (() => {});
-  cfg = { ...DEFAULTS, ...(opts.config || {}) };
   if (!scene) { console.warn('[castle] start() sin scene'); return; }
 
   raycaster = new THREE.Raycaster();
-
-  castleGroup = await loadAndMergeCastle(CASTLE_URL, cfg.targetHeight);
-  if (!castleGroup) { console.warn('[castle] start() inerte (no cargó GLB)'); started = false; return; }
-
-  // AABB local (tras escalar, sin rotación) para colisión.
-  const b = new THREE.Box3().setFromObject(castleGroup);
+  template = await loadAndMergeCastle(CASTLE_URL, DEFAULTS.targetHeight);
+  if (!template) { console.warn('[castle] start() inerte (no cargó GLB)'); started = false; return; }
+  const b = new THREE.Box3().setFromObject(template);
   aabbLocal = { minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z };
 
-  // Banquero: un grupo simple (cilindro + cabeza). Reemplazable luego por GLB.
-  bankerGroup = makeBanker();
-
-  // Sesión 40 — montaña procedural detrás (tapa la parte de atrás, lo asienta).
-  if (cfg.mountain) mountainGroup = makeMountain();
-  // Sesión 40 — zócalo de roca envolvente (tapa el hueco bajo el castillo).
-  if (cfg.skirt) skirtGroup = makeSkirt();
-  // Sesión 40 — puerta de madera en el hueco de entrada.
-  if (cfg.door) doorGroup = makeDoor();
-
-  scene.add(castleGroup);
-  if (skirtGroup) scene.add(skirtGroup);       // el faldón va ANTES (debajo)
-  if (mountainGroup) scene.add(mountainGroup);
-  if (doorGroup) scene.add(doorGroup);
-  scene.add(bankerGroup);
-  applyTransforms();
-
-  // Sesión 40 — que NO crezcan árboles dentro del castillo, y limpiar los ya
-  // plantados en el footprint (se ensartaban).
-  try {
-    terrain.addKeepout?.(cfg.x, cfg.z, cfg.treeKeepoutR);
-    terrain.clearTreesNear?.(cfg.x, cfg.z, cfg.treeKeepoutR);
-  } catch (e) { console.warn('[castle] keepout:', e); }
-
+  for (const def of CASTLES) {
+    try { castles.push(makeInstance(def)); } catch (e) { console.warn('[castle]', def.id, e); }
+  }
   started = true;
   exposeDebug();
-  console.log(`[castle] listo en (${cfg.x},${cfg.z}) alto=${cfg.targetHeight}m y=${cfg.y}. Ajustá con window.__castle()`);
+  console.log(`[castle] ${castles.length} castillos listos. Ajustá con window.__castleSel(i) + window.__castle*()`);
+}
+
+/** Sesión 50 — keep-outs de árboles ANTES de que el terreno plante (el GLB tarda). */
+export function registerKeepouts(t) {
+  for (const def of CASTLES) { try { t.addKeepout?.(def.x, def.z, DEFAULTS.treeKeepoutR); t.clearTreesNear?.(def.x, def.z, DEFAULTS.treeKeepoutR); } catch {} }
+}
+
+export function getMapIcons() {
+  return CASTLES.map(c => ({ x: c.x, z: c.z, kind: 'castle', name: c.name }));
 }
 
 export function stop() {
-  try { if (castleGroup) scene?.remove(castleGroup); } catch {}
-  try { if (mountainGroup) scene?.remove(mountainGroup); } catch {}
-  try { if (skirtGroup) scene?.remove(skirtGroup); } catch {}
-  try { if (doorGroup) scene?.remove(doorGroup); } catch {}
-  try { if (bankerGroup) scene?.remove(bankerGroup); } catch {}
+  for (const inst of castles) {
+    for (const k of ['castleGroup', 'mountainGroup', 'skirtGroup', 'doorGroup', 'bankerGroup']) {
+      try { if (inst[k]) scene?.remove(inst[k]); } catch {}
+    }
+  }
+  castles.length = 0;
   try { if (menuEl) { menuEl.remove(); menuEl = null; } } catch {}
-  castleGroup = null; mountainGroup = null; skirtGroup = null; doorGroup = null; bankerGroup = null; aabbLocal = null; started = false;
+  template = null; aabbLocal = null; started = false;
 }
 
-// Coloca/orienta el castillo + montaña + banquero según cfg (tras cada tuner).
-function applyTransforms() {
+// Coloca/orienta castillo + montaña + banquero según su cfg.
+// Convención (la de siempre en este módulo, colisión incluida): local→mundo
+//   wx = x + lx·cos a − lz·sin a ;  wz = z + lx·sin a + lz·cos a
+// En three eso es rotation.y = −a (Sesión 50: antes se ponía +a y solo
+// cuadraba con 0°/180°).
+function applyTransforms(inst) {
+  const cfg = inst.cfg;
   const a = cfg.rotDeg * Math.PI / 180;
-  if (castleGroup) {
-    castleGroup.position.set(cfg.x, cfg.y, cfg.z);   // y = grounding (no flota)
-    castleGroup.rotation.y = a;
+  const toW = (lx, lz) => [cfg.x + (lx * Math.cos(a) - lz * Math.sin(a)), cfg.z + (lx * Math.sin(a) + lz * Math.cos(a))];
+  if (inst.castleGroup) { inst.castleGroup.position.set(cfg.x, cfg.y, cfg.z); inst.castleGroup.rotation.y = -a; }
+  if (inst.mountainGroup) {
+    const [wx, wz] = toW(0, cfg.mountainOffZ);
+    inst.mountainGroup.position.set(wx, cfg.y - 0.5, wz);
+    inst.mountainGroup.rotation.y = -a;
   }
-  if (mountainGroup) {
-    // detrás del castillo en su eje local +Z, rotado al mundo.
-    const oz = cfg.mountainOffZ;
-    const wx = cfg.x + (-Math.sin(a) * oz);
-    const wz = cfg.z + ( Math.cos(a) * oz);
-    mountainGroup.position.set(wx, cfg.y - 0.5, wz);  // un pelín hundida para fundirse
-    mountainGroup.rotation.y = a;
+  if (inst.skirtGroup) { inst.skirtGroup.position.set(cfg.x, cfg.y, cfg.z); inst.skirtGroup.rotation.y = -a; }
+  if (inst.doorGroup) {
+    const gc = gateLocalCenter(cfg);
+    const [wx, wz] = toW(gc.x, gc.z);
+    inst.doorGroup.position.set(wx, cfg.y, wz);
+    inst.doorGroup.rotation.y = (gc.axis === 'z') ? -a : -a + Math.PI / 2;
   }
-  if (skirtGroup) {
-    // mismo centro y rotación que el castillo; su geometría ya sube/baja sola.
-    skirtGroup.position.set(cfg.x, cfg.y, cfg.z);
-    skirtGroup.rotation.y = a;
-  }
-  if (doorGroup) {
-    // la puerta vive en el hueco: centro local del gate rotado al mundo.
-    const gc = gateLocalCenter();
-    const wx = cfg.x + (gc.x * Math.cos(a) - gc.z * Math.sin(a));
-    const wz = cfg.z + (gc.x * Math.sin(a) + gc.z * Math.cos(a));
-    doorGroup.position.set(wx, cfg.y, wz);
-    // orientar el marco según el muro (gate en eje Z mira ±Z; en eje X, ±X)
-    doorGroup.rotation.y = (gc.axis === 'z') ? a : a + Math.PI / 2;
-  }
-  if (bankerGroup) {
-    const ox = cfg.bankerOffX, oz = cfg.bankerOffZ;
-    const wx = cfg.x + (ox * Math.cos(a) - oz * Math.sin(a));
-    const wz = cfg.z + (ox * Math.sin(a) + oz * Math.cos(a));
-    bankerGroup.position.set(wx, cfg.y, wz);
+  if (inst.bankerGroup) {
+    const [wx, wz] = toW(cfg.bankerOffX, cfg.bankerOffZ);
+    inst.bankerGroup.position.set(wx, cfg.y, wz);
+    // el banquero mira a la puerta
+    inst.bankerGroup.rotation.y = -a + Math.PI;
   }
 }
 
 // Sesión 40 — Montaña procedural: cono irregular de roca con ruido, para
 // "pegar" el castillo y tapar la parte de atrás. Sin assets: geometría pura.
-function makeMountain() {
+function makeMountain(inst) {
+  const cfg = inst.cfg;
   const g = new THREE.Group();
   g.userData = { kind: 'castle-mountain' };
   const R = cfg.mountainRadius, H = cfg.mountainHeight;
@@ -299,7 +299,8 @@ function makeMountain() {
 //   - interior: pegado al muro, a altura skirtRise (tapa el hueco)
 //   - exterior: skirtOut metros afuera, cayendo a -skirtDrop (se mete en el piso)
 // Triangulamos entre ambos anillos. Ruido para que se vea roca, no rampa lisa.
-function makeSkirt() {
+function makeSkirt(inst) {
+  const cfg = inst.cfg;
   if (!aabbLocal) return null;
   const g = new THREE.Group();
   g.userData = { kind: 'castle-skirt' };
@@ -378,15 +379,25 @@ function makeSkirt() {
   return g;
 }
 
-function makeBanker() {
+function makeBanker(name = 'Banquero') {
   const g = new THREE.Group();
-  g.userData = { kind: 'castle-banker' };
+  g.userData = { kind: 'castle-banker', name };
   const bodyMat = new THREE.MeshLambertMaterial({ color: 0x5b4636 });
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 1.4, 10), bodyMat);
   body.position.y = 0.7; g.add(body);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), new THREE.MeshLambertMaterial({ color: 0xe0b48c }));
   head.position.y = 1.6; g.add(head);
-  // cartel flotante simple no — mantenemos minimal; el nombre va en feedLog al acercarse.
+  // Sesión 50 — cartel con su nombre y un $ para que se sepa qué es
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgba(20,14,8,0.85)'; x.fillRect(0, 0, 256, 64);
+  x.fillStyle = '#f2c230'; x.font = 'bold 30px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(`🏦 ${name}`, 128, 33);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+  spr.scale.set(2.4, 0.6, 1); spr.position.y = 2.4; spr.renderOrder = 5; g.add(spr);
+  // hitbox generoso para tocarlo fácil
+  const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 2.4, 8), new THREE.MeshBasicMaterial({ visible: false }));
+  hit.position.y = 1.2; g.add(hit);
   return g;
 }
 
@@ -394,8 +405,8 @@ function makeBanker() {
 // sobre los goznes (extremos del hueco) y se abren hacia adentro. El grupo se
 // orienta al muro desde applyTransforms; acá construimos en local: ancho a lo
 // largo de X, apertura hacia -Z (adentro).
-let _doorLeftPivot = null, _doorRightPivot = null;
-function makeDoor() {
+function makeDoor(inst) {
+  const cfg = inst.cfg;
   const g = new THREE.Group();
   g.userData = { kind: 'castle-door' };
   const w = cfg.gateWidth;
@@ -418,33 +429,35 @@ function makeDoor() {
     }
     return pivot;
   }
-  _doorLeftPivot = leaf(-1);
-  _doorRightPivot = leaf(+1);
-  g.add(_doorLeftPivot);
-  g.add(_doorRightPivot);
+  inst.doorL = leaf(-1);
+  inst.doorR = leaf(+1);
+  g.add(inst.doorL);
+  g.add(inst.doorR);
   return g;
 }
 
-// Llamar cada frame desde world.js (castle.update(dt)). Abre/cierra la puerta
-// según distancia del player, animando el giro de las hojas.
-let _doorAngle = 0;
+// Llamar cada frame desde world.js (castle.update(dt)). Abre/cierra las
+// puertas según la distancia del player.
 export function update(dt = 0.016) {
-  if (!started || !doorGroup) return;
+  if (!started) return;
   const player = getPlayer();
-  if (cfg.doorAutoOpen && player) {
-    const d = Math.hypot(player.position.x - doorGroup.position.x, player.position.z - doorGroup.position.z);
-    doorOpen = d < cfg.gateWidth * 1.6;   // se abre al acercarte al hueco
+  for (const inst of castles) {
+    if (!inst.doorGroup) continue;
+    const cfg = inst.cfg;
+    if (cfg.doorAutoOpen && player) {
+      const d = Math.hypot(player.position.x - inst.doorGroup.position.x, player.position.z - inst.doorGroup.position.z);
+      inst.doorOpen = d < cfg.gateWidth * 1.6;
+    }
+    const targetA = inst.doorOpen ? (Math.PI * 0.62) : 0;
+    inst.doorAngle += (targetA - inst.doorAngle) * Math.min(1, dt * 6);
+    if (inst.doorL) inst.doorL.rotation.y = -inst.doorAngle;
+    if (inst.doorR) inst.doorR.rotation.y = +inst.doorAngle;
   }
-  const targetA = doorOpen ? (Math.PI * 0.62) : 0;   // ~110° abierto
-  _doorAngle += (targetA - _doorAngle) * Math.min(1, dt * 6);
-  if (_doorLeftPivot)  _doorLeftPivot.rotation.y  = -_doorAngle;  // abre hacia adentro
-  if (_doorRightPivot) _doorRightPivot.rotation.y = +_doorAngle;
 }
 
 // ============================================================
 // Colisión perimetral con hueco de puerta
 // ============================================================
-// Igual patrón que buildings: se llama desde world.js tras terrain+buildings.
 export function applyCollision(x0, z0, x1, z1) {
   if (!started || !aabbLocal || !wallsOn) return { x: x1, z: z1 };
   const tryX = solidAt(x1, z0);
@@ -455,11 +468,8 @@ export function applyCollision(x0, z0, x1, z1) {
   return { x: fx, z: fz };
 }
 
-// ¿El punto del mundo es muro sólido del castillo? Dentro del AABB SALVO el
-// hueco de la puerta (gate) en el muro frontal (-Z local). Esto deja entrar.
-// Centro local del hueco de puerta según gateSide + gateOffset. Lo usan la
-// colisión y la puerta visual, así SIEMPRE coinciden.
-function gateLocalCenter() {
+// Centro local del hueco de puerta según gateSide + gateOffset.
+function gateLocalCenter(cfg) {
   const A = aabbLocal;
   switch (cfg.gateSide) {
     case 'back':  return { x: cfg.gateOffset, z: A.maxZ, axis: 'z', sign: +1 };
@@ -470,19 +480,22 @@ function gateLocalCenter() {
   }
 }
 
-// ¿El punto del mundo es muro sólido del castillo? Dentro del AABB SALVO el
-// hueco de la puerta (gate), que puede estar en cualquier muro (gateSide).
 function solidAt(worldX, worldZ) {
-  const a = cfg.rotDeg * Math.PI / 180;
+  for (const inst of castles) if (solidAtInst(inst, worldX, worldZ)) return true;
+  return false;
+}
+// ¿El punto es muro sólido de este castillo? Dentro del AABB SALVO el hueco.
+function solidAtInst(inst, worldX, worldZ) {
+  const cfg = inst.cfg;
   const dx = worldX - cfg.x, dz = worldZ - cfg.z;
+  if (Math.abs(dx) > 60 || Math.abs(dz) > 60) return false;
+  const a = cfg.rotDeg * Math.PI / 180;
   const c = Math.cos(-a), s = Math.sin(-a);
   const lx = dx * c - dz * s;
   const lz = dx * s + dz * c;
   const A = aabbLocal;
-  // fuera del AABB → libre
   if (lx < A.minX || lx > A.maxX || lz < A.minZ || lz > A.maxZ) return false;
-  // ¿en el corredor de la puerta? (según el muro elegido)
-  const gc = gateLocalCenter();
+  const gc = gateLocalCenter(cfg);
   let inGate = false;
   if (gc.axis === 'z') {
     const inWidth = Math.abs(lx - cfg.gateOffset) <= cfg.gateWidth / 2;
@@ -493,37 +506,56 @@ function solidAt(worldX, worldZ) {
     const nearEdge = gc.sign < 0 ? (lx <= A.minX + cfg.gateDepth) : (lx >= A.maxX - cfg.gateDepth);
     inGate = inWidth && nearEdge;
   }
-  if (inGate) return false;   // hueco de puerta → podés pasar
-  // solo el borde (muros) bloquea; el interior queda libre para caminar.
+  if (inGate) return false;
   const margin = 1.2;
-  const onPerimeter =
-    lx <= A.minX + margin || lx >= A.maxX - margin ||
-    lz <= A.minZ + margin || lz >= A.maxZ - margin;
-  return onPerimeter;
+  return lx <= A.minX + margin || lx >= A.maxX - margin || lz <= A.minZ + margin || lz >= A.maxZ - margin;
 }
 
 // ============================================================
-// Tap: ¿tappeó al banquero? → abre el banco (sin teleport)
+// Tap: ¿tocó a un banquero? → menú (sin teleport)
 // ============================================================
 export function handleTap(ndcX, ndcY) {
-  if (!started || !bankerGroup || !camera) return false;
-  const player = getPlayer();
+  if (!started || !camera) return false;
   raycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
-  const hits = raycaster.intersectObject(bankerGroup, true);
-  if (hits.length === 0) return false;
-  // chequear distancia del player al banquero
-  if (player) {
-    const d = Math.hypot(player.position.x - bankerGroup.position.x, player.position.z - bankerGroup.position.z);
-    if (d > cfg.bankerReach) {
-      feedLog('info', 'Acercate al banquero para usar el banco.');
+  return tryHandleTapRay(raycaster);
+}
+let pendingBanker = null;
+let setPlayerTarget = null;
+export function setWalker(fn) { setPlayerTarget = fn; }
+export function tryHandleTapRay(ray) {
+  if (!started || !castles.length) return false;
+  const player = getPlayer();
+  for (const inst of castles) {
+    if (!inst.bankerGroup) continue;
+    if (player && Math.hypot(player.position.x - inst.cfg.x, player.position.z - inst.cfg.z) > 80) continue;
+    const hits = ray.intersectObject(inst.bankerGroup, true);
+    if (!hits.length) continue;
+    const bp = inst.bankerGroup.position;
+    const d = player ? Math.hypot(player.position.x - bp.x, player.position.z - bp.z) : 0;
+    if (d > inst.cfg.bankerReach) {
+      if (setPlayerTarget && player) {
+        const k = (inst.cfg.bankerReach - 1) / (d || 1);
+        setPlayerTarget(bp.x + (player.position.x - bp.x) * k, bp.z + (player.position.z - bp.z) * k);
+        pendingBanker = inst;
+      } else feedLog('info', 'Acércate al banquero.');
       return true;
     }
+    openBankerMenu(inst);
+    return true;
   }
-  openBankerMenu();
-  return true;
+  return false;
+}
+export function cancel() { pendingBanker = null; }
+export function updatePending() {
+  if (!pendingBanker) return;
+  const p = getPlayer(); if (!p) return;
+  const bp = pendingBanker.bankerGroup.position;
+  if (Math.hypot(p.position.x - bp.x, p.position.z - bp.z) <= pendingBanker.cfg.bankerReach) {
+    const inst = pendingBanker; pendingBanker = null; openBankerMenu(inst);
+  }
 }
 
-function openBankerMenu() {
+function openBankerMenu(inst) {
   if (menuEl) return;
   menuEl = document.createElement('div');
   menuEl.id = 'castleBankerMenu';
@@ -531,8 +563,12 @@ function openBankerMenu() {
     'position:fixed','left:50%','bottom:18%','transform:translateX(-50%)',
     'z-index:60','background:rgba(20,16,10,0.96)','border:2px solid #6b5a3a',
     'border-radius:12px','padding:10px','display:flex','flex-direction:column',
-    'gap:8px','min-width:180px','box-shadow:0 6px 24px rgba(0,0,0,0.5)',
+    'gap:8px','min-width:200px','box-shadow:0 6px 24px rgba(0,0,0,0.5)',
   ].join(';');
+  const title = document.createElement('div');
+  title.textContent = `${inst?.def?.banker || 'Banquero'} · ${inst?.def?.name || 'Castillo'}`;
+  title.style.cssText = 'color:#e8c560;font:bold 14px sans-serif;text-align:center;padding:2px 4px 4px';
+  menuEl.appendChild(title);
   const mk = (label, fn) => {
     const b = document.createElement('button');
     b.textContent = label;
@@ -550,13 +586,11 @@ function openBankerMenu() {
 }
 function closeBankerMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
 
-// Reconstruye la puerta tras cambiar ancho/lado (las hojas dependen del ancho).
-function rebuildDoor() {
-  if (!cfg.door) return;
-  if (doorGroup) { scene.remove(doorGroup); doorGroup = null; }
-  doorGroup = makeDoor();
-  scene.add(doorGroup);
-  applyTransforms();
+// Reconstruye piezas de la instancia seleccionada tras un tuner.
+function rebuild(inst, key, maker) {
+  if (inst[key]) { scene.remove(inst[key]); inst[key] = null; }
+  if (maker) { inst[key] = maker(inst); if (inst[key]) scene.add(inst[key]); }
+  applyTransforms(inst);
 }
 
 // ============================================================
@@ -564,68 +598,34 @@ function rebuildDoor() {
 // ============================================================
 function exposeDebug() {
   if (typeof window === 'undefined') return;
-  window.__castle = () => {
-    const st = { ...cfg, wallsOn, aabbLocal };
-    console.log('[castle]', JSON.stringify(st, null, 2));
-    return st;
-  };
-  window.__castlePos = (x, z) => { if (Number.isFinite(x)) cfg.x = x; if (Number.isFinite(z)) cfg.z = z; applyTransforms(); try { terrain.clearKeepouts?.(); terrain.addKeepout?.(cfg.x, cfg.z, cfg.treeKeepoutR); terrain.clearTreesNear?.(cfg.x, cfg.z, cfg.treeKeepoutR); } catch {} return [cfg.x, cfg.z]; };
-  window.__castleY = (y) => { if (Number.isFinite(y)) cfg.y = y; applyTransforms(); return cfg.y; };
-  window.__castleMountain = (on) => {
-    if (typeof on === 'boolean') {
-      cfg.mountain = on;
-      if (on && !mountainGroup) { mountainGroup = makeMountain(); scene.add(mountainGroup); applyTransforms(); }
-      else if (!on && mountainGroup) { scene.remove(mountainGroup); mountainGroup = null; }
-    }
-    return cfg.mountain;
-  };
+  const I = () => castles[sel];
+  const C = () => I().cfg;
+  window.__castleSel = (i) => { if (Number.isInteger(i) && castles[i]) sel = i; return castles.map((c, k) => `${k === sel ? '▶' : ' '} ${k}: ${c.def.name} (${c.cfg.x},${c.cfg.z})`); };
+  window.__castle = () => { const st = { ...C(), wallsOn, aabbLocal, id: I().def.id }; console.log('[castle]', JSON.stringify(st, null, 2)); return st; };
+  window.__castlePos = (x, z) => { if (Number.isFinite(x)) C().x = x; if (Number.isFinite(z)) C().z = z; applyTransforms(I()); try { terrain.addKeepout?.(C().x, C().z, C().treeKeepoutR); terrain.clearTreesNear?.(C().x, C().z, C().treeKeepoutR); } catch {} return [C().x, C().z]; };
+  window.__castleY = (y) => { if (Number.isFinite(y)) C().y = y; applyTransforms(I()); return C().y; };
+  window.__castleMountain = (on) => { if (typeof on === 'boolean') { C().mountain = on; rebuild(I(), 'mountainGroup', on ? makeMountain : null); } return C().mountain; };
   window.__castleMountainSize = (radius, height, offZ) => {
-    if (Number.isFinite(radius)) cfg.mountainRadius = radius;
-    if (Number.isFinite(height)) cfg.mountainHeight = height;
-    if (Number.isFinite(offZ)) cfg.mountainOffZ = offZ;
-    if (mountainGroup) { scene.remove(mountainGroup); mountainGroup = makeMountain(); scene.add(mountainGroup); applyTransforms(); }
-    return [cfg.mountainRadius, cfg.mountainHeight, cfg.mountainOffZ];
+    if (Number.isFinite(radius)) C().mountainRadius = radius;
+    if (Number.isFinite(height)) C().mountainHeight = height;
+    if (Number.isFinite(offZ)) C().mountainOffZ = offZ;
+    if (I().mountainGroup) rebuild(I(), 'mountainGroup', makeMountain);
+    return [C().mountainRadius, C().mountainHeight, C().mountainOffZ];
   };
-  window.__castleSkirt = (on) => {
-    if (typeof on === 'boolean') {
-      cfg.skirt = on;
-      if (on && !skirtGroup) { skirtGroup = makeSkirt(); if (skirtGroup) { scene.add(skirtGroup); applyTransforms(); } }
-      else if (!on && skirtGroup) { scene.remove(skirtGroup); skirtGroup = null; }
-    }
-    return cfg.skirt;
-  };
-  // rise=cuánto sube y tapa el hueco · out=cuánto sobresale · drop=cuánto baja
+  window.__castleSkirt = (on) => { if (typeof on === 'boolean') { C().skirt = on; rebuild(I(), 'skirtGroup', on ? makeSkirt : null); } return C().skirt; };
   window.__castleSkirtSize = (rise, out, drop) => {
-    if (Number.isFinite(rise)) cfg.skirtRise = rise;
-    if (Number.isFinite(out)) cfg.skirtOut = out;
-    if (Number.isFinite(drop)) cfg.skirtDrop = drop;
-    if (skirtGroup) { scene.remove(skirtGroup); skirtGroup = makeSkirt(); if (skirtGroup) scene.add(skirtGroup); applyTransforms(); }
-    return [cfg.skirtRise, cfg.skirtOut, cfg.skirtDrop];
+    if (Number.isFinite(rise)) C().skirtRise = rise;
+    if (Number.isFinite(out)) C().skirtOut = out;
+    if (Number.isFinite(drop)) C().skirtDrop = drop;
+    if (I().skirtGroup) rebuild(I(), 'skirtGroup', makeSkirt);
+    return [C().skirtRise, C().skirtOut, C().skirtDrop];
   };
-  window.__castleScale = async (m) => {
-    if (Number.isFinite(m) && m > 0) {
-      cfg.targetHeight = m;
-      // re-cargar el merge a nueva escala
-      if (castleGroup) scene.remove(castleGroup);
-      castleGroup = await loadAndMergeCastle(CASTLE_URL, cfg.targetHeight);
-      if (castleGroup) { scene.add(castleGroup); const b = new THREE.Box3().setFromObject(castleGroup); aabbLocal = { minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z }; applyTransforms(); }
-    }
-    return cfg.targetHeight;
-  };
-  window.__castleRot = (deg) => { if (Number.isFinite(deg)) cfg.rotDeg = deg; applyTransforms(); return cfg.rotDeg; };
-  window.__castleGate = (w, d) => { if (Number.isFinite(w)) cfg.gateWidth = w; if (Number.isFinite(d)) cfg.gateDepth = d; rebuildDoor(); return [cfg.gateWidth, cfg.gateDepth]; };
-  // alinear el hueco al ARCO REAL del castillo: probá front/back/left/right
-  window.__castleGateSide = (side) => { if (['front','back','left','right'].includes(side)) cfg.gateSide = side; rebuildDoor(); applyTransforms(); return cfg.gateSide; };
-  window.__castleGatePos = (off) => { if (Number.isFinite(off)) cfg.gateOffset = off; applyTransforms(); return cfg.gateOffset; };
-  window.__castleDoor = (on) => {
-    if (typeof on === 'boolean') {
-      cfg.door = on;
-      if (on && !doorGroup) { doorGroup = makeDoor(); scene.add(doorGroup); applyTransforms(); }
-      else if (!on && doorGroup) { scene.remove(doorGroup); doorGroup = null; }
-    }
-    return cfg.door;
-  };
+  window.__castleRot = (deg) => { if (Number.isFinite(deg)) C().rotDeg = deg; applyTransforms(I()); return C().rotDeg; };
+  window.__castleGate = (w, d) => { if (Number.isFinite(w)) C().gateWidth = w; if (Number.isFinite(d)) C().gateDepth = d; if (C().door) rebuild(I(), 'doorGroup', makeDoor); return [C().gateWidth, C().gateDepth]; };
+  window.__castleGateSide = (side) => { if (['front','back','left','right'].includes(side)) C().gateSide = side; if (C().door) rebuild(I(), 'doorGroup', makeDoor); applyTransforms(I()); return C().gateSide; };
+  window.__castleGatePos = (off) => { if (Number.isFinite(off)) C().gateOffset = off; applyTransforms(I()); return C().gateOffset; };
+  window.__castleDoor = (on) => { if (typeof on === 'boolean') { C().door = on; rebuild(I(), 'doorGroup', on ? makeDoor : null); } return C().door; };
   window.__castleWalls = (on) => { if (typeof on === 'boolean') wallsOn = on; return wallsOn; };
-  window.__bankerPos = (x, z) => { if (Number.isFinite(x)) cfg.bankerOffX = x; if (Number.isFinite(z)) cfg.bankerOffZ = z; applyTransforms(); return [cfg.bankerOffX, cfg.bankerOffZ]; };
+  window.__bankerPos = (x, z) => { if (Number.isFinite(x)) C().bankerOffX = x; if (Number.isFinite(z)) C().bankerOffZ = z; applyTransforms(I()); return [C().bankerOffX, C().bankerOffZ]; };
   window.__castleBox = () => aabbLocal;
 }

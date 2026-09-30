@@ -195,6 +195,16 @@ export const TOWN_NPCS = [
       'Mis cabras suben hasta el páramo de Erjos… y algunas no vuelven. Dicen que allí vive la bruja Chona.',
       'Por las noches se ven luces rojas en el monte de Las Mercedes. Gente con capucha. Yo no me acerco.',
     ] },
+  // Sesión 50 — casas de jugador
+  { id: 'nauzet_inmobiliaria', name: 'Nauzet', title: 'Agente inmobiliario', x: 50, z: 50, rotY: 0.8, role: '🏠',
+    look: { skin: 0xd0a07a, shirt: 0x2a3a6a, pants: 0x1a1a2a, hair: 0x1a1a1a, acc: 'glasses' },
+    actions: ['house'],
+    lines: [
+      '¡Buenas! Nauzet, de Inmobiliaria Achinech. ¿Buscas casa en la isla? Tengo lo que necesitas… a buen precio. Más o menos.',
+      'Con lo caro que está todo, chacho, una casa es la mejor inversión. Mañana vale el doble, fijo.',
+      'Tu casa la compras una vez y entras desde cualquier urbanización: La Laguna, La Orotava, Güímar, Adeje, Los Cristianos, Santa Cruz, Vilaflor o Icod.',
+      'Una cama pa\' recuperarte, un cofre del banco, un altar… Eso sí que es calidad de vida.',
+    ] },
 ];
 
 export const TOWN_NPCS_BY_ID = Object.fromEntries(TOWN_NPCS.map(n => [n.id, n]));

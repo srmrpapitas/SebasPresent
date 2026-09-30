@@ -666,3 +666,14 @@ export async function asoStatus() {
 export async function asoJoin(via) {
   return apiFetch('/api/aso/join', { method: 'POST', auth: true, body: { via } });
 }
+
+// Sesión 50 — casas de jugador
+export async function houseGet() {
+  return apiFetch('/api/house', { auth: true });
+}
+export async function houseBuy(tier) {
+  return apiFetch('/api/house/buy', { method: 'POST', auth: true, body: { tier } });
+}
+export async function houseRest() {
+  return apiFetch('/api/house/rest', { method: 'POST', auth: true });
+}

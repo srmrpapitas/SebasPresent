@@ -90,6 +90,8 @@ let lastExteriorRotY = 0;
 let exitButtonEl = null;
 let active = false;
 let started = false;
+// Sesión 50 — sala propia (casa del jugador). null = sala del banco.
+let room = null;
 let camera = null;
 let canvas = null;
 
@@ -237,8 +239,22 @@ export function stop() {
   started = false;
 }
 
+/**
+ * Sesión 50 — entrar a una sala propia (la casa del jugador). `r` trae:
+ *   center {x,z}, spawn {x,z}, floor (Mesh), bg, fogNear, fogFar,
+ *   applyCollision(x0,z0,x1,z1), onTap(clientX,clientY)→bool, update(dt), onLeave()
+ * Todo lo demás (botón Salir, volver a la puerta, cielo/niebla) es igual.
+ */
+export function enterRoom(r, fromId = 'house') {
+  if (active || !r) return false;
+  room = r;
+  enter(fromId);
+  if (!active) { room = null; return false; }
+  return true;
+}
+
 export function enter(fromBuildingId) {
-  if (!started || active || !interiorRoot) {
+  if (active || (!room && (!started || !interiorRoot))) {
     console.warn(`[interiors] enter() ignorado: started=${started} active=${active} hasRoot=${!!interiorRoot}`);
     return;
   }
@@ -251,9 +267,15 @@ export function enter(fromBuildingId) {
   lastExteriorPos = { x: player.position.x, z: player.position.z };
   lastExteriorRotY = player.rotation.y;
 
-  player.position.x = INTERIOR_CENTER.x + PLAYER_SPAWN_OFFSET.x;
-  player.position.z = INTERIOR_CENTER.z + PLAYER_SPAWN_OFFSET.z;
+  if (room) {
+    player.position.x = room.spawn.x;
+    player.position.z = room.spawn.z;
+  } else {
+    player.position.x = INTERIOR_CENTER.x + PLAYER_SPAWN_OFFSET.x;
+    player.position.z = INTERIOR_CENTER.z + PLAYER_SPAWN_OFFSET.z;
+  }
   player.rotation.y = 0;
+  const BG = room?.bg ?? INTERIOR_BG;
 
   if (scene) {
     savedBg = (scene.background && scene.background.getHex) ? scene.background.getHex() : 0x9ec0d6;
@@ -262,11 +284,11 @@ export function enter(fromBuildingId) {
       savedFogNear = scene.fog.near;
       savedFogFar = scene.fog.far;
     }
-    scene.background = new THREE.Color(INTERIOR_BG);
+    scene.background = new THREE.Color(BG);
     if (scene.fog) {
-      scene.fog.color = new THREE.Color(INTERIOR_BG);
-      scene.fog.near = INTERIOR_FOG_NEAR;
-      scene.fog.far = INTERIOR_FOG_FAR;
+      scene.fog.color = new THREE.Color(BG);
+      scene.fog.near = room?.fogNear ?? INTERIOR_FOG_NEAR;
+      scene.fog.far = room?.fogFar ?? INTERIOR_FOG_FAR;
     }
   }
 
@@ -305,17 +327,22 @@ function finishLeave() {
   closeNpcMenu();
   lastExteriorPos = null;
   active = false;
+  if (room) { const r = room; room = null; try { r.onLeave?.(); } catch (e) { console.warn('[interiors] room.onLeave:', e); } }
 }
+
+/** Sesión 50 — ¿estás en una sala propia? (id de la sala o null) */
+export function currentRoomId() { return active && room ? (room.id || 'room') : null; }
 
 export function isActive() {
   return active;
 }
 
 export function getFloorMesh() {
-  return interiorFloor;
+  return room ? room.floor : interiorFloor;
 }
 
 export function applyCollision(x0, z0, x1, z1) {
+  if (active && room) return room.applyCollision ? room.applyCollision(x0, z0, x1, z1) : { x: x1, z: z1 };
   if (!active || !interiorBox) return { x: x1, z: z1 };
   const localX1 = x1 - INTERIOR_CENTER.x;
   const localZ1 = z1 - INTERIOR_CENTER.z;
@@ -512,12 +539,14 @@ async function loadNpc(url, targetHeight) {
 }
 
 export function update(dt) {
+  if (active && room?.update) { try { room.update(dt); } catch {} }
   if (npcMixer) {
     try { npcMixer.update(dt); } catch {}
   }
 }
 
 export function tryHandleNpcTap(clientX, clientY) {
+  if (active && room) return !!room.onTap?.(clientX, clientY);
   if (!active || !npcModel || !raycaster || !camera || !canvas) return false;
   const rect = canvas.getBoundingClientRect();
   const nx = ((clientX - rect.left) / rect.width) * 2 - 1;

@@ -10,6 +10,7 @@
  * Migración: server/migrations/003_prayer.sql
  */
 
+import { atHouseWith } from './house.js';   // Sesión 50
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { xpToLevel, MAX_XP } from '../lib/skills_engine.js';
@@ -117,12 +118,15 @@ export async function handlePrayerRecharge(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
   const body = await readJson(request);
-  const altar = ALTARS.find(a => a.id === body?.altar_id);
-  if (!altar) return json({ error: 'invalid_altar' }, 400);
   const userId = session.user_id;
   const pos = await getPlayerPosition(env, userId);
   if (!pos) return json({ error: 'no_position' }, 400);
-  if (!isWithinDistance(pos, altar.x, altar.z, ALTAR_USE_DIST_M).ok) {
+  // Sesión 50 — el altar de tu casona
+  const homeAltar = body?.altar_id === 'altar_casa';
+  if (homeAltar && !(await atHouseWith(env, userId, 'altar', pos))) return json({ error: 'out_of_range', message: 'Tienes que estar en tu casa.' }, 400);
+  const altar = homeAltar ? { id: 'altar_casa' } : ALTARS.find(a => a.id === body?.altar_id);
+  if (!altar) return json({ error: 'invalid_altar' }, 400);
+  if (!homeAltar && !isWithinDistance(pos, altar.x, altar.z, ALTAR_USE_DIST_M).ok) {
     return json({ error: 'out_of_range', message: 'Acércate al altar.' }, 400);
   }
   const now = Date.now();
