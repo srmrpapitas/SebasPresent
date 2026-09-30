@@ -33,7 +33,7 @@ let toastEl = null;
 let dropdownEl = null;           // Sesión 28: ahora dropdown, no modal
 let shownInviteIds = new Set();
 
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 10000;   // S50: 4000 → 10000
 const INVITE_TOAST_DURATION_MS = 60_000;
 
 // ============================================================

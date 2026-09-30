@@ -43,7 +43,7 @@ import * as THREE from 'three';
 // ============================================================
 // Constantes
 // ============================================================
-const POLL_INTERVAL = 1000;          // ms entre polls al server
+const POLL_INTERVAL = 2000;          // ms entre polls al server (S50: 1000 → 2000, ahorro de peticiones)
 const AUTO_RADIUS_M = 2.2;           // dentro de este radio → pickup auto
 const PICKUP_RADIUS_M = 2.5;         // tolerancia para "estoy cerca"
 const PICKUP_COOLDOWN_MS = 800;      // entre intentos del mismo item

@@ -688,3 +688,12 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 
 - Tabs Combate y Equipo: sin scroll, se reparten la altura del panel (`.osrs-tab-pane[data-tab=...].active { height:100%; overflow:hidden }`). El tab de combate ya no lista NPCs cercanos.
 - `hasSpecialAttack(itemId)` (shared/equip_reqs.js): espadas/espadones de oro, obsidiana, basaltita, teiderio + arcos de arce, tejo y mágico. El server lo exige (specCost = null si el arma no tiene especial) y el cliente solo muestra la barra con esas armas.
+
+## 27. Tiempo real por WebSocket (Sesión 50)
+
+- Durable Object `Realm` (server/realm.js, binding REALM, id "global"). `GET /api/rt?token=` → WebSocket.
+- Cliente (client/src/realtime.js) manda posición ~8/s moviéndose, cada 3 s quieto. El Realm la reenvía al resto y la guarda en `online_users` con límite (0.5 s en combate, 1.5 s moviéndose, 5 s quieto, y siempre al cambiar de estado).
+- Eventos del servidor por `pushRealtime(env, msg)` (server/lib/realtime.js): `hit` (PvP, con vida real del objetivo y contraataque), `npc` (golpe a NPC), `hp` (comer / respawn), `eq` (cambio de equipo).
+- Con el WebSocket conectado: no hay heartbeat HTTP y el snapshot va a 1.5 s (0.6 s en combate). Sin WebSocket todo funciona como antes (plan B).
+- La vida SIEMPRE se valida en el server con D1 (el WebSocket solo muestra).
+- Polls reducidos: suelo 2 s, chat 4 s, grupo 10 s, pestaña de combate 5 s. Índice nuevo `idx_npc_instances_pos` (migración 005, ejecutada).

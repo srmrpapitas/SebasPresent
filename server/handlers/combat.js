@@ -20,6 +20,7 @@ import {
   VALID_STYLES,
 } from '../combat_engine.js';
 import { questEvent } from '../lib/quests.js';   // Sesión 50
+import { pushRealtime } from '../lib/realtime.js';   // Sesión 50
 export async function handleCombatState(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
@@ -64,6 +65,13 @@ export async function handleCombatAttack(request, env) {
   const db = makeDbAdapter(env);
   try {
     const result = await attackNpc(db, session.user_id, npcId, opts);
+    // Sesión 50 — los demás ven tu golpe al NPC al instante
+    if (!result?.error) {
+      await pushRealtime(env, {
+        t: 'npc', at: Date.now(), a: session.user_id, n: npcId, dmg: result.your_damage ?? result.damage ?? 0,
+        hp: result.npc_hp, killed: !!result.npc_killed, wt: result.weapon_type || null,
+      });
+    }
     if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
     if (result.error) {
       const knownClient = new Set([
@@ -138,6 +146,21 @@ export async function handleCombatAttackPlayer(request, env) {
   const db = makeDbAdapter(env);
   try {
     const result = await attackPlayer(db, session.user_id, targetUserId, opts);
+    // Sesión 50 — el golpe llega al instante a todos (el objetivo ve daño,
+    // reacción y su vida real sin esperar al siguiente snapshot).
+    if (!result.error) {
+      await pushRealtime(env, {
+        t: 'hit', at: result.at, a: session.user_id, d: targetUserId,
+        dmg: result.your_damage || 0, hit: !!result.your_hit, crit: !!result.is_crit,
+        hp: result.target_hp, hpMax: result.target_hp_max, killed: !!result.target_killed,
+        cd: result.target_damage || 0, chit: !!result.target_hit,
+        ahp: result.your_hp, ahpMax: result.your_hp_max, adied: !!result.you_died,
+        wt: result.weapon_type || null,
+        spell: result.spell_cast ? { id: result.spell_cast.spell_id, color: result.spell_cast.color } : null,
+        spec: result.special ? result.special.hits : null,
+        skulled: !!result.skulled,
+      });
+    }
     if (result.error) {
       const knownClient = new Set([
         'cannot_attack_self', 'attacker_not_found', 'target_not_found',
@@ -163,6 +186,9 @@ export async function handleCombatRespawn(request, env) {
   try {
     const result = await respawnUser(db, session.user_id, {});
     if (!result.ok) return json(result, 400);
+    if (typeof result.hp_current === 'number') {
+      await pushRealtime(env, { t: 'hp', id: session.user_id, hp: result.hp_current, hpMax: result.hp_max ?? result.hp_current });
+    }
     return json(result);
   } catch (err) {
     console.error('[combat/respawn]', err);

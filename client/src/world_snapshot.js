@@ -44,6 +44,7 @@
  *   window.__snapshotDebug.lag()     → ms entre server.now y client.recv
  */
 
+import * as realtime from './realtime.js';   // Sesión 50
 import * as duel from './duel.js';   // Sesión 28 — hook onSnapshotMe
 
 // Sesión 41 — Polling ADAPTATIVO para no reventar el límite de Cloudflare
@@ -56,6 +57,11 @@ import * as duel from './duel.js';   // Sesión 28 — hook onSnapshotMe
 // ven afectados por la velocidad: el server usa SU posición autoritativa.
 const POLL_FAST_MS = 250;          // en combate / PvP
 const POLL_SLOW_MS = 500;          // idle / caminando
+// Sesión 50 — con el WebSocket conectado, los peers, golpes PvP, curas y
+// equipo llegan al instante por ahí → el snapshot solo lleva NPCs, suelo,
+// árboles/vetas… y puede ir mucho más lento (ahorra peticiones y lecturas D1).
+const POLL_FAST_RT_MS = 600;
+const POLL_SLOW_RT_MS = 1500;
 const COMBAT_GRACE_MS = 8_000;     // seguir rápido N ms tras la última pelea
 let _fastUntil = 0;                 // timestamp hasta el que polleamos rápido
 
@@ -63,7 +69,30 @@ const SNAPSHOT_STALE_AFTER_MS   = 5_000; // tras esto consideramos stale
 
 // Devuelve el intervalo actual según si estamos en "modo combate".
 function currentPollInterval() {
-  return (Date.now() < _fastUntil) ? POLL_FAST_MS : POLL_SLOW_MS;
+  const fast = Date.now() < _fastUntil;
+  if (realtime.isConnected()) return fast ? POLL_FAST_RT_MS : POLL_SLOW_RT_MS;
+  return fast ? POLL_FAST_MS : POLL_SLOW_MS;
+}
+
+/** Sesión 50 — true si estamos en modo combate (lo usa realtime.js). */
+export function isInCombat() { return Date.now() < _fastUntil; }
+
+// Sesión 50 — eventos en tiempo real que te afectan a TI (golpes PvP, curas,
+// muerte). Mismo tratamiento que si llegaran por el snapshot, pero al instante.
+function onRealtime(m, myId) {
+  if (!myId) return;
+  if (m.t === 'hit') {
+    if (m.d === myId) {
+      handleIncomingHit({
+        last_hit_at: m.at, last_hit_damage: m.dmg || 0,
+        last_hit_from_user_id: m.a, last_hit_is_crit: m.crit ? 1 : 0,
+      });
+      if (typeof m.hp === 'number') { try { window.__setHpInstant?.(m.hp, m.hpMax); } catch {} }
+      if (m.killed) handleIncomingDeath({ you_died_recently: true, last_died_at: m.at });
+    }
+  } else if (m.t === 'hp' && m.id === myId) {
+    try { window.__setHpInstant?.(m.hp, m.hpMax); } catch {}
+  }
 }
 
 /**
@@ -107,7 +136,10 @@ let _lastProcessedDeathAt = 0;
 // API pública
 // ============================================================
 
+let _rtUnsub = null;
 export function start(opts) {
+  if (_rtUnsub) _rtUnsub();
+  _rtUnsub = realtime.onMessage(onRealtime);
   if (started) {
     console.warn('[world_snapshot] start() llamado dos veces sin stop()');
     stop();

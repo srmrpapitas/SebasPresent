@@ -1892,6 +1892,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   }
 
   return {
+    at:            now,   // Sesión 50 — = last_hit_at del objetivo (evento en tiempo real)
     your_hit:      userHit.hit,
     your_damage:   dmgToTarget,
     is_crit:       isCrit,

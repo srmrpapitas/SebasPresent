@@ -18,3 +18,13 @@ database_id = "bd9c29c7-493d-4ece-ac6e-6f97d49558b9"
 
 [triggers]
 crons = ["* * * * *"]
+
+# Sesión 50 — tiempo real (WebSocket) con un Durable Object (plan gratuito:
+# clases SQLite). Ver server/realm.js.
+[[durable_objects.bindings]]
+name = "REALM"
+class_name = "Realm"
+
+[[migrations]]
+tag = "v1-realm"
+new_sqlite_classes = ["Realm"]

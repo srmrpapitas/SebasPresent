@@ -36,6 +36,7 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { questEvent } from '../lib/quests.js';   // Sesión 50
+import { pushRealtime } from '../lib/realtime.js';   // Sesión 50
 import { xpToLevel } from '../lib/skills_engine.js';
 import { equipRequirement, requirementText } from '../../client/src/shared/equip_reqs.js';   // Sesión 50
 
@@ -56,6 +57,19 @@ const TWO_HANDED_WEAPON_TYPES = new Set(['2h_sword', 'bow']);
 // ============================================================
 // GET /api/equipment
 // ============================================================
+
+// Sesión 50 — avisar al resto de jugadores (tiempo real) del equipo nuevo
+async function pushEquipState(env, userId) {
+  try {
+    const r = await env.DB.prepare(
+      `SELECT (SELECT group_concat(slot_id || ':' || item_id, ',') FROM user_equipment WHERE user_id = ?) AS equip,
+              (SELECT e.item_id FROM user_equipment e WHERE e.user_id = ? AND e.slot_id = 'weapon') AS w,
+              (SELECT i.weapon_type FROM user_equipment e JOIN items i ON i.id = e.item_id WHERE e.user_id = ? AND e.slot_id = 'weapon') AS wt`
+    ).bind(userId, userId, userId).first();
+    await pushRealtime(env, { t: 'eq', id: userId, equip: r?.equip || '', w: r?.w || null, wt: r?.wt || null });
+  } catch {}
+}
+
 export async function handleGetEquipment(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
@@ -246,6 +260,7 @@ export async function handleEquip(request, env) {
   await env.DB.batch(ops);
   await questEvent(env, session.user_id, 'equip', invItem.item_id);   // Sesión 50 — misiones
 
+  await pushEquipState(env, session.user_id);
   return json({
     ok: true,
     equipped: { slot_id: targetSlot, item_id: invItem.item_id },
@@ -355,6 +370,7 @@ export async function handleUnequip(request, env) {
     }
 
     await env.DB.batch(stmts);
+    await pushEquipState(env, session.user_id);
     return json({
       ok: true,
       unequipped: { slot_id: slotId, item_id: equipped.item_id, to_inventory_slot: quiverDestSlot },
@@ -383,6 +399,7 @@ export async function handleUnequip(request, env) {
     ).bind(session.user_id, freeSlot, equipped.item_id, now),
   ]);
 
+  await pushEquipState(env, session.user_id);
   return json({
     ok: true,
     unequipped: { slot_id: slotId, item_id: equipped.item_id, to_inventory_slot: freeSlot },

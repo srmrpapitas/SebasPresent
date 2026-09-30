@@ -45,6 +45,7 @@ import * as woodcutting from './skills/woodcutting.js';
 import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as fishing from './skills/fishing.js'; // Sesión 50 — pesca
 import * as crafting from './skills/crafting.js'; // Sesión 50 — flechería/artesanía
+import * as realtime from './realtime.js';        // Sesión 50 — WebSocket (PvP en vivo, menos peticiones)
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
 import * as quests from './quests.js';   // Sesión 50 — misiones
 import * as prayer from './prayer.js';   // Sesión 50 — plegaria
@@ -711,6 +712,15 @@ export async function startWorld(loggedInUser, token) {
         apiBase:      API_BASE,
       });
     } catch (e) { console.warn('[world] world_snapshot start:', e); }
+    // Sesión 50 — canal en tiempo real. Debug: window.__rt()
+    try {
+      realtime.start({
+        apiBase: API_BASE,
+        getToken: () => authToken,
+        getPlayer: () => player,
+        isInCombat: () => worldSnapshot.isInCombat?.(),
+      });
+    } catch (e) { console.warn('[world] realtime start:', e); }
 
     // Sesión 30 — Woodcutting + Firemaking
     // Verificar en Eruda: window.__wcDebug(), window.__fmDebug()
@@ -831,6 +841,7 @@ export function stopWorld() {
 
   // Sesión 27 Bloque 1 — world_snapshot cleanup
   try { worldSnapshot.stop(); } catch {}
+  try { realtime.stop(); } catch {}
 
   // Sesión 29 — chat cleanup (quita root DOM + bubbles + polling)
   try { chat.stop(); } catch {}
@@ -2777,6 +2788,7 @@ function animate() {
   npcRenderer.update(dt);
   multiplayer.update(dt);
   worldSnapshot.update(dt);   // Sesión 27 Bloque 1
+  realtime.update();          // Sesión 50 — posición por WebSocket
   chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles
   woodcutting.update(dt);     // Sesión 30 — chop loop + sync depletadas
   mining.update(dt);          // Sesión 50 — vetas + loop de picar

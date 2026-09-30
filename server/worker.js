@@ -66,9 +66,30 @@ import * as quests from './handlers/quests.js';                  // Sesión 50 �
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
 import { scheduledHandler } from './handlers/cron.js';
 
+export { Realm } from './realm.js';   // Sesión 50 — Durable Object del tiempo real
+
+// Sesión 50 — GET /api/rt?token=...  → WebSocket con el Realm (el navegador no
+// puede mandar cabeceras en un WebSocket, por eso el token va en la URL).
+async function handleRealtimeUpgrade(request, env, url) {
+  if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected websocket', { status: 426 });
+  if (!env.REALM) return new Response('realtime disabled', { status: 503 });
+  const token = url.searchParams.get('token') || '';
+  if (!token) return new Response('unauthorized', { status: 401 });
+  const sess = await env.DB.prepare(
+    `SELECT s.user_id, s.expires_at, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`
+  ).bind(token).first();
+  if (!sess || sess.expires_at < Date.now()) return new Response('unauthorized', { status: 401 });
+  const headers = new Headers(request.headers);
+  headers.set('x-uid', String(sess.user_id));
+  headers.set('x-name', sess.username || '');
+  const stub = env.REALM.get(env.REALM.idFromName('global'));
+  return stub.fetch(new Request('https://realm/ws', { headers }));
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/rt') return handleRealtimeUpgrade(request, env, url);   // Sesión 50
 
     if (request.method === 'OPTIONS') {
       return corsResponse(request, env);

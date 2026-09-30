@@ -39,7 +39,7 @@ import * as multiplayer from './multiplayer.js';
 // ============================================================
 // Constantes
 // ============================================================
-const POLL_INTERVAL_MS         = 2_500;
+const POLL_INTERVAL_MS         = 4_000;   // S50: 2500 → 4000 (ahorro de peticiones)
 const OVERHEAD_DURATION_MS     = 7_000;     // OSRS-like
 const OVERHEAD_FADE_MS         = 600;       // últimos N ms de fade-out
 const MAX_MESSAGES_IN_VIEW     = 30;

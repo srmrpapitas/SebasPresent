@@ -23,6 +23,7 @@ import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.
 import { tableExists } from './_shared.js';
 import { questEvent } from '../../lib/quests.js';   // Sesión 50
 import { EDIBLE, COOKABLE } from '../../../client/src/shared/food.js';
+import { pushRealtime } from '../../lib/realtime.js';   // Sesión 50
 
 const SKILL_ID = 'cooking';
 const FIRE_COOK_RADIUS_M = 5.0;   // Sesión 49 — subido de 2.5 (ver fix abajo)
@@ -130,6 +131,9 @@ export async function handleFoodEat(request, env) {
       'UPDATE combat_stats SET hp_current = ? WHERE user_id = ?'
     ).bind(hpAfter, userId).run();
   }
+
+  // Sesión 50 — los demás ven la cura al instante (y su barra de vida)
+  await pushRealtime(env, { t: 'hp', id: userId, hp: hpAfter, hpMax, eat: invRow.item_id });
 
   return json({
     ok: true,

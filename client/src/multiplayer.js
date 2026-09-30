@@ -50,6 +50,7 @@ import * as equipment from './equipment.js';  // Sesión 37 — engage range din
 // no la del local player heredada por SkeletonUtils.clone.
 import { attachWeaponMeshToBone, resolveWeaponHand } from './character.js';
 import { isProceduralArmor, buildProceduralArmor } from './armor_procedural.js';   // Sesión 50 — armadura de los peers
+import * as realtime from './realtime.js';   // Sesión 50 — posiciones y eventos por WebSocket
 
 // ============================================================
 // Constantes
@@ -126,10 +127,13 @@ export function start(opts) {
     window.__worldFlashPeerHit = flashPeerHit;
   }
 
+  if (_rtUnsub) _rtUnsub();
+  _rtUnsub = realtime.onMessage(onRealtime);
   started = true;
 }
 
 export function stop() {
+  if (_rtUnsub) { _rtUnsub(); _rtUnsub = null; }
   if (!started) return;
   for (const userId of Array.from(mpLastPeerMap.keys())) {
     removePeer(userId);
@@ -159,6 +163,9 @@ export function update(dt) {
 
   // 1) Heartbeat periódico (cliente → server, sigue siendo 500ms)
   mpHeartbeatTimer += dt * 1000;
+  // Sesión 50 — con el WebSocket conectado la posición va por ahí (el Realm
+  // la guarda en D1); el heartbeat HTTP solo es el plan B.
+  if (realtime.isConnected()) mpHeartbeatTimer = 0;
   if (mpHeartbeatTimer >= MP_HEARTBEAT_INTERVAL && !mpInFlightHeartbeat) {
     mpHeartbeatTimer = 0;
     sendHeartbeat();
@@ -767,39 +774,33 @@ function upsertPeer(p) {
   //
   // El attach es async pero NO esperamos — el mesh aparece unos cientos de
   // ms después (primer cargado) o instantáneo (cache hit).
-  if (peer.handBones && p.weapon_item_id !== peer._peerWeaponItemId) {
-    if (peer._peerWeaponItemId) {
-      detachPeerWeapon(peer);
-    }
-    if (p.weapon_item_id) {
-      attachPeerWeapon(peer, p.weapon_item_id, p.weapon_type || null, peer.handBones);
-    }
-    // Sesion 46 — guardar weapon_type para elegir la anim correcta en
-    // triggerPeerAttackAnim (bow→bow_overdraw, staff→staff_attack_1, etc.)
-    peer._peerWeaponType = p.weapon_type || 'melee';
-    peer._peerWeaponItemId = p.weapon_item_id || null;
+  // Sesión 50 — si el equipo llegó hace poco por WebSocket, el snapshot
+  // (que puede ser más viejo) no lo pisa.
+  if (!(peer._eqAt && Date.now() - peer._eqAt < 3000)) {
+    applyPeerEquip(peer, p.weapon_item_id || null, p.weapon_type || null, p.equip);
   }
 
-  // Sesión 50 — armadura del peer en directo (snapshot.players[].equip)
-  if (peer.meshRoot && typeof p.equip === 'string' && p.equip !== peer._equipStr) {
-    peer._equipStr = p.equip;
-    syncPeerArmor(peer, p.equip);
+  // Sesión 50 — posición: si llega por WebSocket, el snapshot no la pisa
+  // (es más vieja y haría saltar al personaje).
+  const rtFresh = peer._rtAt && Date.now() - peer._rtAt < 2000;
+  if (!rtFresh) {
+    // Nueva interpolación: from = posición visual actual, to = la del server
+    peer.fromX = peer.group.position.x;
+    peer.fromZ = peer.group.position.z;
+    peer.fromYaw = peer.group.rotation.y;
+    peer.toX = p.x;
+    peer.toZ = p.z;
+    peer.toYaw = p.yaw || 0;
+    peer.state = p.state || 'idle';
+    peer.interpStart = performance.now();
   }
-
-  // Nueva interpolación: from = posición visual actual, to = la del server
-  peer.fromX = peer.group.position.x;
-  peer.fromZ = peer.group.position.z;
-  peer.fromYaw = peer.group.rotation.y;
-  peer.toX = p.x;
-  peer.toZ = p.z;
-  peer.toYaw = p.yaw || 0;
-  peer.state = p.state || 'idle';
-  peer.interpStart = performance.now();
   peer.lastUpdate = Date.now();
 
-  // HP actual y máximo
-  if (typeof p.hp_current === 'number') peer.hp = p.hp_current;
-  if (typeof p.hp_max === 'number') peer.hpMax = p.hp_max;
+  // HP actual y máximo (salvo que el WebSocket lo haya actualizado hace nada)
+  if (!(peer._hpAt && Date.now() - peer._hpAt < 1500)) {
+    if (typeof p.hp_current === 'number') peer.hp = p.hp_current;
+    if (typeof p.hp_max === 'number') peer.hpMax = p.hp_max;
+  }
 
   // Sesión 27 Bloque 3 — Niveles + combat_lvl
   if (typeof p.combat_lvl === 'number') peer.combatLvl = p.combat_lvl;
@@ -852,6 +853,92 @@ function upsertPeer(p) {
         try { flashPeerHit(p.user_id); } catch {}
       }
     }
+  }
+}
+
+// ============================================================
+// Sesión 50 — Tiempo real (WebSocket)
+// ============================================================
+let _rtUnsub = null;
+
+function applyPeerEquip(peer, weaponItemId, weaponType, equipStr) {
+  if (peer.handBones && weaponItemId !== peer._peerWeaponItemId) {
+    if (peer._peerWeaponItemId) detachPeerWeapon(peer);
+    if (weaponItemId) attachPeerWeapon(peer, weaponItemId, weaponType || null, peer.handBones);
+    // Sesion 46 — guardar weapon_type para elegir la anim correcta en
+    // triggerPeerAttackAnim (bow→bow_overdraw, staff→staff_attack_1, etc.)
+    peer._peerWeaponType = weaponType || 'melee';
+    peer._peerWeaponItemId = weaponItemId || null;
+  }
+  if (peer.meshRoot && typeof equipStr === 'string' && equipStr !== peer._equipStr) {
+    peer._equipStr = equipStr;
+    syncPeerArmor(peer, equipStr);
+  }
+}
+
+function rtMovePeer(peer, x, z, yaw, state) {
+  peer.fromX = peer.group.position.x;
+  peer.fromZ = peer.group.position.z;
+  peer.fromYaw = peer.group.rotation.y;
+  peer.toX = x; peer.toZ = z; peer.toYaw = yaw || 0;
+  peer.state = state || 'idle';
+  peer.interpStart = performance.now();
+  peer.lastUpdate = Date.now();
+  peer._rtAt = Date.now();
+}
+
+function onRealtime(m, myId) {
+  if (!started) return;
+  if (m.t === 'p') {
+    const peer = mpLastPeerMap.get(m.id);
+    if (peer?.group) rtMovePeer(peer, m.x, m.z, m.y, m.s);
+  } else if (m.t === 'hello') {
+    for (const q of m.peers || []) {
+      const peer = mpLastPeerMap.get(q.id);
+      if (peer?.group) rtMovePeer(peer, q.x, q.z, q.y, q.s);
+    }
+  } else if (m.t === 'bye') {
+    const peer = mpLastPeerMap.get(m.id);
+    if (peer) peer.lastUpdate = 0;   // se quita en el próximo frame
+  } else if (m.t === 'hit') {
+    // Golpe PvP resuelto por el server. El objetivo local lo gestiona
+    // world_snapshot (vida propia, reacción, muerte).
+    const target = m.d !== myId ? mpLastPeerMap.get(m.d) : null;
+    const attacker = m.a !== myId ? mpLastPeerMap.get(m.a) : null;
+    if (attacker) {
+      attacker._lastAttackAtSeen = Math.max(attacker._lastAttackAtSeen || 0, m.at || 0);
+      if (m.wt) attacker._peerWeaponType = m.wt;
+      triggerPeerAttackAnim(attacker);
+    }
+    if (target) {
+      target._lastHitAtSeen = Math.max(target._lastHitAtSeen || 0, m.at || 0);
+      if (typeof m.hp === 'number') { target.hp = m.hp; target.hpMax = m.hpMax || target.hpMax; target._hpAt = Date.now(); }
+      const hits = Array.isArray(m.spec) && m.spec.length ? m.spec : [m.dmg || 0];
+      hits.forEach((h, i) => setTimeout(() => {
+        try { spawnHitsplatOnPeer(m.d, h); } catch {}
+        if (h > 0) { try { flashPeerHit(m.d); } catch {} }
+      }, i * 180));
+    }
+    // Contraataque del objetivo (golpe automático de vuelta)
+    if (attacker && m.chit != null) {
+      try { spawnHitsplatOnPeer(m.a, m.cd || 0); } catch {}
+      if (typeof m.ahp === 'number') { attacker.hp = m.ahp; attacker.hpMax = m.ahpMax || attacker.hpMax; attacker._hpAt = Date.now(); }
+    }
+    if (target && m.chit != null && m.cd != null) {
+      target._lastAttackAtSeen = Math.max(target._lastAttackAtSeen || 0, m.at || 0);
+      triggerPeerAttackAnim(target);
+    }
+  } else if (m.t === 'hp') {
+    const peer = m.id !== myId ? mpLastPeerMap.get(m.id) : null;
+    if (peer) { peer.hp = m.hp; peer.hpMax = m.hpMax || peer.hpMax; peer._hpAt = Date.now(); }
+  } else if (m.t === 'eq') {
+    const peer = m.id !== myId ? mpLastPeerMap.get(m.id) : null;
+    if (peer) { peer._eqAt = Date.now(); applyPeerEquip(peer, m.w || null, m.wt || null, m.equip || ''); }
+  } else if (m.t === 'npc') {
+    if (m.a === myId) return;
+    const peer = mpLastPeerMap.get(m.a);
+    if (peer) { if (m.wt) peer._peerWeaponType = m.wt; triggerPeerAttackAnim(peer); peer._lastAttackAtSeen = Math.max(peer._lastAttackAtSeen || 0, m.at || 0); }
+    try { window.__worldSpawnHitsplat?.(m.n, m.dmg || 0); } catch {}
   }
 }
 

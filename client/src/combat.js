@@ -45,7 +45,7 @@ import { hasSpecialAttack } from './shared/equip_reqs.js';   // Sesión 50
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 5000;   // S50: 3000 → 5000 (golpes PvP y curas llegan por WebSocket)
 const FEED_MAX_LINES = 50;
 
 // Sesión 17 — mapping skill_id interno → skill_id del catálogo nuevo.
