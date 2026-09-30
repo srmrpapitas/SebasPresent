@@ -703,3 +703,11 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - `client/src/shared/banks.js`: 21 cofres (ciudades, pueblos, minas, lagos; ninguno en la wilderness). `client/src/bank_chests.js` los dibuja (solo los de ≤260 m), tap = caminar + abrir el banco de siempre (`openBankOverlay`). Minimapa: moneda dorada "$".
 - Notas: `client/src/shared/notes.js` (id `<item>_note`). `POST /api/bank/withdraw { as_note: true }` crea la fila de la nota si falta (`ensureNoteItem`) y la da apilada. Depositar una nota la guarda como el objeto real. En el GE, al vender, las notas cuentan como el objeto (se gastan primero) y la orden siempre es del objeto base.
 - Eventos de misión: 'bank' (depositar), 'note' (sacar nota), 'ge_sell'. Misión `banquero`. Pista `hint: { bank: true }` = cofre más cercano.
+
+## 29. Habitantes, diálogos y misiones de NPCs (Sesión 50)
+
+- `client/src/shared/town_npcs.js`: 20 habitantes (posición, ropa, frases, acciones). `client/src/town_npcs.js` los dibuja (≤180 m), miran al jugador, marcas "!" (misión nueva) / "?" amarillo (entregar/terminar) / "?" gris (en curso), puntos amarillos en el minimapa.
+- `client/src/dialogue.js`: cuadro de diálogo estilo OSRS con promesas (`d.npc()`, `d.player()`, `d.choose()`).
+- Misiones con `giver`: NO se crean solas (ensureQuests las salta); se aceptan en el diálogo → `POST /api/quests/start` (hay que estar a ≤9 m del NPC según la posición del server).
+- Pasos nuevos: `talk` (POST /api/npc/talk → questEvent 'talk') y `deliver` (POST /api/npc/deliver: comprueba y quita los objetos REALES de la mochila, las notas no valen). Recompensas con `xp: { skill: n }` (`grantXp`: combat_stats + user_skills).
+- El rastreador muestra la misión fijada (toque en su tarjeta) o la última que avanzó.

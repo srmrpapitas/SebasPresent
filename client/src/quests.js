@@ -17,6 +17,7 @@ import * as api from './api.js';
 import * as audio from './audio.js';
 import { QUESTS, QUEST_ORDER } from './shared/quests.js';
 import { nearestBankChest } from './shared/banks.js';   // Sesión 50
+import { TOWN_NPCS_BY_ID } from './shared/town_npcs.js';  // Sesión 50
 
 let scene = null, getSnapshot = () => null, getPlayer = () => null, feedLog = () => {};
 let started = false;
@@ -64,20 +65,33 @@ export function getHintPos() { return hintPos; }
 // ------------------------------------------------------------
 // Estado
 // ------------------------------------------------------------
+// Sesión 50 — con varias misiones a la vez, el rastreador enseña la que
+// hayas fijado en la pestaña (toque en la tarjeta) o la última que avanzó.
+let trackedId = null;
 function activeQuest() {
+  if (trackedId && state[trackedId]?.status === 0) return { q: QUESTS[trackedId], s: state[trackedId] };
+  let best = null;
   for (const id of QUEST_ORDER) {
     const s = state[id];
-    if (s && s.status === 0) return { q: QUESTS[id], s };
+    if (!s || s.status !== 0) continue;
+    if (!best || (s.updatedAt || 0) > (best.s.updatedAt || 0)) best = { q: QUESTS[id], s };
   }
-  return null;
+  return best;
 }
+
+/** Sesión 50 — estado de una misión: null (sin empezar) | { step, progress, status } */
+export function getQuestState(id) { return state[id] || null; }
+/** Sesión 50 — aplicar filas que devuelve el server tras hablar/aceptar/entregar. */
+export function applyServerRows(rows) { applyRows(rows || [], true); }
+/** Sesión 50 — fijar misión en el rastreador. */
+export function track(id) { trackedId = id; render(); }
 
 function applyRows(rows, announce) {
   for (const r of rows) {
     const q = QUESTS[r.quest_id];
     if (!q) continue;
     const prev = state[r.quest_id];
-    state[r.quest_id] = { step: r.step, progress: r.progress, status: r.status };
+    state[r.quest_id] = { step: r.step, progress: r.progress, status: r.status, updatedAt: r.updated_at || Date.now() };
     if (!announce || !prev) continue;
     if (r.status === 1 && prev.status === 0) {
       const last = q.steps[prev.step];
@@ -151,11 +165,26 @@ function renderTab() {
   const pane = document.querySelector('.osrs-tab-pane[data-tab="quest"]');
   if (!pane) return;
   let html = '<div class="quest-tab">';
-  for (const id of QUEST_ORDER) {
+  const act = activeQuest();
+  // Orden: en curso → sin empezar → terminadas
+  const rank = (id) => (state[id]?.status === 0 ? 0 : !state[id] ? 1 : 2);
+  const ids = QUEST_ORDER.slice().sort((a, b) => rank(a) - rank(b));
+  const nDone = QUEST_ORDER.filter(id => state[id]?.status === 1).length;
+  html += `<div class="qtab-count">Misiones completadas: <b>${nDone}/${QUEST_ORDER.length}</b></div>`;
+  for (const id of ids) {
     const q = QUESTS[id];
     const s = state[id];
     const done = s?.status === 1;
-    html += `<div class="qtab-card"><div class="qtab-name">${done ? '✅' : '📜'} ${esc(q.name)}</div>
+    if (!s) {
+      // Sin empezar (Sesión 50): dónde conseguirla
+      const giver = TOWN_NPCS_BY_ID[q.giver];
+      html += `<div class="qtab-card qtab-new"><div class="qtab-name">❗ ${esc(q.name)}</div>
+        <div class="qtab-sum">${esc(q.summary)}</div>
+        <div class="qtab-giver">Habla con <b>${esc(giver?.name || '?')}</b>${giver?.title ? ` (${esc(giver.title)})` : ''} para empezarla.</div></div>`;
+      continue;
+    }
+    const isTracked = act && act.q.id === id;
+    html += `<div class="qtab-card${done ? ' qtab-done' : ''}${isTracked ? ' qtab-tracked' : ''}" data-track="${done ? '' : id}"><div class="qtab-name">${done ? '✅' : isTracked ? '📍' : '📜'} ${esc(q.name)}</div>
       <div class="qtab-sum">${esc(q.summary)}</div><ol class="qtab-steps">`;
     q.steps.forEach((st, i) => {
       const cls = done || (s && i < s.step) ? 'done' : (s && i === s.step ? 'cur' : '');
@@ -169,6 +198,13 @@ function renderTab() {
   }
   html += '</div>';
   pane.innerHTML = html;
+  pane.querySelectorAll('[data-track]').forEach(card => {
+    if (!card.dataset.track) return;
+    card.addEventListener('pointerup', (ev) => {
+      if (ev.target.closest('[data-skip]')) return;
+      track(card.dataset.track);
+    });
+  });
   const btn = pane.querySelector('[data-skip]');
   btn?.addEventListener('pointerup', async (ev) => {
     ev.preventDefault(); ev.stopPropagation();
@@ -216,6 +252,10 @@ function computeHint() {
       if (d < bd) { bd = d; best = n; }
     }
     return best ? { x: best.x, z: best.z } : null;
+  }
+  if (h.talk) {   // Sesión 50 — el NPC con el que hay que hablar
+    const n = TOWN_NPCS_BY_ID[h.talk];
+    return n ? { x: n.x, z: n.z } : null;
   }
   if (h.bank) {   // Sesión 50 — el cofre de banco más cercano
     const p = getPlayer?.();
@@ -281,6 +321,11 @@ function ensureCss() {
       75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -20px); } }
     .quest-tab { padding: 6px; color: #f0e0b0; font-family: 'IM Fell English', serif; }
     .qtab-card { background: rgba(0,0,0,0.25); border: 1px solid rgba(200,160,67,0.4); border-radius: 5px; padding: 8px; }
+    .qtab-card.qtab-tracked { border-color: #ffd35a; box-shadow: 0 0 8px rgba(255,211,90,0.35); }
+    .qtab-card.qtab-done { opacity: 0.6; }
+    .qtab-card.qtab-new { border-style: dashed; }
+    .qtab-giver { font-size: 11px; color: #ffe27a; margin-top: 4px; }
+    .qtab-count { font-size: 11px; color: #d8c89a; margin: 0 0 6px; text-align: center; }
     .qtab-name { font-family: 'Cinzel', serif; font-weight: 700; color: #e8c560; font-size: 14px; }
     .qtab-sum { font-size: 12px; color: #bba878; margin: 4px 0 6px; }
     .qtab-steps { list-style: none; padding: 0; margin: 0; font-size: 12.5px; }

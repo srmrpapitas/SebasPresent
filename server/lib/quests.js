@@ -11,6 +11,7 @@
  */
 
 import { QUESTS, QUEST_ORDER } from '../../client/src/shared/quests.js';
+import { xpToLevel, MAX_XP } from './skills_engine.js';
 
 const INVENTORY_SLOTS = 20;
 
@@ -79,10 +80,121 @@ async function giveStepTools(env, userId, step) {
   }
 }
 
+// Sesión 50 — XP de recompensa. Las skills de combate viven en combat_stats
+// (y se reflejan en user_skills); el resto solo en user_skills.
+const COMBAT_XP_COL = {
+  attack: 'attack_xp', strength: 'strength_xp', defence: 'defence_xp', hitpoints: 'hp_xp',
+  ranged: 'ranged_xp', magic: 'magic_xp', prayer: 'prayer_xp',
+};
+export async function grantXp(env, userId, skill, amount) {
+  if (!amount || amount <= 0) return;
+  const now = Date.now();
+  const col = COMBAT_XP_COL[skill];
+  if (col) {
+    try {
+      await env.DB.prepare(`UPDATE combat_stats SET ${col} = MIN(${col} + ?, ?) WHERE user_id = ?`).bind(amount, MAX_XP, userId).run();
+    } catch (err) { console.warn('[quests] xp combate:', err?.message); }
+  }
+  await env.DB.prepare(
+    `INSERT INTO user_skills (user_id, skill_id, xp, updated_at) VALUES (?, ?, ?, 0)
+     ON CONFLICT(user_id, skill_id) DO UPDATE SET xp = MIN(xp + excluded.xp, ?)`
+  ).bind(userId, skill, amount, MAX_XP).run().catch(async () => {
+    // Sin UNIQUE(user_id, skill_id) → hacerlo a mano
+    const r = await env.DB.prepare('UPDATE user_skills SET xp = MIN(xp + ?, ?) WHERE user_id = ? AND skill_id = ?').bind(amount, MAX_XP, userId, skill).run();
+    if (!r?.meta?.changes) await env.DB.prepare('INSERT INTO user_skills (user_id, skill_id, xp, updated_at) VALUES (?, ?, ?, 0)').bind(userId, skill, amount).run();
+  });
+}
+
 async function giveReward(env, userId, reward) {
   if (!reward) return;
   if (reward.coins) await grantItem(env, userId, 'coins', reward.coins);
   for (const [id, q] of reward.items || []) await grantItem(env, userId, id, q);
+  for (const [skill, amount] of Object.entries(reward.xp || {})) {
+    try { await grantXp(env, userId, skill, amount); } catch (err) { console.warn('[quests] xp:', err?.message); }
+  }
+}
+
+/** Avanza (o termina) el paso `row.step` si nadie lo ha hecho ya. */
+async function advanceStep(env, userId, row, q, step, now) {
+  const isLast = row.step + 1 >= q.steps.length;
+  const adv = await env.DB.prepare(
+    `UPDATE user_quests SET step = ?, progress = 0, status = ?, updated_at = ?
+      WHERE user_id = ? AND quest_id = ? AND step = ? AND status = 0 AND progress >= ?`
+  ).bind(isLast ? row.step : row.step + 1, isLast ? 1 : 0, now, userId, row.quest_id, row.step, step.count || 1).run();
+  if (!adv?.meta?.changes) return null;
+  await giveReward(env, userId, step.reward);
+  if (isLast) {
+    await giveReward(env, userId, q.reward);
+    return { quest_id: row.quest_id, step_done: step.id, quest_done: true };
+  }
+  await giveStepTools(env, userId, q.steps[row.step + 1]);
+  return { quest_id: row.quest_id, step_done: step.id };
+}
+
+/** Sesión 50 — empezar una misión que ofrece un NPC. */
+export async function startQuest(env, userId, questId) {
+  const q = QUESTS[questId];
+  if (!q || !(await tableReady(env))) return false;
+  const now = Date.now();
+  const r = await env.DB.prepare(
+    `INSERT OR IGNORE INTO user_quests (user_id, quest_id, step, progress, status, started_at, updated_at)
+     VALUES (?, ?, 0, 0, 0, ?, ?)`
+  ).bind(userId, questId, now, now).run();
+  if (r?.meta?.changes) await giveStepTools(env, userId, q.steps[0]);
+  return !!r?.meta?.changes;
+}
+
+/**
+ * Sesión 50 — entregar objetos a un NPC (paso 'deliver'). Solo objetos
+ * reales de la mochila (las notas no valen, como en OSRS).
+ * Devuelve { ok, results } o { error, missing }.
+ */
+export async function deliverToNpc(env, userId, npcId) {
+  const rows = await env.DB.prepare(
+    'SELECT quest_id, step, progress FROM user_quests WHERE user_id = ? AND status = 0'
+  ).bind(userId).all();
+  const inv = await env.DB.prepare(
+    'SELECT slot_index, item_id, quantity FROM user_inventory WHERE user_id = ? ORDER BY slot_index'
+  ).bind(userId).all();
+  const invRows = inv.results || [];
+  const results = [];
+  let lastMissing = null;
+  for (const row of rows.results || []) {
+    const q = QUESTS[row.quest_id];
+    const step = q?.steps?.[row.step];
+    if (!step || step.event !== 'deliver' || step.npc !== npcId) continue;
+    const missing = [];
+    for (const [id, n] of step.items) {
+      const have = invRows.filter(r => r.item_id === id).reduce((t, r) => t + r.quantity, 0);
+      if (have < n) missing.push([id, n - have]);
+    }
+    if (missing.length) { lastMissing = missing; continue; }
+    const now = Date.now();
+    // Marcar el progreso ANTES de quitar (solo una petición pasa)
+    const mark = await env.DB.prepare(
+      `UPDATE user_quests SET progress = 1, updated_at = ? WHERE user_id = ? AND quest_id = ? AND step = ? AND status = 0 AND progress = 0`
+    ).bind(now, userId, row.quest_id, row.step).run();
+    if (!mark?.meta?.changes) continue;
+    const stmts = [];
+    for (const [id, n] of step.items) {
+      let left = n;
+      for (const r of invRows) {
+        if (left <= 0) break;
+        if (r.item_id !== id || r.quantity <= 0) continue;
+        const take = Math.min(left, r.quantity);
+        stmts.push(take >= r.quantity
+          ? env.DB.prepare('DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ?').bind(userId, r.slot_index, id)
+          : env.DB.prepare('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND slot_index = ? AND item_id = ?').bind(take, userId, r.slot_index, id));
+        r.quantity -= take;
+        left -= take;
+      }
+    }
+    if (stmts.length) await env.DB.batch(stmts);
+    const res = await advanceStep(env, userId, row, q, step, now);
+    if (res) results.push(res);
+  }
+  if (!results.length && lastMissing) return { error: 'missing_items', missing: lastMissing };
+  return { ok: true, results };
 }
 
 /** Crea las misiones que falten (tutorial) y entrega herramientas del paso actual. */
@@ -90,6 +202,7 @@ export async function ensureQuests(env, userId) {
   if (!(await tableReady(env))) return false;
   const now = Date.now();
   for (const qid of QUEST_ORDER) {
+    if (QUESTS[qid].giver) continue;   // Sesión 50 — esas se empiezan hablando con su NPC
     const r = await env.DB.prepare(
       `INSERT OR IGNORE INTO user_quests (user_id, quest_id, step, progress, status, started_at, updated_at)
        VALUES (?, ?, 0, 0, 0, ?, ?)`
@@ -133,21 +246,9 @@ export async function questEvent(env, userId, event, match = null) {
       ).bind(userId, row.quest_id, row.step).first();
       if (!cur || cur.progress < step.count) { out.push({ quest_id: row.quest_id }); continue; }
 
-      const isLast = row.step + 1 >= q.steps.length;
       // Solo UNA petición consigue avanzar el paso (condición step + progress).
-      const adv = await env.DB.prepare(
-        `UPDATE user_quests SET step = ?, progress = 0, status = ?, updated_at = ?
-          WHERE user_id = ? AND quest_id = ? AND step = ? AND status = 0 AND progress >= ?`
-      ).bind(isLast ? row.step : row.step + 1, isLast ? 1 : 0, now, userId, row.quest_id, row.step, step.count).run();
-      if (!adv?.meta?.changes) continue;
-      await giveReward(env, userId, step.reward);
-      if (isLast) {
-        await giveReward(env, userId, q.reward);
-        out.push({ quest_id: row.quest_id, step_done: step.id, quest_done: true });
-      } else {
-        await giveStepTools(env, userId, q.steps[row.step + 1]);
-        out.push({ quest_id: row.quest_id, step_done: step.id });
-      }
+      const res = await advanceStep(env, userId, row, q, step, now);
+      if (res) out.push(res);
     }
   } catch (err) {
     console.warn('[quests] event failed (no fatal):', err?.message);

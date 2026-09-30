@@ -629,3 +629,14 @@ export async function craftingMake(recipeId) {
     body: { recipe_id: recipeId },
   });
 }
+
+// Sesión 50 — NPCs del mundo y misiones que dan
+export async function questsStart(questId) {
+  return apiFetch('/api/quests/start', { method: 'POST', auth: true, body: { quest_id: questId } });
+}
+export async function npcTalk(npcId) {
+  return apiFetch('/api/npc/talk', { method: 'POST', auth: true, body: { npc_id: npcId } });
+}
+export async function npcDeliver(npcId) {
+  return apiFetch('/api/npc/deliver', { method: 'POST', auth: true, body: { npc_id: npcId } });
+}

@@ -5,7 +5,9 @@
  */
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
-import { ensureQuests, getUserQuests } from '../lib/quests.js';
+import { ensureQuests, getUserQuests, startQuest, deliverToNpc, questEvent } from '../lib/quests.js';
+import { TOWN_NPCS_BY_ID, TALK_DIST_SERVER_M } from '../../client/src/shared/town_npcs.js';   // Sesión 50
+import { getPlayerPosition } from './skills/_shared.js';
 import { QUESTS } from '../../client/src/shared/quests.js';
 
 export async function handleQuestsGet(request, env) {
@@ -26,4 +28,54 @@ export async function handleQuestsSkip(request, env) {
     `UPDATE user_quests SET status = 1, step = ?, progress = 0, updated_at = ? WHERE user_id = ? AND quest_id = ? AND status = 0`
   ).bind(q.steps.length - 1, Date.now(), session.user_id, q.id).run();
   return json({ ok: true, quests: await getUserQuests(env, session.user_id) });
+}
+
+
+// ============================================================
+// Sesión 50 — Hablar con NPCs / aceptar misiones / entregar objetos
+// ============================================================
+async function nearNpc(env, userId, npcId) {
+  const npc = TOWN_NPCS_BY_ID[npcId];
+  if (!npc) return { error: 'invalid_npc' };
+  const pos = await getPlayerPosition(env, userId);
+  if (!pos) return { error: 'no_position' };
+  const d = Math.hypot(pos.x - npc.x, pos.z - npc.z);
+  if (d > TALK_DIST_SERVER_M) return { error: 'too_far', distance: d };
+  return { npc };
+}
+
+/** POST /api/npc/talk { npc_id } → evento 'talk' (pasos "vuelve a hablar con…") */
+export async function handleNpcTalk(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  const body = await readJson(request);
+  const near = await nearNpc(env, session.user_id, body?.npc_id);
+  if (near.error) return json(near, 400);
+  const results = await questEvent(env, session.user_id, 'talk', body.npc_id);
+  return json({ ok: true, results, quests: await getUserQuests(env, session.user_id) });
+}
+
+/** POST /api/quests/start { quest_id } → aceptar la misión de un NPC (hay que estar a su lado) */
+export async function handleQuestStart(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  const body = await readJson(request);
+  const q = QUESTS[body?.quest_id];
+  if (!q || !q.giver) return json({ error: 'invalid_quest' }, 400);
+  const near = await nearNpc(env, session.user_id, q.giver);
+  if (near.error) return json(near, 400);
+  const started = await startQuest(env, session.user_id, q.id);
+  return json({ ok: true, started, quests: await getUserQuests(env, session.user_id) });
+}
+
+/** POST /api/npc/deliver { npc_id } → entregar los objetos que pide el paso actual */
+export async function handleNpcDeliver(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  const body = await readJson(request);
+  const near = await nearNpc(env, session.user_id, body?.npc_id);
+  if (near.error) return json(near, 400);
+  const r = await deliverToNpc(env, session.user_id, body.npc_id);
+  if (r.error) return json(r, 400);
+  return json({ ok: true, results: r.results, quests: await getUserQuests(env, session.user_id) });
 }

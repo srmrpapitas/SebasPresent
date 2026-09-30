@@ -287,6 +287,12 @@ export default {
         response = await prayer.handlePrayerRecharge(request, env);
       } else if (path === '/api/quests' && method === 'GET') {
         response = await quests.handleQuestsGet(request, env);
+      } else if (path === '/api/quests/start' && method === 'POST') {   // Sesión 50
+        response = await quests.handleQuestStart(request, env);
+      } else if (path === '/api/npc/talk' && method === 'POST') {
+        response = await quests.handleNpcTalk(request, env);
+      } else if (path === '/api/npc/deliver' && method === 'POST') {
+        response = await quests.handleNpcDeliver(request, env);
       } else if (path === '/api/quests/skip' && method === 'POST') {
         response = await quests.handleQuestsSkip(request, env);
 
