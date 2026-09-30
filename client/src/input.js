@@ -164,7 +164,10 @@ export function setup(opts) {
       // Sesión 22 — menús contextuales sueltos
       '.inv-context-menu, #invContextMenu, ' +
       '.equip-tooltip, #equipTooltip, ' +
-      '.osrs-action-menu'
+      '.osrs-action-menu, ' +
+      // Sesión 50 — diálogo con NPCs (texto incluido: tocarlo = seguir
+      // hablando, nunca andar) y menús de castillo/casas
+      '.dlg, #castleBankerMenu'
     )) return true;
     // Eruda usa el id="eruda" y a veces emite events desde divs sin clase
     // específica. Como fallback: si el target tiene attribute o ancestor
