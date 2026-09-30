@@ -44,7 +44,7 @@ export function init(opts) {
 }
 
 // Sesión 50 — varias tiendas
-const SHOP_TITLES = { general_store: '🛒 Tienda', magic_store: '🔮 Tienda de magia' };
+const SHOP_TITLES = { general_store: '🛒 Tienda', magic_store: '🔮 Tienda de magia', aso: '🌿 La ASO · Herboristería' };
 
 export async function open(shopId = 'general_store') {
   currentShopId = shopId;

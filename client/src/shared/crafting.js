@@ -13,7 +13,8 @@
  *   group: pestaña del panel
  */
 
-export const SKILL_LABEL = { fletching: 'Flechería', crafting: 'Artesanía' };
+export const SKILL_LABEL = { fletching: 'Flechería', crafting: 'Artesanía', herblore: 'Herbología' };
+import { HERBLORE_RECIPES } from './herblore.js';   // Sesión 50
 
 // Flechas: material → [nivel, xp por tanda de 15]
 const ARROWS = [
@@ -32,6 +33,7 @@ const BOWS = [
 ];
 
 export const RECIPES = [
+  ...HERBLORE_RECIPES,   // Sesión 50 — Herbología (pociones)
   // ---------------- Flechería ----------------
   { id: 'shafts_logs', skill: 'fletching', group: 'Astiles', name: '15 astiles', level: 1, xp: 5,
     tool: 'knife', in: [['logs', 1]], out: ['arrow_shaft', 15] },

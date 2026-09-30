@@ -183,6 +183,7 @@ export const PLACES = [
   { name: 'Observatorio de Izaña',  type: 'tower',  x:   400, z:  -900, color: 0x7090d0, biome: 'forest' },
   { name: 'Mina de Guajara',    type: 'mine',   x:  1200, z: -1500, color: 0x505050, biome: 'snow' },
   { name: 'Basílica de Candelaria', type: 'temple', x:    0, z: -1200, color: 0xfff4d0, biome: 'plains' },
+  { name: 'Monte de Las Mercedes', type: 'ruins', x: -40, z: -600, color: 0x8a1a1a, biome: 'forest' },   // Sesión 50 — guarida del Cabildo
   { name: 'Ruinas de Teno', type: 'ruins', x: -1500, z:  -500, color: 0x6a4030, biome: 'wilderness' },
   { name: 'Altar de Guayota',  type: 'altar', x: -1700, z:   500, color: 0x4a1a3a, biome: 'wilderness' },
   { name: 'Volcán Chinyero',     type: 'boss',  x: -1850, z:     0, color: 0x8a1a1a, biome: 'wilderness' },

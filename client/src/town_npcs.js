@@ -158,6 +158,61 @@ function nameSprite(n) {
   return sp.clone();
 }
 
+// Sesión 50 — Puesto con toldo y cartel (La ASO: hierbas y viales)
+function buildStall(n) {
+  const g = new THREE.Group();
+  g.position.set(n.x, 0, n.z);
+  g.rotation.y = n.rotY || 0;
+  const wood = new THREE.MeshLambertMaterial({ color: 0x7a5230, flatShading: true });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x4a3018, flatShading: true });
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.0, 0.7), wood);
+  counter.position.set(0, 0.5, 0.9);
+  g.add(counter);
+  for (const sx of [-1.25, 1.25]) for (const sz of [0.55, -0.9]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.6, 0.12), dark);
+    post.position.set(sx, 1.3, sz);
+    g.add(post);
+  }
+  // Toldo a rayas verdes y blancas
+  const c = document.createElement('canvas'); c.width = 128; c.height = 32;
+  const x = c.getContext('2d');
+  for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#f4f0e0' : '#2f8a3a'; x.fillRect(i * 16, 0, 16, 32); }
+  const tex = new THREE.CanvasTexture(c);
+  const awning = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 1.7), new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }));
+  awning.position.set(0, 2.55, 0.0);
+  awning.rotation.x = -Math.PI / 2 + 0.35;
+  g.add(awning);
+  // Cartel
+  const sc = document.createElement('canvas'); sc.width = 256; sc.height = 64;
+  const sx = sc.getContext('2d');
+  sx.fillStyle = '#2a4a1a'; sx.fillRect(0, 0, 256, 64);
+  sx.strokeStyle = '#d8c070'; sx.lineWidth = 4; sx.strokeRect(3, 3, 250, 58);
+  sx.fillStyle = '#f4e8b0'; sx.font = 'bold 34px serif'; sx.textAlign = 'center'; sx.textBaseline = 'middle';
+  sx.fillText(n.stall.sign || 'LA ASO', 128, 34);
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), side: THREE.DoubleSide }));
+  sign.position.set(0, 2.95, 0.62);
+  g.add(sign);
+  // Macetas de hierbas y frascos sobre el mostrador
+  const pot = new THREE.MeshLambertMaterial({ color: 0xa0522d, flatShading: true });
+  const leaf = [0x3a8a2a, 0x7ab040, 0xc03030, 0xe0c040];
+  for (let i = 0; i < 4; i++) {
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.18, 7), pot);
+    p.position.set(-0.9 + i * 0.3, 1.09, 0.85);
+    g.add(p);
+    const l = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 0), new THREE.MeshLambertMaterial({ color: leaf[i], flatShading: true }));
+    l.position.set(-0.9 + i * 0.3, 1.27, 0.85);
+    g.add(l);
+  }
+  const glass = [0x60c0ff, 0xff6040, 0x60ff80];
+  for (let i = 0; i < 3; i++) {
+    const v = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.22, 8),
+      new THREE.MeshLambertMaterial({ color: glass[i], emissive: glass[i], emissiveIntensity: 0.35, transparent: true, opacity: 0.85 }));
+    v.position.set(0.35 + i * 0.25, 1.11, 0.95);
+    g.add(v);
+  }
+  return g;
+}
+
 function build(n) {
   const m = buildModel(n);
   m.root.position.set(n.x, 0, n.z);
@@ -174,6 +229,7 @@ function build(n) {
   scene.add(m.root);
   pickMeshes.push(m.hit);
   const o = { n, ...m, name, bang, qGold, qGray, mark: null, baseYaw: n.rotY || 0, phase: Math.random() * 6, gestureT: 0 };
+  if (n.stall) { o.stall = buildStall(n); scene.add(o.stall); }   // Sesión 50 — puesto (La ASO)
   objs.set(n.id, o);
   updateMark(o);
   return o;
@@ -181,6 +237,7 @@ function build(n) {
 
 function dispose(o) {
   scene?.remove(o.root);
+  if (o.stall) scene?.remove(o.stall);
   const i = pickMeshes.indexOf(o.hit);
   if (i >= 0) pickMeshes.splice(i, 1);
   objs.delete(o.n.id);
@@ -301,7 +358,7 @@ async function talkTo(o) {
     for (const a of n.actions || []) {
       if (!a.startsWith('shop:')) continue;
       const shopId = a.slice(5);
-      opts.push({ label: shopId === 'magic_store' ? '🔮 Ver la tienda de magia' : '🛒 Ver la tienda', run: async () => { d.end(); onOpenShop(shopId); } });
+      opts.push({ label: shopId === 'magic_store' ? '🔮 Ver la tienda de magia' : shopId === 'aso' ? '🌿 Ver las hierbas' : '🛒 Ver la tienda', run: async () => { d.end(); onOpenShop(shopId); } });
     }
     if ((n.lines?.length || 0) > 1) opts.push({ label: '💬 ¿Qué me cuentas?', run: () => d.npc(n.lines[1 + Math.floor(Math.random() * (n.lines.length - 1))]) });
     opts.push({ label: '👋 Adiós', run: async () => { await d.player('Adiós.'); d.end(); } });

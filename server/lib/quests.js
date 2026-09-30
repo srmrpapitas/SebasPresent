@@ -85,7 +85,7 @@ async function giveStepTools(env, userId, step) {
 const COMBAT_XP_COL = {
   attack: 'attack_xp', strength: 'strength_xp', defence: 'defence_xp', hitpoints: 'hp_xp',
   ranged: 'ranged_xp', magic: 'magic_xp', prayer: 'prayer_xp',
-};
+};   // (herblore y demás oficios van solo a user_skills)
 export async function grantXp(env, userId, skill, amount) {
   if (!amount || amount <= 0) return;
   const now = Date.now();

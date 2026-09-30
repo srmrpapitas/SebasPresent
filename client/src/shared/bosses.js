@@ -10,7 +10,7 @@
  *                          piedras donde estás: muévete aunque estés trabado.
  *   Reina Sekhet         → escupe veneno a distancia (Protección contra
  *                          proyectiles) y deja charcos de veneno: no te quedes.
- *   Morgath, la Bruja    → magia (Protección contra magia), se teletransporta y
+ *   Chona, la Bruja del Páramo → magia (Protección contra magia), se teletransporta y
  *                          lanza maldiciones en área a tus pies.
  *   Leviatán             → cambia de estilo: VERDE = proyectiles, AZUL = magia.
  *                          Cambia tu protección según su color. Remolinos.
@@ -75,14 +75,14 @@ export const BOSSES = {
     tip: 'Protección contra proyectiles y no te quedes quieto sobre los charcos verdes.',
   },
   bruja_pantano: {
-    name: 'Morgath', title: 'la Bruja del Pantano', x: -640, z: 760, lairR: 24, bodyR: 0.9,
+    name: 'Chona', title: 'la Bruja del Páramo', x: -640, z: 760, lairR: 24, bodyR: 0.9,
     color: '#c070ff', drop: 'gloves_dragon', dropName: 'Guantes de dragón',
     stats: { hp: 240, att: 66, str: 60, def: 48, speed: 5, range: 11 },
     attacks: [{ style: 'magic', range: 12, max: 18, every: 3000 }],
     specialEvery: 7500,
     specials: [
-      { kind: 'aoe_target', count: 1, spread: 0, r: 3.2, delay: 1800, dmg: 20, name: 'Morgath te maldice: ¡sal del círculo!' },
-      { kind: 'teleport', name: 'Morgath desaparece entre la niebla…' },
+      { kind: 'aoe_target', count: 1, spread: 0, r: 3.2, delay: 1800, dmg: 20, name: 'Chona te maldice: ¡sal del círculo!' },
+      { kind: 'teleport', name: 'Chona desaparece entre la niebla…' },
     ],
     rocks: [],
     tip: 'Protección contra magia. Sal de los círculos morados y búscala cuando se teletransporte.',
@@ -113,6 +113,20 @@ export const BOSSES = {
     ],
     rocks: [{ x: -1488, z: -428, r: 1.8 }, { x: -1512, z: -452, r: 1.8 }],
     tip: 'Usa melé con Protección cuerpo a cuerpo de cerca, o magia con Protección contra magia de lejos. Lleva comida: drena tu plegaria.',
+  },
+  magister_cabildo: {
+    name: 'Magister Perdomo', title: 'Gran Brujo del Cabildo', x: -40, z: -600, lairR: 24, bodyR: 1.0,
+    color: '#ff3a3a', drop: 'super_fuerza_3', dropName: 'Súper fuerza',
+    stats: { hp: 300, att: 68, str: 60, def: 55, speed: 5, range: 11 },
+    attacks: [{ style: 'magic', range: 12, max: 20, every: 2800 }, { style: 'melee', range: 3.0, max: 14, every: 2600 }],
+    specialEvery: 7000,
+    specials: [
+      { kind: 'aoe_target', count: 3, spread: 3.5, r: 2.6, delay: 1900, dmg: 18, name: '¡Perdomo invoca el Sello de Guayota! Fuego a tus pies.' },
+      { kind: 'drain', name: 'El Magister te roba la fe: tu plegaria se debilita.' },
+      { kind: 'teleport', name: 'Perdomo se esfuma en humo rojo…' },
+    ],
+    rocks: [],
+    tip: 'Protección contra magia. Sal de los círculos rojos y ten pociones de plegaria a mano: te la roba.',
   },
   dragon_rojo: {
     name: 'Vermithrax', title: 'el Dragón Rojo', x: -1850, z: 40, lairR: 30, bodyR: 2.4,

@@ -75,7 +75,7 @@ export function start(opts) {
   started = true;
   render(true);
   if (typeof window !== 'undefined') {
-    window.__prayer = { buryFromSlot, state: () => ({ ...st, live: live() }) };
+    window.__prayer = { buryFromSlot, applyServer, state: () => ({ ...st, live: live() }) };
   }
 }
 

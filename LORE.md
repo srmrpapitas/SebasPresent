@@ -23,7 +23,25 @@ El sello de Achamán se agrieta: la tierra tiembla y el Teide humea.
   - **Morgath**: Charcas de Erjos.
   - **Leviatán**: costa de Los Cristianos.
   - **Varkhul**: un mencey antiguo que pactó con Guayota. Vive en las Ruinas de Teno.
-- **Gobierno**: el Cabildo gobierna desde **La Laguna** (Aguere). Los jugadores son forasteros recién llegados.
+- **El Cabildo**: en apariencia gobierna desde **La Laguna** (Aguere). En secreto es una **orden de magos malignos** que adora a Guayota y quiere romper el sello para quedarse con su poder.
+  - Hacen sus rituales en el **Monte de Las Mercedes**, con acólitos de capucha roja que atacan con magia.
+  - Los guía el **Magister Perdomo, Gran Brujo del Cabildo**, que es un jefe.
+  - Compran toda la retama del Teide para que nadie pueda rezar contra ellos.
+- **Personajes** (todos con nombres canarios genéricos):
+  - **Carmita**: herbolaria de **La ASO**, el puesto de hierbas de la plaza de La Laguna.
+  - **Airam**: el Forzudo de Santa Cruz.
+  - **Yeray**: pastor de Vilaflor.
+  - **Chona**: la Bruja del Páramo (jefa en el páramo de Erjos).
+- **Los jugadores** son forasteros recién llegados.
+
+## Herbología (La ASO)
+Las hierbas son plantas canarias. La poción se hace con hierba y vial de agua; si además lleva gofio, sale una súper poción:
+- Tabaiba: Ataque.
+- Verode: Fuerza.
+- Salvia canaria: Defensa.
+- Orégano de risco: Distancia.
+- Retama del Teide: Plegaria.
+- Tajinaste rojo: Magia.
 
 ## Geografía del juego
 | Antes | Ahora |

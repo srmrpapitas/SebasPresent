@@ -24,7 +24,7 @@ import {
 const SKILL_ID = 'prayer';
 const BURY_TICK_MS = 1000;
 
-async function prayerLevel(env, userId) {
+export async function prayerLevel(env, userId) {
   await env.DB.prepare(
     'INSERT OR IGNORE INTO user_skills (user_id, skill_id, xp, updated_at) VALUES (?, ?, 0, 0)'
   ).bind(userId, SKILL_ID).run();
@@ -32,7 +32,7 @@ async function prayerLevel(env, userId) {
   return { xp: r?.xp || 0, level: xpToLevel(r?.xp || 0) };
 }
 
-async function loadState(env, userId, level, now) {
+export async function loadState(env, userId, level, now) {
   const row = await env.DB.prepare(
     'SELECT prayer_points, prayer_updated_at, active_prayers FROM combat_stats WHERE user_id = ?'
   ).bind(userId).first();
@@ -41,7 +41,7 @@ async function loadState(env, userId, level, now) {
   return currentPrayerState(pts, row.prayer_updated_at, row.active_prayers, now);
 }
 
-async function saveState(env, userId, points, active, now) {
+export async function saveState(env, userId, points, active, now) {
   await env.DB.prepare(
     `INSERT INTO combat_stats (user_id, hp_xp, hp_current) VALUES (?, 1154, 10) ON CONFLICT(user_id) DO NOTHING`
   ).bind(userId).run();
@@ -50,7 +50,7 @@ async function saveState(env, userId, points, active, now) {
   ).bind(points, now, active.join(','), userId).run();
 }
 
-function stateJson(level, points, active, now) {
+export function stateJson(level, points, active, now) {
   return { prayer_level: level, prayer_points: +points.toFixed(3), prayer_max: level, active_prayers: active, updated_at: now };
 }
 

@@ -45,6 +45,8 @@ const NICE = {
   logs: 'troncos', oak_logs: 'troncos de roble', willow_logs: 'troncos de sauce', maple_logs: 'troncos de arce',
   yew_logs: 'troncos de tejo', magic_logs: 'troncos mágicos', arrow_shaft: 'astiles', feather: 'plumas',
   headless_arrow: 'flechas sin punta', bowstring: 'cuerda', leather: 'cuero', cowhide: 'piel de vaca', thread: 'hilo',
+  vial_agua: 'vial de agua', gofio: 'gofio', hierba_tabaiba: 'tabaiba', hierba_verode: 'verode', hierba_salvia: 'salvia',
+  hierba_oregano: 'orégano', hierba_retama: 'retama', hierba_tajinaste: 'tajinaste',
 };
 const nameOf = (id) => NICE[id] || names[id] || id.replace(/_/g, ' ');
 
@@ -52,7 +54,7 @@ const nameOf = (id) => NICE[id] || names[id] || id.replace(/_/g, ' ');
 export function menuLabelFor(itemId) {
   const rs = recipesUsing(itemId);
   if (!rs.length) return null;
-  return rs[0].skill === 'fletching' ? '🏹 Flechería' : '🧵 Artesanía';
+  return rs[0].skill === 'fletching' ? '🏹 Flechería' : rs[0].skill === 'herblore' ? '🌿 Herbología' : '🧵 Artesanía';
 }
 
 function closePanel() { if (panelEl) { panelEl.remove(); panelEl = null; } }
@@ -92,7 +94,7 @@ export function openFor(itemId, onlySkill = null) {
   }
   const el = document.createElement('div');
   el.className = 'smith-panel';
-  el.innerHTML = `<div class="smith-head"><span>${skill === 'fletching' ? '🏹' : '🧵'} ${SKILL_LABEL[skill]}</span>
+  el.innerHTML = `<div class="smith-head"><span>${skill === 'fletching' ? '🏹' : skill === 'herblore' ? '🌿' : '🧵'} ${SKILL_LABEL[skill]}</span>
       <small>Nivel ${lvl}</small><button class="smith-x" data-close="1">✕</button></div>
     <div class="smith-body">${body}</div>`;
   if (!document.getElementById('craft-css')) {
@@ -120,7 +122,7 @@ function startWork(recipeId, n) {
   if (!rec) return;
   workGen++;
   work = { rec, remaining: n, lastAt: 0, waiting: false, gen: workGen, done: 0 };
-  feedLog('info', rec.skill === 'fletching' ? 'Empiezas a trabajar la madera...' : 'Empiezas a coser...');
+  feedLog('info', rec.skill === 'fletching' ? 'Empiezas a trabajar la madera...' : rec.skill === 'herblore' ? 'Machacas las hierbas y las mezclas...' : 'Empiezas a coser...');
 }
 
 export function stopWork(reason = 'user') {

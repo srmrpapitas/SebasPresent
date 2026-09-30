@@ -12,7 +12,7 @@ import { FOSA, FOSA_MOBS, FOSA_WAVES, FOSA_WAVE_DELAY_MS, FOSA_REWARDS, insideFo
 import { playerDefProfile, monsterRoll, levelFromXp } from './combat_engine.js';
 
 const TICK_MS = 350;
-const INV_SLOTS = 28;
+const INV_SLOTS = 20;
 
 function dist(ax, az, bx, bz) { return Math.hypot(ax - bx, az - bz); }
 function parse(s, d) { try { return s ? JSON.parse(s) : d; } catch { return d; } }

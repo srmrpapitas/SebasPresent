@@ -23,6 +23,7 @@ const bursts = [];
 const lastAtk = new Map();     // bossId → at
 const lastSpec = new Map();
 const lastStyle = new Map();
+const npcAtk = new Map();       // npcId → last_attack_at visto
 let hud = null, banner = null, bannerTimer = 0;
 let clockOffset = 0;           // serverNow - Date.now()
 let lastSnapNow = 0;
@@ -260,6 +261,21 @@ export function update(dt) {
         hazards.set(key, e);
       }
       e.h = h;
+    }
+  }
+
+  // Sesión 50 — monstruos normales que atacan a distancia (acólitos del Cabildo…)
+  for (const n of snap?.npcs || []) {
+    if (!n.style || n.style === 'melee' || BOSSES[n.def_id] || !n.last_attack_at) continue;
+    const prev = npcAtk.get(n.id);
+    npcAtk.set(n.id, n.last_attack_at);
+    if (prev == null || prev === n.last_attack_at || !n.in_combat_with) continue;
+    if (sNow - n.last_attack_at > 2500) continue;
+    const from = window.__getNpcPosition?.(n.id), to = targetPos(n.in_combat_with, me);
+    try { window.__getNpcProc?.(n.id)?.attack?.(); } catch {}
+    if (from && to && window.__worldFireProjectile) {
+      window.__worldFireProjectile({ x: from.x, y: 0, z: from.z }, { x: to.x, y: 0, z: to.z },
+        { type: 'spell', spellId: n.style === 'magic' ? (n.def_id === 'acolito_cabildo' ? 'fire_strike' : 'thunderbolt') : 'entangle', windupMs: 150 });
     }
   }
 

@@ -19,7 +19,8 @@ export const LORE = {
       'Esta isla es Tenerife. Los antiguos, los guanches, la llamaban Achinech.',
       'En el centro se alza Echeyde, el Teide: la montaña más alta de todas las islas. Los guanches decían que era la puerta del infierno.',
       'Nueve menceyes —reyes— se repartían la isla: Taoro, Güímar, Anaga, Tacoronte, Tegueste, Icod, Daute, Adeje y Abona. Sus nombres aún viven en nuestros pueblos.',
-      'Hoy gobierna el Cabildo, desde aquí, La Laguna, la antigua vega de Aguere. Por eso todos los caminos empiezan en esta plaza.',
+      'Oficialmente gobierna el Cabildo, desde aquí, La Laguna, la antigua vega de Aguere. Por eso todos los caminos empiezan en esta plaza.',
+      'Aunque… entre tú y yo: el Cabildo está lleno de magos. Y últimamente sus túnicas se han vuelto rojas. No me gusta nada.',
       'Pero la isla está inquieta. La tierra tiembla, el Teide humea y del Malpaís llegan criaturas que nadie había visto. Habla con Alma, la sacerdotisa: ella conoce la leyenda.',
     ],
   },
@@ -34,6 +35,7 @@ export const LORE = {
       'La sangre de Guayota, al enfriarse bajo la tierra, se convirtió en un metal verde que brilla como el mar: el TEIDERIO. Por eso es el metal más fuerte… y se encuentra en lo más hondo del Malpaís.',
       'Chaxiraxi, la madre, cuida de nosotros desde la Basílica de Candelaria. Si tu plegaria se agota, reza en un altar: ella te escucha.',
       'Ahora el sello se agrieta. Al este se ha abierto una fosa de fuego… y los ancianos dicen que Guayota intenta volver.',
+      'Y no está solo. Bajo las túnicas del Cabildo se esconde una orden de brujos que lo adora: quieren romper el sello y quedarse con su poder. Los guía el Magister Perdomo.',
     ],
   },
   // Capítulo III — El teiderio, los dragos y los dragones
@@ -64,7 +66,7 @@ export const LORE = {
     pages: [
       'Los viejos de Icod hablan de los tibicenas: perros negros enormes, de ojos rojos, sirvientes de Guayota.',
       'Los lobos que rondan el monteverde se han vuelto más fieros desde que tiembla la tierra. Yo creo que llevan sangre de tibicena.',
-      'Y en las Charcas de Erjos vive Morgath, una bruja que maldice a los caminantes. Mi abuelo decía que las brujas de Las Raíces se reunían allí en las noches sin luna.',
+      'Y en las Charcas de Erjos vive Chona, una bruja que maldice a los caminantes. Mi abuelo decía que las brujas de Las Raíces se reunían allí en las noches sin luna.',
     ],
   },
   // Capítulo VI — El Malpaís y el Rey Esqueleto
@@ -109,6 +111,17 @@ export const LORE = {
     pages: [
       'Guajara es la montaña que vigila al Teide. En sus minas sale acero, oro… y a veces obsidiana negra como la noche.',
       'Los mineros que bajaron más hondo contaron que la obsidiana se movía. Ahora un Coloso de Obsidiana guarda la mina: las espadas rebotan en él.',
+    ],
+  },
+
+  // Capítulo XI — Las hierbas de la isla
+  carmita_aso: {
+    label: '📖 ¿De dónde salen tus hierbas?',
+    pages: [
+      'Cada hierba de mi puesto crece en un rincón de la isla, mi niño.',
+      'La tabaiba en la costa, el verode en los riscos, la salvia en el monte, el orégano en los barrancos… y el tajinaste rojo solo en Las Cañadas, a los pies del Teide.',
+      'Los guanches ya curaban con ellas. Y con gofio, que lo arregla todo.',
+      'La retama del Teide calma el espíritu y devuelve la fe: por eso los del Cabildo la quieren toda. Sin fe, nadie puede rezar contra sus hechizos.',
     ],
   },
 };

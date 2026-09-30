@@ -748,3 +748,9 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Morir dentro NO suelta objetos: vida llena y fuera (`fosaDamage`). Salir de la arena = rendirse. Premios en rondas 3/6/9/12 (12 = Capa de fuego procedural + 20k).
 - Ignaroth: `tele {s, at}` → el cliente lo hace brillar verde/azul; al llegar `at` pega según tu protección en ese momento.
 - Endpoints: POST /api/fosa/start (junto a Kargath) y /api/fosa/leave. Estado en `snapshot.me.fosa`.
+
+## 35. Tenerife, Herbología y el Cabildo (Sesión 50)
+- Lore canónico en LORE.md y en `client/src/shared/lore.js` (opción "📖" en los diálogos). Los nombres visibles son de Tenerife; los ids internos no cambian.
+- Herbología (`client/src/shared/herblore.js`): recetas en `shared/crafting.js` (skill 'herblore', evento de misión 'herb'). Pociones de 3/2/1 dosis; `POST /api/potion/drink` gasta la dosis con guarda. Las subidas se guardan en `combat_stats.boosts` (migración 008, EJECUTADA) y entran al combate por `prayerFx().flat` → `boostLvls`, la defensa de los monstruos/jefes y el nivel de Magia. Seed 011 (EJECUTADO): objetos y tienda `aso`.
+- Monstruos a distancia: `npc_defs.style` 'magic'/'ranged' atacan desde `attack_range` en `tickNpcAggro` y la protección correspondiente los bloquea. El snapshot manda `style` y `last_attack_at` → `boss_fx` dibuja el proyectil.
+- Cabildo: los acólitos (`acolito_cabildo`) y el jefe Magister Perdomo (`magister_cabildo` en bosses.js) están en el Monte de Las Mercedes (-40,-600). Seed 012 (EJECUTADO).

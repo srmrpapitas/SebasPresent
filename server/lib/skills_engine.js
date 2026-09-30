@@ -70,6 +70,7 @@ export const SKILLS = [
   { id: 'smithing',    name: 'Herrería',    icon: '🔨', gathering: true, startLvl: 1 },
   // Sesión 50
   { id: 'fletching',   name: 'Flechería',   icon: '🏹', gathering: true, startLvl: 1 },
+  { id: 'herblore',    name: 'Herbología',  icon: '🌿', gathering: true, startLvl: 1 },   // Sesión 50
   { id: 'crafting',    name: 'Artesanía',   icon: '🧵', gathering: true, startLvl: 1 },
 ];
 

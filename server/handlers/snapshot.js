@@ -269,7 +269,7 @@ export async function handleWorldSnapshot(request, env) {
       `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
               i.in_combat_with, i.last_attack_at,
               d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
-              d.attack_speed_ticks, d.max_hit, d.attack_range, d.model
+              d.attack_speed_ticks, d.max_hit, d.attack_range, d.model, d.style
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
@@ -303,6 +303,8 @@ export async function handleWorldSnapshot(request, env) {
         attack_range:   r.attack_range,
         model:          r.model,
         in_combat_with: r.in_combat_with,
+        style: r.style || 'melee',               // Sesión 50 — para dibujar hechizos/flechas de monstruos
+        last_attack_at: r.last_attack_at || 0,
         in_combat: r.last_attack_at != null &&
           (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS,
       }));
@@ -432,13 +434,14 @@ export async function handleWorldSnapshot(request, env) {
     // Sesión 50 — plegaria (el cliente calcula el gasto en vivo con estos datos)
     try {
       const pr = await env.DB.prepare(
-        'SELECT prayer_points, prayer_updated_at, active_prayers, skulled_until FROM combat_stats WHERE user_id = ?'
+        'SELECT prayer_points, prayer_updated_at, active_prayers, skulled_until, boosts FROM combat_stats WHERE user_id = ?'
       ).bind(session.user_id).first();
       if (pr) {
         me.prayer_points = pr.prayer_points;
         me.prayer_updated_at = pr.prayer_updated_at;
         me.active_prayers = pr.active_prayers || '';
         me.skulled_until = pr.skulled_until || 0;   // Sesión 50 — calavera
+        me.boosts = pr.boosts || null;              // Sesión 50 — subidas de pociones
       }
     } catch { /* migración 003 pendiente */ }
 

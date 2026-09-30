@@ -20,6 +20,7 @@ export const PROC_NPC_HEIGHTS = {
   // Sesión 50 — jefes
   rey_yeti: 4.6, coloso_obsidiana: 5.0, reina_escorpion: 2.4, bruja_pantano: 2.6, leviatan: 5.5,
   rey_esqueleto: 3.3, dragon_rojo: 5.2, dragon_negro: 6.2,
+  acolito_cabildo: 2.3, magister_cabildo: 3.2,
   // Sesión 50 — Fosa de Guayota
   fosa_diablillo: 1.2, fosa_escupefuego: 1.3, fosa_espiritu: 1.9, fosa_bruto: 2.6, fosa_ignaroth: 5.2,
 };
@@ -392,19 +393,29 @@ function dragon(o) {
   };
 }
 
-/** Bruja del pantano: túnica, sombrero puntiagudo, bastón con calavera. Flota. */
-function witch() {
+/** Bruja del páramo: túnica, sombrero puntiagudo, bastón con calavera. Flota.
+ *  Sesión 50 — parametrizada: también la usan los magos del Cabildo (capucha roja). */
+function witch(o = {}) {
   const root = new THREE.Group();
   const body = new THREE.Group(); root.add(body);
-  const robe = mat(0x3a1a4a), robe2 = mat(0x24102e), skin = mat(0x8aa070), hat = mat(0x1a0c22), glow = mat(0xc070ff, { emissive: 0x7020c0, emissiveIntensity: 1.3 }), bone = mat(0xe6dcc4);
+  const robe = mat(o.robe ?? 0x3a1a4a), robe2 = mat(o.robe2 ?? 0x24102e), skin = mat(o.skin ?? 0x8aa070), hat = mat(o.hat ?? 0x1a0c22),
+    glow = mat(o.glow ?? 0xc070ff, { emissive: o.glowE ?? 0x7020c0, emissiveIntensity: 1.3 }), bone = mat(0xe6dcc4);
   const skirt = cone(0.75, 1.6, robe, 8); skirt.position.y = 0.9; body.add(skirt);
   const tatters = cone(0.85, 0.5, robe2, 8); tatters.position.y = 0.25; tatters.rotation.x = Math.PI; body.add(tatters);
   const chest = sph(0.38, robe, 1); chest.scale.set(1, 1.1, 0.8); chest.position.set(0, 1.75, 0.05); body.add(chest);
   const head = sph(0.26, skin, 1); head.position.set(0, 2.2, 0.18); body.add(head);
   const nose = cone(0.06, 0.28, skin, 4); nose.position.set(0, 2.18, 0.46); nose.rotation.x = Math.PI / 2 + 0.3; body.add(nose);
   for (const sx of [-1, 1]) { const e = sph(0.045, glow); e.position.set(sx * 0.1, 2.26, 0.4); body.add(e); }
-  const brim = cyl(0.55, 0.55, 0.04, hat, 12); brim.position.y = 2.38; body.add(brim);
-  const tip = cone(0.3, 1.0, hat, 8); tip.position.set(0, 2.9, -0.1); tip.rotation.x = -0.35; body.add(tip);
+  if (o.hood) {
+    const hood = sph(0.34, hat, 1); hood.scale.set(1, 1.15, 1.05); hood.position.set(0, 2.24, 0.02); body.add(hood);
+    const peak = cone(0.2, 0.45, hat, 6); peak.position.set(0, 2.55, -0.12); peak.rotation.x = -0.6; body.add(peak);
+    head.position.z = 0.22;
+  } else {
+    const brim = cyl(0.55, 0.55, 0.04, hat, 12); brim.position.y = 2.38; body.add(brim);
+    const tip = cone(0.3, 1.0, hat, 8); tip.position.set(0, 2.9, -0.1); tip.rotation.x = -0.35; body.add(tip);
+  }
+  if (o.crown) crown(body, 2.62, 0.2, 0xe0b030);
+  if (o.scale) root.scale.setScalar(o.scale);
   const arm = new THREE.Group(); arm.position.set(0.45, 1.8, 0.1); body.add(arm);
   const sleeve = cyl(0.1, 0.16, 0.7, robe, 6); sleeve.position.y = -0.3; sleeve.rotation.z = 0.4; arm.add(sleeve);
   const staff = cyl(0.04, 0.05, 2.2, mat(0x3a2410), 5); staff.position.set(0.25, -0.2, 0.1); arm.add(staff);
@@ -582,7 +593,10 @@ Object.assign(BUILDERS, {
     const cape = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 1.1), mat(0x3a0a4a, { side: THREE.DoubleSide }));
     cape.position.set(0, 1.0, -0.14); r.add(cape);
   }),
-  bruja_pantano: witch,
+  bruja_pantano: () => witch(),
+  // Sesión 50 — el Cabildo: magos malignos (capucha roja) y su Gran Brujo
+  acolito_cabildo: () => witch({ robe: 0x6a0a0a, robe2: 0x2a0404, skin: 0xd9a57a, hat: 0x4a0606, glow: 0xff5020, glowE: 0xc02000, hood: true }),
+  magister_cabildo: () => witch({ robe: 0x1a0a0a, robe2: 0x5a0a0a, skin: 0xc89070, hat: 0x8a0a0a, glow: 0xff2a2a, glowE: 0xff0000, hood: true, crown: true, scale: 1.35 }),
   leviatan,
   dragon_rojo: () => dragon({ s: 1.0, c1: 0xa3161a, c2: 0xe8a060, c3: 0x3a0a08, wing: 0xc0302a, eye: 0xffd040 }),
   fosa_diablillo: imp,

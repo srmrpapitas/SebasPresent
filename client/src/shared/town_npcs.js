@@ -171,6 +171,29 @@ export const TOWN_NPCS = [
       'Guayota BRILLA antes de atacar: verde = proyectiles, azul = magia. Cambia tu plegaria a tiempo.',
       'Si caes ahí abajo no pierdes nada: te saco yo. Pero sin capa, claro.',
     ] },
+  // Sesión 50 — La ASO (herboristería) y personajes canarios
+  { id: 'carmita_aso', name: 'Carmita', title: 'Herbolaria de La ASO', x: -8, z: 28, rotY: 3.3, role: '🌿',
+    look: { skin: 0xd9a57a, shirt: 0x2f6a3a, pants: 0x3a2a1a, hair: 0x2a1a10, acc: 'apron' },
+    actions: ['shop:aso'], stall: { sign: 'LA ASO' },
+    lines: [
+      '¡Buenas, mi niño! Bienvenido a La ASO. Aquí tienes las mejores hierbas de la isla.',
+      'Hierba, un vial de agua y a mezclar: eso es una poción. Y si le echas gofio, ¡súper poción!',
+      'La tabaiba pa\' pegar, el verode pa\' la fuerza, la salvia pa\' aguantar… y la retama del Teide pa\' rezar.',
+      'Últimamente los del Cabildo me compran toda la retama y el tajinaste. ¿Pa\' qué querrán tanto? Me da mala espina…',
+    ] },
+  { id: 'airam_forzudo', name: 'Airam', title: 'el Forzudo de Santa Cruz', x: 1700, z: -775, rotY: 2.4, role: '💪',
+    look: { skin: 0xc08a5a, shirt: 0xb02020, pants: 0x1a1a1a, hair: 0x1a1a1a, acc: 'bandana' },
+    lines: [
+      '¡Mira qué bíceps, chacho! Esto no sale solo, esto es entreno y gofio.',
+      'Nunca te saltes el día de pierna. Nunca.',
+      'Un buen guerrero se toma su poción de fuerza antes de pelear. Y después, un escaldón de gofio.',
+    ] },
+  { id: 'yeray_pastor', name: 'Yeray', title: 'Pastor de Vilaflor', x: -410, z: 412, rotY: 1.2, role: '🐐',
+    look: { skin: 0xb07a52, shirt: 0x8a6a3a, pants: 0x4a3a2a, hair: 0x2a1a10, acc: 'hat' },
+    lines: [
+      'Mis cabras suben hasta el páramo de Erjos… y algunas no vuelven. Dicen que allí vive la bruja Chona.',
+      'Por las noches se ven luces rojas en el monte de Las Mercedes. Gente con capucha. Yo no me acerco.',
+    ] },
 ];
 
 export const TOWN_NPCS_BY_ID = Object.fromEntries(TOWN_NPCS.map(n => [n.id, n]));

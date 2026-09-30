@@ -119,7 +119,7 @@ export async function handleCraftingMake(request, env) {
     // p. ej. el hueco se ocupó entre medias (PK) → no se hizo nada
     return json({ error: 'conflict', message: 'Inténtalo otra vez.' }, 409);
   }
-  await questEvent(env, userId, rec.skill === 'fletching' ? 'fletch' : 'craft', outId);
+  await questEvent(env, userId, rec.skill === 'fletching' ? 'fletch' : rec.skill === 'herblore' ? 'herb' : 'craft', outId);
 
   const after = await env.DB.prepare(
     'SELECT xp FROM user_skills WHERE user_id = ? AND skill_id = ?'

@@ -26,6 +26,7 @@ import { EDIBLE_IDS, COOKABLE_IDS } from './shared/food.js';
 import { equipRequirement, requirementText } from './shared/equip_reqs.js';   // Sesión 50
 import { recipesUsing } from './shared/crafting.js';   // Sesión 50 — Flechería/Artesanía
 import { isTablet, TABLETS } from './shared/teleports.js';   // Sesión 50 — tabletas
+import { parsePotion } from './shared/herblore.js';   // Sesión 50 — pociones
 import * as api from './api.js';
 import * as equipment from './equipment.js';
 import { renderItemIcon, getItemIconHtml } from './item_icons.js';
@@ -364,6 +365,8 @@ function onPointerUp(ev) {
       window.__prayer?.buryFromSlot?.(fromSlot);   // Sesión 50 — tocar huesos = enterrar
     } else if (selectedSlot === null && data && isTablet(data.item_id)) {
       window.__tablets?.breakTablet?.(fromSlot, data.item_id);   // Sesión 50 — tocar tableta = romperla
+    } else if (selectedSlot === null && data && parsePotion(data.item_id)) {
+      window.__potions?.drink?.(fromSlot);   // Sesión 50 — tocar poción = beber una dosis
     } else if (selectedSlot === null && isEquipableItem(data)) {
       doEquip(fromSlot);
     } else if (selectedSlot === null) {
@@ -503,6 +506,9 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   if (BURYABLE_ITEM_IDS.has(item.item_id)) {
     html += `<div class="inv-context-row" data-act="bury">⚱ Enterrar</div>`;
   }
+  if (parsePotion(item.item_id)) {   // Sesión 50
+    html += `<div class="inv-context-row" data-act="drink">🧪 Beber</div>`;
+  }
   if (COOKABLE_ITEM_IDS.has(item.item_id)) {
     html += `<div class="inv-context-row" data-act="cook">🍳 Cocinar</div>`;
     html += `<div class="inv-context-row" data-act="cook_all">🍳 Cocinar todo</div>`;
@@ -511,9 +517,10 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
   {
     const rs = recipesUsing(item.item_id);
     if (rs.length) {
-      const hasF = rs.some(r => r.skill === 'fletching'), hasC = rs.some(r => r.skill === 'crafting');
+      const hasF = rs.some(r => r.skill === 'fletching'), hasC = rs.some(r => r.skill === 'crafting'), hasH = rs.some(r => r.skill === 'herblore');
       if (hasF) html += `<div class="inv-context-row" data-act="craft_f">🏹 Flechería</div>`;
       if (hasC) html += `<div class="inv-context-row" data-act="craft_c">🧵 Artesanía</div>`;
+      if (hasH) html += `<div class="inv-context-row" data-act="craft_h">🌿 Herbología</div>`;
     }
   }
   html += `<div class="inv-context-row" data-act="examine">🔍 Examinar</div>`;
@@ -559,8 +566,10 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
           console.warn('[inventory] to_quiver err:', err);
           showError('No se pudo meter las flechas al carcaj.');
         }
-      } else if (act === 'craft_f' || act === 'craft_c') {
-        window.__crafting?.open?.(item.item_id, act === 'craft_f' ? 'fletching' : 'crafting');
+      } else if (act === 'craft_f' || act === 'craft_c' || act === 'craft_h') {
+        window.__crafting?.open?.(item.item_id, act === 'craft_f' ? 'fletching' : act === 'craft_h' ? 'herblore' : 'crafting');
+      } else if (act === 'drink') {
+        window.__potions?.drink?.(slotIdx);
       } else if (act === 'examine') {
         const req = equipRequirement(item);
         showError(item.name + (item.equip_slot ? ` · ${item.equip_slot}` : '') + (req ? ` · requiere ${requirementText(req)}` : '') + (item.stackable ? ` · stackable (x${item.quantity})` : ''));

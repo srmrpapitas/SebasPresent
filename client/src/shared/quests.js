@@ -354,12 +354,12 @@ Object.assign(QUESTS, {
   },
   bruja_niebla: {
     id: 'bruja_niebla', name: 'La bruja de la niebla', giver: 'samir_mercader',
-    summary: 'Morgath, la Bruja del Pantano, maldice las caravanas. Estrategia: Protección contra magia y sal de los círculos.',
-    offer: ['Mis caravanas cruzan el pantano y vuelven… malditas.', 'Morgath lanza magia: protégete de ella. Y cuando veas un círculo morado a tus pies, ¡muévete!'],
-    accept: 'Acabaré con la bruja.', doing: 'Morgath vive en el pantano al oeste de Vilaflor.',
+    summary: 'Chona, la Bruja del Páramo, maldice las caravanas. Estrategia: Protección contra magia y sal de los círculos.',
+    offer: ['Mis caravanas cruzan el páramo de Erjos y vuelven… malditas.', 'Chona lanza magia: protégete de ella. Y cuando veas un círculo morado a tus pies, ¡muévete!'],
+    accept: 'Acabaré con la bruja.', doing: 'Chona vive en el páramo de Erjos, al oeste de Vilaflor.',
     thanks: 'Las maldiciones se han roto. Toma: la mejor mercancía de mi caravana.',
     steps: [
-      { id: 'kill', event: 'kill', match: 'bruja_pantano', count: 1, hint: { x: -640, z: 760 }, text: 'Derrota a Morgath, la Bruja del Pantano.', tip: 'Protección contra magia. Sal de los círculos morados.' },
+      { id: 'kill', event: 'kill', match: 'bruja_pantano', count: 1, hint: { x: -640, z: 760 }, text: 'Derrota a Chona, la Bruja del Páramo.', tip: 'Protección contra magia. Sal de los círculos morados.' },
       talkBack('samir_mercader', 'Vuelve con Samir a Güímar.'),
     ],
     reward: { coins: 6000, items: [['tele_solquemado', 3]], xp: { magic: 5000 }, text: '6.000 monedas · 3 tabletas · 5.000 XP Magia' },
@@ -391,11 +391,57 @@ Object.assign(QUESTS, {
   },
 });
 
+// ============================================================
+// Sesión 50 — Herbología y el Cabildo
+// ============================================================
+Object.assign(QUESTS, {
+  primeras_pociones: {
+    id: 'primeras_pociones', name: 'Primeras pociones', giver: 'carmita_aso',
+    summary: 'Carmita te enseña a hacer pociones con las hierbas de La ASO.',
+    offer: ['¿Nunca has hecho una poción? ¡Qué me dices!', 'Cómprame una tabaiba y un vial de agua, y mézclalos: poción de ataque. Fácil, fácil.'],
+    accept: 'Enséñeme, Carmita.', doing: 'Compra tabaiba y un vial de agua en mi puesto. En la mochila, toca la tabaiba → 🌿 Herbología.',
+    thanks: '¡Mira qué color más bonito! Toma, pa\' que sigas practicando.',
+    steps: [
+      { id: 'mix', event: 'herb', match: 'pocion_ataque_3', count: 1, hint: { talk: 'carmita_aso' }, text: 'Haz una poción de ataque (tabaiba + vial de agua).', tip: 'En la mochila, toca la tabaiba y elige 🌿 Herbología.' },
+      talkBack('carmita_aso', 'Enséñale la poción a Carmita.'),
+    ],
+    reward: { coins: 150, items: [['hierba_verode', 5], ['hierba_salvia', 3], ['vial_agua', 10]], xp: { herblore: 500 }, text: '5 verodes · 3 salvias · 10 viales · 150 monedas · 500 XP Herbología' },
+  },
+  dia_de_pierna: {
+    id: 'dia_de_pierna', name: 'Día de pierna', giver: 'airam_forzudo',
+    summary: 'Airam, el Forzudo de Santa Cruz, necesita pociones para su entreno.',
+    offer: ['¡Chacho! Hoy toca día de pierna y me quedé sin pociones.', 'Tráeme 2 pociones de fuerza (3 dosis) y te enseño unos truquillos de entreno.'],
+    accept: 'Te las traigo, Airam.', doing: '2 pociones de fuerza, mi niño. Verode + vial de agua, nivel 8 de Herbología.',
+    thanks: '¡Eso es! Mira, mira… ¡se me hinchan las venas! Toma, que te lo has ganado.',
+    steps: [
+      { id: 'deliver', event: 'deliver', npc: 'airam_forzudo', items: [['pocion_fuerza_3', 2]], count: 1, hint: { talk: 'airam_forzudo' },
+        text: 'Lleva 2 pociones de fuerza (3) a Airam en Santa Cruz.', tip: 'Verode + vial de agua (La ASO, La Laguna).' },
+    ],
+    reward: { coins: 800, items: [['gofio', 5]], xp: { strength: 3000, herblore: 800 }, text: '800 monedas · 5 gofios · 3.000 XP Fuerza · 800 XP Herbología' },
+  },
+  sombra_cabildo: {
+    id: 'sombra_cabildo', name: 'La sombra del Cabildo', giver: 'alma_sacerdotisa',
+    summary: 'El Cabildo esconde una orden de magos que quiere liberar a Guayota. Recomendado: combate 60.',
+    offer: ['Tengo que contarte algo… y no puede oírlo nadie del Cabildo.', 'Por las noches, magos con capucha roja hacen rituales en el monte de Las Mercedes. Quieren romper el sello de Achamán y liberar a Guayota.', 'Habla primero con Carmita, en La ASO: ella ha visto qué compran.'],
+    accept: 'Descubriré qué trama el Cabildo.', doing: 'El Cabildo se reúne en el monte de Las Mercedes, al norte de La Laguna.',
+    thanks: 'Has salvado la isla sin que nadie lo sepa. Achamán te lo pagará… y yo también.',
+    steps: [
+      { id: 'talk', event: 'talk', match: 'carmita_aso', count: 1, hint: { talk: 'carmita_aso' }, text: 'Pregunta a Carmita en La ASO.', tip: 'Su puesto está en la plaza de La Laguna.' },
+      { id: 'mix', event: 'herb', match: 'pocion_plegaria_3', count: 1, hint: { talk: 'carmita_aso' }, text: 'Prepara una poción de plegaria (retama del Teide + vial).', tip: 'Necesitas nivel 35 de Herbología. Te hará falta contra el Magister.' },
+      { id: 'kill', event: 'kill', match: 'acolito_cabildo', count: 5, hint: { x: -40, z: -560 }, text: 'Derrota a 5 acólitos del Cabildo.', tip: 'Atacan con magia: Protección contra magia.' },
+      { id: 'boss', event: 'kill', match: 'magister_cabildo', count: 1, hint: { x: -40, z: -600 }, text: 'Derrota al Magister Perdomo.', tip: 'Sal de los círculos rojos y bebe plegaria cuando te la robe.' },
+      talkBack('alma_sacerdotisa', 'Vuelve con Alma junto al altar de La Laguna.'),
+    ],
+    reward: { coins: 12000, items: [['super_ataque_3', 2], ['super_fuerza_3', 2], ['super_defensa_3', 2]], xp: { prayer: 5000, magic: 5000, herblore: 3000 }, text: '12.000 monedas · 6 súper pociones · XP de Plegaria, Magia y Herbología' },
+  },
+});
+
 export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'primer_viaje',
   'ratas_granero', 'guiso_abuela', 'faro_apagado', 'aranas_robledal', 'aullidos',
   'mago_huesos', 'encargo_herrera', 'escorpiones', 'golems_mina', 'bestia_blanca',
   // Sesión 50
-  'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones'];
+  'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones',
+  'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {

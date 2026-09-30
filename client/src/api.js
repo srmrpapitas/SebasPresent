@@ -653,3 +653,8 @@ export async function fosaStart() {
 export async function fosaLeave() {
   return apiFetch('/api/fosa/leave', { method: 'POST', auth: true, body: {} });
 }
+
+// Sesión 50 — beber una dosis de poción
+export async function potionDrink(slot) {
+  return apiFetch('/api/potion/drink', { method: 'POST', auth: true, body: { slot } });
+}

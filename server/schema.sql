@@ -337,3 +337,4 @@ CREATE TABLE IF NOT EXISTS user_fosa (
   result TEXT,
   started_at INTEGER
 );
+ALTER TABLE combat_stats ADD COLUMN boosts TEXT;

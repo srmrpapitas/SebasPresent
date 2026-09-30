@@ -31,6 +31,7 @@
 import * as magic from './magic.js';   // Sesión 41 — sistema de mago
 import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.js';   // Sesión 50
 import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jefes
+import { activeBoosts } from '../client/src/shared/herblore.js';   // Sesión 50 — pociones
 import { hasSpecialAttack, DRAGON_SPEC_MULT, DRAGON_SPEC_MIN_HIT, DRAGON_SPEC_COST, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
@@ -473,19 +474,22 @@ async function getEquipBonuses(db, userId) {
 }
 // Sesión 50 — Plegarias activas (con el gasto de puntos aplicado) → efectos.
 function prayerFx(stats, now) {
-  if (!stats || stats.prayer_points == null) return prayerEffects([]);
-  const st = currentPrayerState(stats.prayer_points, stats.prayer_updated_at, stats.active_prayers, now);
-  return prayerEffects(st.active);
+  let fx;
+  if (!stats || stats.prayer_points == null) fx = prayerEffects([]);
+  else fx = prayerEffects(currentPrayerState(stats.prayer_points, stats.prayer_updated_at, stats.active_prayers, now).active);
+  // Sesión 50 — pociones: subida plana de niveles (Herbología)
+  fx.flat = activeBoosts(stats?.boosts, now);
+  return fx;
 }
 // Niveles con el % de las plegarias (como en OSRS: suben el nivel efectivo).
 function boostLvls(l, fx) {
   return {
     ...l,
-    attack:   Math.floor(l.attack   * (1 + fx.atk)),
-    strength: Math.floor(l.strength * (1 + fx.str)),
-    defence:  Math.floor(l.defence  * (1 + fx.def)),
-    ranged:   Math.floor(l.ranged   * (1 + fx.rng)),
-    magic:    Math.floor(l.magic    * (1 + fx.mag)),
+    attack:   Math.floor(l.attack   * (1 + fx.atk)) + (fx.flat?.attack || 0),
+    strength: Math.floor(l.strength * (1 + fx.str)) + (fx.flat?.strength || 0),
+    defence:  Math.floor(l.defence  * (1 + fx.def)) + (fx.flat?.defence || 0),
+    ranged:   Math.floor(l.ranged   * (1 + fx.rng)) + (fx.flat?.ranged || 0),
+    magic:    Math.floor(l.magic    * (1 + fx.mag)) + (fx.flat?.magic || 0),
   };
 }
 
@@ -1097,7 +1101,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   const doRoll = () => (
     isMagic
-      ? magic.rollHitMagic(rng, Math.floor(magicLevel * (1 + userFx.mag)), npc.defence_lvl,
+      ? magic.rollHitMagic(rng, Math.floor(magicLevel * (1 + userFx.mag)) + (userFx.flat?.magic || 0), npc.defence_lvl,
           magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, staffMagicBonus))
       : isRanged
       ? rollHitRanged(rng, userLvls.ranged, npc.defence_lvl,
@@ -1625,7 +1629,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   const doRollPvp = () => (
     isMagicPvp && spellPvp
-      ? magic.rollHitMagic(rng, Math.floor(magicLevelPvp * (1 + attackerFx.mag)), Math.round(targetLvls.defence * targetDefMult),
+      ? magic.rollHitMagic(rng, Math.floor(magicLevelPvp * (1 + attackerFx.mag)) + (attackerFx.flat?.magic || 0), Math.round(targetLvls.defence * targetDefMult),
           magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, STAFF_MAGIC_BONUS[weaponItemIdPvp] || 0))
       : isRanged
       ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
@@ -2447,7 +2451,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
       `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
               i.in_combat_with, i.last_attack_at, i.last_moved_at, i.spawn_x, i.spawn_z,
               d.behavior, d.aggro_radius, d.attack_range, d.attack_speed_ticks,
-              d.attack_lvl, d.strength_lvl, d.max_hit
+              d.attack_lvl, d.strength_lvl, d.max_hit, d.style
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
@@ -2472,7 +2476,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
   if (!viewerStats || viewerStats.hp_current <= 0) return changes; // muerto: no agro
 
   const viewerFx = prayerFx(viewerStats, now);   // Sesión 50 — plegarias del jugador
-  const viewerDefLvl = Math.floor((viewerStats.defence_xp != null ? levelFromXp(viewerStats.defence_xp) : 1) * (1 + viewerFx.def));
+  const viewerDefLvl = Math.floor((viewerStats.defence_xp != null ? levelFromXp(viewerStats.defence_xp) : 1) * (1 + viewerFx.def)) + (viewerFx.flat?.defence || 0);
   // Sesión 50 — la armadura y el estilo defensivo del jugador cuentan.
   let viewerDefMult = 1;
   try {
@@ -2518,7 +2522,11 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
     let dmg = 0;
 
     if (target === viewer.user_id) {
-      const attackRange = Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE);
+      // Sesión 50 — monstruos a distancia / magos (acólitos del Cabildo): atacan desde lejos
+      const npcStyle = npc.style || 'melee';
+      const attackRange = npcStyle === 'melee'
+        ? Math.min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE)
+        : Math.max(3, npc.attack_range);
 
       // ---- PERSECUCIÓN: si fuera de rango, paso hacia el viewer.
       if (dToViewer > attackRange) {
@@ -2539,7 +2547,10 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
         const ready = !npc.last_attack_at || (now - npc.last_attack_at) >= cooldownMs;
         if (ready && viewerHp > 0) {
           const roll = rollHit(rng, npc.attack_lvl, viewerDefLvl, npc.max_hit, 1, viewerDefMult);
-          dmg = viewerFx.protectMelee ? 0 : Math.min(roll.damage, viewerHp);
+          const blocked = (npcStyle === 'melee' && viewerFx.protectMelee)
+            || (npcStyle === 'ranged' && viewerFx.protectRanged)
+            || (npcStyle === 'magic' && viewerFx.protectMagic);
+          dmg = blocked ? 0 : Math.min(roll.damage, viewerHp);
           attacked = true;
         }
       }
@@ -2708,7 +2719,7 @@ export async function playerDefProfile(env, userId, now) {
   const stats = await env.DB.prepare('SELECT * FROM combat_stats WHERE user_id = ?').bind(userId).first();
   if (!stats) return null;
   const fx = prayerFx(stats, now);
-  const defLvl = Math.floor(levelFromXp(stats.defence_xp || 0) * (1 + fx.def));
+  const defLvl = Math.floor(levelFromXp(stats.defence_xp || 0) * (1 + fx.def)) + (fx.flat?.defence || 0);
   let defMult = 1;
   try {
     const eq = await getEquipBonuses(makeEnvDb(env), userId);

@@ -356,6 +356,13 @@ const ICONS = {
 // un color dominante distinto para que el grid del tab Stats se vea
 // variado de un vistazo.
 const SKILL_ICONS = {
+  // Sesión 50 — Herbología: mortero con hojas
+  herblore: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <path d="M5 16 H27 Q26 27 16 27 Q6 27 5 16Z" fill="#8a8a8a" stroke="#000" stroke-width="1.2"/>
+    <path d="M7 18 H25" stroke="#bdbdbd" stroke-width="1"/>
+    <line x1="18" y1="16" x2="27" y2="4" stroke="#5a3a1d" stroke-width="3" stroke-linecap="round"/>
+    <path d="M8 15 Q9 8 14 9 Q12 13 8 15Z M13 15 Q16 9 20 11 Q17 14 13 15Z" fill="#4ab040" stroke="#1f5a18" stroke-width=".8"/>
+  </svg>`,
   // Sesión 50 — Flechería: flecha con plumas sobre astil
   fletching: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
     <line x1="6" y1="26" x2="24" y2="8" stroke="#8a5a2b" stroke-width="2.4" stroke-linecap="round"/>
@@ -704,6 +711,38 @@ ICONS.cape_fuego = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <rect x="9" y="3" width="14" height="3" rx="1" fill="#2a0804" stroke="#000" stroke-width=".8"/>
   <circle cx="11" cy="4.5" r="1.4" fill="#ffa030"/><circle cx="21" cy="4.5" r="1.4" fill="#ffa030"/>
 </svg>`;
+
+// Sesión 50 — Herbología: hierbas canarias, vial, gofio y pociones
+{
+  const HERB_C = { hierba_tabaiba: ['#9ac040', '#e0e070'], hierba_verode: ['#5a9a3a', '#f0d040'], hierba_salvia: ['#8aa8a0', '#c0a0e0'],
+    hierba_oregano: ['#4a8a3a', '#f0f0f0'], hierba_retama: ['#6a8a4a', '#fff4f0'], hierba_tajinaste: ['#3a6a2a', '#e03030'] };
+  for (const [id, [leaf, flower]] of Object.entries(HERB_C)) {
+    ICONS[id] = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 29 V12" stroke="#3a5a1a" stroke-width="2"/>
+      <path d="M16 22 Q8 22 7 14 Q14 15 16 22Z M16 18 Q24 18 25 10 Q18 11 16 18Z M16 26 Q10 27 8 22 Q14 21 16 26Z" fill="${leaf}" stroke="#1f3a10" stroke-width=".9"/>
+      <circle cx="16" cy="9" r="3.4" fill="${flower}" stroke="#000" stroke-width=".8"/><circle cx="12.5" cy="6.5" r="1.8" fill="${flower}"/><circle cx="19.5" cy="6.5" r="1.8" fill="${flower}"/>
+    </svg>`;
+  }
+  const flask = (liquid, fill) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <rect x="13" y="3" width="6" height="4" rx="1" fill="#8a6a3a" stroke="#000" stroke-width=".8"/>
+    <path d="M13.5 7 V12 L7 24 Q6 28 10 28 H22 Q26 28 25 24 L18.5 12 V7Z" fill="rgba(220,240,255,.35)" stroke="#000" stroke-width="1.1" stroke-linejoin="round"/>
+    ${fill > 0 ? `<clipPath id="fc${liquid.slice(1)}${Math.round(fill * 10)}"><rect x="0" y="${28 - 16 * fill}" width="32" height="32"/></clipPath>
+    <path d="M13.5 12 L7 24 Q6 28 10 28 H22 Q26 28 25 24 L18.5 12Z" fill="${liquid}" clip-path="url(#fc${liquid.slice(1)}${Math.round(fill * 10)})"/>` : ''}
+    <path d="M11 20 Q10 24 12 26" stroke="#fff" stroke-width="1.2" fill="none" opacity=".7"/>
+  </svg>`;
+  ICONS.vial_agua = flask('#7ac8ff', 0.75);
+  ICONS.gofio = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 10 Q6 28 10 29 H22 Q26 28 24 10 Z" fill="#d8b878" stroke="#000" stroke-width="1.1"/>
+    <path d="M8 10 Q16 6 24 10 Q16 13 8 10Z" fill="#c0a060" stroke="#000" stroke-width=".9"/>
+    <path d="M10 9 Q16 3 22 9" fill="#e8d8b0" stroke="#000" stroke-width=".8"/>
+    <text x="16" y="23" text-anchor="middle" font-size="7" font-weight="bold" fill="#5a3a10">GOFIO</text>
+  </svg>`;
+  const POT_C = { pocion_ataque: '#e05a3a', pocion_fuerza: '#e0b030', pocion_defensa: '#3a7ad0', pocion_distancia: '#3ab04a',
+    pocion_plegaria: '#40d0c0', pocion_magia: '#9a5ae0', super_ataque: '#ff2a1a', super_fuerza: '#ffd000', super_defensa: '#2a5aff' };
+  for (const [base, col] of Object.entries(POT_C)) {
+    for (const d of [3, 2, 1]) ICONS[`${base}_${d}`] = flask(col, d / 3 * 0.85);
+  }
+}
 
 // Sesión 50 — Tabletas de teletransporte: losa de piedra con runa del color del destino
 import { TABLETS as _TABLETS } from './shared/teleports.js';

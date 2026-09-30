@@ -29,6 +29,7 @@ import * as terrain from './terrain.js';
 import * as mapRender from './map_render.js';   // Sesión 50 — minimapa/mapa nuevos
 import * as bossFx from './boss_fx.js';         // Sesión 50 — jefes
 import * as fosa from './fosa.js';              // Sesión 50 — Fosa de Guayota
+import * as potions from './potions.js';        // Sesión 50 — pociones
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
@@ -858,6 +859,7 @@ export async function startWorld(loggedInUser, token) {
         },
       });
     } catch (e) { console.warn('[world] tablets start:', e); }
+    try { potions.start({ getSnapshot: () => worldSnapshot.getSnapshot(), feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] potions start:', e); }
     // Sesión 50 — La Fosa de Guayota (oleadas)
     try {
       fosa.start({
@@ -3076,6 +3078,7 @@ function animate() {
   crafting.update(dt);        // Sesión 50 — bucle de flechería/artesanía
   bankChests.update(dt);      // Sesión 50 — cofres de banco
   try { bossFx.update(dt); } catch (e) { if (!window.__bossErr) { window.__bossErr = e; console.warn('[boss]', e); } }
+  try { potions.update(dt); } catch {}
   try { fosa.update(dt); } catch (e) { if (!window.__fosaErr) { window.__fosaErr = e; console.warn('[fosa]', e); } }
   townNpcs.update(dt);        // Sesión 50 — habitantes
   tablets.update(dt);         // Sesión 50 — efecto de teletransporte
