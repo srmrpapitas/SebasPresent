@@ -734,3 +734,10 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - **Ataque especial SOLO con `bow_dragon`** (`hasSpecialAttack`): "Aliento del dragón", 55 % de barra, dos golpes ×1.5 con mínimo 4 cada uno; respuesta `special.dragon=true` → el cliente dispara dos cabezas de dragón (`fireProjectile type:'dragonhead'`).
 - Modelos procedurales en `armor_procedural.js` (`buildDragonBow`, `buildDragomanteStaff`), en la mano izquierda. Tuning: `__procArmorTune.bow / .staff`.
 - Proyectiles: cada hechizo tiene su efecto (bola de fuego, lanza de hielo, rayo, lianas) con estela de partículas, círculo rúnico al lanzar e impacto. Los demás jugadores también ven tus proyectiles (`fx` en el push `npc`; `spell/arrow/dragon` en `hit`).
+
+## 33. Jefes (Sesión 50)
+- Definición única: `client/src/shared/bosses.js` (8 jefes: guarida, stats, ataques, especiales, rocas, pieza de dragón). Seed 009 generado desde ahí (`npc_defs.behavior='boss'`, id = boss id; botín: pieza 1/20). Migración 006 = `boss_state`.
+- Cerebro: `server/bosses.js` `tickBossesNear` desde el snapshot (gate atómico `last_tick`, cada 350 ms). Melé/proyectiles/magia; las protecciones de plegaria anulan el estilo correspondiente. Especiales: aoe_target, aoe_self (ring), pool, teleport, drain, switch. Las ROCAS bloquean al jefe (safespot) y al jugador (`boss_fx.applyCollision`).
+- `attackNpc` NO contraataca con jefes (lo hace su cerebro); `meleeResist` reduce la melé (Coloso). Los pasivos que deambulan excluyen `boss`.
+- Snapshot: `bosses: [{id,npc_id,alive,style,hz,atk,spec}]` y `me.user_id`. Cliente: `boss_fx.js` (avisos en el suelo, explosiones, proyectiles, barra de vida arriba, banner de especial), modelos en `npc_procedural.js`.
+- Si cambias bosses.js: regenera el seed (scratchpad gen_bosses.mjs) y re-ejecútalo.

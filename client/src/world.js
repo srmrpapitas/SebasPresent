@@ -27,6 +27,8 @@ import * as spellbook from './spellbook.js';   // Sesión 41 — hechizos de com
 import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
 import * as mapRender from './map_render.js';   // Sesión 50 — minimapa/mapa nuevos
+import * as bossFx from './boss_fx.js';         // Sesión 50 — jefes
+import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
 import * as bank from './bank.js';
@@ -253,6 +255,8 @@ export async function startWorld(loggedInUser, token) {
     try { prayer.registerKeepouts(terrain); } catch (e) { console.warn('[world] prayer keepouts:', e); }
     try { bankChests.registerKeepouts(terrain); } catch (e) { console.warn('[world] bank keepouts:', e); }
     try { townNpcs.registerKeepouts(terrain); } catch (e) { console.warn('[world] npc keepouts:', e); }
+    // Sesión 50 — guaridas de jefes sin árboles
+    try { for (const b of Object.values(BOSSES)) { terrain.addKeepout?.(b.x, b.z, b.lairR + 2); terrain.clearTreesNear?.(b.x, b.z, b.lairR + 2); } } catch {}
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
     // Sesión 11b parcial — camera/canvas/feedLog para tap + colisión sólida
     // Sesión 11c-1 — onTapBuilding dispara interiors.enter()
@@ -786,6 +790,16 @@ export async function startWorld(loggedInUser, token) {
         feedLog:         (type, msg) => combat.feedLog?.(type, msg),
       });
     } catch (e) { console.warn('[world] prayer start:', e); }
+    // Sesión 50 — Jefes: rocas, avisos, barra de vida
+    try {
+      bossFx.start({
+        scene,
+        getPlayer:   () => player,
+        getSnapshot: () => worldSnapshot.getSnapshot(),
+        feedLog:     (type, msg) => combat.feedLog?.(type, msg),
+        getPeerPos:  (uid) => multiplayer.getPeerVisualPosition?.(uid),
+      });
+    } catch (e) { console.warn('[world] boss fx start:', e); }
     // Sesión 50 — Cofres de banco por el mapa
     try {
       bankChests.start({
@@ -963,6 +977,7 @@ export function stopWorld() {
     scene = null;
   }
 
+  try { bossFx.stop(); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';
   if (fullMapOverlay) fullMapOverlay.classList.remove('visible');
   ['worldTooltip', 'worldRegion', 'worldBanner'].forEach(id => {
@@ -1243,6 +1258,13 @@ function drawMinimap() {
     ctx.beginPath(); ctx.arc(sx, sy, 2.6, 0, Math.PI * 2);
     ctx.fillStyle = sameParty ? '#4adc4a' : '#ffffff'; ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // Jefes
+  for (const b of bossFx.getBossesForMap()) {
+    if (!inView(b.x, b.z)) continue;
+    const [sx, sy] = S(b.x, b.z);
+    mapRender.drawIcon(ctx, 'boss', sx, sy, 5.5);
   }
 
   // Lugares (icono + nombre)
@@ -1576,6 +1598,14 @@ function drawFullMap() {
     const r = big ? IR + 2 : IR;
     mapRender.drawIcon(ctx, mapRender.placeIconKind(p), sx, sy, r, { color: '#' + (p.color >>> 0).toString(16).padStart(6, '0') });
     if (big || ppm >= 0.14) mapRender.label(ctx, p.name, sx, sy + r + 9, big ? 13 : 11, big ? '#fff3c0' : '#e8d8a8', big);
+  }
+
+  // Jefes (siempre visibles: calavera roja + nombre)
+  for (const b of bossFx.getBossesForMap()) {
+    if (!vis(b.x, b.z, 60)) continue;
+    const [sx, sy] = S(b.x, b.z);
+    mapRender.drawIcon(ctx, 'boss', sx, sy, IR + 1);
+    if (ppm >= 0.12) mapRender.label(ctx, b.name, sx, sy + IR + 10, 11, '#ffb0a0', true);
   }
 
   // Otros jugadores
@@ -3024,6 +3054,7 @@ function animate() {
   fishing.update(dt);         // Sesión 50 — estanques + bancos + loop de pesca
   crafting.update(dt);        // Sesión 50 — bucle de flechería/artesanía
   bankChests.update(dt);      // Sesión 50 — cofres de banco
+  try { bossFx.update(dt); } catch (e) { if (!window.__bossErr) { window.__bossErr = e; console.warn('[boss]', e); } }
   townNpcs.update(dt);        // Sesión 50 — habitantes
   tablets.update(dt);         // Sesión 50 — efecto de teletransporte
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo
@@ -3112,7 +3143,8 @@ function updatePlayer(dt) {
     const nextZ = player.position.z + wz * speed * dt;
     const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
     const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
-    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
+    const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);   // Sesión 50 — rocas de jefes
+    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
     player.position.x = adjusted.x;
     player.position.z = adjusted.z;
     moveWx = wx;
@@ -3140,7 +3172,8 @@ function updatePlayer(dt) {
       const adjusted = (() => {
         const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
         const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
-        return interiors.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
+        const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
+        return interiors.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
       })();
       const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
       if (moved < 0.01) {

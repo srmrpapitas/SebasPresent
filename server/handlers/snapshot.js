@@ -34,6 +34,7 @@ import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 // Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
 import { tickNpcAggro, tickNpcWander } from '../combat_engine.js';
+import { tickBossesNear } from '../bosses.js';   // Sesión 50 — jefes
 import { currentPrayerState, overheadPrayer } from '../../client/src/shared/prayer.js';   // Sesión 50
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
@@ -245,6 +246,13 @@ export async function handleWorldSnapshot(request, env) {
     } catch (err) {
       console.error('[snapshot/npc-wander]', err);
     }
+    // Sesión 50 — jefes (ataques, mecánicas y avisos en el suelo)
+    let bosses = [];
+    try {
+      bosses = await tickBossesNear(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
+    } catch (err) {
+      console.error('[snapshot/bosses]', err);
+    }
 
     // Bloque 2: formato idéntico al de combat_engine.getCombatState para que
     // npc_renderer.js sea drop-in replacement. Solo vivos (status=0).
@@ -302,6 +310,7 @@ export async function handleWorldSnapshot(request, env) {
     const RETALIATE_WINDOW_MS = 8_000;
     const retaliateCutoff = now - RETALIATE_WINDOW_MS;
     let me = {
+      user_id: session.user_id,   // Sesión 50 — para saber a quién apunta un jefe
       last_attacker: null,
       party_id: null,
       duel: null,           // Sesión 28
@@ -631,7 +640,7 @@ export async function handleWorldSnapshot(request, env) {
       if (!msg.includes('no such table')) console.warn('[snapshot/rock_state]', msg);
     }
 
-    return json({ now, players, npcs, me, fires, depleted_trees, depleted_veins });
+    return json({ now, players, npcs, me, fires, depleted_trees, depleted_veins, bosses });
   } catch (err) {
     console.error('[world/snapshot]', err);
     return json({ error: 'internal_error', message: err.message }, 500);

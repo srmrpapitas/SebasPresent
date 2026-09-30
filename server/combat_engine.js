@@ -30,6 +30,7 @@
 
 import * as magic from './magic.js';   // Sesión 41 — sistema de mago
 import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.js';   // Sesión 50
+import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jefes
 import { hasSpecialAttack, DRAGON_SPEC_MULT, DRAGON_SPEC_MIN_HIT, DRAGON_SPEC_COST, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
@@ -739,7 +740,7 @@ async function dbGetNpcInstance(db, npcInstanceId) {
   const row = await db.first(
     `SELECT i.*, d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
             d.attack_speed_ticks, d.max_hit, d.xp_per_kill, d.respawn_ms,
-            d.spawn_x, d.spawn_z, d.attack_range, d.model, d.style
+            d.spawn_x, d.spawn_z, d.attack_range, d.model, d.style, d.behavior
      FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
      WHERE i.id = ?`,
     [npcInstanceId]
@@ -1121,6 +1122,9 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   };
 
   const m1 = applyDamageMults(userHit);
+  // Sesión 50 — jefes resistentes a cuerpo a cuerpo (Coloso de Obsidiana)
+  const bossDef = npc.behavior === 'boss' ? BOSSES[npc.def_id] : null;
+  if (bossDef?.meleeResist && !isRangedLike) m1.dmg = Math.floor(m1.dmg * (1 - bossDef.meleeResist));
   let dmgRaw = m1.dmg;
   let isCrit = m1.crit;
 
@@ -1189,7 +1193,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   let userKilled = false;
   let respawned = false;
 
-  if (!npcKilled) {
+  if (!npcKilled && npc.behavior !== 'boss') {   // Sesión 50 — los jefes atacan con su propio cerebro (server/bosses.js)
     const npcCooldownMs = npc.attack_speed_ticks * TICK_MS;
     const npcReady = !npc.last_attack_at || (now - npc.last_attack_at) >= npcCooldownMs;
     // Sesión 39 fix — El NPC SOLO contraataca si VOS estás dentro de SU rango
@@ -2648,7 +2652,7 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
-         AND d.behavior != 'aggressive'
+         AND d.behavior NOT IN ('aggressive', 'boss')
          AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`
     ).bind(viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
   } catch {
@@ -2692,4 +2696,60 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
   }
 
   return changes;
+}
+
+// ============================================================
+// Sesión 50 — Ayudas para los JEFES (server/bosses.js)
+// ============================================================
+/** Perfil defensivo de un jugador (nivel de Defensa con plegarias, armadura y estilo). */
+export async function playerDefProfile(env, userId, now) {
+  const stats = await env.DB.prepare('SELECT * FROM combat_stats WHERE user_id = ?').bind(userId).first();
+  if (!stats) return null;
+  const fx = prayerFx(stats, now);
+  const defLvl = Math.floor(levelFromXp(stats.defence_xp || 0) * (1 + fx.def));
+  let defMult = 1;
+  try {
+    const eq = await getEquipBonuses(makeEnvDb(env), userId);
+    const st = await env.DB.prepare('SELECT combat_style FROM users WHERE id = ?').bind(userId).first();
+    defMult = defMultOf(eq, STYLE_TO_STANCE[st?.combat_style] || 'smash');
+  } catch {}
+  return { stats, fx, defLvl, defMult };
+}
+
+/** Tirada de golpe de un monstruo contra un jugador. */
+export function monsterRoll(rng, atkLvl, defLvl, maxHit, defMult) {
+  return rollHit(rng, atkLvl, defLvl, maxHit, 1, defMult);
+}
+
+/**
+ * Aplica daño de un jefe a un jugador (vida, marcas de golpe para la animación,
+ * registro, y muerte con pérdida de objetos como con cualquier monstruo).
+ * Devuelve { hp, died }.
+ */
+export async function damagePlayerFromMonster(env, userId, dmg, now, npcId, pos, rng = Math.random) {
+  const stats = await env.DB.prepare('SELECT hp_current, skulled_until FROM combat_stats WHERE user_id = ?').bind(userId).first();
+  if (!stats || stats.hp_current <= 0) return { hp: 0, died: false };
+  const d = Math.max(0, Math.min(dmg | 0, stats.hp_current));
+  const hp = stats.hp_current - d;
+  await env.DB.prepare(
+    `UPDATE combat_stats SET hp_current = MAX(0, hp_current - ?), last_hit_from_user_id = NULL,
+            last_hit_damage = ?, last_hit_at = ?, last_hit_is_crit = 0
+      WHERE user_id = ? AND hp_current > 0`
+  ).bind(d, d, now, userId).run();
+  try {
+    await env.DB.prepare(
+      `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
+       VALUES (?, 1, ?, 0, ?, ?, ?, ?)`
+    ).bind(now, npcId || 0, userId, d, d > 0 ? 1 : 0, hp <= 0 ? 1 : 0).run();
+  } catch {}
+  if (hp <= 0) {
+    try {
+      await env.DB.prepare('UPDATE combat_stats SET last_died_at = ? WHERE user_id = ?').bind(now, userId).run();
+      const edb = makeEnvDb(env);
+      if (isSkulled(stats, now)) await dropAllExceptTopUnitsOnDeathPVP(edb, userId, pos.x, pos.z, now, 0, rng, null);
+      else await dropExcessInventoryOnDeath(edb, userId, pos.x, pos.z, now, DEATH_KEEP_TOP_N_SLOTS, rng);
+      await env.DB.prepare('UPDATE combat_stats SET skulled_until = 0 WHERE user_id = ?').bind(userId).run();
+    } catch (err) { console.warn('[boss] death drop:', err?.message); }
+  }
+  return { hp, died: hp <= 0, dmg: d };
 }

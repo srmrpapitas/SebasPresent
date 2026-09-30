@@ -261,6 +261,8 @@ export async function start(opts) {
     };
     // Sesión 41 — posición VIVA del NPC (mesh interpolado), para que el
     // proyectil de hechizo persiga al objetivo aunque se mueva (homing).
+    // Sesión 50 — modelo procedural del NPC (jefes: attack(), setStyle())
+    window.__getNpcProc = (npcId) => npcMeshes.get(npcId)?.userData?.proc || null;
     window.__getNpcPosition = (npcId) => {
       const m = npcMeshes.get(npcId);
       if (!m || !m.position) return null;
