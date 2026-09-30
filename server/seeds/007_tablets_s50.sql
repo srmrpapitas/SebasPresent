@@ -1,19 +1,19 @@
 -- Sesión 50 — Tabletas de teletransporte + Tienda de magia (Morgana / Eldric)
 INSERT OR IGNORE INTO items (id,name,icon,stackable,description,created_at,base_price) VALUES
- ('tele_concejo','Tableta: Concejo Central','🪨',1,'Rómpela para ir a Concejo Central.',1791000000000,30),
- ('tele_robledal','Tableta: Robledal','🪨',1,'Rómpela para ir a Robledal.',1791000000000,60),
- ('tele_cazador','Tableta: Cabaña del Cazador','🪨',1,'Rómpela para ir a Cabaña del Cazador.',1791000000000,60),
- ('tele_cruce','Tableta: Aldea del Cruce','🪨',1,'Rómpela para ir a Aldea del Cruce.',1791000000000,60),
- ('tele_faro','Tableta: Faro del Sur','🪨',1,'Rómpela para ir a Faro del Sur.',1791000000000,90),
- ('tele_sirena','Tableta: Puerto Sirena','🪨',1,'Rómpela para ir a Puerto Sirena.',1791000000000,90),
- ('tele_torre','Tableta: Torre del Mago','🪨',1,'Rómpela para ir a Torre del Mago.',1791000000000,70),
- ('tele_picoblanco','Tableta: Picoblanco','🪨',1,'Rómpela para ir a Picoblanco.',1791000000000,100),
- ('tele_vientos','Tableta: Pueblo de los Vientos','🪨',1,'Rómpela para ir a Pueblo de los Vientos.',1791000000000,100),
- ('tele_mina','Tableta: Mina Antigua','🪨',1,'Rómpela para ir a Mina Antigua.',1791000000000,120),
- ('tele_solquemado','Tableta: Solquemado','🪨',1,'Rómpela para ir a Solquemado.',1791000000000,110),
- ('tele_verdis','Tableta: Verdis','🪨',1,'Rómpela para ir a Verdis.',1791000000000,110),
- ('tele_marpiedra','Tableta: Marpiedra','🪨',1,'Rómpela para ir a Marpiedra.',1791000000000,120),
- ('tele_ruinas','Tableta: Ruinas de Antaño','🪨',1,'Rómpela para ir a Ruinas de Antaño. ¡Cuidado: está en la wilderness!',1791000000000,150);
+ ('tele_concejo','Tableta: La Laguna','🪨',1,'Rómpela para ir a La Laguna.',1791000000000,30),
+ ('tele_robledal','Tableta: La Orotava','🪨',1,'Rómpela para ir a La Orotava.',1791000000000,60),
+ ('tele_cazador','Tableta: Icod de los Vinos','🪨',1,'Rómpela para ir a Icod de los Vinos.',1791000000000,60),
+ ('tele_cruce','Tableta: Vilaflor','🪨',1,'Rómpela para ir a Vilaflor.',1791000000000,60),
+ ('tele_faro','Tableta: Faro de Punta Rasca','🪨',1,'Rómpela para ir a Faro de Punta Rasca.',1791000000000,90),
+ ('tele_sirena','Tableta: Los Cristianos','🪨',1,'Rómpela para ir a Los Cristianos.',1791000000000,90),
+ ('tele_torre','Tableta: Observatorio de Izaña','🪨',1,'Rómpela para ir a Observatorio de Izaña.',1791000000000,70),
+ ('tele_picoblanco','Tableta: Las Cañadas','🪨',1,'Rómpela para ir a Las Cañadas.',1791000000000,100),
+ ('tele_vientos','Tableta: La Esperanza','🪨',1,'Rómpela para ir a La Esperanza.',1791000000000,100),
+ ('tele_mina','Tableta: Mina de Guajara','🪨',1,'Rómpela para ir a Mina de Guajara.',1791000000000,120),
+ ('tele_solquemado','Tableta: Güímar','🪨',1,'Rómpela para ir a Güímar.',1791000000000,110),
+ ('tele_verdis','Tableta: Adeje','🪨',1,'Rómpela para ir a Adeje.',1791000000000,110),
+ ('tele_marpiedra','Tableta: Santa Cruz','🪨',1,'Rómpela para ir a Santa Cruz.',1791000000000,120),
+ ('tele_ruinas','Tableta: Ruinas de Teno','🪨',1,'Rómpela para ir a Ruinas de Teno. ¡Cuidado: está en la wilderness!',1791000000000,150);
 INSERT OR REPLACE INTO shop_stock (shop_id,item_id,current_qty,max_qty,buy_price,sell_price,last_restock_at) VALUES
  ('magic_store','tele_concejo',200,200,12,30,0),
  ('magic_store','tele_robledal',100,100,24,60,0),

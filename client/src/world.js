@@ -28,7 +28,7 @@ import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
 import * as mapRender from './map_render.js';   // Sesión 50 — minimapa/mapa nuevos
 import * as bossFx from './boss_fx.js';         // Sesión 50 — jefes
-import * as fosa from './fosa.js';              // Sesión 50 — Fosa de Fuego
+import * as fosa from './fosa.js';              // Sesión 50 — Fosa de Guayota
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
@@ -234,7 +234,7 @@ export async function startWorld(loggedInUser, token) {
   user = loggedInUser;
   authToken = token || null;
 
-  showWorldLoading('Cargando el reino…');
+  showWorldLoading('Cargando la isla…');
 
   try {
     // Sesión 31 — scene/camera/renderer/raycaster/canvas/ocean ahora salen
@@ -858,7 +858,7 @@ export async function startWorld(loggedInUser, token) {
         },
       });
     } catch (e) { console.warn('[world] tablets start:', e); }
-    // Sesión 50 — La Fosa de Fuego (oleadas)
+    // Sesión 50 — La Fosa de Guayota (oleadas)
     try {
       fosa.start({
         scene,
@@ -1278,7 +1278,7 @@ function drawMinimap() {
     ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineWidth = 1; ctx.stroke();
   }
 
-  // Jefes + Fosa de Fuego
+  // Jefes + Fosa de Guayota
   for (const b of bossFx.getBossesForMap()) {
     if (!inView(b.x, b.z)) continue;
     const [sx, sy] = S(b.x, b.z);
@@ -1588,10 +1588,10 @@ function drawFullMap() {
     }
   }
 
-  // Tierras Rotas: rótulo
+  // Malpaís: rótulo
   {
     const [wx] = S(WILDERNESS_X, 0);
-    if (wx > 40) mapRender.label(ctx, 'TIERRAS ROTAS', Math.min(wx / 2, wx - 70), 22, 14, '#ff7060', true);
+    if (wx > 40) mapRender.label(ctx, 'EL MALPAÍS', Math.min(wx / 2, wx - 70), 22, 14, '#ff7060', true);
   }
 
   const IR = Math.max(5, Math.min(9, 4 + ppm * 3));
@@ -1619,7 +1619,7 @@ function drawFullMap() {
     if (big || ppm >= 0.14) mapRender.label(ctx, p.name, sx, sy + r + 9, big ? 13 : 11, big ? '#fff3c0' : '#e8d8a8', big);
   }
 
-  // Fosa de Fuego
+  // Fosa de Guayota
   { const fz = fosa.getForMap(); if (vis(fz.x, fz.z, 60)) { const [sx, sy] = S(fz.x, fz.z); mapRender.drawIcon(ctx, 'minigame', sx, sy, IR + 1); if (ppm >= 0.12) mapRender.label(ctx, fz.name, sx, sy + IR + 10, 11, '#ffc080', true); } }
   // Jefes (siempre visibles: calavera roja + nombre)
   for (const b of bossFx.getBossesForMap()) {

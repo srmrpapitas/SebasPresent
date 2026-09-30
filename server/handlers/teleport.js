@@ -31,7 +31,7 @@ export async function handleTabletBreak(request, env) {
   // Demasiado profundo en la wilderness
   const pos = await getPlayerPosition(env, userId);
   if (pos && pos.x < TELEPORT_WILD_LIMIT_X) {
-    return json({ error: 'too_deep', message: 'La magia no funciona tan dentro de las Tierras Rotas. Sal un poco al este.' }, 400);
+    return json({ error: 'too_deep', message: 'La magia no funciona tan dentro del Malpaís. Sal un poco al este.' }, 400);
   }
 
   // Gastar 1 (condicionado a que siga ahí)

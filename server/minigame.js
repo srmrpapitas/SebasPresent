@@ -1,5 +1,5 @@
 /**
- * SebasPresent — La Fosa de Fuego (servidor) · Sesión 50
+ * SebasPresent — La Fosa de Guayota (servidor) · Sesión 50
  *
  * Minijuego de oleadas por jugador. Las criaturas son filas de npc_instances
  * con owner_user_id = jugador (solo las ve y ataca él). Su IA corre aquí, "al
@@ -181,7 +181,7 @@ export async function tickFosa(env, uid, pos, now, rng = Math.random) {
         const dNow = dist(x, z, pos.x, pos.z);
         let attackedAt = null;
         if (D.style === 'jad') {
-          // Ignaroth: aviso (brillo verde/azul) y luego el golpe
+          // Guayota: aviso (brillo verde/azul) y luego el golpe
           if (tele && tele.n === m.id && now >= tele.at) {
             const blocked = (tele.s === 'ranged' && prof?.fx.protectRanged) || (tele.s === 'magic' && prof?.fx.protectMagic);
             const roll = monsterRoll(rng, D.att, prof?.defLvl || 1, D.max, prof?.defMult || 1);

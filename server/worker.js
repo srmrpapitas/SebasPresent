@@ -62,7 +62,7 @@ import * as mining from './handlers/skills/mining.js';            // Sesión 50 
 import * as fishing from './handlers/skills/fishing.js';          // Sesión 50 — pesca
 import * as crafting from './handlers/skills/crafting.js';        // Sesión 50 — flechería/artesanía
 import * as teleport from './handlers/teleport.js';               // Sesión 50 — tabletas
-import * as fosa from './handlers/minigame.js';                   // Sesión 50 — Fosa de Fuego
+import * as fosa from './handlers/minigame.js';                   // Sesión 50 — Fosa de Guayota
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria

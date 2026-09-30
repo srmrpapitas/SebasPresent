@@ -134,9 +134,9 @@ function inNoVeinZone(x, z) {
 // ------------------------------------------------------------
 // Vetas fijas (a mano)
 // ------------------------------------------------------------
-// s0-s5: Cantera de iniciación, al noreste del Concejo Central (spawn).
+// s0-s5: Cantera de iniciación, al noreste de La Laguna (spawn).
 //        La usará la misión tutorial de minería.
-// s6-s13: Mina Antigua (1200, -1500) — acero y oro alrededor de la entrada.
+// s6-s13: Mina de Guajara (1200, -1500) — acero y oro alrededor de la entrada.
 const STATIC_VEINS = [
   ['bronze', 118, -96], ['bronze', 122.5, -92], ['bronze', 114, -90.5],
   ['bronze', 125, -99.5], ['hierro', 119.5, -103], ['hierro', 129, -94],
@@ -144,7 +144,7 @@ const STATIC_VEINS = [
   ['oro', 1222, -1514], ['oro', 1176, -1478], ['acero', 1222, -1484],
   ['oro', 1230, -1490], ['acero', 1170, -1486],
 ];
-export const STARTER_QUARRY = { x: 121, z: -95, name: 'Cantera del Concejo' };
+export const STARTER_QUARRY = { x: 121, z: -95, name: 'Cantera de La Laguna' };
 
 // ------------------------------------------------------------
 // Generación

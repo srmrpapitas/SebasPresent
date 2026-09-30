@@ -11,6 +11,7 @@
  * Datos en shared/town_npcs.js y misiones en shared/quests.js (giver/offer/…).
  */
 
+import { LORE } from './shared/lore.js';   // Sesión 50 — Crónicas de Achinech
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as inventory from './inventory.js';
@@ -277,13 +278,20 @@ async function talkTo(o) {
     const opts = [];
     for (const q of info.offer) opts.push({ label: `❗ ${q.name}`, run: () => offerQuest(d, n, q) });
     for (const t of info.doing) opts.push({ label: `📜 ${t.q.name}`, run: () => aboutQuest(d, t) });
+    // Sesión 50 — Lore: Crónicas de Achinech
+    if (LORE[n.id]) {
+      const L = LORE[n.id];
+      opts.push({ label: L.label, run: async () => {
+        for (const page of L.pages) { await d.npc(page); if (d.closed) return; }
+      } });
+    }
     if (n.actions?.includes('bank')) opts.push({ label: '🏦 Quiero usar el banco', run: async () => { d.end(); onOpenBank(); } });
-    // Sesión 50 — La Fosa de Fuego
+    // Sesión 50 — La Fosa de Guayota
     if (n.actions?.includes('fosa')) {
       opts.push({ label: '🔥 Quiero bajar a la Fosa', run: async () => {
-        await d.npc('¿Seguro? Lleva comida y plegaria. Doce rondas… y si llegas, Ignaroth.');
+        await d.npc('¿Seguro? Lleva comida y plegaria. Doce rondas… y si llegas, Guayota.');
         if (d.closed) return;
-        const k = await d.choose(['¡Vamos allá!', 'Mejor otro día.'], 'La Fosa de Fuego');
+        const k = await d.choose(['¡Vamos allá!', 'Mejor otro día.'], 'La Fosa de Guayota');
         if (k !== 0) return;
         d.end();
         try { window.__fosa?.enter?.(); } catch (e) { console.warn(e); }

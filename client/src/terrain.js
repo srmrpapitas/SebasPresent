@@ -142,9 +142,9 @@ const DECORATION_GLB_URLS = {
 const LANDMARK_GLB_URL = `${R2_BASE}/decoration/rocks.glb`;
 const LANDMARK_DEFS = [
   // name → mesh hijo en rocks.glb que se usa como geometry.
-  { name: 'Black Rock',                 meshName: 'cliff1_cliffs_0', height: 80,  color: 0x2a2018 },
-  { name: "Zuckerberg's Dungeon",       meshName: 'cliff2_cliffs_0', height: 60,  color: 0x3a2828 },
-  { name: 'Mbappé Dictator Mountain',   meshName: 'cliff3_cliffs_0', height: 120, color: 0xc8d8e8 },
+  { name: 'Roque Negro',                 meshName: 'cliff1_cliffs_0', height: 80,  color: 0x2a2018 },
+  { name: "Los Gigantes",       meshName: 'cliff2_cliffs_0', height: 60,  color: 0x3a2828 },
+  { name: 'El Teide',   meshName: 'cliff3_cliffs_0', height: 120, color: 0xc8d8e8 },
 ];
 
 const BIOME_DECORATION = {
@@ -166,34 +166,34 @@ const DECORATION_CONFIG = {
 };
 
 export const PLACES = [
-  { name: 'Concejo Central',     type: 'city',    x:     0, z:     0, color: 0xe8c560, biome: 'plaza' },
-  { name: 'Robledal',            type: 'city',    x:  -300, z:  -700, color: 0x4a8a30, biome: 'forest' },
-  { name: 'Picoblanco',          type: 'city',    x:   200, z: -1700, color: 0xc8d8e8, biome: 'snow' },
-  { name: 'Solquemado',          type: 'city',    x:  1500, z:   100, color: 0xe8a448, biome: 'desert' },
-  { name: 'Verdis',              type: 'city',    x:  1000, z:  1200, color: 0x5aaa3a, biome: 'jungle' },
-  { name: 'Puerto Sirena',       type: 'city',    x:  -300, z:  1700, color: 0x6090c0, biome: 'beach' },
-  { name: 'Marpiedra',           type: 'city',    x:  1700, z:  -800, color: 0xa08070, biome: 'desert' },
-  { name: 'Avanzada del Olvido', type: 'city',    x: -1100, z:     0, color: 0x8a4040, biome: 'wilderness' },
-  { name: 'Aldea del Cruce',         type: 'village', x:  -400, z:   400, color: 0xc8a043, biome: 'plains' },
-  { name: 'Cabaña del Cazador',      type: 'village', x:  -700, z:  -200, color: 0x6a4828, biome: 'forest' },
-  { name: 'Pueblo de los Vientos',   type: 'village', x:   700, z: -1100, color: 0xc0d0e0, biome: 'snow' },
-  { name: 'Oasis del Halcón',        type: 'village', x:  1100, z:   600, color: 0xd8b860, biome: 'desert' },
-  { name: 'Hondonada Verde',         type: 'village', x:   700, z:  1450, color: 0x5a8a3a, biome: 'jungle' },
-  { name: 'Faro del Sur',            type: 'village', x:  -800, z:  1400, color: 0xc0d8e8, biome: 'beach' },
-  { name: 'Torre del Mago',  type: 'tower',  x:   400, z:  -900, color: 0x7090d0, biome: 'forest' },
-  { name: 'Mina Antigua',    type: 'mine',   x:  1200, z: -1500, color: 0x505050, biome: 'snow' },
-  { name: 'Templo de la Luz', type: 'temple', x:    0, z: -1200, color: 0xfff4d0, biome: 'plains' },
-  { name: 'Ruinas de Antaño', type: 'ruins', x: -1500, z:  -500, color: 0x6a4030, biome: 'wilderness' },
-  { name: 'Altar del Vacío',  type: 'altar', x: -1700, z:   500, color: 0x4a1a3a, biome: 'wilderness' },
-  { name: 'Corazón Roto',     type: 'boss',  x: -1850, z:     0, color: 0x8a1a1a, biome: 'wilderness' },
+  { name: 'La Laguna',     type: 'city',    x:     0, z:     0, color: 0xe8c560, biome: 'plaza' },
+  { name: 'La Orotava',            type: 'city',    x:  -300, z:  -700, color: 0x4a8a30, biome: 'forest' },
+  { name: 'Las Cañadas',          type: 'city',    x:   200, z: -1700, color: 0xc8d8e8, biome: 'snow' },
+  { name: 'Güímar',          type: 'city',    x:  1500, z:   100, color: 0xe8a448, biome: 'desert' },
+  { name: 'Adeje',              type: 'city',    x:  1000, z:  1200, color: 0x5aaa3a, biome: 'jungle' },
+  { name: 'Los Cristianos',       type: 'city',    x:  -300, z:  1700, color: 0x6090c0, biome: 'beach' },
+  { name: 'Santa Cruz',           type: 'city',    x:  1700, z:  -800, color: 0xa08070, biome: 'desert' },
+  { name: 'Santiago del Teide', type: 'city',    x: -1100, z:     0, color: 0x8a4040, biome: 'wilderness' },
+  { name: 'Vilaflor',         type: 'village', x:  -400, z:   400, color: 0xc8a043, biome: 'plains' },
+  { name: 'Icod de los Vinos',      type: 'village', x:  -700, z:  -200, color: 0x6a4828, biome: 'forest' },
+  { name: 'La Esperanza',   type: 'village', x:   700, z: -1100, color: 0xc0d0e0, biome: 'snow' },
+  { name: 'Arico',        type: 'village', x:  1100, z:   600, color: 0xd8b860, biome: 'desert' },
+  { name: 'Chayofa',         type: 'village', x:   700, z:  1450, color: 0x5a8a3a, biome: 'jungle' },
+  { name: 'Faro de Punta Rasca',            type: 'village', x:  -800, z:  1400, color: 0xc0d8e8, biome: 'beach' },
+  { name: 'Observatorio de Izaña',  type: 'tower',  x:   400, z:  -900, color: 0x7090d0, biome: 'forest' },
+  { name: 'Mina de Guajara',    type: 'mine',   x:  1200, z: -1500, color: 0x505050, biome: 'snow' },
+  { name: 'Basílica de Candelaria', type: 'temple', x:    0, z: -1200, color: 0xfff4d0, biome: 'plains' },
+  { name: 'Ruinas de Teno', type: 'ruins', x: -1500, z:  -500, color: 0x6a4030, biome: 'wilderness' },
+  { name: 'Altar de Guayota',  type: 'altar', x: -1700, z:   500, color: 0x4a1a3a, biome: 'wilderness' },
+  { name: 'Volcán Chinyero',     type: 'boss',  x: -1850, z:     0, color: 0x8a1a1a, biome: 'wilderness' },
 
   // Sesión 12 — Landmarks únicos (cliffs del rocks.glb). type='landmark' los
   // diferencia de places normales: se renderizan con un mesh GLB específico
   // en lugar de geometría procedural. La propiedad 'modelMesh' indica qué
   // mesh hijo del GLB usar.
-  { name: 'Black Rock',                 type: 'landmark', x: -1700, z: -1700, color: 0x2a2018, biome: 'wilderness', modelMesh: 'cliff1_cliffs_0', height: 80  },
-  { name: "Zuckerberg's Dungeon",       type: 'landmark', x: -1800, z:  1500, color: 0x3a2828, biome: 'wilderness', modelMesh: 'cliff2_cliffs_0', height: 60  },
-  { name: 'Mbappé Dictator Mountain',   type: 'landmark', x:   800, z: -1850, color: 0xc8d8e8, biome: 'snow',       modelMesh: 'cliff3_cliffs_0', height: 120 },
+  { name: 'Roque Negro',                 type: 'landmark', x: -1700, z: -1700, color: 0x2a2018, biome: 'wilderness', modelMesh: 'cliff1_cliffs_0', height: 80  },
+  { name: "Los Gigantes",       type: 'landmark', x: -1800, z:  1500, color: 0x3a2828, biome: 'wilderness', modelMesh: 'cliff2_cliffs_0', height: 60  },
+  { name: 'El Teide',   type: 'landmark', x:   800, z: -1850, color: 0xc8d8e8, biome: 'snow',       modelMesh: 'cliff3_cliffs_0', height: 120 },
 ];
 
 const PLACES_BY_CHUNK = new Map();
@@ -386,15 +386,15 @@ export function getRegionInfo(x, z) {
     if (depth > 0.75) level = 50;
     else if (depth > 0.45) level = 30;
     else if (depth > 0.2) level = 10;
-    return { name: `Tierras Rotas · Nv. ${level}`, type: 'wilderness', isWild: true };
+    return { name: `Malpaís · Nv. ${level}`, type: 'wilderness', isWild: true };
   }
   const biome = biomeAt(x, z);
   const REGION_NAMES = {
-    plaza: 'Plaza Central', plains: 'Llanuras Verdes', forest: 'Bosques del Norte',
-    snow: 'Tundra de Picoblanco', desert: 'Desierto de Sol', jungle: 'Selva de Verdis',
-    beach: 'Costa del Sur', swamp: 'Pantano del Sauce',
+    plaza: 'Vega de Aguere', plains: 'Medianías', forest: 'Monteverde de Anaga',
+    snow: 'Cumbres de Las Cañadas', desert: 'Malpaís de Güímar', jungle: 'Barranco del Infierno',
+    beach: 'Costa de Abona', swamp: 'Charcas de Erjos',
   };
-  return { name: REGION_NAMES[biome.id] || 'Tierras Salvajes', type: 'biome' };
+  return { name: REGION_NAMES[biome.id] || 'Monte', type: 'biome' };
 }
 
 // ============================================================

@@ -1,5 +1,5 @@
 /**
- * SebasPresent — La Fosa de Fuego (minijuego de oleadas, estilo Fight Caves) · Sesión 50
+ * SebasPresent — La Fosa de Guayota (minijuego de oleadas, estilo Fight Caves) · Sesión 50
  *
  * MÓDULO COMPARTIDO cliente + servidor.
  *
@@ -8,11 +8,11 @@
  *   Diablillo (cuerpo a cuerpo) · Escupefuego (proyectiles) · Espíritu ígneo
  *   (magia) · Bruto de magma (cuerpo a cuerpo fuerte).
  * Usa la protección correcta contra cada una. En la última ronda aparece
- * IGNAROTH: antes de cada ataque BRILLA en VERDE (proyectiles) o AZUL (magia)
+ * GUAYOTA: antes de cada ataque BRILLA en VERDE (proyectiles) o AZUL (magia)
  * — cambia tu protección a tiempo.
  *
  * Si mueres dentro NO pierdes objetos: te sacan fuera con la vida llena.
- * Premios: monedas cada 3 rondas superadas y, al vencer a Ignaroth, la
+ * Premios: monedas cada 3 rondas superadas y, al vencer a Guayota, la
  * CAPA DE FUEGO.
  */
 
@@ -29,7 +29,7 @@ export const FOSA_MOBS = {
   fosa_escupefuego: { name: 'Escupefuego',      hp: 30, att: 48, def: 30, style: 'ranged', range: 11,  max: 10, every: 3000, speed: 2.4, h: 1.4 },
   fosa_espiritu:  { name: 'Espíritu ígneo',     hp: 34, att: 52, def: 34, style: 'magic',  range: 11,  max: 12, every: 3000, speed: 2.4, h: 1.8 },
   fosa_bruto:     { name: 'Bruto de magma',     hp: 60, att: 55, def: 45, style: 'melee',  range: 2.8, max: 15, every: 3000, speed: 2.2, h: 2.6 },
-  fosa_ignaroth:  { name: 'Ignaroth',           hp: 250, att: 70, def: 60, style: 'jad',   range: 13,  max: 40, every: 4200, speed: 1.6, h: 5.2, telegraphMs: 1700 },
+  fosa_ignaroth:  { name: 'Guayota',           hp: 250, att: 70, def: 60, style: 'jad',   range: 13,  max: 40, every: 4200, speed: 1.6, h: 5.2, telegraphMs: 1700 },
 };
 
 // Rondas (12). Cada entrada = lista de tipos.

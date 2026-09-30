@@ -4,9 +4,9 @@
  * Genera imágenes del terreno a partir del mismo generador del mundo:
  *   - biomas con bordes suaves (mezcla de 5 muestras),
  *   - textura de "suelo" (ruido suave claro/oscuro, como el terreno 3D),
- *   - mar fuera del reino con espuma en la costa,
+ *   - mar fuera de la isla con espuma en la costa,
  *   - estanques/lagos (shared/fishing.js), plazas empedradas en las ciudades,
- *   - tinte rojizo de las Tierras Rotas.
+ *   - tinte rojizo del Malpaís.
  * Y dibuja iconos estilo OSRS (banco, yunque, altar, pesca, misión…).
  */
 import { BIOMES, WORLD_HALF, WILDERNESS_X, PLACES, biomeAt } from './terrain.js';
@@ -40,7 +40,7 @@ const CITY_R = { city: 26, village: 16 };
 
 /** Color [r,g,b] del mapa en (x, z). */
 export function colorAt(x, z) {
-  // Mar alrededor del reino
+  // Mar alrededor de la isla
   const edge = Math.max(Math.abs(x), Math.abs(z)) - WORLD_HALF;
   if (edge > 0) {
     if (edge < 5) return FOAM;
@@ -92,7 +92,7 @@ export function colorAt(x, z) {
       r += (COBBLE[0] * tile - r) * k * 0.85; g += (COBBLE[1] * tile - g) * k * 0.85; b += (COBBLE[2] * tile - b) * k * 0.85;
     }
   }
-  // Tierras Rotas: rojizo y más oscuro
+  // Malpaís: rojizo y más oscuro
   if (x < WILDERNESS_X + 10) {
     const k = Math.min(1, (WILDERNESS_X + 10 - x) / 40) * 0.25;
     r = r + (120 - r) * k; g = g * (1 - k * 0.8); b = b * (1 - k * 0.8);
@@ -152,7 +152,7 @@ export function getWorldBase(size = 900) {
       row += h;
       if (row < size) setTimeout(step, 0);
       else {
-        // Frontera de las Tierras Rotas (línea discontinua roja)
+        // Frontera del Malpaís (línea discontinua roja)
         const wx = (WILDERNESS_X - x0) / mpp;
         g.save();
         g.strokeStyle = 'rgba(200,40,30,0.85)'; g.lineWidth = 2; g.setLineDash([6, 4]);

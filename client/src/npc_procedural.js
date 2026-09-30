@@ -20,7 +20,7 @@ export const PROC_NPC_HEIGHTS = {
   // Sesión 50 — jefes
   rey_yeti: 4.6, coloso_obsidiana: 5.0, reina_escorpion: 2.4, bruja_pantano: 2.6, leviatan: 5.5,
   rey_esqueleto: 3.3, dragon_rojo: 5.2, dragon_negro: 6.2,
-  // Sesión 50 — Fosa de Fuego
+  // Sesión 50 — Fosa de Guayota
   fosa_diablillo: 1.2, fosa_escupefuego: 1.3, fosa_espiritu: 1.9, fosa_bruto: 2.6, fosa_ignaroth: 5.2,
 };
 
@@ -477,7 +477,7 @@ function leviatan() {
 }
 
 
-// ---------------- Criaturas de la Fosa de Fuego ----------------
+// ---------------- Criaturas de la Fosa de Guayota ----------------
 const LAVA = () => mat(0xff6a10, { emissive: 0xff3a00, emissiveIntensity: 1.3 });
 function imp() {
   const root = new THREE.Group(); const body = new THREE.Group(); root.add(body);

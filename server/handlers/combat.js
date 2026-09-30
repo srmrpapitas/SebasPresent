@@ -77,7 +77,7 @@ export async function handleCombatAttack(request, env) {
       });
     }
     if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
-    // Sesión 50 — ¡pieza de dragón! Se anuncia a todo el reino.
+    // Sesión 50 — ¡pieza de dragón! Se anuncia a toda la isla.
     if (result?.npc_killed && BOSSES[result.npc_def_id]) {
       try {
         const drop = await env.DB.prepare(

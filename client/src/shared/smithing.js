@@ -35,8 +35,8 @@ export const SMITH_XP_PER_BAR = {
 // Estaciones del mundo. id estable (lo manda el cliente; el server comprueba
 // que existe y que estás cerca).
 export const STATIONS = [
-  { id: 'furnace_concejo', type: 'furnace', name: 'Horno del Concejo',   x: 102, z: -74, rotY: -0.6 },
-  { id: 'anvil_concejo',   type: 'anvil',   name: 'Yunque del Concejo',  x:  96, z: -80, rotY: 0.9 },
+  { id: 'furnace_concejo', type: 'furnace', name: 'Horno de La Laguna',   x: 102, z: -74, rotY: -0.6 },
+  { id: 'anvil_concejo',   type: 'anvil',   name: 'Yunque de La Laguna',  x:  96, z: -80, rotY: 0.9 },
   { id: 'furnace_mina',    type: 'furnace', name: 'Horno de la Mina',    x: 1196, z: -1466, rotY: 3.1 },
   { id: 'anvil_mina',      type: 'anvil',   name: 'Yunque de la Mina',   x: 1204, z: -1470, rotY: 2.4 },
 ];

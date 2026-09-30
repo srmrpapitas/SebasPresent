@@ -65,7 +65,7 @@ const DESCRIPTIONS = {
   hitpoints:   'Tu vida máxima es igual a tu nivel de Vitalidad. Sube un poco con cualquier golpe que aciertes. Fuera de combate recuperas <strong>1 HP cada 20 s</strong>; la comida cura al instante.',
   ranged:      'Combate a distancia con arco y flechas (hasta ~10 m). Cada disparo gasta una flecha; con carcaj equipado el <strong>75 %</strong> se conservan.',
   magic:       'Lanza hechizos con un bastón equipado. Cada hechizo gasta maná, que se regenera solo (más rápido con bastón).',
-  prayer:      'Entierra <strong>huesos</strong> (tócalos en la mochila) para ganar XP. Tus puntos de plegaria = tu nivel; las plegarias activas los gastan y se recargan rezando en un <strong>altar</strong> (hay uno junto al Concejo y otro en el Templo de la Luz).',
+  prayer:      'Entierra <strong>huesos</strong> (tócalos en la mochila) para ganar XP. Tus puntos de plegaria = tu nivel; las plegarias activas los gastan y se recargan rezando en un <strong>altar</strong> (hay uno junto a La Laguna y otro en la Basílica de Candelaria).',
   woodcutting: 'Tala árboles con un hacha para conseguir troncos. Toca un árbol y tu personaje irá hasta él. Algunos árboles dan varios troncos antes de caer.',
   fishing:     'Busca las <strong>burbujas</strong> en estanques, lagos y en la costa y tócalas para pescar. Cada banco pide una herramienta: <strong>red</strong>, <strong>caña</strong> (gasta plumas de cebo) o <strong>arpón</strong>. Los bancos se mueven cada pocos minutos.',
   mining:      'Pica vetas de mineral con un pico. Las vetas brillan con el color de su mineral y salen en el minimapa. Cuando una veta se agota, reaparece al rato.',
@@ -73,7 +73,7 @@ const DESCRIPTIONS = {
   firemaking:  'Enciende fuegos con un yesquero y troncos. Los fuegos duran 5 minutos y sirven para cocinar.',
   fletching:   'Con un <strong>cuchillo</strong> talla troncos en astiles y arcos. Junta 15 astiles con 15 plumas y ponles punta con un lingote para hacer flechas. Los arcos necesitan una cuerda (Artesanía). Se abre desde la mochila: toca unos troncos → <strong>🏹 Flechería</strong>.',
   crafting:    'Curte las pieles de vaca para sacar cuero y cóselo con <strong>aguja</strong> e <strong>hilo</strong> para hacer armadura de cuero (buena para Distancia), cuerdas de arco y carcajes. Toca el cuero en la mochila → <strong>🧵 Artesanía</strong>. Aguja, hilo y cuchillo están en la tienda general.',
-  smithing:    'Funde mineral en el <strong>horno</strong> para obtener lingotes, y forja armaduras en el <strong>yunque</strong>. Hay horno y yunque junto a la Cantera del Concejo (al noreste del spawn) y en la Mina Antigua.',
+  smithing:    'Funde mineral en el <strong>horno</strong> para obtener lingotes, y forja armaduras en el <strong>yunque</strong>. Hay horno y yunque junto a la Cantera de La Laguna (al noreste del spawn) y en la Mina de Guajara.',
 };
 
 // ------------------------------------------------------------
@@ -169,11 +169,11 @@ async function buildUnlocks(skillId, lvl) {
           level: t.level, name: t.name, detail: `${t.xp} XP · reaparece en ${Math.round(t.respawnMs / 1000)} s`, icon: icon(t.oreItem, '🪨'),
         })), lvl),
         { content: `<h2>Dónde encontrarlas</h2><ul>
-            <li><strong>Bronce</strong> — Llanuras y la Cantera del Concejo (NE del spawn)</li>
+            <li><strong>Bronce</strong> — Llanuras y la Cantera de La Laguna (NE del spawn)</li>
             <li><strong>Hierro</strong> — Bosques y pantano</li>
-            <li><strong>Acero</strong> — Tundra nevada y la Mina Antigua</li>
-            <li><strong>Oro</strong> — Desierto, selva y la Mina Antigua</li>
-            <li><strong>Obsidiana, Basaltita, Teiderio</strong> — Tierras Rotas (wilderness), cuanto más al fondo, mejor</li></ul>
+            <li><strong>Acero</strong> — Tundra nevada y la Mina de Guajara</li>
+            <li><strong>Oro</strong> — Desierto, selva y la Mina de Guajara</li>
+            <li><strong>Obsidiana, Basaltita, Teiderio</strong> — Malpaís (wilderness), cuanto más al fondo, mejor</li></ul>
             <p class="sg-muted">Las vetas salen en el minimapa con el color de su mineral.</p>` },
       ];
     case 'fishing': {
@@ -191,12 +191,12 @@ async function buildUnlocks(skillId, lvl) {
           level: f.level, name: f.name, detail: `${f.xp} XP · ${toolName[byFish[id]] || ''} · cocinado cura ${f.heal}`, icon: icon(id, '🐟'),
         })), lvl),
         { content: `<h2>Dónde pescar</h2><ul>
-            <li><strong>Estanque del Concejo</strong> — al suroeste del spawn: gambas, sardina, arenque, trucha, salmón</li>
+            <li><strong>Laguna de Aguere</strong> — al suroeste del spawn: gambas, sardina, arenque, trucha, salmón</li>
             <li><strong>Laguna del Pantano</strong> — igual que el estanque</li>
-            <li><strong>Lago de Verdis</strong> (selva) — peces de río y atún / pez espada</li>
+            <li><strong>Lago de Adeje</strong> (selva) — peces de río y atún / pez espada</li>
             <li><strong>Lago Helado</strong> (tundra) — atún y pez espada con arpón</li>
             <li><strong>Costa del Sur</strong> — gambas y peces grandes en la orilla de la playa</li>
-            <li><strong>Costa de las Tierras Rotas</strong> — ☠ aguas profundas: <strong>tiburón</strong> (nivel 76)</li></ul>
+            <li><strong>Costa del Malpaís</strong> — ☠ aguas profundas: <strong>tiburón</strong> (nivel 76)</li></ul>
             <p class="sg-muted">Los lagos salen en azul en el minimapa y los bancos activos como puntitos celestes.</p>` },
       ];
     }
@@ -224,7 +224,7 @@ async function buildUnlocks(skillId, lvl) {
         // Sesión 50 — tabletas de teletransporte
         .concat(unlockPages('Tabletas de teletransporte', Object.entries(TABLETS).map(([id, t]) => ({
           level: 1, name: t.name, icon: icon(id, '🪨'),
-          detail: t.quest ? `Misión cerca: ${QUESTS[t.quest]?.name || ''}` : (t.wild ? '¡En la wilderness!' : 'Se compra a Morgana (Concejo)'),
+          detail: t.quest ? `Misión cerca: ${QUESTS[t.quest]?.name || ''}` : (t.wild ? '¡En la wilderness!' : 'Se compra a Morgana (La Laguna)'),
         })), lvl));
     case 'strength': {
       const rows = [1, 7, 17, 27, 37, 47, 57, 67, 77, 87, 97].map(l => ({

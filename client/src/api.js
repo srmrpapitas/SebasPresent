@@ -646,7 +646,7 @@ export async function tabletBreak(slot) {
   return apiFetch('/api/magic/tablet', { method: 'POST', auth: true, body: { slot } });
 }
 
-// Sesión 50 — La Fosa de Fuego
+// Sesión 50 — La Fosa de Guayota
 export async function fosaStart() {
   return apiFetch('/api/fosa/start', { method: 'POST', auth: true, body: {} });
 }

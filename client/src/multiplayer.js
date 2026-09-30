@@ -942,7 +942,7 @@ function onRealtime(m, myId) {
       triggerPeerAttackAnim(target);
     }
   } else if (m.t === 'ann') {
-    // Sesión 50 — anuncios del reino (jefes y piezas de dragón)
+    // Sesión 50 — anuncios de la isla (jefes y piezas de dragón)
     try {
       if (m.k === 'drop') window.__feedLog?.('levelup', `🐉 ¡${m.u} ha conseguido ${m.item} de ${m.boss}!`);
       else window.__feedLog?.('info', `⚔ ${m.u} ha derrotado a ${m.boss}.`);

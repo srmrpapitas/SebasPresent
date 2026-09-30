@@ -35,7 +35,7 @@ import { requireSession } from '../lib/auth.js';
 // Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
 import { tickNpcAggro, tickNpcWander } from '../combat_engine.js';
 import { tickBossesNear } from '../bosses.js';   // Sesión 50 — jefes
-import { tickFosa } from '../minigame.js';        // Sesión 50 — Fosa de Fuego
+import { tickFosa } from '../minigame.js';        // Sesión 50 — Fosa de Guayota
 import { currentPrayerState, overheadPrayer } from '../../client/src/shared/prayer.js';   // Sesión 50
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
@@ -254,7 +254,7 @@ export async function handleWorldSnapshot(request, env) {
     } catch (err) {
       console.error('[snapshot/bosses]', err);
     }
-    // Sesión 50 — La Fosa de Fuego (oleadas)
+    // Sesión 50 — La Fosa de Guayota (oleadas)
     let fosa = null;
     try {
       fosa = await tickFosa(env, session.user_id, { x: centerX, z: centerZ }, now);
@@ -321,7 +321,7 @@ export async function handleWorldSnapshot(request, env) {
     const retaliateCutoff = now - RETALIATE_WINDOW_MS;
     let me = {
       user_id: session.user_id,   // Sesión 50 — para saber a quién apunta un jefe
-      fosa: null,                 // Sesión 50 — estado de la Fosa de Fuego
+      fosa: null,                 // Sesión 50 — estado de la Fosa de Guayota
       last_attacker: null,
       party_id: null,
       duel: null,           // Sesión 28

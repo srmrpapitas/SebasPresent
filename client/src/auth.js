@@ -30,7 +30,7 @@ export async function handleLogin(event) {
   if (usernameErr) { ui.showError('login', usernameErr); return; }
   const passwordErr = validatePassword(password);
   if (passwordErr) { ui.showError('login', passwordErr); return; }
-  ui.setLoading(true, 'Entrando al reino…');
+  ui.setLoading(true, 'Entrando a la isla…');
   try {
     const data = await api.login(username, password);
     onAuthenticated(data.user);

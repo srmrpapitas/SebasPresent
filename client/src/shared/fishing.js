@@ -50,9 +50,9 @@ export function catchRate(fishId, level) {
 // Agua: estanques y lagos (el cliente los dibuja; el server solo usa los spots)
 // ------------------------------------------------------------
 export const PONDS = [
-  { id: 'concejo', name: 'Estanque del Concejo', x: -70,  z: -150,  r: 9,  types: ['net', 'rod'], frozen: false },
+  { id: 'concejo', name: 'Laguna de Aguere', x: -70,  z: -150,  r: 9,  types: ['net', 'rod'], frozen: false },
   { id: 'pantano', name: 'Laguna del Pantano',   x: -500, z: 600,   r: 14, types: ['net', 'rod'], frozen: false },
-  { id: 'selva',   name: 'Lago de Verdis',       x: 820,  z: 880,   r: 13, types: ['rod', 'harpoon'], frozen: false },
+  { id: 'selva',   name: 'Lago de Adeje',       x: 820,  z: 880,   r: 13, types: ['rod', 'harpoon'], frozen: false },
   { id: 'helado',  name: 'Lago Helado',          x: 500,  z: -1500, r: 12, types: ['harpoon'], frozen: true },
 ];
 
@@ -60,7 +60,7 @@ export const PONDS = [
 const COAST = [
   // Costa del Sur (playa): gambas y peces grandes
   ...Array.from({ length: 12 }, (_, i) => ({ x: -950 + i * 150, z: 2050, type: i % 3 === 2 ? 'harpoon' : 'net', coast: 'sur' })),
-  // Costa de las Tierras Rotas (wilderness, oeste): aguas profundas
+  // Costa del Malpaís (wilderness, oeste): aguas profundas
   ...Array.from({ length: 8 }, (_, i) => ({ x: -2050, z: -840 + i * 240, type: i % 2 ? 'deep' : 'harpoon', coast: 'oeste' })),
 ];
 

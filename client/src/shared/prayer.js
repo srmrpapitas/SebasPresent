@@ -44,8 +44,8 @@ export const PRAYERS_BY_ID = Object.fromEntries(PRAYERS.map(p => [p.id, p]));
 
 // Altares (recargan los puntos). El server valida la distancia.
 export const ALTARS = [
-  { id: 'altar_concejo', name: 'Altar del Concejo', x: -38, z: -92 },
-  { id: 'altar_templo',  name: 'Altar del Templo de la Luz', x: 0, z: -1182 },
+  { id: 'altar_concejo', name: 'Altar de La Laguna', x: -38, z: -92 },
+  { id: 'altar_templo',  name: 'Altar de la Basílica de Candelaria', x: 0, z: -1182 },
 ];
 export const ALTAR_USE_DIST_M = 4.0;
 

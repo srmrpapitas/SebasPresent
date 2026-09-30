@@ -60,12 +60,12 @@ const TARGET_HEIGHT = 16.0;
  *
  * Reglas usadas para elegir estas coords:
  *   - 'plaza': 12m al este del spawn (0,0). El spawn ya tiene el PLACE
- *     'Concejo Central' que ocupa ~3.5m de radio + columna de 10m de alto;
+ *     'La Laguna' que ocupa ~3.5m de radio + columna de 10m de alto;
  *     12m lo deja claramente fuera de esa estructura.
- *   - 'forest': 50m al noreste de Robledal (-300, -700), sigue dentro del
+ *   - 'forest': 50m al noreste de La Orotava (-300, -700), sigue dentro del
  *     radio "named region" (130m city) → entrarás en el edificio estando
- *     en zona Robledal.
- *   - 'desert': 60m al noroeste de Solquemado (1500, 100), idem.
+ *     en zona La Orotava.
+ *   - 'desert': 60m al noroeste de Güímar (1500, 100), idem.
  */
 const BUILDING_PLACEMENTS = [
   { id: 'plaza',  x:   30, z:    0, rotY: -Math.PI / 2 },

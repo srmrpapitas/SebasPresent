@@ -1,10 +1,10 @@
 /**
- * SebasPresent — La Fosa de Fuego (cliente) · Sesión 50
+ * SebasPresent — La Fosa de Guayota (cliente) · Sesión 50
  *
  *   - Dibuja la arena: cráter de roca volcánica con ríos de lava y humo.
  *   - enter(): pide entrar al server (Kargath) y te baja a la arena.
  *   - HUD: "Ronda X / 12", cuenta atrás entre rondas, botón Rendirse.
- *   - Ignaroth: su brillo (verde/azul) avisa del próximo ataque.
+ *   - Guayota: su brillo (verde/azul) avisa del próximo ataque.
  *   - Ataques de las criaturas: proyectiles hacia ti.
  *   - Resultado: premios, victoria (Capa de fuego) o derrota (te saca fuera).
  * Todo el estado viene de snapshot.me.fosa (server/minigame.js).
@@ -138,7 +138,7 @@ export async function enter() {
     const r = await api.fosaStart();
     if (r?.ok) {
       movePlayer(r.x, r.z);
-      feedLog('warning', '🔥 Bajas a la Fosa de Fuego. ¡Prepárate, la primera ronda empieza ya!');
+      feedLog('warning', '🔥 Bajas a la Fosa de Guayota. ¡Prepárate, la primera ronda empieza ya!');
       try { audio.synth?.('altar', { volume: 0.8, pitch: 0.6 }); } catch {}
     }
   } catch (err) {
@@ -177,7 +177,7 @@ export function update(dt) {
       const r = f.result;
       if (r.k === 'reward') feedLog('info', `🏅 ¡Ronda ${r.wave} superada! Recibes ${r.coins?.toLocaleString?.('es-ES') || r.coins} monedas.`);
       else if (r.k === 'won') {
-        feedLog('warning', `🔥🏆 ¡HAS VENCIDO A IGNAROTH! Recibes la CAPA DE FUEGO y ${r.coins} monedas.`);
+        feedLog('warning', `🔥🏆 ¡HAS VENCIDO A GUAYOTA! Recibes la CAPA DE FUEGO y ${r.coins} monedas.`);
         try { window.__spawnLevelUpBanner?.('fosa', 'CAPA DE FUEGO'); } catch {}
         try { audio.synth?.('level_up', { volume: 1 }); } catch {}
       } else if (r.k === 'lost') {
@@ -200,13 +200,13 @@ export function update(dt) {
   }
   if (f.wave !== lastWave) {
     if (lastWave >= 0 && f.wave > 0) {
-      feedLog('warning', f.wave === f.waves ? '🔥 ¡ÚLTIMA RONDA! Aparece IGNAROTH. Mira su brillo: verde = proyectiles, azul = magia.' : `🔥 ¡Ronda ${f.wave}!`);
+      feedLog('warning', f.wave === f.waves ? '🔥 ¡ÚLTIMA RONDA! Aparece GUAYOTA. Mira su brillo: verde = proyectiles, azul = magia.' : `🔥 ¡Ronda ${f.wave}!`);
       try { audio.synth?.('pray_on', { volume: 0.8, pitch: 0.7 }); } catch {}
     }
     lastWave = f.wave;
   }
 
-  // Aviso de Ignaroth
+  // Aviso de Guayota
   const tEl = hud.querySelector('.tele');
   if (f.tele && f.tele.at > clock - 200) {
     tEl.style.display = '';
@@ -235,5 +235,5 @@ export function update(dt) {
   }
 }
 
-export function getForMap() { return { x: FOSA.x, z: FOSA.z, name: 'Fosa de Fuego' }; }
+export function getForMap() { return { x: FOSA.x, z: FOSA.z, name: 'Fosa de Guayota' }; }
 export const FOSA_MOB_IDS = Object.keys(FOSA_MOBS);

@@ -1,5 +1,5 @@
 /**
- * SebasPresent — La Fosa de Fuego: entrar / rendirse (Sesión 50)
+ * SebasPresent — La Fosa de Guayota: entrar / rendirse (Sesión 50)
  *   POST /api/fosa/start  → junto a Kargath; te mete en la arena (ronda 1 en 2.5 s)
  *   POST /api/fosa/leave  → te rindes: fuera, sin premio de las rondas que faltan
  */
