@@ -97,3 +97,10 @@ En los riscos del noroeste (Poblado de Chinamada, -620, 140) sigue viviendo un p
 - **Mencey de Chinamada** (jefe del poblado, en el tagoror).
 - **Cabras** (pasivas).
 Misión: *El tagoror de Chinamada* (Yeray, pastor de Vilaflor).
+
+
+## La ASO: solo socios
+Carmita habla en canario de la calle. Para comprar hay que ser socio:
+- venir con un socio conectado al lado (gratis), o
+- pagar **5 pavos**. El juego no lo explica, pero 1 pavo = 100 monedas, así que son 500. Si preguntas "¿Pavos?", te llama godo y te lo traduce.
+Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o venta en la tienda `aso` de quien no sea socio.

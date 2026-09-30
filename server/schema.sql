@@ -338,3 +338,11 @@ CREATE TABLE IF NOT EXISTS user_fosa (
   started_at INTEGER
 );
 ALTER TABLE combat_stats ADD COLUMN boosts TEXT;
+
+-- Sesión 50 — socios de La ASO
+CREATE TABLE IF NOT EXISTS aso_members (
+  user_id INTEGER PRIMARY KEY,
+  joined_at INTEGER NOT NULL,
+  via TEXT NOT NULL,
+  sponsor_id INTEGER
+);

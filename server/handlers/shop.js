@@ -25,6 +25,7 @@
  *     se aceptan todos, con price = clamp(item.base_price / 2, 1, 20).
  */
 
+import { isAsoMember } from './aso.js';   // Sesión 50
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
@@ -35,7 +36,7 @@ const COINS_ITEM_ID = 'coins';
 // Sesión 50 — seguridad: cobros/pagos atómicos (sin duplicar oro)
 // ============================================================
 /** Resta `amount` monedas. true si se pudo (una sola petición gana). */
-async function debitCoins(env, uid, amount, now) {
+export async function debitCoins(env, uid, amount, now) {
   if (amount <= 0) return true;
   const up = await env.DB.prepare(
     `UPDATE user_inventory SET quantity = quantity - ?, updated_at = ?
@@ -50,7 +51,7 @@ async function debitCoins(env, uid, amount, now) {
   return !!del?.meta?.changes;
 }
 /** Suma monedas (al montón existente o a un hueco libre). */
-async function creditCoins(env, uid, amount, now) {
+export async function creditCoins(env, uid, amount, now) {
   if (amount <= 0) return true;
   const up = await env.DB.prepare(
     `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
@@ -87,6 +88,11 @@ export async function handleGetShop(request, env) {
 
   const url = new URL(request.url);
   const shopId = url.searchParams.get('shop_id') || 'general_store';
+
+  // Sesión 50 — La ASO solo vende/compra a socios
+  if (shopId === 'aso' && !(await isAsoMember(env, session.user_id))) {
+    return json({ error: 'aso_no_socio', message: 'Pa\' comprar aquí tienes que ser socio de La ASO.' }, 403);
+  }
 
   // Stock del NPC con datos del item
   const stockResult = await env.DB.prepare(
@@ -135,6 +141,11 @@ export async function handleShopBuy(request, env) {
   const body = await readJson(request);
   if (!body) return json({ error: 'bad_request' }, 400);
   const shopId = body.shop_id || 'general_store';
+
+  // Sesión 50 — La ASO solo vende/compra a socios
+  if (shopId === 'aso' && !(await isAsoMember(env, session.user_id))) {
+    return json({ error: 'aso_no_socio', message: 'Pa\' comprar aquí tienes que ser socio de La ASO.' }, 403);
+  }
   const itemId = body.item_id;
   const qty = body.qty | 0;
 
@@ -262,6 +273,11 @@ export async function handleShopSell(request, env) {
   const body = await readJson(request);
   if (!body) return json({ error: 'bad_request' }, 400);
   const shopId = body.shop_id || 'general_store';
+
+  // Sesión 50 — La ASO solo vende/compra a socios
+  if (shopId === 'aso' && !(await isAsoMember(env, session.user_id))) {
+    return json({ error: 'aso_no_socio', message: 'Pa\' comprar aquí tienes que ser socio de La ASO.' }, 403);
+  }
   const slotIndex = body.slot_index;
   const qty = body.qty | 0;
 

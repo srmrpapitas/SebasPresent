@@ -358,7 +358,10 @@ async function talkTo(o) {
     for (const a of n.actions || []) {
       if (!a.startsWith('shop:')) continue;
       const shopId = a.slice(5);
-      opts.push({ label: shopId === 'magic_store' ? '🔮 Ver la tienda de magia' : shopId === 'aso' ? '🌿 Ver las hierbas' : '🛒 Ver la tienda', run: async () => { d.end(); onOpenShop(shopId); } });
+      opts.push({ label: shopId === 'magic_store' ? '🔮 Ver la tienda de magia' : shopId === 'aso' ? '🌿 Ver las hierbas' : '🛒 Ver la tienda', run: async () => {
+        if (shopId === 'aso' && !(await asoDoor(d))) return;   // Sesión 50 — solo socios
+        d.end(); onOpenShop(shopId);
+      } });
     }
     if ((n.lines?.length || 0) > 1) opts.push({ label: '💬 ¿Qué me cuentas?', run: () => d.npc(n.lines[1 + Math.floor(Math.random() * (n.lines.length - 1))]) });
     opts.push({ label: '👋 Adiós', run: async () => { await d.player('Adiós.'); d.end(); } });
@@ -368,6 +371,45 @@ async function talkTo(o) {
   }
   talking = null;
   for (const obj of objs.values()) updateMark(obj);
+}
+
+// Sesión 50 — La ASO: pa' comprar hay que ser socio
+async function asoDoor(d) {
+  let st;
+  try { st = await api.asoStatus(); } catch { await d.npc('Espérate un momentito, muyayo, que se me cayó el sistema.'); return false; }
+  if (st?.socio) return true;
+  await d.npc('Ey, ey, ey, muyayo. ¿Tú dónde vas tan ligero?');
+  if (d.closed) return false;
+  await d.npc('Esto es La ASO, mi niño. Pa\' entrar aquí tienes que ser local y venir con uno que ya sea socio.');
+  if (d.closed) return false;
+  await d.npc('Si no… me das 5 pavos y puedes comprar. Así de fácil.');
+  while (!d.closed) {
+    const k = await d.choose(['🤝 Vengo con un socio', '💶 Toma, 5 pavos', '❓ ¿Pavos? ¿Qué es eso?', '🚶 Paso, gracias'], 'La ASO · solo socios');
+    if (k < 0 || d.closed) return false;
+    if (k === 2) {
+      await d.npc('¿Pavos? ¡Pavos, muyayo, PAVOS! Chacho, se nota que tú eres godo…');
+      if (d.closed) return false;
+      await d.npc('Mira, pa\' que me entiendas: cinco pavos son quinientas monedas. ¿Estamos?');
+      continue;
+    }
+    if (k === 3) { await d.npc('Tú verás, mi niño. Aquí te espero.'); return false; }
+    const via = k === 0 ? 'socio' : 'pavos';
+    await d.player(k === 0 ? 'Vengo con un socio.' : 'Toma, 5 pavos.');
+    try {
+      await api.asoJoin(via);
+      try { audio.synth?.('craft_done', { volume: 0.6 }); } catch {}
+      feedLog('info', via === 'socio' ? '🌿 Ya eres socio de La ASO (te avaló un socio).' : '🌿 Ya eres socio de La ASO (−5 pavos).');
+      await d.npc(via === 'socio' ? '¡Ah, que vienes con este! Haberlo dicho, muyayo. Pasa, pasa, que ya eres de la casa.' : '¡Eso es! Ya eres socio, mi niño. Bienvenido a La ASO.');
+      return !d.closed;
+    } catch (err) {
+      const c = err?.code;
+      await d.npc(c === 'no_sponsor' ? '¿Con un socio? Yo aquí no veo a nadie, muyayo. Tráetelo pa\'cá, que lo vea yo.'
+        : c === 'not_enough_coins' ? '¿Y los pavos, mi niño? Tú no tienes ni pa\' un barraquito.'
+        : c === 'too_far' ? 'Arrímate, que no te escucho.'
+        : 'Ahora no puedo, vuelve luego.');
+    }
+  }
+  return false;
 }
 
 async function offerQuest(d, n, q) {

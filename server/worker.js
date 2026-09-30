@@ -63,6 +63,7 @@ import * as fishing from './handlers/skills/fishing.js';          // Sesión 50 
 import * as crafting from './handlers/skills/crafting.js';        // Sesión 50 — flechería/artesanía
 import * as teleport from './handlers/teleport.js';               // Sesión 50 — tabletas
 import * as potions from './handlers/potions.js';                 // Sesión 50 — pociones
+import * as aso from './handlers/aso.js';                         // Sesión 50 — socios de La ASO
 import * as fosa from './handlers/minigame.js';                   // Sesión 50 — Fosa de Guayota
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
@@ -278,6 +279,10 @@ export default {
         response = await crafting.handleCraftingMake(request, env);
       } else if (path === '/api/magic/tablet' && method === 'POST') {
         response = await teleport.handleTabletBreak(request, env);
+      } else if (path === '/api/aso' && method === 'GET') {
+        response = await aso.handleAsoStatus(request, env);
+      } else if (path === '/api/aso/join' && method === 'POST') {
+        response = await aso.handleAsoJoin(request, env);
       } else if (path === '/api/potion/drink' && method === 'POST') {
         response = await potions.handlePotionDrink(request, env);
       } else if (path === '/api/fosa/start' && method === 'POST') {

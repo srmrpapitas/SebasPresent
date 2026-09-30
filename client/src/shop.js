@@ -357,6 +357,7 @@ function translateError(code, msg) {
     case 'slot_empty':         return 'El slot está vacío.';
     case 'cannot_sell_coins':  return 'No puedes vender monedas.';
     case 'item_not_in_shop':   return 'Este item no está en venta.';
+    case 'aso_no_socio':       return 'Solo socios de La ASO. Habla con Carmita.';
     default:                   return 'Error: ' + code;
   }
 }

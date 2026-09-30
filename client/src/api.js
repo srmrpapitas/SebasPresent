@@ -658,3 +658,11 @@ export async function fosaLeave() {
 export async function potionDrink(slot) {
   return apiFetch('/api/potion/drink', { method: 'POST', auth: true, body: { slot } });
 }
+
+// Sesión 50 — La ASO (club de socios)
+export async function asoStatus() {
+  return apiFetch('/api/aso', { auth: true });
+}
+export async function asoJoin(via) {
+  return apiFetch('/api/aso/join', { method: 'POST', auth: true, body: { via } });
+}
