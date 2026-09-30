@@ -40,6 +40,7 @@
  *   En consola: window.__mpPlayers()  → tabla de peers activos.
  */
 
+import { updatePeerMount, removePeerMount } from './mounts.js';   // Sesión 50 — monturas
 import { overheadHtml, ensureOverheadCss } from './overhead.js';   // Sesión 50
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
@@ -197,6 +198,10 @@ export function update(dt) {
     while (dyaw < -Math.PI) dyaw += Math.PI * 2;
     peer.group.rotation.y = peer.fromYaw + dyaw * t;
 
+    // Sesión 50 — montura del peer (caballo / pardela)
+    try { updatePeerMount(peer, peer.mountId, dt, now / 1000); } catch {}
+    const _peerState = peer.mountId ? 'idle' : peer.state;   // montado va sentado
+
     // Mixer (solo si es Nico clonado)
     if (peer.mixer) peer.mixer.update(dt);
 
@@ -211,9 +216,9 @@ export function update(dt) {
     const isPlayingAttack = peer._attackingUntil && Date.now() < peer._attackingUntil;
     if (!isPlayingAttack && peer.actions && Object.keys(peer.actions).length > 0) {
       let desiredName = 'idle';
-      if (peer.state === 'run')         desiredName = 'run_forward';
-      else if (peer.state === 'walk')   desiredName = 'walk_forward';
-      else if (peer.state === 'attack') desiredName = 'attack_1';
+      if (_peerState === 'run')         desiredName = 'run_forward';
+      else if (_peerState === 'walk')   desiredName = 'walk_forward';
+      else if (_peerState === 'attack') desiredName = 'attack_1';
       // Fallback chain: el clip pedido → run_forward → idle.
       const desiredAction =
         peer.actions[desiredName] ||
@@ -892,11 +897,11 @@ function onRealtime(m, myId) {
   if (!started) return;
   if (m.t === 'p') {
     const peer = mpLastPeerMap.get(m.id);
-    if (peer?.group) rtMovePeer(peer, m.x, m.z, m.y, m.s);
+    if (peer?.group) { rtMovePeer(peer, m.x, m.z, m.y, m.s); peer.mountId = m.m || null; }
   } else if (m.t === 'hello') {
     for (const q of m.peers || []) {
       const peer = mpLastPeerMap.get(q.id);
-      if (peer?.group) rtMovePeer(peer, q.x, q.z, q.y, q.s);
+      if (peer?.group) { rtMovePeer(peer, q.x, q.z, q.y, q.s); peer.mountId = q.m || null; }
     }
   } else if (m.t === 'bye') {
     const peer = mpLastPeerMap.get(m.id);
@@ -1330,6 +1335,7 @@ function createPeer(p) {
 function removePeer(userId) {
   const peer = mpLastPeerMap.get(userId);
   if (!peer) return;
+  try { removePeerMount(peer); } catch {}
   if (peer.mixer) peer.mixer.stopAllAction();
   if (peer.group) {
     if (scene) scene.remove(peer.group);

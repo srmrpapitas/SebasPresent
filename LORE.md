@@ -119,3 +119,16 @@ Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o ven
   - altar: recarga la plegaria.
   El server lo valida como "estás en una urbanización y tu casa tiene ese mueble", porque dentro de la casa el cliente no manda su posición.
 - **Castillos** (mismo modelo que el de La Laguna, `shared/castles.js`): Castillo de San Cristóbal en Santa Cruz (Dácil), Casa Fuerte de Adeje (Acaymo) y Fortaleza de Los Cristianos (Cathaysa). Cada banquero tiene Banco, Mercado (GE) y Tienda.
+
+
+## Caminos y monturas
+- 15 km de caminos de tierra unen todas las ciudades. En cada pueblo hay un poste con una flecha por camino, que dice el destino y la distancia, y otro poste a mitad de cada tramo. Los caminos salen en el minimapa y en el mapa.
+- **Tanausú**, el cuadrero de La Laguna, vende:
+  - 🐎 Caballo: nivel de combate 5, 2.000 monedas.
+  - 🕊️ Súper pardela: nivel 5, 20.000 monedas. Anda por tierra y, con nivel de combate 25, vuela a 9 m por encima de árboles, casas y rocas.
+- **Reglas:**
+  - si te atacan, no puedes montar en 10 s;
+  - si te golpean (daño > 0), te caes;
+  - que un bicho te persiga no te baja;
+  - atacar, recoger recursos, entrar en un interior o en la Fosa te baja de la montura.
+- Los demás jugadores ven tu montura: el Realm manda `m` en el mensaje `p`.

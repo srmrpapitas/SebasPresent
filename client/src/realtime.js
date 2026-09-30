@@ -94,6 +94,8 @@ function connect() {
   sock.onerror = () => { try { sock.close(); } catch {} };
 }
 
+let lastMount = '';
+
 function schedule() {
   if (!started) return;
   clearTimeout(retryTimer);
@@ -117,15 +119,17 @@ export function update() {
   }
 
   const x = p.position.x, z = p.position.z, y = p.rotation.y;
+  let mt = '';   // Sesión 50 — montura (los demás la ven)
+  try { mt = window.__mounts?.id?.() || ''; } catch {}
   const moved = lastX === null || Math.abs(x - lastX) > 0.03 || Math.abs(z - lastZ) > 0.03 || Math.abs(y - lastY) > 0.05;
   const since = now - lastSendAt;
-  const due = (moved && since >= SEND_MOVING_MS) || since >= SEND_IDLE_MS || curState !== lastState;
+  const due = (moved && since >= SEND_MOVING_MS) || since >= SEND_IDLE_MS || curState !== lastState || mt !== lastMount;
   if (!due) return;
-  lastSendAt = now; lastX = x; lastZ = z; lastY = y; lastState = curState;
+  lastSendAt = now; lastX = x; lastZ = z; lastY = y; lastState = curState; lastMount = mt;
   try {
     ws.send(JSON.stringify({
       t: 'p', x: +x.toFixed(2), z: +z.toFixed(2), y: +y.toFixed(3), s: curState,
-      c: isInCombat?.() ? 1 : 0,
+      c: isInCombat?.() ? 1 : 0, m: mt,
     }));
     stats.sent++;
   } catch {}

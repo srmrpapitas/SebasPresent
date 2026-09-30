@@ -33,6 +33,8 @@ import * as potions from './potions.js';        // Sesión 50 — pociones
 import * as guancheVillage from './guanche_village.js';   // Sesión 50 — poblado guanche
 import * as houses from './houses.js';                     // Sesión 50 — casas de jugador
 import * as roadsRender from './roads_render.js';          // Sesión 50 — caminos y postes
+import * as mounts from './mounts.js';                     // Sesión 50 — monturas
+import { insideFosa } from './shared/fosa.js';
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
@@ -677,7 +679,10 @@ export async function startWorld(loggedInUser, token) {
       });
       // Hooks globales que combat.js consume tras cada attack tick
       window.__spawnXpDrops = (xpMap) => damageSplat.spawnXpDrops(xpMap);
-      window.__spawnPlayerSplat = (damage, hit) => damageSplat.spawnPlayerDamageSplat(damage, hit);
+      window.__spawnPlayerSplat = (damage, hit) => {
+        try { mounts.onAttacked(hit ? (damage || 0) : 0); } catch {}   // Sesión 50 — te atacan: 10 s sin montar; si te dan, al suelo
+        return damageSplat.spawnPlayerDamageSplat(damage, hit);
+      };
       window.__spawnLevelUpBanner = (skillId, newLevel) => damageSplat.spawnLevelUpBanner(skillId, newLevel);
       // Sesión 32 — exponer feedLog para que world_snapshot mande mensajes
       // "X te pega Y HP" cuando detecta hits vía snapshot (caso PvP donde
@@ -701,6 +706,7 @@ export async function startWorld(loggedInUser, token) {
       // Sesión 49 — exponer la anim de gathering (kneel/woodcut) para que el
       // inventario la dispare por pieza al "Cocinar todo" (encadenado OSRS).
       window.__playerGather = (animKey, ms) => {
+        try { if (mounts.isMounted()) mounts.dismount('Te bajas de la montura para trabajar.'); } catch {}
         try { character?.playGather?.(animKey || 'kneel', ms || 1000); } catch {}
       };
       // Level up banner también vía skills.onLevelUp (cubre grants vía API directa)
@@ -882,6 +888,23 @@ export async function startWorld(loggedInUser, token) {
         onOpenBank: openBankHere,
       });
     } catch (e) { console.warn('[world] houses start:', e); }
+    try {
+      mounts.start({
+        scene,
+        getPlayer: () => player,
+        feedLog: (type, msg) => combat.feedLog?.(type, msg),
+        findLanding: (x, z) => findLandingSpot(x, z),
+        canMountHere: () => {
+          if (interiors.isActive()) return 'No puedes montar dentro de un edificio.';
+          if (character?.isDead) return 'No puedes montar ahora.';
+          if (player && insideFosa(player.position.x, player.position.z, 2)) return 'No puedes montar en la Fosa.';
+          let inCombat = false;
+          try { inCombat = !!combat.getStateSnapshot?.()?.currentTarget || combatHooks.getCombatTargetNpcId() !== null; } catch {}
+          if (inCombat) return 'No puedes montar en pleno combate.';
+          return null;
+        },
+      });
+    } catch (e) { console.warn('[world] mounts start:', e); }
     try { potions.start({ getSnapshot: () => worldSnapshot.getSnapshot(), feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] potions start:', e); }
     // Sesión 50 — La Fosa de Guayota (oleadas)
     try {
@@ -1024,6 +1047,7 @@ export function stopWorld() {
   try { guancheVillage.stop(); } catch {}
   try { roadsRender.stop(); } catch {}
   try { houses.stop(); } catch {}
+  try { mounts.stop(); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';
   if (fullMapOverlay) fullMapOverlay.classList.remove('visible');
   ['worldTooltip', 'worldRegion', 'worldBanner'].forEach(id => {
@@ -3077,7 +3101,7 @@ function animate() {
       // Para 'punching' (tala), no tocamos Y porque es una anim que no
       // baja el centro del char — usa el mismo -1.03 que idle/walk.
       // Configurable: window.__gatherY = { kneel: -0.6 }
-      let targetY = baseY;
+      let targetY = baseY + mounts.liftY();   // Sesión 50 — en la silla / volando
       if (character?._gatheringActive && character._gatherAnimName === 'kneel') {
         const overrides = (typeof window !== 'undefined' && window.__gatherY) || {};
         targetY = overrides.kneel != null ? overrides.kneel : -0.6;
@@ -3117,6 +3141,7 @@ function animate() {
   try { potions.update(dt); } catch {}
   try { guancheVillage.update(dt); } catch {}
   try { houses.update(dt); } catch {}
+  try { mounts.update(dt); } catch (e) { if (!window.__mtErr) { window.__mtErr = e; console.warn('[mounts]', e); } }
   try { fosa.update(dt); } catch (e) { if (!window.__fosaErr) { window.__fosaErr = e; console.warn('[fosa]', e); } }
   townNpcs.update(dt);        // Sesión 50 — habitantes
   tablets.update(dt);         // Sesión 50 — efecto de teletransporte
@@ -3164,6 +3189,42 @@ function updatePositionSave(dt) {
 // multiplayer.getPeerPositions().
 
 
+// Sesión 50 — toda la cadena de colisiones en un sitio. Volando en la pardela
+// no chocas con nada (árboles, casas, rocas…).
+function collideStep(x0, z0, x1, z1) {
+  if (mounts.isFlying()) return { x: x1, z: z1 };
+  const a1 = terrain.applyCollision(x0, z0, x1, z1);
+  const a2 = buildings.applyCollision(x0, z0, a1.x, a1.z);
+  const a3 = bossFx.applyCollision(x0, z0, a2.x, a2.z);          // rocas de jefes
+  const a4 = guancheVillage.applyCollision(x0, z0, a3.x, a3.z);  // casas guanches
+  const a6 = houses.applyCollision(x0, z0, a4.x, a4.z);          // urbanizaciones, casonas, Arico
+  return interiors.applyCollision(x0, z0, a6.x, a6.z);
+}
+// ¿Se puede estar de pie aquí? (para aterrizar al bajar de la pardela)
+function groundFreeAt(x, z) {
+  const probes = [[0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6]];
+  return probes.every(([dx, dz]) => {
+    const a1 = terrain.applyCollision(x + dx, z + dz, x, z);
+    const a2 = buildings.applyCollision(x + dx, z + dz, a1.x, a1.z);
+    const a3 = bossFx.applyCollision(x + dx, z + dz, a2.x, a2.z);
+    const a4 = guancheVillage.applyCollision(x + dx, z + dz, a3.x, a3.z);
+    const a6 = houses.applyCollision(x + dx, z + dz, a4.x, a4.z);
+    return Math.hypot(a6.x - x, a6.z - z) < 0.05;
+  });
+}
+function findLandingSpot(x, z) {
+  if (groundFreeAt(x, z)) return { x, z };
+  for (let r = 1.5; r <= 40; r += 1.5) {
+    const n = Math.ceil(r * 3);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (groundFreeAt(px, pz)) return { x: px, z: pz };
+    }
+  }
+  return { x, z };
+}
+
 function updatePlayer(dt) {
   let isMoving = false;
   let moveSpeed = 0;
@@ -3173,7 +3234,9 @@ function updatePlayer(dt) {
   // Sesión 26 — Run energy: si la energía se acaba, forzar walking aunque
   // el toggle esté activo. La velocidad efectiva se calcula AQUÍ.
   const effectiveRun = runMode && runEnergy > 0;
-  const maxSpeed = effectiveRun ? PLAYER_RUN * PLAYER_RUN_BOOST : PLAYER_RUN;
+  const maxSpeed = mounts.isMounted()
+    ? PLAYER_RUN * PLAYER_RUN_BOOST * mounts.speedMult()     // Sesión 50 — montado: rápido y sin gastar energía
+    : (effectiveRun ? PLAYER_RUN * PLAYER_RUN_BOOST : PLAYER_RUN);
 
   // Sesión 25 — Si el player está muerto, NO procesar input. El joystick
   // y el playerTarget se ignoran hasta que respawnee. Esto soluciona el bug
@@ -3204,12 +3267,7 @@ function updatePlayer(dt) {
     const speed = maxSpeed * speedScale;
     const nextX = player.position.x + wx * speed * dt;
     const nextZ = player.position.z + wz * speed * dt;
-    const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
-    const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
-    const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);   // Sesión 50 — rocas de jefes
-    const a4 = guancheVillage.applyCollision(player.position.x, player.position.z, a3.x, a3.z);   // casas guanches
-    const a6 = houses.applyCollision(player.position.x, player.position.z, a4.x, a4.z);          // urbanizaciones, casonas, Arico
-    const adjusted = interiors.applyCollision(player.position.x, player.position.z, a6.x, a6.z);
+    const adjusted = collideStep(player.position.x, player.position.z, nextX, nextZ);
     player.position.x = adjusted.x;
     player.position.z = adjusted.z;
     moveWx = wx;
@@ -3234,14 +3292,7 @@ function updatePlayer(dt) {
         nextX = player.position.x + nx * step;
         nextZ = player.position.z + nz * step;
       }
-      const adjusted = (() => {
-        const a1 = terrain.applyCollision(player.position.x, player.position.z, nextX, nextZ);
-        const a2 = buildings.applyCollision(player.position.x, player.position.z, a1.x, a1.z);
-        const a3 = bossFx.applyCollision(player.position.x, player.position.z, a2.x, a2.z);
-        const a4 = guancheVillage.applyCollision(player.position.x, player.position.z, a3.x, a3.z);
-        const a6 = houses.applyCollision(player.position.x, player.position.z, a4.x, a4.z);
-        return interiors.applyCollision(player.position.x, player.position.z, a6.x, a6.z);
-      })();
+      const adjusted = collideStep(player.position.x, player.position.z, nextX, nextZ);
       const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
       if (moved < 0.01) {
         playerTarget = null;
@@ -3298,8 +3349,8 @@ function updatePlayer(dt) {
   }
 
   if (character && character.loaded) {
-    if (!isMoving) {
-      character.play('idle');
+    if (!isMoving || mounts.isMounted()) {
+      character.play('idle');   // montado: el animal corre, tú vas sentado
     } else {
       // Sesión 13 — SFX de paso (audio.step() tiene throttle interno 220ms)
       try { audio.step(); } catch {}
@@ -3363,7 +3414,7 @@ function updatePlayer(dt) {
   //   - Drena si efectivamente corriendo y el player se mueve.
   //   - Regenera siempre que no esté corriendo (incluso parado).
   //   - Si runEnergy llega a 0 mientras runMode=true, se desactiva el toggle.
-  if (effectiveRun && isMoving) {
+  if (effectiveRun && isMoving && !mounts.isMounted()) {
     runEnergy = Math.max(0, runEnergy - RUN_DRAIN_PER_SEC * dt);
     if (runEnergy <= 0 && runMode) {
       // Se acabó la energía: apagar toggle. El próximo frame ya irá a walk.

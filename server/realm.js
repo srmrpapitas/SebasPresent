@@ -65,7 +65,7 @@ export class Realm {
     for (const w of this.ctx.getWebSockets()) {
       if (w === server) continue;
       const a = w.deserializeAttachment();
-      if (a && a.x != null) peers.push({ id: a.uid, x: a.x, z: a.z, y: a.y, s: a.s });
+      if (a && a.x != null) peers.push({ id: a.uid, x: a.x, z: a.z, y: a.y, s: a.s, m: a.m || '' });
     }
     server.send(JSON.stringify({ t: 'hello', you: uid, peers }));
     return new Response(null, { status: 101, webSocket: client });
@@ -83,12 +83,14 @@ export class Realm {
       if (!Number.isFinite(x) || !Number.isFinite(z)) return;
       if (Math.abs(x) > WORLD_HALF + 5 || Math.abs(z) > WORLD_HALF + 5) return;
       const s = m.s === 'run' ? 'run' : 'idle';
+      const mt = (m.m === 'caballo' || m.m === 'pardela') ? m.m : '';   // Sesión 50 — montura
       const prevS = a.s;
       a.x = Math.round(x * 100) / 100;
       a.z = Math.round(z * 100) / 100;
       a.y = Math.round(y * 1000) / 1000;
       a.s = s;
-      this.broadcast(JSON.stringify({ t: 'p', id: a.uid, x: a.x, z: a.z, y: a.y, s }), ws);
+      a.m = mt;
+      this.broadcast(JSON.stringify({ t: 'p', id: a.uid, x: a.x, z: a.z, y: a.y, s, m: mt }), ws);
 
       // Guardar en D1 con límite de frecuencia
       const now = Date.now();

@@ -1,14 +1,14 @@
 /**
  * SebasPresent — Monturas (Sesión 50)
  *
- *   🐎 Caballo (nivel 5)  · 🦅 Guirre (nivel 25, vuela)
+ *   🐎 Caballo (nivel 5)  · 🕊️ Súper pardela (nivel 5; vuela desde nivel 25)
  *
  * Botón redondo junto a vida/plegaria/correr: tocar = montar / bajar.
  * Reglas (shared/mounts.js):
  *   · Te atacan → no puedes montar en 10 s (el orbe muestra la cuenta atrás).
  *   · Te GOLPEAN (daño > 0) montado → te caes. Que te persigan no te baja.
  *   · Atacar, recoger, entrar en interiores/Fosa o morir → te bajas.
- * El guirre vuela a 9 m: pasa por encima de árboles, casas y murallas. Al
+ * La pardela, con nivel 25, vuela a 9 m: pasa por encima de árboles, casas y murallas. Al
  * bajar busca un hueco libre en el suelo.
  *
  * Los modelos se añaden a la escena (no como hijos del personaje, que puede
@@ -20,7 +20,7 @@ import * as api from './api.js';
 import { MOUNTS, MOUNT_COMBAT_LOCK_MS } from './shared/mounts.js';
 
 const HIP = 0.95;                  // altura de la cadera del personaje sobre sus pies
-const SEAT = { caballo: 1.55, guirre: 0.95 };   // silla sobre la base de la montura
+const SEAT = { caballo: 1.55, pardela: 1.45 };   // silla sobre la base de la montura
 
 let scene = null;
 let getPlayer = () => null;
@@ -37,6 +37,8 @@ let alt = 0;                       // altura actual de vuelo (sube/baja suave)
 let lastPos = null, speedNow = 0, t = 0;
 let orbEl = null, orbVal = null, menuEl = null;
 let preferred = null;
+let combatLevel = 3;
+let lastYaw = 0, bank = 0;
 
 // ============================================================
 // Modelos
@@ -50,15 +52,15 @@ export function buildHorse(color = 0x6a3f22) {
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 1.25, 4, 10), coat);
   body.rotation.x = Math.PI / 2; body.position.set(0, 1.18, 0); g.add(body);
   // cuello + cabeza
-  const neck = new THREE.Group(); neck.position.set(0, 1.35, 0.75); neck.rotation.x = -0.75; g.add(neck);
+  const neck = new THREE.Group(); neck.position.set(0, 1.35, 0.75); neck.rotation.x = 0.6; g.add(neck);
   const nk = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.26, 0.85, 8), coat); nk.position.y = 0.38; neck.add(nk);
-  const head = new THREE.Group(); head.position.set(0, 0.8, 0.02); head.rotation.x = 1.55; neck.add(head);
+  const head = new THREE.Group(); head.position.set(0, 0.8, 0.02); head.rotation.x = 1.3; neck.add(head);
   head.add(bx(0.24, 0.62, 0.3, coat, 0, 0.26, 0));
   head.add(bx(0.2, 0.16, 0.26, dark, 0, 0.6, 0.0));
   for (const sx of [-0.09, 0.09]) { const ear = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 4), coat); ear.position.set(sx, -0.05, -0.12); ear.rotation.x = -1.4; head.add(ear); }
   for (const sx of [-0.125, 0.125]) head.add(bx(0.02, 0.05, 0.05, dark, sx, 0.15, 0.05));
   // crin
-  for (let i = 0; i < 6; i++) neck.add(bx(0.06, 0.18, 0.14, dark, 0, 0.05 + i * 0.14, -0.2));
+  for (let i = 0; i < 6; i++) neck.add(bx(0.06, 0.18, 0.14, dark, 0, 0.05 + i * 0.14, -0.22));
   // cola
   const tail = new THREE.Group(); tail.position.set(0, 1.3, -0.95); g.add(tail);
   const tl = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.85, 6), dark); tl.position.y = -0.4; tl.rotation.x = Math.PI; tail.add(tl);
@@ -84,61 +86,111 @@ export function buildHorse(color = 0x6a3f22) {
   return g;
 }
 
-export function buildGuirre() {
-  const g = new THREE.Group(); g.userData.kind = 'mount-guirre';
-  const cream = L(0xeee6d2), buff = L(0xd8c49a), black = L(0x1c1a18), yellow = L(0xf2b42a), horn = L(0x3a3228), eye = L(0x8a1a10);
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 9), cream); body.scale.set(0.95, 0.72, 1.55); body.position.y = 0.55; g.add(body);
-  // cuello (plumas despeinadas) + cabeza amarilla con pico ganchudo
-  const ruff = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), buff); ruff.position.set(0, 0.72, 0.72); ruff.scale.set(1, 0.9, 1.1); g.add(ruff);
-  const head = new THREE.Group(); head.position.set(0, 0.88, 1.0); g.add(head);
-  const face = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), yellow); face.scale.set(0.9, 0.95, 1.25); head.add(face);
-  const crown = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), cream); crown.position.set(0, 0.05, -0.06); head.add(crown);
-  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.3, 6), horn); beak.rotation.x = Math.PI / 2; beak.position.set(0, -0.02, 0.28); head.add(beak);
-  const hook = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.1, 5), horn); hook.position.set(0, -0.07, 0.4); hook.rotation.x = Math.PI; head.add(hook);
-  for (const sx of [-0.1, 0.1]) head.add(bx(0.03, 0.04, 0.04, eye, sx, 0.04, 0.1));
-  // cola en cuña
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.9, 4), cream); tail.rotation.x = -Math.PI / 2; tail.rotation.y = Math.PI / 4; tail.scale.set(1, 1, 0.25); tail.position.set(0, 0.55, -1.15); g.add(tail);
-  // alas: cobertoras blancas, remeras negras
+// Súper pardela (pardela cenicienta, el ave marina de Canarias), en grande:
+// dorso pardo-grisáceo, vientre blanco, pico amarillo pálido con punta oscura
+// y "tubo" nasal, alas largas y estrechas de planeador, patas palmeadas
+// rosadas. En tierra lleva las alas plegadas y camina; volando planea.
+export function buildPardela() {
+  const g = new THREE.Group(); g.userData.kind = 'mount-pardela';
+  const S = (c, r = 0.75) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0 });
+  const back = S(0x7a6a58), backD = S(0x5a4c3e), belly = S(0xf2efe8), bill = S(0xe8d27a, 0.5), tip = S(0x3a3228, 0.5),
+    eyeM = S(0x0a0a0a, 0.2), foot = S(0xe8b8a8), tack = S(0x5a3418), gold = new THREE.MeshStandardMaterial({ color: 0xd8b040, metalness: 0.8, roughness: 0.3 });
+
+  // Cuerpo: dorso y vientre como dos medias elipsoides suaves
+  const body = new THREE.Group(); body.position.y = 0.95; g.add(body);
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.6, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2), back);
+  top.scale.set(0.95, 0.72, 1.75); body.add(top);
+  const bot = new THREE.Mesh(new THREE.SphereGeometry(0.6, 28, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), belly);
+  bot.scale.set(0.95, 0.78, 1.75); body.add(bot);
+  // Cuello y cabeza (gris pardo arriba, blanco abajo)
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.4, 0.55, 20), back);
+  neck.position.set(0, 0.28, 0.95); neck.rotation.x = 1.0; body.add(neck);
+  const throat = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 12), belly); throat.scale.set(0.9, 0.8, 1.1); throat.position.set(0, 0.12, 1.08); body.add(throat);
+  const head = new THREE.Group(); head.position.set(0, 0.5, 1.28); body.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), back); skull.scale.set(0.92, 0.9, 1.15); head.add(skull);
+  const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.27, 20, 12, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55), belly);
+  cheek.scale.set(0.95, 0.9, 1.1); cheek.position.set(0, -0.03, 0.02); head.add(cheek);
+  // Pico: base gruesa, tubo nasal arriba y gancho oscuro
+  const beak = new THREE.Group(); beak.position.set(0, -0.02, 0.3); head.add(beak);
+  const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.1, 0.42, 14), bill); b1.rotation.x = Math.PI / 2; b1.position.z = 0.2; beak.add(b1);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.16, 10), bill); tube.rotation.x = Math.PI / 2; tube.position.set(0, 0.07, 0.1); beak.add(tube);
+  const hk = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8), tip); hk.scale.set(0.9, 1.1, 1.3); hk.position.set(0, -0.015, 0.42); beak.add(hk);
+  const hk2 = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.09, 10), tip); hk2.position.set(0, -0.06, 0.45); hk2.rotation.x = Math.PI; beak.add(hk2);
+  for (const sx of [-1, 1]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), eyeM); e.position.set(sx * 0.21, 0.06, 0.14); head.add(e);
+    const hl = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 4), S(0xffffff, 0.1)); hl.position.set(sx * 0.235, 0.075, 0.16); head.add(hl);
+  }
+  // Cola corta redondeada
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.4, 18, 10), backD); tail.scale.set(0.8, 0.18, 0.9); tail.position.set(0, 0.05, -1.1); body.add(tail);
+  // Alas: silueta larga y estrecha (Shape extruida), dorso pardo encima, blanco debajo
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, 0.28); wingShape.bezierCurveTo(0.9, 0.42, 2.2, 0.36, 3.6, 0.02);
+  wingShape.bezierCurveTo(3.1, -0.14, 2.0, -0.3, 0.9, -0.36); wingShape.lineTo(0, -0.34); wingShape.lineTo(0, 0.28);
+  const wgeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2, curveSegments: 24 });
+  wgeo.rotateX(Math.PI / 2);   // plano XZ: x = envergadura, z = cuerda
   const wings = [];
-  for (const s of [-1, 1]) {
-    const w = new THREE.Group(); w.position.set(s * 0.45, 0.7, 0.1); g.add(w);
-    const inner = bx(1.4, 0.07, 0.95, cream, s * 0.7, 0, 0); w.add(inner);
-    const outer = new THREE.Group(); outer.position.set(s * 1.4, 0, 0); w.add(outer);
-    outer.add(bx(1.2, 0.06, 0.8, cream, s * 0.55, 0, 0.05));
-    for (let i = 0; i < 6; i++) outer.add(bx(0.85, 0.04, 0.16, black, s * (0.9 + i * 0.05), -0.01, -0.35 + i * 0.12 - 0.05).translateX(s * 0.2));
-    for (let i = 0; i < 5; i++) w.add(bx(0.24, 0.04, 0.5, black, s * (0.15 + i * 0.3), -0.02, -0.6));
-    w.userData.outer = outer; w.userData.side = s;
+  for (const side of [-1, 1]) {
+    const w = new THREE.Group(); w.position.set(side * 0.42, 0.18, 0.12); body.add(w);
+    const up = new THREE.Mesh(wgeo, back); up.scale.set(side, 1, 1); w.add(up);
+    const dn = new THREE.Mesh(wgeo, belly); dn.scale.set(side, 1, 1); dn.position.y = -0.06; w.add(dn);
+    // borde de ataque y puntas más oscuros
+    const edge = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 3.2, 8), backD);
+    edge.rotation.z = Math.PI / 2; edge.position.set(side * 1.7, 0.02, 0.27); w.add(edge);
+    const tipM = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), backD); tipM.scale.set(1.6, 0.12, 0.5); tipM.position.set(side * 3.2, 0.0, 0.04); w.add(tipM);
+    w.userData.side = side;
     wings.push(w);
   }
-  // patas recogidas
-  for (const sx of [-0.18, 0.18]) g.add(bx(0.08, 0.2, 0.28, L(0xb8b0a0), sx, 0.12, -0.2));
-  // silla de cuero en la espalda
-  g.add(bx(0.55, 0.12, 0.7, L(0x4a2a14), 0, 0.93, 0.05));
-  for (const sx of [-1, 1]) g.add(bx(0.05, 0.45, 0.45, L(0x4a2a14), sx * 0.46, 0.72, 0.05));
-  g.userData.wings = wings; g.userData.head = head;
+  // Patas palmeadas
+  const feet = [];
+  for (const sx of [-0.22, 0.22]) {
+    const leg = new THREE.Group(); leg.position.set(sx, 0.62, -0.15); g.add(leg);
+    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.6, 10), foot); shin.position.y = -0.3; leg.add(shin);
+    const web = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.2, 0.05, 3), foot); web.rotation.y = Math.PI; web.position.set(0, -0.6, 0.1); web.scale.set(1, 1, 1.5); leg.add(web);
+    feet.push(leg);
+  }
+  // Montura: silla de cuero con perilla dorada, riendas
+  const saddle = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 0.14, 24), tack); saddle.scale.set(1, 1, 1.4); saddle.position.set(0, 0.46, -0.05); body.add(saddle);
+  const horn = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 8), gold); horn.position.set(0, 0.56, 0.35); body.add(horn);
+  for (const sx of [-1, 1]) {
+    const flap = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.42, 0.5), tack); flap.position.set(sx * 0.5, 0.22, -0.05); flap.rotation.z = sx * 0.25; body.add(flap);
+    const rein = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.0, 6), tack); rein.position.set(sx * 0.16, 0.5, 0.85); rein.rotation.x = 1.2; body.add(rein);
+  }
+  g.userData.wings = wings; g.userData.head = head; g.userData.body = body; g.userData.feet = feet;
+  g.traverse(o => { if (o.isMesh) { o.castShadow = false; } });
   return g;
 }
 
-export function buildMount(id) { return id === 'guirre' ? buildGuirre() : buildHorse(); }
+export function buildMount(id) { return id === 'pardela' ? buildPardela() : buildHorse(); }
 
 /** Anima una montura. moving: 0..1 (velocidad relativa), time en s. */
-export function animateMount(o, id, moving, time, flying) {
+export function animateMount(o, id, moving, time, flying, bank = 0) {
   if (!o) return;
-  if (id === 'guirre') {
-    const flap = flying ? (moving > 0.2 ? 0.35 : 0.75) : 0.15;
-    const speed = moving > 0.2 ? 4.2 : 6.5;
-    for (const w of o.userData.wings || []) {
-      const a = Math.sin(time * speed) * flap;
-      w.rotation.z = w.userData.side * (a + (flying ? 0.05 : 1.1));
-      w.userData.outer.rotation.z = w.userData.side * (Math.sin(time * speed - 0.6) * flap * 0.6);
+  if (id === 'pardela') {
+    const U = o.userData;
+    if (flying) {
+      // planeo: alas extendidas, aleteo corto de vez en cuando, se inclina al girar
+      const burst = Math.max(0, Math.sin(time * 0.9)) ** 6;       // rachas de aleteo
+      const flap = Math.sin(time * (moving > 0.2 ? 7 : 9)) * (0.12 + burst * 0.45 + (moving > 0.2 ? 0 : 0.25));
+      for (const w of U.wings) { w.rotation.set(0, 0, w.userData.side * (0.08 + flap)); w.scale.set(1, 1, 1); }
+      U.body.rotation.z = bank * 0.6;
+      U.body.rotation.x = -0.05;
+      for (const f of U.feet) { f.rotation.x = -1.2; f.position.y = 0.72; }
+      U.head.rotation.x = Math.sin(time * 1.1) * 0.05;
+    } else {
+      // en tierra: alas plegadas sobre el lomo, anda balanceándose
+      const step = Math.sin(time * 9) * Math.min(1, moving);
+      for (const w of U.wings) { w.rotation.set(0, w.userData.side * 1.48, 0); w.rotation.z = w.userData.side * -0.18; w.scale.set(0.5, 1, 0.9); }
+      U.body.rotation.z = step * 0.08;
+      U.body.rotation.x = 0;
+      U.feet.forEach((f, i) => { f.rotation.x = (i ? 1 : -1) * step * 0.6; f.position.y = 0.62; });
+      U.head.rotation.x = Math.sin(time * 9) * 0.06 * Math.min(1, moving) + Math.sin(time * 1.3) * 0.04;
     }
-    o.userData.head.rotation.x = Math.sin(time * 1.3) * 0.08;
   } else {
     const legs = o.userData.legs || [];
     const amp = Math.min(1, moving) * 0.75;
     const ph = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
     legs.forEach((l, i) => { l.rotation.x = Math.sin(time * 11 + ph[i]) * amp; });
-    if (o.userData.neck) o.userData.neck.rotation.x = -0.75 + Math.sin(time * 11) * 0.08 * amp;
+    if (o.userData.neck) o.userData.neck.rotation.x = 0.6 + Math.sin(time * 11) * 0.08 * amp;
     if (o.userData.tail) o.userData.tail.rotation.x = 0.5 + amp * 0.5 + Math.sin(time * 3) * 0.08;
   }
 }
@@ -146,7 +198,7 @@ export function animateMount(o, id, moving, time, flying) {
 /** Altura extra del jinete (sobre su altura normal). */
 export function riderLift(id, altitude = 0) {
   if (!id) return 0;
-  return SEAT[id] - HIP + (id === 'guirre' ? altitude : 0);
+  return SEAT[id] - HIP + (id === 'pardela' ? altitude : 0);
 }
 
 // ============================================================
@@ -154,8 +206,13 @@ export function riderLift(id, altitude = 0) {
 // ============================================================
 export function id() { return current; }
 export function isMounted() { return !!current; }
-export function isFlying() { return current === 'guirre' && alt > 0.5; }
-export function speedMult() { return current ? MOUNTS[current].speed : 1; }
+export function isFlying() { return current === 'pardela' && alt > 0.5; }
+export function canFly() { return combatLevel >= MOUNTS.pardela.flyLevel; }
+export function speedMult() {
+  if (!current) return 1;
+  const M = MOUNTS[current];
+  return M.fly && canFly() ? M.flySpeed : M.speed;
+}
 export function liftY() { return riderLift(current, alt); }
 
 function lockLeft() { return Math.max(0, MOUNT_COMBAT_LOCK_MS - (Date.now() - lastAttackedAt)); }
@@ -175,11 +232,14 @@ export function mount(which) {
   if (why) { feedLog('warning', why); return; }
   if (!owned.includes(which)) { feedLog('info', 'Todavía no tienes montura. Tanausú, el cuadrero de La Laguna, te vende una.'); return; }
   current = which; preferred = which;
+  if (which === 'pardela' && !canFly()) refresh();   // por si subiste de nivel
   obj = buildMount(which);
   scene.add(obj);
   alt = 0;
   sync(0);
-  feedLog('info', which === 'guirre' ? '🦅 Te subes al guirre y levantas el vuelo.' : '🐎 Te subes al caballo.');
+  feedLog('info', which === 'pardela'
+    ? (canFly() ? '🕊️ Te subes a la súper pardela y levantas el vuelo.' : `🕊️ Te subes a la súper pardela. Volará cuando tengas nivel de combate ${MOUNTS.pardela.flyLevel}.`)
+    : '🐎 Te subes al caballo.');
   try { window.__playSfx?.('door_open'); } catch {}
   renderOrb();
 }
@@ -188,7 +248,7 @@ export function dismount(msg = null) {
   if (!current) return;
   const p = getPlayer();
   // aterrizar en un sitio libre si venías volando
-  if (p && current === 'guirre' && findLanding) {
+  if (p && current === 'pardela' && alt > 0.5 && findLanding) {
     try { const f = findLanding(p.position.x, p.position.z); if (f) { p.position.x = f.x; p.position.z = f.z; } } catch {}
   }
   if (obj) { scene.remove(obj); obj.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
@@ -207,7 +267,7 @@ export function toggle() {
 function sync(dt) {
   const p = getPlayer();
   if (!p || !obj) return;
-  obj.position.set(p.position.x, current === 'guirre' ? alt : 0, p.position.z);
+  obj.position.set(p.position.x, current === 'pardela' ? alt : 0, p.position.z);
   obj.rotation.y = p.rotation.y;
 }
 
@@ -227,10 +287,15 @@ export function update(dt) {
     const why = canMountHere();
     if (why) { dismount(why.replace('No puedes montar', 'Te bajas de la montura')); return; }
     const M = MOUNTS[current];
-    const target = M.fly ? M.alt + Math.sin(t * 1.4) * 0.35 : 0;
+    const flyNow = M.fly && canFly();
+    const target = flyNow ? M.alt + Math.sin(t * 1.4) * 0.35 : 0;
     alt += (target - alt) * Math.min(1, dt * 1.6);
+    // inclinación al girar (según cuánto cambia el rumbo)
+    let dy = (p?.rotation.y || 0) - lastYaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
+    lastYaw = p?.rotation.y || 0;
+    bank += ((dt > 0 ? Math.max(-1, Math.min(1, -dy / dt * 0.35)) : 0) - bank) * Math.min(1, dt * 4);
     sync(dt);
-    animateMount(obj, current, speedNow, t, alt > 0.5);
+    animateMount(obj, current, speedNow, t, alt > 0.5, bank);
   }
   // cuenta atrás del bloqueo en el orbe
   if (orbVal) {
@@ -282,7 +347,7 @@ function renderOrb() {
   if (!orbEl) return;
   orbEl.classList.toggle('active', !!current);
   const icon = orbEl.querySelector('.osrs-stat-icon');
-  icon.textContent = current ? '⬇' : (preferred ? MOUNTS[preferred].icon : (owned.includes('guirre') ? '🦅' : '🐎'));
+  icon.textContent = current ? '⬇' : (preferred ? MOUNTS[preferred].icon : (owned.includes('pardela') ? '🕊️' : '🐎'));
 }
 
 function openChooser() {
@@ -305,7 +370,7 @@ function outside(e) { if (menuEl && !menuEl.contains(e.target)) closeChooser(); 
 function closeChooser() { document.removeEventListener('pointerdown', outside, true); if (menuEl) { menuEl.remove(); menuEl = null; } }
 
 export async function refresh() {
-  try { const r = await api.mountsGet(); owned = r?.owned || []; } catch {}
+  try { const r = await api.mountsGet(); owned = r?.owned || []; combatLevel = r?.combat_level || combatLevel; } catch {}
   renderOrb();
 }
 
@@ -319,7 +384,7 @@ export function start(opts) {
   started = true;
   buildOrb();
   refresh();
-  if (typeof window !== 'undefined') window.__mounts = { refresh, id: () => current, toggle, onAttacked };
+  if (typeof window !== 'undefined') window.__mounts = { refresh, id: () => current, toggle, onAttacked, setLevel: (l) => { combatLevel = l; } };
 }
 
 export function stop() {
@@ -343,12 +408,14 @@ export function updatePeerMount(peer, mountId, dt, time) {
   }
   if (!peer._mountObj) { if (peer._liftApplied) { peer.group.position.y = 0; peer._liftApplied = false; } return; }
   const M = MOUNTS[peer._mountId];
-  const target = M.fly ? M.alt + Math.sin(time * 1.4) * 0.35 : 0;
+  // un peer vuela si su montura vuela y su nivel lo permite
+  const flyNow = M.fly && (peer.combatLvl || 0) >= (M.flyLevel || 0);
+  const target = flyNow ? M.alt + Math.sin(time * 1.4) * 0.35 : 0;
   peer._mountAlt += (target - peer._mountAlt) * Math.min(1, dt * 1.6);
   const moving = peer.state === 'run' ? 1 : 0;
   peer.group.position.y = riderLift(peer._mountId, peer._mountAlt);
   peer._liftApplied = true;
-  peer._mountObj.position.set(peer.group.position.x, M.fly ? peer._mountAlt : 0, peer.group.position.z);
+  peer._mountObj.position.set(peer.group.position.x, peer._mountAlt, peer.group.position.z);
   peer._mountObj.rotation.y = peer.group.rotation.y;
   animateMount(peer._mountObj, peer._mountId, moving, time, peer._mountAlt > 0.5);
 }

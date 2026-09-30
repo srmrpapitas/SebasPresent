@@ -389,7 +389,7 @@ async function stableAgent(d) {
   const owned = new Set(st?.owned || []);
   const lvl = st?.combat_level || 3;
   const avail = MOUNT_LIST.filter(id => !owned.has(id));
-  if (!avail.length) { await d.npc('Ya tienes el caballo y el guirre. ¡Más que el mencey!'); return; }
+  if (!avail.length) { await d.npc('Ya tienes el caballo y la pardela. ¡Más que el mencey!'); return; }
   await d.npc(owned.size ? '¿Otra montura? Tú sí que sabes.' : 'Tengo dos animales buenos. Tú eliges.');
   if (d.closed) return;
   const labels = [...avail.map(id => {
@@ -405,12 +405,12 @@ async function stableAgent(d) {
     }
     const M = MOUNTS[avail[k]];
     if (lvl < M.level) { await d.npc(`Tú todavía eres muy flojito pa'l ${M.name}, mi niño. Vuelve con nivel de combate ${M.level} (tienes ${lvl}).`); continue; }
-    await d.player(`Me llevo el ${M.name}.`);
+    await d.player(`Me llevo ${M.id === 'pardela' ? 'la' : 'el'} ${M.name}.`);
     try {
       await api.mountsBuy(M.id);
       try { audio.synth?.('craft_done', { volume: 0.7 }); } catch {}
       feedLog('info', `${M.icon} ¡Ya tienes ${M.name}! Pulsa el botón ${M.icon} junto a la vida para montar.`);
-      await d.npc(M.fly ? '¡Cuídamelo! Súbete y vuela por encima de lo que quieras. Pero si te pegan, al suelo.' : '¡Todo tuyo! Pulsa el botón de la montura y a correr por los caminos.');
+      await d.npc(M.fly ? `¡Cuídamela! Por tierra ya la puedes usar; con nivel de combate ${M.flyLevel} vuela. Pero si te pegan, al suelo.` : '¡Todo tuyo! Pulsa el botón de la montura y a correr por los caminos.');
       try { window.__mounts?.refresh?.(); } catch {}
     } catch (err) {
       await d.npc(err?.code === 'not_enough_coins' ? '¿Y las perras? Sin monedas no hay animal, mi niño.'
