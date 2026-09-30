@@ -33,6 +33,7 @@ import * as potions from './potions.js';        // Sesión 50 — pociones
 import * as guancheVillage from './guanche_village.js';   // Sesión 50 — poblado guanche
 import * as castle from './castle.js';                     // Sesión 50 — castillos (banco/GE/tienda)
 import * as houses from './houses.js';                     // Sesión 50 — casas de jugador
+import * as roadsRender from './roads_render.js';          // Sesión 50 — caminos y postes
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
@@ -866,6 +867,7 @@ export async function startWorld(loggedInUser, token) {
       });
     } catch (e) { console.warn('[world] tablets start:', e); }
     try { guancheVillage.start({ scene }); } catch (e) { console.warn('[world] poblado:', e); }
+    try { roadsRender.start({ scene, biomeAt: terrain.biomeAt }); } catch (e) { console.warn('[world] caminos:', e); }
     // Sesión 50 — castillos y casas de jugador
     const openBankHere = () => {
       try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
@@ -1030,6 +1032,7 @@ export function stopWorld() {
   try { bossFx.stop(); } catch {}
   try { fosa.stop(); } catch {}
   try { guancheVillage.stop(); } catch {}
+  try { roadsRender.stop(); } catch {}
   try { castle.stop(); } catch {}
   try { houses.stop(); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';

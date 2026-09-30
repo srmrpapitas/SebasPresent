@@ -19,6 +19,7 @@
  * a antes.
  */
 
+import { roadDist, ROAD_HALF_W } from './shared/roads.js';   // Sesión 50 — caminos
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -243,6 +244,7 @@ export function addKeepout(x, z, r) {
 }
 export function clearKeepouts() { _keepouts.length = 0; }
 function inKeepout(wx, wz) {
+  if (roadDist(wx, wz) < ROAD_HALF_W + 2.5) return true;   // Sesión 50 — caminos sin árboles
   for (const k of _keepouts) if (Math.hypot(wx - k.x, wz - k.z) < k.r) return true;
   return false;
 }

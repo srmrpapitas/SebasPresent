@@ -9,6 +9,7 @@
  *   - tinte rojizo del Malpaís.
  * Y dibuja iconos estilo OSRS (banco, yunque, altar, pesca, misión…).
  */
+import { roadDist, ROAD_HALF_W } from './shared/roads.js';   // Sesión 50
 import { BIOMES, WORLD_HALF, WILDERNESS_X, PLACES, biomeAt } from './terrain.js';
 import { PONDS } from './shared/fishing.js';
 
@@ -51,6 +52,12 @@ export function colorAt(x, z) {
       SEA[1] + (SEA_DEEP[1] - SEA[1]) * k - n * 30,
       SEA[2] + (SEA_DEEP[2] - SEA[2]) * k - n * 20,
     ];
+  }
+  // Sesión 50 — caminos
+  const rd = roadDist(x, z);
+  if (rd < ROAD_HALF_W + 1.2) {
+    const n = vnoise(x * 0.3, z * 0.3) * 10;
+    return rd < ROAD_HALF_W ? [176 + n, 146 + n, 100 + n] : [120 + n, 96 + n, 66 + n];
   }
   // Agua de estanques/lagos
   for (const p of PONDS) {
