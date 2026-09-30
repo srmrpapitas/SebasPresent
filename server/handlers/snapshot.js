@@ -35,6 +35,7 @@ import { requireSession } from '../lib/auth.js';
 // Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
 import { tickNpcAggro, tickNpcWander } from '../combat_engine.js';
 import { tickBossesNear } from '../bosses.js';   // Sesión 50 — jefes
+import { tickFosa } from '../minigame.js';        // Sesión 50 — Fosa de Fuego
 import { currentPrayerState, overheadPrayer } from '../../client/src/shared/prayer.js';   // Sesión 50
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
@@ -253,6 +254,13 @@ export async function handleWorldSnapshot(request, env) {
     } catch (err) {
       console.error('[snapshot/bosses]', err);
     }
+    // Sesión 50 — La Fosa de Fuego (oleadas)
+    let fosa = null;
+    try {
+      fosa = await tickFosa(env, session.user_id, { x: centerX, z: centerZ }, now);
+    } catch (err) {
+      console.error('[snapshot/fosa]', err);
+    }
 
     // Bloque 2: formato idéntico al de combat_engine.getCombatState para que
     // npc_renderer.js sea drop-in replacement. Solo vivos (status=0).
@@ -265,9 +273,11 @@ export async function handleWorldSnapshot(request, env) {
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
+         AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
          AND i.x BETWEEN ? AND ?
          AND i.z BETWEEN ? AND ?`
     ).bind(
+      session.user_id,
       centerX - margin, centerX + margin,
       centerZ - margin, centerZ + margin,
     ).all();
@@ -311,6 +321,7 @@ export async function handleWorldSnapshot(request, env) {
     const retaliateCutoff = now - RETALIATE_WINDOW_MS;
     let me = {
       user_id: session.user_id,   // Sesión 50 — para saber a quién apunta un jefe
+      fosa: null,                 // Sesión 50 — estado de la Fosa de Fuego
       last_attacker: null,
       party_id: null,
       duel: null,           // Sesión 28
@@ -640,6 +651,7 @@ export async function handleWorldSnapshot(request, env) {
       if (!msg.includes('no such table')) console.warn('[snapshot/rock_state]', msg);
     }
 
+    me.fosa = fosa;
     return json({ now, players, npcs, me, fires, depleted_trees, depleted_veins, bosses });
   } catch (err) {
     console.error('[world/snapshot]', err);

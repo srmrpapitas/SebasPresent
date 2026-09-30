@@ -35,6 +35,7 @@ export const BANK_CHESTS = [
   { id: 'bank_pantano',   name: 'Cofre de la Laguna',         x: -478, z:   600 },
   { id: 'bank_lago',      name: 'Cofre del Lago de Verdis',   x:  842, z:   880 },
   { id: 'bank_helado',    name: 'Cofre del Lago Helado',      x:  522, z: -1500 },
+  { id: 'bank_fosa',      name: 'Cofre de la Fosa de Fuego',  x: 1852, z:  -304 },   // Sesión 50
 ];
 
 export const BANK_CHESTS_BY_ID = Object.fromEntries(BANK_CHESTS.map(b => [b.id, b]));

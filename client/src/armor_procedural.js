@@ -44,8 +44,10 @@ export function materialOf(itemId) {
 }
 
 export function isProceduralArmor(itemId, slot) {
+  if (slot === 'cape' && PROC_CAPES[itemId]) return true;   // Sesión 50 — Capa de fuego
   return PROC_SLOTS.has(slot) && !!materialOf(itemId);
 }
+const PROC_CAPES = { cape_fuego: true };
 
 // ------------------------------------------------------------
 // Materiales (cacheados por material)
@@ -971,6 +973,11 @@ export function buildProceduralWeapon(itemId, weaponType, root, handBone = null)
  * `root` = el FBX del personaje (character.mesh).
  */
 export function buildProceduralArmor(itemId, slot, root) {
+  if (slot === 'cape' && PROC_CAPES[itemId] && root) {
+    const parts = buildFireCape(root);
+    if (parts) for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    return parts;
+  }
   const matId = materialOf(itemId);
   if (!matId || !root) return null;
   let parts = null;
@@ -983,4 +990,52 @@ export function buildProceduralArmor(itemId, slot, root) {
   if (!parts) return null;
   for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
   return parts;
+}
+
+// ---------------- Capa de fuego (Sesión 50) ----------------
+let _fireTex = null;
+function fireCapeTexture() {
+  if (_fireTex) return _fireTex;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#3a0804'); grd.addColorStop(0.45, '#a0180a'); grd.addColorStop(0.75, '#ff5a10'); grd.addColorStop(1, '#ffd040');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 256);
+  // Lenguas de fuego
+  for (let i = 0; i < 18; i++) {
+    const x = Math.random() * 64, y = 120 + Math.random() * 136, h = 40 + Math.random() * 70;
+    g.fillStyle = `rgba(255,${120 + Math.random() * 120 | 0},20,0.55)`;
+    g.beginPath(); g.moveTo(x - 6, y); g.quadraticCurveTo(x + 4, y - h * 0.6, x, y - h); g.quadraticCurveTo(x + 2, y - h * 0.4, x + 6, y); g.fill();
+  }
+  _fireTex = new THREE.CanvasTexture(c);
+  return _fireTex;
+}
+function buildFireCape(root) {
+  const sp2 = findBone(root, 'Spine2');
+  if (!sp2) return null;
+  const basis = spineFrame(root, sp2, 'Neck');
+  const box = fitBox(boneVerts(root, [sp2], sp2), basis);
+  if (!box) return null;
+  const tn = tune('cape');
+  const h = box.max.y - box.min.y;
+  const rx = (box.max.x - box.min.x) / 2 * 1.2 * tn.s, rz = (box.max.z - box.min.z) / 2;
+  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+  const top = box.max.y + h * 0.05, len = h * 5.4 * tn.s;
+  const tex = fireCapeTexture();
+  const mat = new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.55, side: THREE.DoubleSide, roughness: 0.8 });
+  // Tela ligeramente curvada (trozo de cilindro abierto), por detrás del torso
+  const geo = new THREE.CylinderGeometry(rx * 1.1, rx * 1.45, len, 12, 6, true, Math.PI * 0.62, Math.PI * 0.76);
+  const cape = new THREE.Mesh(geo, mat);
+  const g = framed(basis);
+  cape.position.set(cx, top - len / 2, cz + rz * 0.15 + (tn.z || 0) * h);
+  g.add(cape);
+  // Broche de fuego en los hombros
+  for (const sx of [-1, 1]) {
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(rx * 0.14, 0),
+      new THREE.MeshStandardMaterial({ color: 0xffa030, emissive: 0xff5a10, emissiveIntensity: 1.6 }));
+    gem.position.set(cx + sx * rx * 0.7, top, cz + rz * 0.6);
+    g.add(gem);
+  }
+  return [{ bone: sp2, mesh: g }];
 }

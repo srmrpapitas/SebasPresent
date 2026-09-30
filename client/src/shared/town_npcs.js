@@ -161,6 +161,16 @@ export const TOWN_NPCS = [
       'Allí cualquiera puede atacarte. Si atacas tú primero, te marcan con una calavera: si mueres, lo pierdes TODO.',
       'Pero los mejores minerales están allí. Obsidiana, basaltita… teiderio. Decide tú.',
     ] },
+  // Sesión 50 — La Fosa de Fuego (minijuego de oleadas)
+  { id: 'kargath', name: 'Kargath', title: 'Guardián de la Fosa', x: 1864, z: -306, rotY: 3.14, role: '🔥',
+    look: { skin: 0x8a5a3a, shirt: 0x7a1a0a, pants: 0x2a1a10, hair: 0x1a1a1a, acc: 'helm' },
+    actions: ['fosa'],
+    lines: [
+      'Bienvenido a la Fosa de Fuego. Doce rondas de criaturas de lava… y al final, IGNAROTH.',
+      'Cada criatura pega a su manera: los diablillos y brutos cuerpo a cuerpo, los escupefuegos con proyectiles y los espíritus con magia. Usa la protección adecuada.',
+      'Ignaroth BRILLA antes de atacar: verde = proyectiles, azul = magia. Cambia tu plegaria a tiempo.',
+      'Si caes ahí abajo no pierdes nada: te saco yo. Pero sin capa, claro.',
+    ] },
 ];
 
 export const TOWN_NPCS_BY_ID = Object.fromEntries(TOWN_NPCS.map(n => [n.id, n]));

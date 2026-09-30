@@ -20,6 +20,8 @@ export const PROC_NPC_HEIGHTS = {
   // Sesión 50 — jefes
   rey_yeti: 4.6, coloso_obsidiana: 5.0, reina_escorpion: 2.4, bruja_pantano: 2.6, leviatan: 5.5,
   rey_esqueleto: 3.3, dragon_rojo: 5.2, dragon_negro: 6.2,
+  // Sesión 50 — Fosa de Fuego
+  fosa_diablillo: 1.2, fosa_escupefuego: 1.3, fosa_espiritu: 1.9, fosa_bruto: 2.6, fosa_ignaroth: 5.2,
 };
 
 function mat(color, extra = {}) {
@@ -474,6 +476,88 @@ function leviatan() {
   };
 }
 
+
+// ---------------- Criaturas de la Fosa de Fuego ----------------
+const LAVA = () => mat(0xff6a10, { emissive: 0xff3a00, emissiveIntensity: 1.3 });
+function imp() {
+  const root = new THREE.Group(); const body = new THREE.Group(); root.add(body);
+  const skin = mat(0x8a1a10), dark = mat(0x3a0a06), lava = LAVA(), eye = mat(0xffe040, { emissive: 0xffc000 });
+  const torso = sph(0.3, skin, 1); torso.scale.set(1, 1.15, 0.85); torso.position.y = 0.62; body.add(torso);
+  const belly = sph(0.16, lava, 0); belly.position.set(0, 0.6, 0.2); body.add(belly);
+  const head = sph(0.22, skin, 1); head.position.set(0, 1.0, 0.05); body.add(head);
+  for (const sx of [-1, 1]) {
+    const h = cone(0.05, 0.22, dark, 4); h.position.set(sx * 0.12, 1.2, 0); h.rotation.z = -sx * 0.4; body.add(h);
+    const e = sph(0.04, eye); e.position.set(sx * 0.08, 1.02, 0.2); body.add(e);
+    const w = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.4, 3), mat(0x5a0a08, { side: THREE.DoubleSide })); w.position.set(sx * 0.3, 0.85, -0.15); w.rotation.set(0.4, 0, sx * 1.3); body.add(w);
+  }
+  const legs = [];
+  for (const sx of [-1, 1]) { const L = leg(0.34, 0.09, dark, sx * 0.13, 0.36, 0); body.add(L); legs.push(L); }
+  const tail = cyl(0.02, 0.05, 0.5, dark, 4); tail.position.set(0, 0.45, -0.3); tail.rotation.x = 1.0; body.add(tail);
+  let ph = Math.random() * 6, atkT = 0;
+  return { root, attack() { atkT = 0.35; }, animate(dt, moving) {
+    ph += dt * (moving ? 14 : 2);
+    legs[0].rotation.x = Math.sin(ph) * (moving ? 0.7 : 0); legs[1].rotation.x = -Math.sin(ph) * (moving ? 0.7 : 0);
+    body.position.y = Math.abs(Math.sin(ph)) * 0.05;
+    belly.scale.setScalar(1 + Math.sin(ph * 1.5) * 0.15);
+    body.rotation.x = atkT > 0 ? Math.sin(Math.max(0, (atkT -= dt)) / 0.35 * Math.PI) * 0.5 : 0;
+  } };
+}
+function spitter() {
+  const m = mat(0x2a2220), eyeM = mat(0xffa020, { emissive: 0xff6000 });
+  const out = quadruped({ m, eyeM, snoutM: mat(0xff5a10, { emissive: 0xc02000 }), bw: 0.55, bh: 0.4, bl: 1.0, hs: 0.38, legLen: 0.28, lt: 0.12,
+    ears: false, tailLen: 0.7, gait: 10 });
+  const lava = LAVA();
+  for (let k = 0; k < 4; k++) { const c = cone(0.06, 0.25, lava, 4); c.position.set(0, 0.8, 0.3 - k * 0.22); out.root.add(c); }
+  return out;
+}
+function fireSpirit() {
+  const root = new THREE.Group(); const body = new THREE.Group(); root.add(body);
+  const core = sph(0.28, mat(0xfff0a0, { emissive: 0xffc040, emissiveIntensity: 1.5 }), 1); core.position.y = 1.2; body.add(core);
+  const flames = [];
+  for (let k = 0; k < 7; k++) {
+    const f = cone(0.18 - k * 0.015, 0.7 + (k % 3) * 0.2, mat(k % 2 ? 0xff7a10 : 0xffb030, { emissive: k % 2 ? 0xff4000 : 0xff8000, emissiveIntensity: 1.2 }), 5);
+    const a = k * 0.9;
+    f.position.set(Math.cos(a) * 0.18, 1.35 + (k % 2) * 0.1, Math.sin(a) * 0.18);
+    body.add(f); flames.push(f);
+  }
+  for (const sx of [-1, 1]) { const e = box(0.08, 0.05, 0.03, mat(0x2a0a00)); e.position.set(sx * 0.1, 1.28, 0.26); body.add(e); }
+  let ph = Math.random() * 6, atkT = 0;
+  return { root, attack() { atkT = 0.4; }, animate(dt) {
+    ph += dt * 3;
+    body.position.y = 0.15 + Math.sin(ph) * 0.12;
+    flames.forEach((f, i) => { f.scale.y = 1 + Math.sin(ph * 3 + i) * 0.25; f.rotation.z = Math.sin(ph * 2 + i) * 0.15; });
+    core.scale.setScalar(1 + (atkT > 0 ? Math.sin(Math.max(0, (atkT -= dt)) / 0.4 * Math.PI) * 0.6 : 0));
+  } };
+}
+const lavaRecolor = (m) => {
+  const glowing = m.emissive && m.emissive.getHex() !== 0;
+  if (glowing) { m.color.setHex(0xff6a10); m.emissive.setHex(0xff3a00); m.emissiveIntensity = 1.4; }
+  else m.color.setHex(lum(m) > 110 ? 0x3a2a24 : 0x241a16);
+};
+function ignaroth() {
+  const v = variant('golem', 2.2, lavaRecolor, (r) => {
+    const lava = LAVA();
+    for (let k = 0; k < 6; k++) { const c = cone(0.1, 0.55, lava, 4); const a = k / 6 * Math.PI * 2; c.position.set(Math.cos(a) * 0.25, 2.55, Math.sin(a) * 0.25 + 0.1); c.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5); r.add(c); }
+    for (const sx of [-1, 1]) { const h = cone(0.12, 0.7, mat(0x1a1210), 4); h.position.set(sx * 0.35, 2.4, 0.05); h.rotation.z = -sx * 1.0; r.add(h); }
+  });
+  // Brillo de aviso: verde (proyectiles) / azul (magia)
+  const aura = new THREE.Mesh(new THREE.SphereGeometry(2.6, 16, 12), new THREE.MeshBasicMaterial({ color: 0x40ff60, transparent: true, opacity: 0, depthWrite: false }));
+  aura.position.y = 3.2; aura.name = 'ign_aura';
+  v.root.add(aura);
+  let glowT = 0;
+  const baseAnim = v.animate;
+  v.setGlow = (style) => {
+    v.root.traverse(o => { if (o.name === 'ign_aura') { o.material.color.setHex(style === 'magic' ? 0x4a8aff : 0x40ff60); } });
+    glowT = style ? 1.8 : 0;
+  };
+  v.animate = (dt, moving) => {
+    baseAnim(dt, moving);
+    if (glowT > 0) glowT -= dt;
+    v.root.traverse(o => { if (o.name === 'ign_aura') o.material.opacity = glowT > 0 ? 0.25 + Math.sin(performance.now() / 70) * 0.12 : 0; });
+  };
+  return v;
+}
+
 Object.assign(BUILDERS, {
   rey_yeti: () => variant('yeti', 1.8, (m) => { if (m.color.getHex() === 0xe8eef2) m.color.setHex(0xd8e8f8); }, (r) => {
     crown(r, 2.62, 0.3, 0x9fe3ff);
@@ -501,6 +585,11 @@ Object.assign(BUILDERS, {
   bruja_pantano: witch,
   leviatan,
   dragon_rojo: () => dragon({ s: 1.0, c1: 0xa3161a, c2: 0xe8a060, c3: 0x3a0a08, wing: 0xc0302a, eye: 0xffd040 }),
+  fosa_diablillo: imp,
+  fosa_escupefuego: spitter,
+  fosa_espiritu: fireSpirit,
+  fosa_bruto: () => variant('golem', 1.1, lavaRecolor),
+  fosa_ignaroth: ignaroth,
   dragon_negro: () => dragon({ s: 1.2, c1: 0x1a1620, c2: 0x4a3a5a, c3: 0x0a080c, wing: 0x4a2a6a, eye: 0xc060ff }),
 });
 

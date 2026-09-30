@@ -697,6 +697,14 @@ ICONS.staff_dragomante = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000
   <rect x="14" y="12.5" width="4.5" height="2.2" fill="#d8a030" stroke="#000" stroke-width=".5" transform="rotate(-65 16 13.5)"/>
 </svg>`;
 
+ICONS.cape_fuego = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="icoCapeF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a0a04"/><stop offset=".5" stop-color="#c0200a"/><stop offset=".8" stop-color="#ff6a10"/><stop offset="1" stop-color="#ffd040"/></linearGradient></defs>
+  <path d="M10 4 L22 4 L26 28 Q16 25 6 28 Z" fill="url(#icoCapeF)" stroke="#000" stroke-width="1" stroke-linejoin="round"/>
+  <path d="M9 27 Q11 20 12 26 Q14 18 16 25 Q18 17 20 26 Q21 20 23 27" fill="#ffd040" opacity=".85"/>
+  <rect x="9" y="3" width="14" height="3" rx="1" fill="#2a0804" stroke="#000" stroke-width=".8"/>
+  <circle cx="11" cy="4.5" r="1.4" fill="#ffa030"/><circle cx="21" cy="4.5" r="1.4" fill="#ffa030"/>
+</svg>`;
+
 // Sesión 50 — Tabletas de teletransporte: losa de piedra con runa del color del destino
 import { TABLETS as _TABLETS } from './shared/teleports.js';
 for (const [id, t] of Object.entries(_TABLETS)) {

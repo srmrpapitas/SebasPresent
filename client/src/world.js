@@ -28,6 +28,7 @@ import * as groundItems from './ground_items.js';
 import * as terrain from './terrain.js';
 import * as mapRender from './map_render.js';   // Sesión 50 — minimapa/mapa nuevos
 import * as bossFx from './boss_fx.js';         // Sesión 50 — jefes
+import * as fosa from './fosa.js';              // Sesión 50 — Fosa de Fuego
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
 import * as interiors from './interiors.js';
@@ -255,6 +256,7 @@ export async function startWorld(loggedInUser, token) {
     try { prayer.registerKeepouts(terrain); } catch (e) { console.warn('[world] prayer keepouts:', e); }
     try { bankChests.registerKeepouts(terrain); } catch (e) { console.warn('[world] bank keepouts:', e); }
     try { townNpcs.registerKeepouts(terrain); } catch (e) { console.warn('[world] npc keepouts:', e); }
+    try { fosa.registerKeepouts(terrain); } catch {}
     // Sesión 50 — guaridas de jefes sin árboles
     try { for (const b of Object.values(BOSSES)) { terrain.addKeepout?.(b.x, b.z, b.lairR + 2); terrain.clearTreesNear?.(b.x, b.z, b.lairR + 2); } } catch {}
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -856,6 +858,21 @@ export async function startWorld(loggedInUser, token) {
         },
       });
     } catch (e) { console.warn('[world] tablets start:', e); }
+    // Sesión 50 — La Fosa de Fuego (oleadas)
+    try {
+      fosa.start({
+        scene,
+        getPlayer:   () => player,
+        getSnapshot: () => worldSnapshot.getSnapshot(),
+        feedLog:     (type, msg) => combat.feedLog?.(type, msg),
+        onTeleported: () => {
+          try { window.__playerExitCombat?.(); } catch {}
+          try { npcRenderer.cancelAutoEngage?.(); } catch {}
+          try { terrain.primeChunks(player.position.x, player.position.z); } catch {}
+          playerTarget = null;
+        },
+      });
+    } catch (e) { console.warn('[world] fosa start:', e); }
     // Sesión 50 — Calavera PvP sobre la cabeza.
     try {
       skull.start({
@@ -978,6 +995,7 @@ export function stopWorld() {
   }
 
   try { bossFx.stop(); } catch {}
+  try { fosa.stop(); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';
   if (fullMapOverlay) fullMapOverlay.classList.remove('visible');
   ['worldTooltip', 'worldRegion', 'worldBanner'].forEach(id => {
@@ -1260,12 +1278,13 @@ function drawMinimap() {
     ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineWidth = 1; ctx.stroke();
   }
 
-  // Jefes
+  // Jefes + Fosa de Fuego
   for (const b of bossFx.getBossesForMap()) {
     if (!inView(b.x, b.z)) continue;
     const [sx, sy] = S(b.x, b.z);
     mapRender.drawIcon(ctx, 'boss', sx, sy, 5.5);
   }
+  { const fz = fosa.getForMap(); if (inView(fz.x, fz.z)) { const [sx, sy] = S(fz.x, fz.z); mapRender.drawIcon(ctx, 'minigame', sx, sy, 6); } }
 
   // Lugares (icono + nombre)
   for (const p of PLACES) {
@@ -1600,6 +1619,8 @@ function drawFullMap() {
     if (big || ppm >= 0.14) mapRender.label(ctx, p.name, sx, sy + r + 9, big ? 13 : 11, big ? '#fff3c0' : '#e8d8a8', big);
   }
 
+  // Fosa de Fuego
+  { const fz = fosa.getForMap(); if (vis(fz.x, fz.z, 60)) { const [sx, sy] = S(fz.x, fz.z); mapRender.drawIcon(ctx, 'minigame', sx, sy, IR + 1); if (ppm >= 0.12) mapRender.label(ctx, fz.name, sx, sy + IR + 10, 11, '#ffc080', true); } }
   // Jefes (siempre visibles: calavera roja + nombre)
   for (const b of bossFx.getBossesForMap()) {
     if (!vis(b.x, b.z, 60)) continue;
@@ -3055,6 +3076,7 @@ function animate() {
   crafting.update(dt);        // Sesión 50 — bucle de flechería/artesanía
   bankChests.update(dt);      // Sesión 50 — cofres de banco
   try { bossFx.update(dt); } catch (e) { if (!window.__bossErr) { window.__bossErr = e; console.warn('[boss]', e); } }
+  try { fosa.update(dt); } catch (e) { if (!window.__fosaErr) { window.__fosaErr = e; console.warn('[fosa]', e); } }
   townNpcs.update(dt);        // Sesión 50 — habitantes
   tablets.update(dt);         // Sesión 50 — efecto de teletransporte
   smithing.update(dt);        // Sesión 50 — hornos/yunques + trabajo

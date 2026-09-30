@@ -278,6 +278,18 @@ async function talkTo(o) {
     for (const q of info.offer) opts.push({ label: `❗ ${q.name}`, run: () => offerQuest(d, n, q) });
     for (const t of info.doing) opts.push({ label: `📜 ${t.q.name}`, run: () => aboutQuest(d, t) });
     if (n.actions?.includes('bank')) opts.push({ label: '🏦 Quiero usar el banco', run: async () => { d.end(); onOpenBank(); } });
+    // Sesión 50 — La Fosa de Fuego
+    if (n.actions?.includes('fosa')) {
+      opts.push({ label: '🔥 Quiero bajar a la Fosa', run: async () => {
+        await d.npc('¿Seguro? Lleva comida y plegaria. Doce rondas… y si llegas, Ignaroth.');
+        if (d.closed) return;
+        const k = await d.choose(['¡Vamos allá!', 'Mejor otro día.'], 'La Fosa de Fuego');
+        if (k !== 0) return;
+        d.end();
+        try { window.__fosa?.enter?.(); } catch (e) { console.warn(e); }
+      } });
+      opts.push({ label: '❓ ¿Cómo funciona la Fosa?', run: async () => { for (const l of n.lines.slice(1)) { await d.npc(l); if (d.closed) return; } } });
+    }
     for (const a of n.actions || []) {
       if (!a.startsWith('shop:')) continue;
       const shopId = a.slice(5);

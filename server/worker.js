@@ -62,6 +62,7 @@ import * as mining from './handlers/skills/mining.js';            // Sesión 50 
 import * as fishing from './handlers/skills/fishing.js';          // Sesión 50 — pesca
 import * as crafting from './handlers/skills/crafting.js';        // Sesión 50 — flechería/artesanía
 import * as teleport from './handlers/teleport.js';               // Sesión 50 — tabletas
+import * as fosa from './handlers/minigame.js';                   // Sesión 50 — Fosa de Fuego
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
@@ -276,6 +277,10 @@ export default {
         response = await crafting.handleCraftingMake(request, env);
       } else if (path === '/api/magic/tablet' && method === 'POST') {
         response = await teleport.handleTabletBreak(request, env);
+      } else if (path === '/api/fosa/start' && method === 'POST') {
+        response = await fosa.handleFosaStart(request, env);
+      } else if (path === '/api/fosa/leave' && method === 'POST') {
+        response = await fosa.handleFosaLeave(request, env);
       } else if (path === '/api/smithing/recipes' && method === 'GET') {
         response = await smithing.handleSmithingRecipes(request, env);
       } else if (path === '/api/smithing/smelt' && method === 'POST') {

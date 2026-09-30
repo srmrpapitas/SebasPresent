@@ -809,6 +809,7 @@ async function reviveExpiredNpcs(db, opts = {}) {
                       (SELECT spawn_z FROM npc_defs WHERE id = npc_instances.def_id))
              + (((ABS(RANDOM()) % 2000) - 1000) / 200.0)
      WHERE status = 1
+       AND owner_user_id IS NULL
        AND died_at IS NOT NULL
        AND (died_at + (SELECT respawn_ms FROM npc_defs WHERE id = npc_instances.def_id)) <= ?`,
     [now]
@@ -911,8 +912,8 @@ async function getCombatState(db, userId, opts = {}) {
             d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
             d.attack_speed_ticks, d.max_hit, d.attack_range, d.model
      FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
-     WHERE i.status = 0`,
-    []
+     WHERE i.status = 0 AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)`,
+    [userId]
   );
   const lvls = levelsOf(stats);
   return {
@@ -965,6 +966,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   if (!npc) return { error: 'npc_not_found' };
   if (npc.status !== 0) return { error: 'npc_dead' };
+  if (npc.owner_user_id && npc.owner_user_id !== userId) return { error: 'npc_not_found' };   // Sesión 50 — criaturas de la Fosa de otro
 
   // Sesión 26 — Cooldown DEPENDE del arma equipada + stance:
   //   cooldownMs = ATTACK_SPEEDS[weapon] × STANCE_MODIFIERS[stance].speed_mult
@@ -1193,7 +1195,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   let userKilled = false;
   let respawned = false;
 
-  if (!npcKilled && npc.behavior !== 'boss') {   // Sesión 50 — los jefes atacan con su propio cerebro (server/bosses.js)
+  if (!npcKilled && npc.behavior !== 'boss' && npc.behavior !== 'minigame') {   // Sesión 50 — los jefes atacan con su propio cerebro (server/bosses.js)
     const npcCooldownMs = npc.attack_speed_ticks * TICK_MS;
     const npcReady = !npc.last_attack_at || (now - npc.last_attack_at) >= npcCooldownMs;
     // Sesión 39 fix — El NPC SOLO contraataca si VOS estás dentro de SU rango
@@ -2652,7 +2654,7 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
-         AND d.behavior NOT IN ('aggressive', 'boss')
+         AND d.behavior NOT IN ('aggressive', 'boss', 'minigame')
          AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`
     ).bind(viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
   } catch {

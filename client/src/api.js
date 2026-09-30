@@ -645,3 +645,11 @@ export async function npcDeliver(npcId) {
 export async function tabletBreak(slot) {
   return apiFetch('/api/magic/tablet', { method: 'POST', auth: true, body: { slot } });
 }
+
+// Sesión 50 — La Fosa de Fuego
+export async function fosaStart() {
+  return apiFetch('/api/fosa/start', { method: 'POST', auth: true, body: {} });
+}
+export async function fosaLeave() {
+  return apiFetch('/api/fosa/leave', { method: 'POST', auth: true, body: {} });
+}

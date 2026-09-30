@@ -741,3 +741,10 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - `attackNpc` NO contraataca con jefes (lo hace su cerebro); `meleeResist` reduce la melé (Coloso). Los pasivos que deambulan excluyen `boss`.
 - Snapshot: `bosses: [{id,npc_id,alive,style,hz,atk,spec}]` y `me.user_id`. Cliente: `boss_fx.js` (avisos en el suelo, explosiones, proyectiles, barra de vida arriba, banner de especial), modelos en `npc_procedural.js`.
 - Si cambias bosses.js: regenera el seed (scratchpad gen_bosses.mjs) y re-ejecútalo.
+
+## 34. La Fosa de Fuego (Sesión 50)
+- Config: `client/src/shared/fosa.js` (arena en 1860,-340 r19, Kargath en 1864,-306, 12 rondas, criaturas, premios). Migración 007 (`npc_instances.owner_user_id`, `user_fosa`) y seed 010 (defs `behavior='minigame'`, `cape_fuego`) EJECUTADAS.
+- Criaturas = npc_instances con `owner_user_id`: solo las ve (snapshot, getCombatState) y ataca (`attackNpc`) su dueño; `reviveExpiredNpcs` las ignora; su IA es `server/minigame.js tickFosa` (desde el snapshot del dueño, gate `user_fosa.last_tick`).
+- Morir dentro NO suelta objetos: vida llena y fuera (`fosaDamage`). Salir de la arena = rendirse. Premios en rondas 3/6/9/12 (12 = Capa de fuego procedural + 20k).
+- Ignaroth: `tele {s, at}` → el cliente lo hace brillar verde/azul; al llegar `at` pega según tu protección en ese momento.
+- Endpoints: POST /api/fosa/start (junto a Kargath) y /api/fosa/leave. Estado en `snapshot.me.fosa`.
