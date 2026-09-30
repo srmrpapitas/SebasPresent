@@ -11,6 +11,7 @@
 
 export const EQUIP_LEVEL = {
   bronze: 1, hierro: 5, acero: 10, oro: 20, obsidiana: 30, basaltita: 40, teiderio: 60,
+  dragon: 60,   // Sesión 50 — no se fabrica: la sueltan los jefes (1/20)
 };
 
 export const SKILL_NAMES = { attack: 'Ataque', defence: 'Defensa', ranged: 'Distancia', magic: 'Magia' };
@@ -25,6 +26,8 @@ const BY_ITEM = {
   bow_maple:  { skill: 'ranged', level: 30 },
   bow_yew:    { skill: 'ranged', level: 40 },
   bow_magic:  { skill: 'ranged', level: 50 },
+  bow_dragon: { skill: 'ranged', level: 60 },        // Sesión 50 — arco de garras de dragón
+  staff_dragomante: { skill: 'magic', level: 60 },  // Sesión 50 — bastón de Dragomante
 };
 
 export function materialFromId(itemId) {
@@ -55,15 +58,22 @@ export function requirementText(req) {
 }
 
 // ------------------------------------------------------------
-// Sesión 50 — Ataque especial SOLO en armas buenas (estilo OSRS)
-//   Espadas/espadones de oro, obsidiana, basaltita y teiderio.
-//   Arcos de arce, tejo y mágico.
+// Sesión 50 — Ataque especial: SOLO el arco de garras de dragón.
+//   "Aliento del dragón": dispara dos cabezas de dragón (dos golpes, cada
+//   uno ×1.5 y mínimo DRAGON_SPEC_MIN_HIT).
 // ------------------------------------------------------------
-const SPECIAL_MATERIALS = new Set(['oro', 'obsidiana', 'basaltita', 'teiderio']);
-const SPECIAL_ITEMS = new Set(['bow_maple', 'bow_yew', 'bow_magic']);
+const SPECIAL_ITEMS = new Set(['bow_dragon']);
+export const DRAGON_SPEC_MULT = 1.5;
+export const DRAGON_SPEC_MIN_HIT = 4;
+export const DRAGON_SPEC_COST = 55;
 
 export function hasSpecialAttack(itemId) {
-  if (!itemId) return false;
-  if (SPECIAL_ITEMS.has(itemId)) return true;
-  return /^sword_/.test(itemId) && SPECIAL_MATERIALS.has(materialFromId(itemId));
+  return !!itemId && SPECIAL_ITEMS.has(itemId);
 }
+
+// Bonus de magia de bastones (se suma al golpe máximo del hechizo y al maná).
+export const STAFF_MAGIC_BONUS = { staff_dragomante: 5 };
+export const STAFF_MANA_EXTRA = { staff_dragomante: 60 };
+
+// Equipo de dragón (lo sueltan los jefes, 1/20 cada uno su pieza)
+export const DRAGON_ITEMS = ['helm_dragon', 'body_dragon', 'legs_dragon', 'boots_dragon', 'gloves_dragon', 'shield_dragon', 'staff_dragomante', 'bow_dragon'];

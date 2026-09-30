@@ -70,6 +70,9 @@ export async function handleCombatAttack(request, env) {
       await pushRealtime(env, {
         t: 'npc', at: Date.now(), a: session.user_id, n: npcId, dmg: result.your_damage ?? result.damage ?? 0,
         hp: result.npc_hp, killed: !!result.npc_killed, wt: result.weapon_type || null,
+        // Sesión 50 — para que los demás vean el proyectil
+        fx: result.special?.dragon ? 'dragon' : (result.spell_cast ? result.spell_cast.spell_id : (result.arrow_consumed ? 'arrow' : null)),
+        fxc: result.spell_cast?.color ?? null,
       });
     }
     if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
@@ -158,6 +161,8 @@ export async function handleCombatAttackPlayer(request, env) {
         wt: result.weapon_type || null,
         spell: result.spell_cast ? { id: result.spell_cast.spell_id, color: result.spell_cast.color } : null,
         spec: result.special ? result.special.hits : null,
+        dragon: !!result.special?.dragon,
+        arrow: !!result.arrow_consumed,
         skulled: !!result.skulled,
       });
     }

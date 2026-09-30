@@ -596,6 +596,7 @@ const SKILL_ICONS = {
     basaltita: { base: '#3a3f45', hi: '#6c737b', lo: '#1c1f22', gem: '#ff6a2a' },
     teiderio:  { base: '#2f9e8f', hi: '#7fe8d8', lo: '#15564d', gem: '#5fffe0' },
     cuero:     { base: '#8a5a30', hi: '#b88050', lo: '#4a2e18', gem: '#c89060' },   // Sesión 50
+    dragon:    { base: '#a3161a', hi: '#e8443a', lo: '#2a1412', gem: '#ffa030' },   // Sesión 50 — jefes
   };
   const svg = (inner) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision">${inner}</svg>`;
   const S = 'stroke="#000" stroke-width="1" stroke-linejoin="round"';
@@ -643,7 +644,7 @@ const SKILL_ICONS = {
     add(`gloves_${m}`, gloves);
     // Sesión 50 — espada, espadón y escudo (se pisan también los de bronce
     // para que todo tenga el mismo estilo que el modelo 3D procedural)
-    const gemOn = ['obsidiana', 'basaltita', 'teiderio'].includes(m);
+    const gemOn = ['obsidiana', 'basaltita', 'teiderio', 'dragon'].includes(m);
     const sword = svg(`
       <polygon points="23,4 28,4 28,9 13,22 10,19" fill="${c.hi}" ${S}/>
       <line x1="26" y1="6" x2="13" y2="19" stroke="${c.lo}" stroke-width="1"/>
@@ -674,6 +675,27 @@ const SKILL_ICONS = {
       <polygon points="5,22 10,22 8,26" fill="#e8e8e8" stroke="#000" stroke-width="0.7"/>`));
   }
 })();
+
+// Sesión 50 — Arco de garras de dragón y Bastón de Dragomante
+ICONS.bow_dragon = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <path d="M10 3 Q25 16 10 29" fill="none" stroke="#2a0c0a" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M10 3 Q24 16 10 29" fill="none" stroke="#b01a14" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M15 7 l3-1 l-1 3Z M19 11 l3 0 l-2 2.4Z M19 20 l3 0 l-2-2.4Z M15 25 l3 1 l-1-3Z" fill="#e8dcc0" stroke="#000" stroke-width=".5"/>
+  <path d="M10 3 l-4-1 l2 3Z M10 29 l-4 1 l2-3Z" fill="#e8dcc0" stroke="#000" stroke-width=".6"/>
+  <line x1="9.5" y1="4" x2="9.5" y2="28" stroke="#ffa030" stroke-width="1.1"/>
+  <rect x="15.5" y="14" width="3.4" height="4" fill="#4a1a10" stroke="#000" stroke-width=".6"/>
+  <circle cx="17.2" cy="16" r="1.1" fill="#ffd040"/>
+</svg>`;
+ICONS.staff_dragomante = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs><radialGradient id="icoDrOrb"><stop offset="0" stop-color="#fff0a0"/><stop offset=".5" stop-color="#ff7a20"/><stop offset="1" stop-color="#b02000"/></radialGradient></defs>
+  <line x1="9" y1="30" x2="17" y2="12" stroke="#1a0808" stroke-width="3"/>
+  <line x1="9" y1="30" x2="17" y2="12" stroke="#8a1214" stroke-width="1" stroke-dasharray="2 2"/>
+  <path d="M14 13 L18 6 L25 5 L28 9 L24 12 L20 12 Z" fill="#a3161a" stroke="#000" stroke-width="1" stroke-linejoin="round"/>
+  <path d="M18 6 L15 1 M20 5.5 L19 1" stroke="#e8dcc0" stroke-width="1.4" stroke-linecap="round"/>
+  <circle cx="21.5" cy="7.5" r="1" fill="#ffe040"/>
+  <circle cx="25" cy="14" r="3.4" fill="url(#icoDrOrb)" stroke="#5a1000" stroke-width=".8"/>
+  <rect x="14" y="12.5" width="4.5" height="2.2" fill="#d8a030" stroke="#000" stroke-width=".5" transform="rotate(-65 16 13.5)"/>
+</svg>`;
 
 // Sesión 50 — Tabletas de teletransporte: losa de piedra con runa del color del destino
 import { TABLETS as _TABLETS } from './shared/teleports.js';

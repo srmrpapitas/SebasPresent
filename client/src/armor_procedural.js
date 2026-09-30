@@ -32,8 +32,10 @@ export const ARMOR_COLORS = {
   teiderio:  { base: 0x2f9e8f, trim: 0x7fe8d8, gem: 0x5fffe0, metal: 0.7,  rough: 0.25 },
   // Sesión 50 — armadura de cuero (Artesanía)
   cuero:     { base: 0x7a4a26, trim: 0x3e2412, gem: null,     metal: 0.0,  rough: 0.9 },
+  // Sesión 50 — equipo de dragón (lo sueltan los jefes)
+  dragon:    { base: 0xa3161a, trim: 0x2a1412, gem: 0xffa030, metal: 0.55, rough: 0.32 },
 };
-const TIER = { cuero: 0, bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, basaltita: 5, teiderio: 6 };
+const TIER = { cuero: 0, bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, basaltita: 5, teiderio: 6, dragon: 7 };
 const PROC_SLOTS = new Set(['helm', 'body', 'legs', 'boots', 'gloves', 'shield']);
 
 export function materialOf(itemId) {
@@ -764,9 +766,170 @@ function buildSword(root, matId, twoHanded, handBone) {
 }
 
 const PROC_WEAPON_TYPES = new Set(['1h_sword', '2h_sword']);
+// Sesión 50 — armas de dragón con modelo propio (no hay GLB)
+const PROC_WEAPON_IDS = new Set(['bow_dragon', 'staff_dragomante']);
 
 export function isProceduralWeapon(itemId, weaponType) {
+  if (PROC_WEAPON_IDS.has(itemId)) return true;
   return PROC_WEAPON_TYPES.has(weaponType) && !!materialOf(itemId);
+}
+
+// ---------------- Materiales de dragón ----------------
+let _dragonM = null;
+function dragonMats() {
+  if (_dragonM) return _dragonM;
+  const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.2, flatShading: true, ...o });
+  _dragonM = {
+    scale: std(0x8a1214, { metalness: 0.35, roughness: 0.35 }),
+    dark: std(0x2a0c0a, { roughness: 0.6 }),
+    claw: std(0xe8dcc0, { roughness: 0.35 }),
+    clawTip: std(0x1a1010, { roughness: 0.3, metalness: 0.4 }),
+    leather: std(0x4a1a10, { roughness: 0.9, metalness: 0 }),
+    gold: std(0xd8a030, { metalness: 0.85, roughness: 0.25 }),
+    fire: new THREE.MeshStandardMaterial({ color: 0xffa030, emissive: 0xff5a10, emissiveIntensity: 1.6, roughness: 0.3 }),
+    orb: new THREE.MeshStandardMaterial({ color: 0xff7a20, emissive: 0xff3a00, emissiveIntensity: 2.2, roughness: 0.1, transparent: true, opacity: 0.92 }),
+    eye: new THREE.MeshStandardMaterial({ color: 0xffe040, emissive: 0xffc000, emissiveIntensity: 2 }),
+  };
+  return _dragonM;
+}
+
+/** Arco de garras de dragón (mano izquierda): palas hechas de garras encadenadas. */
+function buildDragonBow(root, handBone) {
+  const side = /Right/.test(handBone?.name || '') ? 'Right' : 'Left';
+  const gf = gripFrame(root, side, handBone);
+  if (!gf) return null;
+  const D = dragonMats(), tn = tune('bow');
+  const L = gf.L * tn.s;
+  const u = new THREE.Group();
+  const H = 7.2 * L, bulge = 3.2 * L;
+  // Empuñadura de cuero con anillos dorados
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.3 * L, 0.3 * L, 1.8 * L, 8), D.leather);
+  u.add(grip);
+  for (const sy of [-1, 1]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.33 * L, 0.07 * L, 4, 10), D.gold);
+    ring.rotation.x = Math.PI / 2; ring.position.y = sy * 0.95 * L;
+    u.add(ring);
+  }
+  // Curva de cada pala (en el plano XY; +x = hacia delante)
+  const limbPts = [];
+  for (const sy of [1, -1]) {
+    const curve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0, sy * 0.9 * L, 0),
+      new THREE.Vector3(bulge * 1.1, sy * H * 0.55, 0),
+      new THREE.Vector3(bulge * 0.2, sy * H, 0));
+    // Garras encadenadas a lo largo de la curva (más finas hacia la punta)
+    const N = 7;
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N, t1 = (k + 1) / N;
+      const a = curve.getPoint(t0), b = curve.getPoint(t1);
+      const len = a.distanceTo(b);
+      const r = (0.34 - 0.2 * t0) * L;
+      const seg = new THREE.Mesh(new THREE.ConeGeometry(r, len * 1.25, 6), k % 2 ? D.scale : D.dark);
+      seg.position.copy(a).lerp(b, 0.5);
+      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      u.add(seg);
+      // púa de garra hacia fuera (lado de delante)
+      if (k % 2 === 0) {
+        const sp = new THREE.Mesh(new THREE.ConeGeometry(r * 0.45, r * 2.6, 5), D.claw);
+        const dir = b.clone().sub(a).normalize();
+        const out = new THREE.Vector3(dir.y * sy, -dir.x * sy, 0).normalize();   // normal hacia fuera
+        if (out.x < 0) out.negate();
+        sp.position.copy(a).addScaledVector(out, r * 1.1);
+        sp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), out.clone().multiplyScalar(0.8).addScaledVector(dir, 0.6).normalize());
+        u.add(sp);
+      }
+    }
+    // Garra grande en la punta (curva hacia atrás)
+    const tip = curve.getPoint(1);
+    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.2 * L, 1.5 * L, 6), D.claw);
+    claw.position.copy(tip).add(new THREE.Vector3(-0.35 * L, sy * 0.5 * L, 0));
+    claw.rotation.z = sy > 0 ? 0.9 : Math.PI - 0.9;
+    u.add(claw);
+    const cTip = new THREE.Mesh(new THREE.ConeGeometry(0.1 * L, 0.5 * L, 5), D.clawTip);
+    cTip.position.copy(claw.position).add(new THREE.Vector3(-0.55 * L, sy * 0.38 * L, 0));
+    cTip.rotation.z = claw.rotation.z;
+    u.add(cTip);
+    limbPts.push(tip);
+  }
+  // Cuerda de fuego (línea brillante entre las puntas, por detrás)
+  const a = limbPts[0], b = limbPts[1];
+  const str = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * L, 0.05 * L, a.distanceTo(b), 4), D.fire);
+  str.position.copy(a).lerp(b, 0.5).add(new THREE.Vector3(-0.15 * L, 0, 0));
+  u.add(str);
+  // Ojo de dragón en el centro
+  const eye = new THREE.Mesh(new THREE.OctahedronGeometry(0.28 * L, 0), D.eye);
+  eye.position.set(0.35 * L, 0, 0);
+  u.add(eye);
+  u.rotation.set(tn.x || 0, 0, 0);
+  const g = framed(gf.basis);
+  g.position.copy(gf.center);
+  g.add(u);
+  return { bone: gf.bone, mesh: g };
+}
+
+/** Bastón de Dragomante: vara oscura con espiral roja y un cráneo de dragón con orbe de fuego. */
+function buildDragomanteStaff(root, handBone) {
+  const side = /Right/.test(handBone?.name || '') ? 'Right' : 'Left';
+  const gf = gripFrame(root, side, handBone);
+  if (!gf) return null;
+  const D = dragonMats(), tn = tune('staff');
+  const L = gf.L * tn.s;
+  const u = new THREE.Group();
+  const top = 9.5 * L, bottom = -6.5 * L;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * L, 0.26 * L, top - bottom, 8), D.dark);
+  shaft.position.y = (top + bottom) / 2;
+  u.add(shaft);
+  // Espiral de escamas rojas
+  for (let k = 0; k < 16; k++) {
+    const y = bottom + 1 * L + k * ((top - bottom - 2.5 * L) / 16);
+    const a = k * 0.9;
+    const sc = new THREE.Mesh(new THREE.BoxGeometry(0.2 * L, 0.45 * L, 0.12 * L), D.scale);
+    sc.position.set(Math.cos(a) * 0.24 * L, y, Math.sin(a) * 0.24 * L);
+    sc.rotation.y = -a;
+    u.add(sc);
+  }
+  // Contera de garra abajo
+  const foot = new THREE.Mesh(new THREE.ConeGeometry(0.28 * L, 1.1 * L, 6), D.claw);
+  foot.position.y = bottom - 0.4 * L; foot.rotation.x = Math.PI;
+  u.add(foot);
+  // Collar dorado
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.42 * L, 0.3 * L, 0.5 * L, 8), D.gold);
+  collar.position.y = top - 0.2 * L;
+  u.add(collar);
+  // Cráneo de dragón mirando hacia delante (+x), con la boca abierta sujetando el orbe
+  const head = new THREE.Group();
+  head.position.y = top + 0.6 * L;
+  const skull = new THREE.Mesh(new THREE.BoxGeometry(1.1 * L, 0.9 * L, 1.0 * L), D.scale);
+  head.add(skull);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(1.0 * L, 0.5 * L, 0.75 * L), D.scale);
+  snout.position.set(0.95 * L, 0.1 * L, 0);
+  head.add(snout);
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.95 * L, 0.2 * L, 0.65 * L), D.dark);
+  jaw.position.set(0.85 * L, -0.45 * L, 0); jaw.rotation.z = -0.35;
+  head.add(jaw);
+  for (const sz of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.16 * L, 1.4 * L, 5), D.claw);
+    horn.position.set(-0.55 * L, 0.65 * L, sz * 0.35 * L);
+    horn.rotation.set(sz * 0.3, 0, 0.9);
+    head.add(horn);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11 * L, 6, 5), D.eye);
+    eye.position.set(0.35 * L, 0.2 * L, sz * 0.5 * L);
+    head.add(eye);
+    for (let k = 0; k < 2; k++) {
+      const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.06 * L, 0.25 * L, 4), D.claw);
+      tooth.position.set((1.1 + k * 0.25) * L, -0.2 * L, sz * 0.22 * L);
+      tooth.rotation.x = Math.PI;
+      head.add(tooth);
+    }
+  }
+  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42 * L, 1), D.orb);
+  orb.position.set(1.05 * L, -0.15 * L, 0);
+  head.add(orb);
+  u.add(head);
+  const g = framed(gf.basis);
+  g.position.copy(gf.center);
+  g.add(u);
+  return { bone: gf.bone, mesh: g };
 }
 
 /** Raíz del personaje (el objeto que contiene la malla con esqueleto) a partir de un hueso. */
@@ -787,11 +950,18 @@ function skinRootOf(bone) {
  * Devuelve { bone, mesh } o null.
  */
 export function buildProceduralWeapon(itemId, weaponType, root, handBone = null) {
-  const matId = materialOf(itemId);
-  if (!matId) return null;
   const r = root || (handBone && skinRootOf(handBone));
   if (!r) return null;
-  const out = buildSword(r, matId, weaponType === '2h_sword', handBone);
+  let out = null;
+  if (itemId === 'bow_dragon' || itemId === 'staff_dragomante') {
+    const hb = handBone || findBone(r, 'LeftHand');
+    out = itemId === 'bow_dragon' ? buildDragonBow(r, hb) : buildDragomanteStaff(r, hb);
+    if (out) out.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    return out;
+  }
+  const matId = materialOf(itemId);
+  if (!matId) return null;
+  out = buildSword(r, matId, weaponType === '2h_sword', handBone);
   if (out) out.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
   return out;
 }

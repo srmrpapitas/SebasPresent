@@ -482,11 +482,15 @@ async function doAttackTickNpc(gen = attackGen) {
     try {
       const playerPos = window.__getPlayerPosition?.();
       if (playerPos) {
-        window.__worldFireProjectile(
-          { x: playerPos.x, y: 0, z: playerPos.z },
-          { x: npc.x, y: 0, z: npc.z },
-          { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 }
-        );
+        const from = { x: playerPos.x, y: 0, z: playerPos.z }, to = { x: npc.x, y: 0, z: npc.z };
+        if (result.special?.dragon) {
+          // Sesión 50 — Aliento del dragón: dos cabezas de dragón en llamas
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', targetNpcId: npcId, windupMs: 200 });
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', targetNpcId: npcId, windupMs: 430, arcHeight: 0.9 });
+          try { audio.synth?.('altar', { volume: 0.9, pitch: 0.55 }); } catch {}
+        } else {
+          window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 });
+        }
       }
     } catch {}
   }
@@ -525,7 +529,9 @@ async function doAttackTickNpc(gen = attackGen) {
 
   if (result.your_hit) {
     if (result.special) {
-      feedLog('hit', `⚡ ¡ESPECIAL! Doble golpe a ${npcName}: ${result.special.hits[0]} + ${result.special.hits[1]} HP.`);
+      feedLog('hit', result.special.dragon
+        ? `🐉 ¡ALIENTO DEL DRAGÓN! ${npcName}: ${result.special.hits[0]} + ${result.special.hits[1]} HP.`
+        : `⚡ ¡ESPECIAL! Doble golpe a ${npcName}: ${result.special.hits[0]} + ${result.special.hits[1]} HP.`);
     } else if (result.is_crit) {
       feedLog('hit', `⚡ ¡CRÍTICO! Golpe demoledor a ${npcName}: ${result.your_damage} HP.`);
     } else {
@@ -816,6 +822,23 @@ async function doAttackTickPlayer(gen = attackGen) {
         }
       } catch {}
     }
+  }
+
+  // Sesión 50 — flecha / cabezas de dragón también en PvP
+  if (result.arrow_consumed && typeof window !== 'undefined' && typeof window.__worldFireProjectile === 'function') {
+    try {
+      const playerPos = window.__getPlayerPosition?.();
+      const peerPos = multiplayer.getPeerVisualPosition?.(targetId);
+      if (playerPos && peerPos) {
+        const from = { x: playerPos.x, y: 0, z: playerPos.z }, to = { x: peerPos.x, y: 0, z: peerPos.z };
+        if (result.special?.dragon) {
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', windupMs: 200 });
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', windupMs: 430, arcHeight: 0.9 });
+        } else {
+          window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 });
+        }
+      }
+    } catch {}
   }
 
   // Sesión 47 — ESPECIAL: no hay animación dedicada, así que el cue es un SFX

@@ -26,28 +26,47 @@
 // ============================================================
 // Íconos SVG (mismo estilo dibujado a mano que los del HUD)
 // ============================================================
+// Sesión 50 — iconos nuevos: más detalle, degradados y brillo (estilo OSRS).
 const SVG = {
   fire_strike:
-    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
-    '<path d="M16 3 C12 10 9 12 9 18 a7 7 0 0 0 14 0 c0-3-2-6-4-9 c-1 3-2 4-3 4 c0-5 0-9 1-10Z" fill="#ff6622" stroke="#000" stroke-width="1.1"/>' +
-    '<path d="M16 15 c-2 2-3 4-3 6 a3 3 0 0 0 6 0 c0-2-1-3-3-6Z" fill="#ffd040"/></svg>',
+    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs>' +
+    '<radialGradient id="sbFg" cx="50%" cy="70%" r="60%"><stop offset="0" stop-color="#fff3b0"/><stop offset=".45" stop-color="#ffb030"/><stop offset="1" stop-color="#e03a00"/></radialGradient>' +
+    '<radialGradient id="sbFh" cx="50%" cy="60%" r="50%"><stop offset="0" stop-color="#ff9a30" stop-opacity=".8"/><stop offset="1" stop-color="#ff5000" stop-opacity="0"/></radialGradient></defs>' +
+    '<circle cx="16" cy="18" r="14" fill="url(#sbFh)"/>' +
+    '<path d="M16 2 C18 8 24 10 24 18 a8 8 0 0 1 -16 0 c0-4 2-6 3-8 c0 3 1 4 2 4 c0-5 1-9 3-12Z" fill="url(#sbFg)" stroke="#5a1400" stroke-width="1.1" stroke-linejoin="round"/>' +
+    '<path d="M16 13 c3 3 4 5 4 7.5 a4 4 0 0 1 -8 0 c0-2 1-3 2-4 c0 1.5 .6 2 1 2 c0-2 .3-4 1-5.5Z" fill="#fff6c8"/>' +
+    '<circle cx="23" cy="7" r="1" fill="#ffd060"/><circle cx="9" cy="9" r=".8" fill="#ffb040"/></svg>',
   ice_spear:
-    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
-    '<polygon points="16,3 22,12 16,29 10,12" fill="#55bbff" stroke="#000" stroke-width="1.1"/>' +
-    '<polygon points="16,3 22,12 16,12" fill="#aee0ff"/>' +
-    '<line x1="16" y1="6" x2="16" y2="26" stroke="#eaf6ff" stroke-width="1"/></svg>',
+    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs>' +
+    '<linearGradient id="sbIg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#8fdcff"/><stop offset="1" stop-color="#2a7ac8"/></linearGradient>' +
+    '<radialGradient id="sbIh" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#9fe3ff" stop-opacity=".7"/><stop offset="1" stop-color="#9fe3ff" stop-opacity="0"/></radialGradient></defs>' +
+    '<circle cx="16" cy="16" r="15" fill="url(#sbIh)"/>' +
+    '<polygon points="27,5 18,22 15,19" fill="url(#sbIg)" stroke="#0a3a6a" stroke-width="1" stroke-linejoin="round"/>' +
+    '<polygon points="27,5 15,19 12,16" fill="#cff4ff" stroke="#0a3a6a" stroke-width="1" stroke-linejoin="round"/>' +
+    '<line x1="14" y1="18" x2="5" y2="27" stroke="#6a4a2a" stroke-width="2.4" stroke-linecap="round"/>' +
+    '<line x1="14" y1="18" x2="5" y2="27" stroke="#c8e8ff" stroke-width=".8" stroke-linecap="round"/>' +
+    '<path d="M8 8 l1 2 l2 1 l-2 1 l-1 2 l-1-2 l-2-1 l2-1Z" fill="#fff"/><path d="M24 22 l.7 1.4 l1.4 .7 l-1.4 .7 l-.7 1.4 l-.7-1.4 l-1.4-.7 l1.4-.7Z" fill="#e8fbff"/></svg>',
   thunderbolt:
-    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
-    '<polygon points="18,3 8,17 15,17 13,29 24,13 17,13" fill="#ffe23a" stroke="#000" stroke-width="1.1"/></svg>',
+    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs>' +
+    '<linearGradient id="sbTg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffbe0"/><stop offset="1" stop-color="#ffc800"/></linearGradient>' +
+    '<radialGradient id="sbTh" cx="50%" cy="55%" r="50%"><stop offset="0" stop-color="#fff27a" stop-opacity=".8"/><stop offset="1" stop-color="#fff27a" stop-opacity="0"/></radialGradient></defs>' +
+    '<circle cx="16" cy="17" r="15" fill="url(#sbTh)"/>' +
+    '<path d="M6 9 a5 4 0 0 1 8-3 a5 4 0 0 1 9 1 a4 3.5 0 0 1 1 7 h-17 a3.5 3.5 0 0 1 -1-5Z" fill="#5a6078" stroke="#1a1c28" stroke-width="1"/>' +
+    '<polygon points="17,12 10,21 15,21 12,30 23,17 17.5,17 20,12" fill="url(#sbTg)" stroke="#5a3a00" stroke-width="1" stroke-linejoin="round"/></svg>',
   entangle:
-    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
-    '<path d="M16 28 C10 22 8 16 12 10 C14 14 18 14 20 10 C24 16 22 22 16 28Z" fill="#44cc55" stroke="#000" stroke-width="1.1"/>' +
-    '<path d="M16 26 C14 20 16 14 16 12" fill="none" stroke="#2a8a3a" stroke-width="1.3"/></svg>',
+    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs>' +
+    '<radialGradient id="sbEh" cx="50%" cy="60%" r="50%"><stop offset="0" stop-color="#7aff6a" stop-opacity=".6"/><stop offset="1" stop-color="#7aff6a" stop-opacity="0"/></radialGradient></defs>' +
+    '<circle cx="16" cy="18" r="14" fill="url(#sbEh)"/>' +
+    '<path d="M9 29 C5 22 14 20 10 13 C8 9 12 6 14 4" fill="none" stroke="#1f5a18" stroke-width="3" stroke-linecap="round"/>' +
+    '<path d="M9 29 C5 22 14 20 10 13 C8 9 12 6 14 4" fill="none" stroke="#5ccf4a" stroke-width="1.4" stroke-linecap="round"/>' +
+    '<path d="M22 29 C27 22 17 20 21 13 C23 9 20 7 18 5" fill="none" stroke="#1f5a18" stroke-width="3" stroke-linecap="round"/>' +
+    '<path d="M22 29 C27 22 17 20 21 13 C23 9 20 7 18 5" fill="none" stroke="#7ae05a" stroke-width="1.4" stroke-linecap="round"/>' +
+    '<path d="M12 14 c-4-1-5 1-5 3 c3 0 4-1 5-3Z M20 12 c4-2 5 0 6 2 c-3 1-5 0-6-2Z M11 23 c-3 0-4 2-4 3 c2 0 3-1 4-3Z" fill="#6ae04a" stroke="#1f5a18" stroke-width=".7"/></svg>',
 };
 
 // Espejo de SPELLS de server/magic.js (lo que la UI necesita).
 const SPELLBOOK = [
-  { id: 'fire_strike', name: 'Rayo de fuego',  level: 1,  mana: 5  },
+  { id: 'fire_strike', name: 'Rayo de fuego',  level: 1,  mana: 10 },
   { id: 'ice_spear',   name: 'Lanza de hielo', level: 20, mana: 9  },
   { id: 'thunderbolt', name: 'Rayo',           level: 40, mana: 14 },
   { id: 'entangle',    name: 'Enredar',        level: 35, mana: 12 },
@@ -285,7 +304,10 @@ function ensureCss() {
   css.id = 'spellbook-css';
   css.textContent = [
     '.spellbook-cell{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 4px;cursor:pointer;background:transparent;border:none;border-radius:8px}',
-    '.spellbook-cell .spellbook-svg{width:30px;height:30px}',
+    '.spellbook-cell .spellbook-svg{width:34px;height:34px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.8));transition:transform .12s}',
+    '.spellbook-cell:active .spellbook-svg{transform:scale(1.15)}',
+    '.spellbook-cell.selected .spellbook-svg{animation:sbPulse 1.4s ease-in-out infinite}',
+    '@keyframes sbPulse{50%{filter:drop-shadow(0 0 6px rgba(255,240,180,.9))}}',
     '.spellbook-cell .spellbook-svg svg{width:100%;height:100%;display:block}',
     '.spellbook-cell .spellbook-meta{font-size:10px;opacity:0.78}',
     /* contorno blanco estilo OSRS */

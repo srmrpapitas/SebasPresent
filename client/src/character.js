@@ -853,12 +853,13 @@ export class Character {
 
     // Sesión 50 — espadas de los 7 materiales: procedurales (armor_procedural.js)
     if (isProceduralWeapon(weaponId, weaponType)) {
-      const w = buildProceduralWeapon(weaponId, weaponType, this.mesh, this._rightHandBone);
+      const leftHanded = weaponType === 'bow' || weaponType === 'staff';   // Sesión 50 — arco/bastón de dragón
+      const w = buildProceduralWeapon(weaponId, weaponType, this.mesh, leftHanded ? this._leftHandBone : this._rightHandBone);
       if (!w) return;
       w.bone.add(w.mesh);
       this._equippedWeaponMesh = w.mesh;
       this._equippedWeaponId = weaponId;
-      this._equippedWeaponHand = 'right';
+      this._equippedWeaponHand = leftHanded ? 'left' : 'right';
       this._equippedWeaponType = weaponType;
       window.__character = this;
       return;

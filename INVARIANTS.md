@@ -728,3 +728,9 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Carcaj: igual (quitar → poner, con devolución si falla).
 - GE: `placeOrder` retira con guardas una a una (devuelve si falla); `cancelOrder` mueve el escrow dentro de la sentencia `WHERE status=open`; `claimAll` pone pending a 0 condicionado antes de entregar; `applyMatch` empieza con una GUARDA `SELECT json(CASE ... ELSE 'stale')` que aborta y deshace todo el lote si otra ejecución tocó las órdenes.
 - Tala: `shared/trees.js` (BIOME_TREES + `treeCandidatesForChunk` = mismo generador que terrain.js). El server rechaza árboles que no existan (`no_tree`), gate de ritmo 1500 ms (`too_fast`, 429) y XP relativa. Si cambias el generador de árboles de terrain.js, cámbialo en trees.js.
+
+## 32. Equipo de dragón y ataque especial (Sesión 50)
+- Material `dragon` (tier 8, nivel 60 como el teiderio). NO se fabrica: lo sueltan los jefes. Seed 008 (ejecutado). Piezas: helm/body/legs/boots/gloves/shield_dragon, `bow_dragon` (Distancia 60), `staff_dragomante` (Magia 60, +5 daño de hechizo `STAFF_MAGIC_BONUS`, +60 maná `STAFF_MANA_EXTRA`).
+- **Ataque especial SOLO con `bow_dragon`** (`hasSpecialAttack`): "Aliento del dragón", 55 % de barra, dos golpes ×1.5 con mínimo 4 cada uno; respuesta `special.dragon=true` → el cliente dispara dos cabezas de dragón (`fireProjectile type:'dragonhead'`).
+- Modelos procedurales en `armor_procedural.js` (`buildDragonBow`, `buildDragomanteStaff`), en la mano izquierda. Tuning: `__procArmorTune.bow / .staff`.
+- Proyectiles: cada hechizo tiene su efecto (bola de fuego, lanza de hielo, rayo, lianas) con estela de partículas, círculo rúnico al lanzar e impacto. Los demás jugadores también ven tus proyectiles (`fx` en el push `npc`; `spell/arrow/dragon` en `hit`).

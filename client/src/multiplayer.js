@@ -909,6 +909,18 @@ function onRealtime(m, myId) {
       attacker._lastAttackAtSeen = Math.max(attacker._lastAttackAtSeen || 0, m.at || 0);
       if (m.wt) attacker._peerWeaponType = m.wt;
       triggerPeerAttackAnim(attacker);
+      // Sesión 50 — ver el proyectil del otro (hechizo / flecha / dragón)
+      try {
+        const from = attacker.group?.position;
+        const to = m.d === myId ? window.__getPlayerPosition?.() : mpLastPeerMap.get(m.d)?.group?.position;
+        const fire = window.__worldFireProjectile;
+        if (from && to && fire) {
+          const a = { x: from.x, y: 0, z: from.z }, b = { x: to.x, y: 0, z: to.z };
+          if (m.dragon) { fire(a, b, { type: 'dragonhead', windupMs: 200 }); fire(a, b, { type: 'dragonhead', windupMs: 430, arcHeight: 0.9 }); }
+          else if (m.spell) fire(a, b, { type: 'spell', spellId: m.spell.id, color: m.spell.color, windupMs: 250 });
+          else if (m.arrow) fire(a, b, { type: 'arrow', windupMs: 200 });
+        }
+      } catch {}
     }
     if (target) {
       target._lastHitAtSeen = Math.max(target._lastHitAtSeen || 0, m.at || 0);
@@ -938,6 +950,16 @@ function onRealtime(m, myId) {
     if (m.a === myId) return;
     const peer = mpLastPeerMap.get(m.a);
     if (peer) { if (m.wt) peer._peerWeaponType = m.wt; triggerPeerAttackAnim(peer); peer._lastAttackAtSeen = Math.max(peer._lastAttackAtSeen || 0, m.at || 0); }
+    // Sesión 50 — proyectil del otro jugador contra el NPC
+    try {
+      const from = peer?.group?.position, to = window.__getNpcPosition?.(m.n), fire = window.__worldFireProjectile;
+      if (from && to && fire && m.fx) {
+        const a = { x: from.x, y: 0, z: from.z }, b = { x: to.x, y: 0, z: to.z };
+        if (m.fx === 'dragon') { fire(a, b, { type: 'dragonhead', targetNpcId: m.n, windupMs: 200 }); fire(a, b, { type: 'dragonhead', targetNpcId: m.n, windupMs: 430, arcHeight: 0.9 }); }
+        else if (m.fx === 'arrow') fire(a, b, { type: 'arrow', windupMs: 200 });
+        else fire(a, b, { type: 'spell', spellId: m.fx, color: m.fxc, targetNpcId: m.n, windupMs: 250 });
+      }
+    } catch {}
     try { window.__worldSpawnHitsplat?.(m.n, m.dmg || 0); } catch {}
   }
 }

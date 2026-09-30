@@ -215,34 +215,21 @@ export function fireProjectile(fromVec3, toVec3, opts = {}) {
   // Sesión 41 — Proyectil de HECHIZO: esfera brillante del color del hechizo
   // (procedural, sin GLB). Núcleo + halo translúcido + luz puntual. Reusa el
   // lerp de liveProjectiles (mismo arco que la flecha).
-  if (opts.type === 'spell') {
-    const color = (typeof opts.color === 'number') ? opts.color : 0xff6622;
-    const group = new THREE.Group();
-    const core = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 12, 12),
-      new THREE.MeshBasicMaterial({ color })
-    );
-    const glow = new THREE.Mesh(
-      new THREE.SphereGeometry(0.34, 12, 12),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32 })
-    );
-    group.add(core);
-    group.add(glow);
-    try { group.add(new THREE.PointLight(color, 1.2, 4)); } catch {}
-    group.position.copy(fromAdj);
-    scene.add(group);
+  if (opts.type === 'spell' || opts.type === 'dragonhead') {
+    const fx = opts.type === 'dragonhead' ? buildDragonHead() : buildSpellFx(opts.spellId, opts.color);
+    fx.obj.position.copy(fromAdj);
+    scene.add(fx.obj);
+    if (opts.type === 'spell') spawnCastCircle(fromVec3, fx.color);
     liveProjectiles.push({
-      obj: group,
+      obj: fx.obj,
       spawnedAt: performance.now(),
-      durationMs,
+      durationMs: opts.type === 'dragonhead' ? 520 : 420,
       from: fromAdj.clone(),
       to:   toAdj.clone(),
       isLine: false,
-      // Sesión 41 — homing: si viene targetNpcId, el update refresca `to` a la
-      // posición VIVA del NPC cada frame → el proyectil va directo al objetivo
-      // aunque camine. arcHeight chico = bolt casi recto (no arco de flecha).
+      fx,
       targetNpcId: (opts.targetNpcId != null) ? opts.targetNpcId : null,
-      arcHeight: (typeof opts.arcHeight === 'number') ? opts.arcHeight : 0.15,
+      arcHeight: (typeof opts.arcHeight === 'number') ? opts.arcHeight : (opts.type === 'dragonhead' ? 0.5 : 0.15),
     });
     return;
   }
@@ -275,13 +262,15 @@ export function fireProjectile(fromVec3, toVec3, opts = {}) {
 }
 
 export function update() {
-  if (!started || liveProjectiles.length === 0) return;
+  if (!started) return;
+  if (liveProjectiles.length === 0) { if (particles.length) updateParticles(performance.now()); return; }
   const now = performance.now();
   for (let i = liveProjectiles.length - 1; i >= 0; i--) {
     const p = liveProjectiles[i];
     const t = (now - p.spawnedAt) / p.durationMs;
 
     if (t >= 1) {
+      if (p.fx) { try { spawnImpact(p.obj.position, p.fx); } catch {} }
       cleanupProjectile(p);
       liveProjectiles.splice(i, 1);
       continue;
@@ -322,10 +311,17 @@ export function update() {
     const nyLin = p.from.y + (p.to.y - p.from.y) * tNext;
     const nyArc = arcH * Math.sin(tNext * Math.PI);
     p.obj.lookAt(nx, nyLin + nyArc, nz);
-    if (ARROW_ROT_OFFSET_X !== 0) p.obj.rotateX(ARROW_ROT_OFFSET_X);
-    if (ARROW_ROT_OFFSET_Y !== 0) p.obj.rotateY(ARROW_ROT_OFFSET_Y);
-    if (ARROW_ROT_OFFSET_Z !== 0) p.obj.rotateZ(ARROW_ROT_OFFSET_Z);
+    if (p.fx) {
+      // (Object3D.lookAt apunta +Z al objetivo: los efectos miran hacia +Z)
+      try { p.fx.tick?.(t, now); } catch {}
+      emitTrail(p);
+    } else {
+      if (ARROW_ROT_OFFSET_X !== 0) p.obj.rotateX(ARROW_ROT_OFFSET_X);
+      if (ARROW_ROT_OFFSET_Y !== 0) p.obj.rotateY(ARROW_ROT_OFFSET_Y);
+      if (ARROW_ROT_OFFSET_Z !== 0) p.obj.rotateZ(ARROW_ROT_OFFSET_Z);
+    }
   }
+  updateParticles(now);
 }
 
 // ============================================================
@@ -373,6 +369,10 @@ function applyArrowColor(mesh, hexColor) {
 function cleanupProjectile(p) {
   if (!p) return;
   if (p.obj && scene) scene.remove(p.obj);
+  if (p.fx) {
+    p.obj.traverse(o => { if (o.isMesh || o.isSprite) { o.geometry?.dispose?.(); o.material?.dispose?.(); } });
+    return;
+  }
   if (p.isLine) {
     // Fallback line: dispose explícito de su geometry+material (no compartidos).
     p.fallbackMaterial?.dispose?.();
@@ -389,4 +389,244 @@ function cleanupProjectile(p) {
       for (const m of mats) m.dispose?.();
     });
   }
+}
+
+
+// ============================================================
+// Sesión 50 — Efectos de hechizos y del Aliento del dragón
+// ============================================================
+// Cada hechizo tiene su propio proyectil + estela de partículas + impacto:
+//   fire_strike  → bola de fuego con llamas y chispas
+//   ice_spear    → lanza de cristal con escarcha
+//   thunderbolt  → rayo en zigzag que parpadea
+//   entangle     → orbe verde con lianas en espiral
+//   dragonhead   → cabeza de dragón en llamas (especial del arco de dragón)
+// Sin PointLights nuevas (caras en móvil): todo aditivo + emissive.
+
+let SOFT_TEX = null;
+function softTex() {
+  if (SOFT_TEX) return SOFT_TEX;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.35, 'rgba(255,255,255,0.6)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  SOFT_TEX = new THREE.CanvasTexture(c);
+  return SOFT_TEX;
+}
+const addMat = (color, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
+function glowSprite(color, size, opacity = 1) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex(), color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false }));
+  s.scale.set(size, size, 1);
+  return s;
+}
+
+const SPELL_STYLE = {
+  fire_strike: { color: 0xff6a1a, trail: [0xffc040, 0xff5010, 0x802000], rate: 3, spread: 0.12, rise: 0.8 },
+  ice_spear:   { color: 0x7fd8ff, trail: [0xe8fbff, 0x9fe3ff, 0x4aa8e8], rate: 2, spread: 0.08, rise: -0.3 },
+  thunderbolt: { color: 0xfff27a, trail: [0xffffff, 0xfff27a, 0x9fb8ff], rate: 2, spread: 0.2, rise: 0 },
+  entangle:    { color: 0x59d34a, trail: [0xb8ff8a, 0x59d34a, 0x2a7a20], rate: 2, spread: 0.1, rise: 0.1 },
+};
+
+function buildSpellFx(spellId, colorOverride) {
+  const st = SPELL_STYLE[spellId] || { ...SPELL_STYLE.fire_strike, color: colorOverride ?? 0xff6622 };
+  const root = new THREE.Group();
+  const fx = { obj: root, color: st.color, style: st, spellId, trailAcc: 0 };
+  if (spellId === 'ice_spear') {
+    const spear = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.9, 6), new THREE.MeshBasicMaterial({ color: 0xcff4ff }));
+    spear.rotation.x = Math.PI / 2;   // punta hacia +Z
+    root.add(spear);
+    const shell = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.05, 6), addMat(0x6fc8ff, 0.35));
+    shell.rotation.x = Math.PI / 2;
+    root.add(shell);
+    for (let k = 0; k < 3; k++) {
+      const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), addMat(0xe8fbff, 0.9));
+      shard.userData.k = k;
+      root.add(shard);
+    }
+    root.add(glowSprite(0x7fd8ff, 0.9, 0.7));
+    fx.tick = (t) => {
+      root.children.forEach(c => { if (c.userData.k != null) {
+        const a = t * 18 + c.userData.k * 2.1;
+        c.position.set(Math.cos(a) * 0.22, Math.sin(a) * 0.22, -0.2);
+        c.rotation.set(a, a, 0);
+      } });
+    };
+  } else if (spellId === 'thunderbolt') {
+    const core = glowSprite(0xffffff, 0.55, 1);
+    root.add(core, glowSprite(0xfff27a, 1.2, 0.8));
+    // rayo: línea en zigzag detrás del proyectil, se regenera cada frame
+    const N = 8;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xfffbd0, transparent: true, blending: THREE.AdditiveBlending }));
+    line.frustumCulled = false;
+    root.add(line);
+    fx.tick = () => {
+      const a = geo.attributes.position.array;
+      for (let k = 0; k < N; k++) {
+        a[k * 3] = (Math.random() - 0.5) * 0.35;
+        a[k * 3 + 1] = (Math.random() - 0.5) * 0.35;
+        a[k * 3 + 2] = -k * 0.28;
+      }
+      geo.attributes.position.needsUpdate = true;
+      core.material.opacity = 0.6 + Math.random() * 0.4;
+    };
+  } else if (spellId === 'entangle') {
+    root.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 1), new THREE.MeshBasicMaterial({ color: 0x3aa030 })));
+    root.add(glowSprite(0x59d34a, 0.9, 0.8));
+    const vines = [];
+    for (let k = 0; k < 3; k++) {
+      const v = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.025, 4, 16, Math.PI * 1.3), new THREE.MeshBasicMaterial({ color: 0x2f8a24 }));
+      v.userData.k = k; vines.push(v); root.add(v);
+    }
+    fx.tick = (t) => { vines.forEach(v => { v.rotation.set(t * 9 + v.userData.k, t * 7 + v.userData.k * 2, 0); }); };
+  } else {
+    // bola de fuego
+    root.add(new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffe6a0 })));
+    const halo = glowSprite(0xff7a1a, 1.0, 0.95);
+    const outer = glowSprite(0xff3a00, 1.6, 0.45);
+    root.add(halo, outer);
+    fx.tick = (t) => { const k = 1 + Math.sin(t * 40) * 0.12; halo.scale.set(k, k, 1); };
+  }
+  return fx;
+}
+
+function buildDragonHead() {
+  const root = new THREE.Group();
+  const red = new THREE.MeshStandardMaterial({ color: 0xb01a10, emissive: 0x5a0800, emissiveIntensity: 0.8, roughness: 0.5, flatShading: true });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x3a0a06, roughness: 0.6, flatShading: true });
+  const horn = new THREE.MeshStandardMaterial({ color: 0xe8d8b0, roughness: 0.5, flatShading: true });
+  const eyeM = new THREE.MeshBasicMaterial({ color: 0xffe040 });
+  const S = 0.55;
+  // cráneo
+  const skull = new THREE.Mesh(new THREE.BoxGeometry(0.34 * S * 2, 0.26 * S * 2, 0.4 * S * 2), red);
+  root.add(skull);
+  // hocico (hacia +Z)
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.26 * S * 2, 0.16 * S * 2, 0.36 * S * 2), red);
+  snout.position.set(0, 0.03 * S * 2, 0.34 * S * 2);
+  root.add(snout);
+  // mandíbula abierta
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.24 * S * 2, 0.06 * S * 2, 0.34 * S * 2), dark);
+  jaw.position.set(0, -0.14 * S * 2, 0.3 * S * 2);
+  jaw.rotation.x = 0.35;
+  root.add(jaw);
+  // dientes
+  for (const sx of [-1, 1]) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.025 * S * 2, 0.09 * S * 2, 4), horn);
+    f.position.set(sx * 0.08 * S * 2, -0.06 * S * 2, 0.48 * S * 2); f.rotation.x = Math.PI;
+    root.add(f);
+  }
+  // cuernos hacia atrás
+  for (const sx of [-1, 1]) {
+    const h = new THREE.Mesh(new THREE.ConeGeometry(0.05 * S * 2, 0.34 * S * 2, 5), horn);
+    h.position.set(sx * 0.13 * S * 2, 0.16 * S * 2, -0.2 * S * 2);
+    h.rotation.set(-2.1, 0, sx * 0.35);
+    root.add(h);
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.035 * S * 2, 6, 6), eyeM);
+    e.position.set(sx * 0.16 * S * 2, 0.07 * S * 2, 0.12 * S * 2);
+    root.add(e);
+  }
+  // cresta
+  for (let k = 0; k < 3; k++) {
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.03 * S * 2, 0.12 * S * 2, 4), dark);
+    sp.position.set(0, 0.16 * S * 2, (0.05 - k * 0.12) * S * 2);
+    sp.rotation.x = -0.5;
+    root.add(sp);
+  }
+  // fuego de la boca + halo
+  const mouth = glowSprite(0xffa020, 0.7, 1);
+  mouth.position.set(0, -0.08, 0.55);
+  root.add(mouth, glowSprite(0xff3a00, 1.6, 0.35));
+  return {
+    obj: root, color: 0xff5010, dragon: true, trailAcc: 0,
+    style: { trail: [0xffd040, 0xff6010, 0x701000], rate: 4, spread: 0.25, rise: 0.9 },
+    tick: (t) => { jaw.rotation.x = 0.25 + Math.sin(t * 30) * 0.15; mouth.scale.setScalar(0.6 + Math.random() * 0.3); },
+  };
+}
+
+// ---------------- Partículas ----------------
+const particles = [];
+const MAX_PARTICLES = 260;
+function spawnParticle(pos, color, size, life, vel, grow = 1.6) {
+  if (!scene) return;
+  if (particles.length >= MAX_PARTICLES) { const old = particles.shift(); scene.remove(old.s); old.s.material.dispose(); }
+  const sp = glowSprite(color, size, 1);
+  sp.position.copy(pos);
+  scene.add(sp);
+  particles.push({ s: sp, born: performance.now(), life, vel, size, grow });
+}
+function emitTrail(p) {
+  const st = p.fx.style;
+  if (!st) return;
+  for (let k = 0; k < st.rate; k++) {
+    const c = st.trail[(Math.random() * st.trail.length) | 0];
+    const pos = p.obj.position.clone();
+    pos.x += (Math.random() - 0.5) * st.spread; pos.y += (Math.random() - 0.5) * st.spread; pos.z += (Math.random() - 0.5) * st.spread;
+    spawnParticle(pos, c, 0.22 + Math.random() * 0.25, 260 + Math.random() * 260,
+      new THREE.Vector3((Math.random() - 0.5) * 0.4, st.rise * (0.5 + Math.random()), (Math.random() - 0.5) * 0.4));
+  }
+}
+function updateParticles(now) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const q = particles[i];
+    const k = (now - q.born) / q.life;
+    if (k >= 1) { scene?.remove(q.s); q.s.material.dispose(); particles.splice(i, 1); continue; }
+    const dt = 1 / 60;
+    q.s.position.addScaledVector(q.vel, dt);
+    const sc = q.size * (1 + k * q.grow);
+    q.s.scale.set(sc, sc, 1);
+    q.s.material.opacity = (1 - k) * (1 - k);
+  }
+}
+function spawnImpact(pos, fx) {
+  const st = fx.style || {};
+  const cols = st.trail || [fx.color];
+  const n = fx.dragon ? 28 : 18;
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2, e = (Math.random() - 0.3) * 1.4;
+    const sp = 1.5 + Math.random() * 2.5;
+    spawnParticle(pos.clone(), cols[k % cols.length], 0.25 + Math.random() * 0.3, 350 + Math.random() * 300,
+      new THREE.Vector3(Math.cos(a) * sp, Math.abs(e) * sp * 0.8, Math.sin(a) * sp), 2);
+  }
+  // onda en el suelo
+  if (!scene) return;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.35, 28), addMat(fx.color, 0.9));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(pos.x, 0.06, pos.z);
+  scene.add(ring);
+  const born = performance.now();
+  const tick = () => {
+    const k = (performance.now() - born) / 450;
+    if (k >= 1 || !scene) { scene?.remove(ring); ring.geometry.dispose(); ring.material.dispose(); return; }
+    ring.scale.setScalar(1 + k * (fx.dragon ? 7 : 4));
+    ring.material.opacity = 0.9 * (1 - k);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+// Círculo rúnico bajo los pies al lanzar un hechizo
+function spawnCastCircle(pos, color) {
+  if (!scene || !pos) return;
+  const g = new THREE.Group();
+  g.position.set(pos.x, 0.05, pos.z);
+  const r1 = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.62, 32), addMat(color, 0.9));
+  const r2 = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.38, 6), addMat(color, 0.8));
+  r1.rotation.x = r2.rotation.x = -Math.PI / 2;
+  g.add(r1, r2);
+  scene.add(g);
+  const born = performance.now();
+  const tick = () => {
+    const k = (performance.now() - born) / 600;
+    if (k >= 1 || !scene) { scene?.remove(g); r1.geometry.dispose(); r2.geometry.dispose(); r1.material.dispose(); r2.material.dispose(); return; }
+    g.rotation.y = k * 3;
+    const sc = 0.8 + k * 0.5;
+    g.scale.set(sc, 1, sc);
+    r1.material.opacity = r2.material.opacity = 0.9 * Math.sin(Math.min(1, k * 1.2) * Math.PI);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
