@@ -8,6 +8,7 @@
  * tipo ocupan un solo slot en el banco — comportamiento OSRS estándar.
  */
 
+import { atHouseWith } from './house.js';   // Sesión 50
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { INVENTORY_SLOTS, pickInvSlot } from './inventory.js';
@@ -19,6 +20,8 @@ import { isNearAnyBank } from '../../client/src/shared/banks.js';               
 async function bankProximityError(env, userId) {
   const row = await env.DB.prepare('SELECT x, z FROM online_users WHERE user_id = ?').bind(userId).first();
   if (row && isNearAnyBank(Number(row.x), Number(row.z))) return null;
+  // Sesión 50 — el cofre de tu casa (el server te ve en la urbanización)
+  if (row && await atHouseWith(env, userId, 'cofre', row)) return null;
   return json({ error: 'not_at_bank', message: 'Tienes que estar junto a un banco.' }, 400);
 }
 
@@ -32,7 +35,9 @@ async function ensureNoteItem(env, baseId) {
   ).bind(Date.now(), baseId).run();
 }
 
-export const BANK_MAX_SLOTS = 1200;
+// Sesión 50 — banco SIN LÍMITE (pedido: "que quepa infinito"). El número
+// solo sirve para validar índices que llegan del cliente.
+export const BANK_MAX_SLOTS = 1_000_000_000;
 
 export async function handleGetBank(request, env) {
   const session = await requireSession(request, env);
@@ -136,9 +141,6 @@ export async function handleBankDeposit(request, env) {
       'SELECT COALESCE(MAX(slot_index), -1) AS max_slot FROM user_bank WHERE user_id = ?'
     ).bind(uid).first();
     bankSlot = (maxRow?.max_slot ?? -1) + 1;
-    if (bankSlot >= BANK_MAX_SLOTS) {
-      return json({ error: 'bank_full', message: 'El banco está lleno.' }, 400);
-    }
     stmts.push(env.DB.prepare(
       'INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, 0, ?)'
     ).bind(uid, bankSlot, bankItemId, now));
