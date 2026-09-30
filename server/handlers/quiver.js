@@ -129,32 +129,41 @@ export async function handleDepositToQuiver(request, env) {
   const newQuiverQty = (quiverState?.arrow_quantity || 0) + moveQty;
   const now = Date.now();
 
-  // 5) Batch atómico
-  const stmts = [];
+  // 5) Sesión 50 — seguridad: primero sacar de la mochila (solo una petición
+  // lo consigue), luego sumar al carcaj de forma relativa.
+  const uid = session.user_id;
+  const took = newInvQty === 0
+    ? await env.DB.prepare(
+        'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = ?'
+      ).bind(uid, invRow.slot_index, invRow.item_id, moveQty).run()
+    : await env.DB.prepare(
+        'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity > ?'
+      ).bind(moveQty, now, uid, invRow.slot_index, invRow.item_id, moveQty).run();
+  if (!took?.meta?.changes) return json({ error: 'no_arrow_at_slot' }, 400);
 
-  if (newInvQty === 0) {
-    stmts.push(env.DB.prepare(
-      `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?`
-    ).bind(session.user_id, invRow.slot_index));
-  } else {
-    stmts.push(env.DB.prepare(
-      `UPDATE user_inventory SET quantity = ?, updated_at = ?
-       WHERE user_id = ? AND slot_index = ?`
-    ).bind(newInvQty, now, session.user_id, invRow.slot_index));
-  }
-
-  // INSERT OR REPLACE para tolerar tanto el caso "primera vez (no hay row)"
-  // como el "ya hay row (deposit incremental)"
-  stmts.push(env.DB.prepare(
+  const put = await env.DB.prepare(
     `INSERT INTO user_quiver (user_id, arrow_item_id, arrow_quantity, updated_at)
      VALUES (?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
+       arrow_quantity = CASE WHEN user_quiver.arrow_item_id IS NULL THEN excluded.arrow_quantity
+                             ELSE user_quiver.arrow_quantity + excluded.arrow_quantity END,
        arrow_item_id = excluded.arrow_item_id,
-       arrow_quantity = excluded.arrow_quantity,
-       updated_at = excluded.updated_at`
-  ).bind(session.user_id, invRow.item_id, newQuiverQty, now));
-
-  await env.DB.batch(stmts);
+       updated_at = excluded.updated_at
+     WHERE user_quiver.arrow_item_id IS NULL OR user_quiver.arrow_item_id = excluded.arrow_item_id`
+  ).bind(uid, invRow.item_id, moveQty, now).run();
+  if (!put?.meta?.changes) {
+    // El carcaj cambió de tipo mientras tanto → devolver las flechas
+    const back = await env.DB.prepare(
+      'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?'
+    ).bind(moveQty, now, uid, invRow.slot_index, invRow.item_id).run();
+    if (!back?.meta?.changes) {
+      try {
+        await env.DB.prepare('INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)')
+          .bind(uid, invRow.slot_index, invRow.item_id, moveQty, now).run();
+      } catch {}
+    }
+    return json({ error: 'arrow_type_mismatch', message: 'El carcaj tiene otras flechas.' }, 400);
+  }
 
   return json({
     ok: true,
@@ -200,43 +209,48 @@ export async function handleWithdrawFromQuiver(request, env) {
   const existingStack = occupied.find(r => r.item_id === q.arrow_item_id);
 
   const now = Date.now();
-  const stmts = [];
-
-  if (existingStack) {
-    stmts.push(env.DB.prepare(
-      `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
-       WHERE user_id = ? AND slot_index = ?`
-    ).bind(moveQty, now, session.user_id, existingStack.slot_index));
-  } else {
-    // Primer slot libre
-    const taken = new Set(occupied.map(r => r.slot_index));
-    let freeSlot = null;
+  const uid = session.user_id;
+  const taken = new Set(occupied.map(r => r.slot_index));
+  let freeSlot = null;
+  if (!existingStack) {
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
       if (!taken.has(i)) { freeSlot = i; break; }
     }
     if (freeSlot === null) {
       return json({ error: 'inventory_full', message: 'Mochila llena' }, 400);
     }
-    stmts.push(env.DB.prepare(
-      `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).bind(session.user_id, freeSlot, q.arrow_item_id, moveQty, now));
   }
 
+  // Sesión 50 — seguridad: primero sacar del carcaj (atómico), luego a la mochila.
+  const took = await env.DB.prepare(
+    `UPDATE user_quiver
+        SET arrow_item_id = CASE WHEN arrow_quantity - ? <= 0 THEN NULL ELSE arrow_item_id END,
+            arrow_quantity = arrow_quantity - ?, updated_at = ?
+      WHERE user_id = ? AND arrow_item_id = ? AND arrow_quantity >= ?`
+  ).bind(moveQty, moveQty, now, uid, q.arrow_item_id, moveQty).run();
+  if (!took?.meta?.changes) return json({ error: 'quiver_empty' }, 400);
+
+  try {
+    if (existingStack) {
+      const r = await env.DB.prepare(
+        `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
+         WHERE user_id = ? AND slot_index = ? AND item_id = ?`
+      ).bind(moveQty, now, uid, existingStack.slot_index, q.arrow_item_id).run();
+      if (!r?.meta?.changes) throw new Error('moved');
+    } else {
+      await env.DB.prepare(
+        `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
+         VALUES (?, ?, ?, ?, ?)`
+      ).bind(uid, freeSlot, q.arrow_item_id, moveQty, now).run();
+    }
+  } catch (e) {
+    await env.DB.prepare(
+      `UPDATE user_quiver SET arrow_item_id = ?, arrow_quantity = arrow_quantity + ?, updated_at = ?
+        WHERE user_id = ? AND (arrow_item_id IS NULL OR arrow_item_id = ?)`
+    ).bind(q.arrow_item_id, moveQty, now, uid, q.arrow_item_id).run();
+    return json({ error: 'busy', message: 'Inténtalo otra vez.' }, 409);
+  }
   const newQuiverQty = q.arrow_quantity - moveQty;
-  if (newQuiverQty === 0) {
-    stmts.push(env.DB.prepare(
-      `UPDATE user_quiver SET arrow_item_id = NULL, arrow_quantity = 0, updated_at = ?
-       WHERE user_id = ?`
-    ).bind(now, session.user_id));
-  } else {
-    stmts.push(env.DB.prepare(
-      `UPDATE user_quiver SET arrow_quantity = ?, updated_at = ?
-       WHERE user_id = ?`
-    ).bind(newQuiverQty, now, session.user_id));
-  }
-
-  await env.DB.batch(stmts);
 
   return json({
     ok: true,

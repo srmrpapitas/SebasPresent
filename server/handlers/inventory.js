@@ -71,44 +71,45 @@ export async function handleSwapInventory(request, env) {
   ).bind(session.user_id, to).first();
 
   const now = Date.now();
+  const uid = session.user_id;
+  // Sesión 50 — seguridad: los movimientos se hacen con UPDATE de slot
+  // (nunca borrar + volver a crear con valores leídos antes). Así dos
+  // peticiones a la vez no pueden duplicar nada: como mucho una no hace nada.
+  try {
+    if (!slotB) {
+      await env.DB.prepare(
+        `UPDATE user_inventory SET slot_index = ?, updated_at = ?
+          WHERE user_id = ? AND slot_index = ? AND item_id = ?`
+      ).bind(to, now, uid, from, slotA.item_id).run();
+      return json({ ok: true });
+    }
 
-  if (!slotB) {
+    if (slotA.item_id === slotB.item_id && slotA.stackable === 1) {
+      await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE user_inventory
+              SET quantity = quantity + COALESCE((SELECT quantity FROM user_inventory
+                                                   WHERE user_id = ? AND slot_index = ? AND item_id = ?), 0),
+                  updated_at = ?
+            WHERE user_id = ? AND slot_index = ? AND item_id = ?`
+        ).bind(uid, from, slotA.item_id, now, uid, to, slotA.item_id),
+        env.DB.prepare(
+          'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ?'
+        ).bind(uid, from, slotA.item_id),
+      ]);
+      return json({ ok: true });
+    }
+
+    const tmp = -1 - from;
     await env.DB.batch([
-      env.DB.prepare(
-        'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(session.user_id, to, slotA.item_id, slotA.quantity, now),
-      env.DB.prepare(
-        'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?'
-      ).bind(session.user_id, from),
+      env.DB.prepare('UPDATE user_inventory SET slot_index = ? WHERE user_id = ? AND slot_index = ?').bind(tmp, uid, from),
+      env.DB.prepare('UPDATE user_inventory SET slot_index = ?, updated_at = ? WHERE user_id = ? AND slot_index = ?').bind(from, now, uid, to),
+      env.DB.prepare('UPDATE user_inventory SET slot_index = ?, updated_at = ? WHERE user_id = ? AND slot_index = ?').bind(to, now, uid, tmp),
     ]);
-    return json({ ok: true });
+  } catch (e) {
+    // Conflicto por otra petición simultánea: no se ha cambiado nada.
+    return json({ error: 'busy', message: 'Inténtalo otra vez.' }, 409);
   }
-
-  if (slotA.item_id === slotB.item_id && slotA.stackable === 1) {
-    const merged = slotA.quantity + slotB.quantity;
-    await env.DB.batch([
-      env.DB.prepare(
-        'UPDATE user_inventory SET quantity = ?, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-      ).bind(merged, now, session.user_id, to),
-      env.DB.prepare(
-        'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?'
-      ).bind(session.user_id, from),
-    ]);
-    return json({ ok: true });
-  }
-
-  await env.DB.batch([
-    env.DB.prepare(
-      'DELETE FROM user_inventory WHERE user_id = ? AND slot_index IN (?, ?)'
-    ).bind(session.user_id, from, to),
-    env.DB.prepare(
-      'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(session.user_id, to, slotA.item_id, slotA.quantity, now),
-    env.DB.prepare(
-      'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(session.user_id, from, slotB.item_id, slotB.quantity, now),
-  ]);
-
   return json({ ok: true });
 }
 

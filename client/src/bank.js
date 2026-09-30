@@ -578,6 +578,7 @@ async function doDeposit(invSlot, qty) {
     await inventory.refresh();
   } catch (err) {
     console.error('[bank] deposit failed:', err);
+    if (err?.code === 'busy') { try { await refresh(); await inventory.refresh(); } catch {} return; }
     showError(err.message || 'No se pudo depositar.');
   }
 }
@@ -609,6 +610,7 @@ async function doWithdraw(bankSlot, qty, targetInvSlot) {
     await inventory.refresh();
   } catch (err) {
     console.error('[bank] withdraw failed:', err);
+    if (err?.code === 'busy') { try { await refresh(); await inventory.refresh(); } catch {} return; }
     showError(err.message || 'No se pudo retirar.');
   }
 }

@@ -22,6 +22,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { BIOME_TREES } from './shared/trees.js';
 
 // ============================================================
 // Constantes públicas
@@ -108,17 +109,7 @@ const TREE_TYPE_DEFS = {
   bush_small:{ name: 'Matorral',     chopLevel: 1,  xpReward: 5,   logItem: 'bush_leaves',   trunkColor: 0x5a4028, canopyColor: 0x6a8a40, trunkScale: 0.4, height: 0.4, canopyShape: 'sphere',  canopyRadius: 0.6 },
 };
 
-const BIOME_TREES = {
-  plaza:      { density: 2,  pool: [['bush', 1]] },
-  plains:     { density: 8,  pool: [['normal', 4], ['oak', 1], ['bush', 2], ['bush_small', 1]] },
-  forest:     { density: 22, pool: [['normal', 2], ['oak', 4], ['maple', 1.5], ['yew', 0.3], ['bush', 2]] },
-  beach:      { density: 4,  pool: [['palm', 6], ['normal', 1], ['bush_small', 1]] },
-  desert:     { density: 1,  pool: [['dead', 1]] },
-  snow:       { density: 12, pool: [['pine', 6], ['maple', 1], ['yew', 0.5], ['bush_small', 0.5]] },
-  jungle:     { density: 28, pool: [['mahogany', 4], ['palm', 1], ['teak', 2], ['magic', 0.2], ['bush', 3]] },
-  swamp:      { density: 18, pool: [['willow', 5], ['dead', 1], ['bush', 2], ['magic', 0.1]] },
-  wilderness: { density: 6,  pool: [['dead', 4], ['yew', 1], ['magic', 0.1]] },
-};
+// Sesión 50 — BIOME_TREES vive en shared/trees.js (el server valida los árboles con ella)
 
 const TREE_GLB_URLS = {
   oak:        `${R2_BASE}/trees/oak.glb`,

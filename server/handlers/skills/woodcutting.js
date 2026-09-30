@@ -15,7 +15,8 @@
 
 import { json, readJson } from '../../lib/db.js';
 import { requireSession } from '../../lib/auth.js';
-import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.js';
+import { applyXpGrant, xpToLevel, startingXpFor, MAX_XP } from '../../lib/skills_engine.js';
+import { isTreeAt } from '../../../client/src/shared/trees.js';   // Sesión 50 — seguridad
 import {
   tableExists,
   hasItemAvailable,
@@ -60,6 +61,8 @@ const MAX_CHOP_DIST_M = 3.5;
 const TREE_POS_TOLERANCE_M = 0.05;
 const SKILL_ID = 'woodcutting';
 const MAX_LEVEL_FOR_SCALING = 99;
+// Sesión 50 — seguridad: mínimo entre hachazos (el cliente va a 1800 ms).
+const MIN_CHOP_TICK_MS = 1500;
 
 /**
  * Calcula la probabilidad de éxito del chop según nivel del player.
@@ -94,6 +97,11 @@ export async function handleWoodcuttingChop(request, env) {
   if (!Number.isFinite(x) || !Number.isFinite(z)) {
     return json({ error: 'invalid_pos' }, 400);
   }
+  // Sesión 50 — el árbol tiene que existir de verdad en el mundo (mismo
+  // generador que dibuja el cliente) y ser de ese tipo.
+  if (!isTreeAt(treeType, x, z)) {
+    return json({ error: 'no_tree', message: 'Ahí no hay ningún árbol así.' }, 400);
+  }
 
   const def = TREE_DEFS[treeType];
   const userId = session.user_id;
@@ -119,6 +127,9 @@ export async function handleWoodcuttingChop(request, env) {
   }
 
   // 3) Level check
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO user_skills (user_id, skill_id, xp, updated_at) VALUES (?, ?, ?, 0)'
+  ).bind(userId, SKILL_ID, startingXpFor(SKILL_ID)).run();
   const skillRow = await env.DB.prepare(
     'SELECT xp FROM user_skills WHERE user_id = ? AND skill_id = ?'
   ).bind(userId, SKILL_ID).first();
@@ -147,6 +158,13 @@ export async function handleWoodcuttingChop(request, env) {
       depleted_until: depRow.depleted_until,
     }, 400);
   }
+
+  // 4b) Ritmo (Sesión 50): gate atómico — spamear la petición no da más troncos.
+  const gate = await env.DB.prepare(
+    `UPDATE user_skills SET updated_at = ?
+      WHERE user_id = ? AND skill_id = ? AND updated_at <= ?`
+  ).bind(now, userId, SKILL_ID, now - MIN_CHOP_TICK_MS).run();
+  if (!gate?.meta?.changes) return json({ error: 'too_fast', message: 'Espera un momento.' }, 429);
 
   // 5) ROLL 1 — éxito del chop
   const chopSuccessRate = computeChopSuccessRate(def, currentLevel);
@@ -179,15 +197,10 @@ export async function handleWoodcuttingChop(request, env) {
   const zKey = Math.round(z * 100) / 100;
 
   const stmts = [];
-  if (skillRow) {
-    stmts.push(env.DB.prepare(
-      'UPDATE user_skills SET xp = ?, updated_at = ? WHERE user_id = ? AND skill_id = ?'
-    ).bind(xpResult.newXp, now, userId, SKILL_ID));
-  } else {
-    stmts.push(env.DB.prepare(
-      'INSERT INTO user_skills (user_id, skill_id, xp, updated_at) VALUES (?, ?, ?, ?)'
-    ).bind(userId, SKILL_ID, xpResult.newXp, now));
-  }
+  // Sesión 50 — incremento relativo (dos peticiones a la vez no se pisan)
+  stmts.push(env.DB.prepare(
+    'UPDATE user_skills SET xp = MIN(xp + ?, ?) WHERE user_id = ? AND skill_id = ?'
+  ).bind(def.xpReward, MAX_XP, userId, SKILL_ID));
   if (spot.kind === 'stack') {
     stmts.push(env.DB.prepare(
       'UPDATE user_inventory SET quantity = quantity + 1, updated_at = ? WHERE user_id = ? AND slot_index = ?'

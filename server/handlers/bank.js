@@ -13,6 +13,14 @@ import { requireSession } from '../lib/auth.js';
 import { INVENTORY_SLOTS, pickInvSlot } from './inventory.js';
 import { isNote, baseOfNote, noteOf } from '../../client/src/shared/notes.js';   // Sesión 50
 import { questEvent } from '../lib/quests.js';                                    // Sesión 50
+import { isNearAnyBank } from '../../client/src/shared/banks.js';                 // Sesión 50 — seguridad
+
+/** Sesión 50 — ¿el jugador está junto a un banco? (null = sí; si no, la respuesta de error) */
+async function bankProximityError(env, userId) {
+  const row = await env.DB.prepare('SELECT x, z FROM online_users WHERE user_id = ?').bind(userId).first();
+  if (row && isNearAnyBank(Number(row.x), Number(row.z))) return null;
+  return json({ error: 'not_at_bank', message: 'Tienes que estar junto a un banco.' }, 400);
+}
 
 /** Sesión 50 — crea la fila de la nota del item si todavía no existe. */
 async function ensureNoteItem(env, baseId) {
@@ -54,6 +62,7 @@ export async function handleGetBank(request, env) {
 export async function handleBankDeposit(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
+  { const e = await bankProximityError(env, session.user_id); if (e) return e; }
 
   const body = await readJson(request);
   if (!body) return json({ error: 'bad_request' }, 400);
@@ -114,44 +123,51 @@ export async function handleBankDeposit(request, env) {
     'SELECT slot_index, quantity FROM user_bank WHERE user_id = ? AND item_id = ?'
   ).bind(session.user_id, bankItemId).first();
 
+  // Sesión 50 — seguridad: TODO en una transacción y las cantidades se leen
+  // DENTRO de ella (subconsultas). Dos depósitos a la vez ya no duplican:
+  // al banco solo entra lo que de verdad sale de la mochila.
+  const uid = session.user_id;
   const stmts = [];
-
+  let bankSlot;
   if (bankRow) {
-    stmts.push(env.DB.prepare(
-      'UPDATE user_bank SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-    ).bind(qty, now, session.user_id, bankRow.slot_index));
+    bankSlot = bankRow.slot_index;
   } else {
     const maxRow = await env.DB.prepare(
       'SELECT COALESCE(MAX(slot_index), -1) AS max_slot FROM user_bank WHERE user_id = ?'
-    ).bind(session.user_id).first();
-    const nextSlot = (maxRow?.max_slot ?? -1) + 1;
-    if (nextSlot >= BANK_MAX_SLOTS) {
+    ).bind(uid).first();
+    bankSlot = (maxRow?.max_slot ?? -1) + 1;
+    if (bankSlot >= BANK_MAX_SLOTS) {
       return json({ error: 'bank_full', message: 'El banco está lleno.' }, 400);
     }
     stmts.push(env.DB.prepare(
-      'INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(session.user_id, nextSlot, bankItemId, qty, now));
+      'INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, 0, ?)'
+    ).bind(uid, bankSlot, bankItemId, now));
   }
-
-  if (unitSlots) {
-    for (const u of unitSlots) {
-      stmts.push(u.take >= u.quantity
-        ? env.DB.prepare('DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?')
-            .bind(session.user_id, u.slot)
-        : env.DB.prepare('UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ?')
-            .bind(u.take, now, session.user_id, u.slot));
-    }
-  } else if (qty >= available) {
+  const takes = unitSlots
+    ? unitSlots.map(u => ({ slot: u.slot, take: u.take }))
+    : [{ slot: invSlot, take: qty }];
+  for (const t of takes) {
     stmts.push(env.DB.prepare(
-      'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?'
-    ).bind(session.user_id, invSlot));
-  } else {
+      `UPDATE user_bank SET quantity = quantity + MIN(?, COALESCE((SELECT quantity FROM user_inventory
+                 WHERE user_id = ? AND slot_index = ? AND item_id = ?), 0)), updated_at = ?
+        WHERE user_id = ? AND slot_index = ? AND item_id = ?`
+    ).bind(t.take, uid, t.slot, itemId, now, uid, bankSlot, bankItemId));
     stmts.push(env.DB.prepare(
-      'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-    ).bind(qty, now, session.user_id, invSlot));
+      'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity <= ?'
+    ).bind(uid, t.slot, itemId, t.take));
+    stmts.push(env.DB.prepare(
+      'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity > ?'
+    ).bind(t.take, now, uid, t.slot, itemId, t.take));
   }
+  stmts.push(env.DB.prepare(
+    'DELETE FROM user_bank WHERE user_id = ? AND slot_index = ? AND quantity <= 0'
+  ).bind(uid, bankSlot));
 
-  await env.DB.batch(stmts);
+  try {
+    await env.DB.batch(stmts);
+  } catch (e) {
+    return json({ error: 'busy', message: 'Inténtalo otra vez.' }, 409);
+  }
   await questEvent(env, session.user_id, 'bank', bankItemId);   // Sesión 50
   return json({ ok: true, deposited: qty, unnoted: bankItemId !== itemId });
 }
@@ -159,6 +175,7 @@ export async function handleBankDeposit(request, env) {
 export async function handleBankWithdraw(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
+  { const e = await bankProximityError(env, session.user_id); if (e) return e; }
 
   const body = await readJson(request);
   if (!body) return json({ error: 'bad_request' }, 400);
@@ -209,6 +226,11 @@ export async function handleBankWithdraw(request, env) {
     invMap.set(r.slot_index, { item_id: r.item_id, quantity: r.quantity });
   }
 
+  // Sesión 50 — seguridad: igual que el depósito, las cantidades se leen
+  // dentro de la transacción: a la mochila solo llega lo que sale del banco.
+  const uid = session.user_id;
+  const bankQ = `COALESCE((SELECT quantity FROM user_bank WHERE user_id = ? AND slot_index = ? AND item_id = ?), 0)`;
+  const bq = [uid, bankSlot, bankRow.item_id];
   const stmts = [];
 
   if (isStackable) {
@@ -219,16 +241,18 @@ export async function handleBankWithdraw(request, env) {
 
     if (existingSlot !== null) {
       stmts.push(env.DB.prepare(
-        'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-      ).bind(qty, now, session.user_id, existingSlot));
+        `UPDATE user_inventory SET quantity = quantity + MIN(?, ${bankQ}), updated_at = ?
+          WHERE user_id = ? AND slot_index = ? AND item_id = ?`
+      ).bind(qty, ...bq, now, uid, existingSlot, itemId));
     } else {
       const slot = pickInvSlot(invMap, targetInvSlot);
       if (slot === null) {
         return json({ error: 'inv_full', message: 'No hay espacio en la mochila.' }, 400);
       }
       stmts.push(env.DB.prepare(
-        'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(session.user_id, slot, itemId, qty, now));
+        `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
+         SELECT ?, ?, ?, MIN(?, ${bankQ}), ? WHERE ${bankQ} > 0`
+      ).bind(uid, slot, itemId, qty, ...bq, now, ...bq));
     }
   } else {
     const freeSlots = [];
@@ -244,23 +268,26 @@ export async function handleBankWithdraw(request, env) {
       return json({ error: 'inv_full', message: 'No hay espacio suficiente en la mochila.' }, 400);
     }
     for (let i = 0; i < qty; i++) {
+      // la unidad nº i+1 solo se crea si el banco tiene al menos i+1
       stmts.push(env.DB.prepare(
-        'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, 1, ?)'
-      ).bind(session.user_id, freeSlots[i], itemId, now));
+        `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
+         SELECT ?, ?, ?, 1, ? WHERE ${bankQ} >= ?`
+      ).bind(uid, freeSlots[i], itemId, now, ...bq, i + 1));
     }
   }
 
-  if (qty >= available) {
-    stmts.push(env.DB.prepare(
-      'DELETE FROM user_bank WHERE user_id = ? AND slot_index = ?'
-    ).bind(session.user_id, bankSlot));
-  } else {
-    stmts.push(env.DB.prepare(
-      'UPDATE user_bank SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-    ).bind(qty, now, session.user_id, bankSlot));
-  }
+  stmts.push(env.DB.prepare(
+    'DELETE FROM user_bank WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity <= ?'
+  ).bind(uid, bankSlot, bankRow.item_id, qty));
+  stmts.push(env.DB.prepare(
+    'UPDATE user_bank SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity > ?'
+  ).bind(qty, now, uid, bankSlot, bankRow.item_id, qty));
 
-  await env.DB.batch(stmts);
+  try {
+    await env.DB.batch(stmts);
+  } catch (e) {
+    return json({ error: 'busy', message: 'Inténtalo otra vez.' }, 409);
+  }
   if (asNote) await questEvent(env, session.user_id, 'note', bankRow.item_id);   // Sesión 50
   return json({ ok: true, as_note: asNote, item_id: itemId, withdrawn: qty });
 }
@@ -294,28 +321,22 @@ export async function handleBankSwap(request, env) {
   ).bind(session.user_id, to).first();
 
   const now = Date.now();
-
-  if (!slotB) {
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM user_bank WHERE user_id = ? AND slot_index = ?').bind(session.user_id, from),
-      env.DB.prepare(
-        'INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(session.user_id, to, slotA.item_id, slotA.quantity, now),
-    ]);
-    return json({ ok: true });
+  const uid = session.user_id;
+  // Sesión 50 — mover = cambiar el slot (nunca borrar y recrear): sin duplicados.
+  try {
+    if (!slotB) {
+      await env.DB.prepare('UPDATE user_bank SET slot_index = ?, updated_at = ? WHERE user_id = ? AND slot_index = ?')
+        .bind(to, now, uid, from).run();
+    } else {
+      const tmp = -1 - from;
+      await env.DB.batch([
+        env.DB.prepare('UPDATE user_bank SET slot_index = ? WHERE user_id = ? AND slot_index = ?').bind(tmp, uid, from),
+        env.DB.prepare('UPDATE user_bank SET slot_index = ?, updated_at = ? WHERE user_id = ? AND slot_index = ?').bind(from, now, uid, to),
+        env.DB.prepare('UPDATE user_bank SET slot_index = ?, updated_at = ? WHERE user_id = ? AND slot_index = ?').bind(to, now, uid, tmp),
+      ]);
+    }
+  } catch (e) {
+    return json({ error: 'busy', message: 'Inténtalo otra vez.' }, 409);
   }
-
-  await env.DB.batch([
-    env.DB.prepare(
-      'DELETE FROM user_bank WHERE user_id = ? AND slot_index IN (?, ?)'
-    ).bind(session.user_id, from, to),
-    env.DB.prepare(
-      'INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(session.user_id, to, slotA.item_id, slotA.quantity, now),
-    env.DB.prepare(
-      'INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(session.user_id, from, slotB.item_id, slotB.quantity, now),
-  ]);
-
   return json({ ok: true });
 }

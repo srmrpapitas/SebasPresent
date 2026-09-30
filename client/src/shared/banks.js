@@ -5,6 +5,8 @@
  * donde abrir TU banco (es el mismo en todos). En la wilderness no hay.
  * MÓDULO COMPARTIDO (cliente dibuja; el server podrá validar distancias).
  */
+import { TOWN_NPCS } from './town_npcs.js';
+
 export const BANK_USE_DIST_M = 3.2;
 
 export const BANK_CHESTS = [
@@ -44,4 +46,27 @@ export function nearestBankChest(x, z) {
     if (d < bd) { bd = d; best = b; }
   }
   return best ? { ...best, dist: bd } : null;
+}
+
+// ------------------------------------------------------------
+// Sesión 50 — Seguridad: el server solo deja meter/sacar cosas del banco si
+// estás junto a un cofre, un banquero (Gerardo, el del castillo) o dentro de
+// la sala del banco. Tolerancia amplia porque la posición que guarda el
+// server llega con ~1 s de retraso mientras caminas.
+// ------------------------------------------------------------
+export const BANK_USE_DIST_SERVER_M = 10;
+const EXTRA_BANK_POINTS = [
+  { x: -80, z: -80, r: 14 },            // banquero del castillo (castle.js)
+  { x: 10000, z: 10000, r: 30 },        // sala del banco (interiors.js)
+];
+
+export function isNearAnyBank(x, z) {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+  const R = BANK_USE_DIST_SERVER_M;
+  for (const b of BANK_CHESTS) if (Math.hypot(b.x - x, b.z - z) <= R) return true;
+  for (const n of TOWN_NPCS) {
+    if (n.actions?.includes('bank') && Math.hypot(n.x - x, n.z - z) <= R) return true;
+  }
+  for (const p of EXTRA_BANK_POINTS) if (Math.hypot(p.x - x, p.z - z) <= p.r) return true;
+  return false;
 }

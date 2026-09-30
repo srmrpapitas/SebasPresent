@@ -31,6 +31,48 @@ import { requireSession } from '../lib/auth.js';
 const INVENTORY_SLOTS = 20;
 const COINS_ITEM_ID = 'coins';
 
+// ============================================================
+// Sesión 50 — seguridad: cobros/pagos atómicos (sin duplicar oro)
+// ============================================================
+/** Resta `amount` monedas. true si se pudo (una sola petición gana). */
+async function debitCoins(env, uid, amount, now) {
+  if (amount <= 0) return true;
+  const up = await env.DB.prepare(
+    `UPDATE user_inventory SET quantity = quantity - ?, updated_at = ?
+      WHERE user_id = ? AND item_id = 'coins' AND quantity > ?
+        AND slot_index = (SELECT slot_index FROM user_inventory WHERE user_id = ? AND item_id = 'coins' AND quantity > ? LIMIT 1)`
+  ).bind(amount, now, uid, amount, uid, amount).run();
+  if (up?.meta?.changes) return true;
+  const del = await env.DB.prepare(
+    `DELETE FROM user_inventory WHERE user_id = ? AND item_id = 'coins' AND quantity = ?
+        AND slot_index = (SELECT slot_index FROM user_inventory WHERE user_id = ? AND item_id = 'coins' AND quantity = ? LIMIT 1)`
+  ).bind(uid, amount, uid, amount).run();
+  return !!del?.meta?.changes;
+}
+/** Suma monedas (al montón existente o a un hueco libre). */
+async function creditCoins(env, uid, amount, now) {
+  if (amount <= 0) return true;
+  const up = await env.DB.prepare(
+    `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
+      WHERE user_id = ? AND item_id = 'coins'
+        AND slot_index = (SELECT slot_index FROM user_inventory WHERE user_id = ? AND item_id = 'coins' LIMIT 1)`
+  ).bind(amount, now, uid, uid).run();
+  if (up?.meta?.changes) return true;
+  const occ = await env.DB.prepare('SELECT slot_index FROM user_inventory WHERE user_id = ?').bind(uid).all();
+  const taken = new Set((occ.results || []).map(r => r.slot_index));
+  for (let i = 0; i < INVENTORY_SLOTS; i++) {
+    if (taken.has(i)) continue;
+    try {
+      await env.DB.prepare(
+        `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, 'coins', ?, ?)`
+      ).bind(uid, i, amount, now).run();
+      return true;
+    } catch { /* hueco ocupado justo ahora → siguiente */ }
+  }
+  return false;
+}
+
+
 // Precio que el NPC paga por items genéricos (no en su lista) cuando el
 // player los vende. Clamp para evitar abuse.
 const GENERIC_BUY_MIN = 1;
@@ -180,26 +222,28 @@ export async function handleShopBuy(request, env) {
     }
   }
 
-  // 4. Cobrar coins
-  const newCoins = playerCoins - totalCost;
-  if (newCoins === 0) {
-    ops.push(env.DB.prepare(
-      `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?`
-    ).bind(session.user_id, coinsRow.slot_index));
-  } else {
-    ops.push(env.DB.prepare(
-      `UPDATE user_inventory SET quantity = ?, updated_at = ?
-       WHERE user_id = ? AND slot_index = ?`
-    ).bind(newCoins, now, session.user_id, coinsRow.slot_index));
+  // 4. Sesión 50 — cobrar PRIMERO (atómico) y reservar stock; luego entregar.
+  const uid = session.user_id;
+  if (!(await debitCoins(env, uid, totalCost, now))) {
+    return json({ error: 'insufficient_coins', message: `Necesitas ${totalCost}gp` }, 400);
   }
-
-  // 5. Bajar stock del NPC
-  ops.push(env.DB.prepare(
+  const st = await env.DB.prepare(
     `UPDATE shop_stock SET current_qty = current_qty - ?
-     WHERE shop_id = ? AND item_id = ?`
-  ).bind(qty, shopId, itemId));
-
-  await env.DB.batch(ops);
+     WHERE shop_id = ? AND item_id = ? AND current_qty >= ?`
+  ).bind(qty, shopId, itemId, qty).run();
+  if (!st?.meta?.changes) {
+    await creditCoins(env, uid, totalCost, now);
+    return json({ error: 'insufficient_stock', message: 'Se ha agotado.' }, 400);
+  }
+  try {
+    await env.DB.batch(ops);
+  } catch (e) {
+    await creditCoins(env, uid, totalCost, now);
+    await env.DB.prepare('UPDATE shop_stock SET current_qty = current_qty + ? WHERE shop_id = ? AND item_id = ?')
+      .bind(qty, shopId, itemId).run();
+    return json({ error: 'busy', message: 'Inténtalo otra vez.' }, 409);
+  }
+  const newCoins = playerCoins - totalCost;
 
   return json({
     ok: true,
@@ -266,67 +310,40 @@ export async function handleShopSell(request, env) {
   //   b) Sumar coins (merge en slot existente o crear nuevo)
   //   c) Subir stock del NPC (si era un item de su catálogo, hasta max)
   const now = Date.now();
-  const ops = [];
+  const uid = session.user_id;
+  // Sesión 50 — seguridad: primero QUITAR el objeto (solo una petición lo
+  // consigue) y después pagar. Antes dos ventas a la vez pagaban dos veces.
+  const took = invRow.quantity === qty
+    ? await env.DB.prepare(
+        'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = ?'
+      ).bind(uid, slotIndex, invRow.item_id, qty).run()
+    : await env.DB.prepare(
+        'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity > ?'
+      ).bind(qty, now, uid, slotIndex, invRow.item_id, qty).run();
+  if (!took?.meta?.changes) return json({ error: 'slot_empty' }, 400);
 
-  if (invRow.quantity === qty) {
-    ops.push(env.DB.prepare(
-      `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?`
-    ).bind(session.user_id, slotIndex));
-  } else {
-    ops.push(env.DB.prepare(
-      `UPDATE user_inventory SET quantity = quantity - ?, updated_at = ?
-       WHERE user_id = ? AND slot_index = ?`
-    ).bind(qty, now, session.user_id, slotIndex));
-  }
-
-  // Sumar coins
-  const coinsRow = await env.DB.prepare(
-    `SELECT slot_index, quantity FROM user_inventory
-     WHERE user_id = ? AND item_id = ?`
-  ).bind(session.user_id, COINS_ITEM_ID).first();
-
-  if (coinsRow) {
-    // Merge en slot existente. OJO: si el slot del coins COINCIDE con el
-    // slot que estamos vaciando, no hay conflicto porque ese DELETE ya
-    // estaría en ops; el UPDATE de coins no toca el mismo slot.
-    ops.push(env.DB.prepare(
-      `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
-       WHERE user_id = ? AND slot_index = ?`
-    ).bind(totalCoins, now, session.user_id, coinsRow.slot_index));
-  } else {
-    // Necesitamos slot libre. Si el slot que acabamos de vaciar (porque
-    // qty == quantity) está disponible, lo usamos. Si no, primer libre.
-    const allOccupied = await env.DB.prepare(
-      `SELECT slot_index FROM user_inventory WHERE user_id = ?`
-    ).bind(session.user_id).all();
-    const taken = new Set((allOccupied.results || []).map(r => r.slot_index));
-
-    // El slot vaciado se considera libre si vendemos todo
-    if (invRow.quantity === qty) taken.delete(slotIndex);
-
-    let freeSlot = null;
-    for (let i = 0; i < INVENTORY_SLOTS; i++) {
-      if (!taken.has(i)) { freeSlot = i; break; }
+  if (!(await creditCoins(env, uid, totalCoins, now))) {
+    // Sin hueco para las monedas → devolver el objeto
+    const back = await env.DB.prepare(
+      'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?'
+    ).bind(qty, now, uid, slotIndex, invRow.item_id).run();
+    if (!back?.meta?.changes) {
+      try {
+        await env.DB.prepare('INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)')
+          .bind(uid, slotIndex, invRow.item_id, qty, now).run();
+      } catch {}
     }
-    if (freeSlot === null) {
-      return json({ error: 'inventory_full' }, 400);
-    }
-    ops.push(env.DB.prepare(
-      `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).bind(session.user_id, freeSlot, COINS_ITEM_ID, totalCoins, now));
+    return json({ error: 'inventory_full' }, 400);
   }
 
   // Subir stock del NPC si era un item del catálogo (sin pasar max_qty)
   if (shopItemRow) {
-    ops.push(env.DB.prepare(
+    await env.DB.prepare(
       `UPDATE shop_stock
        SET current_qty = MIN(current_qty + ?, max_qty)
        WHERE shop_id = ? AND item_id = ?`
-    ).bind(qty, shopId, invRow.item_id));
+    ).bind(qty, shopId, invRow.item_id).run();
   }
-
-  await env.DB.batch(ops);
 
   return json({
     ok: true,

@@ -15,6 +15,7 @@ import { json, makeDbAdapter } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import {
   loadInventoryState, tryDepositToInventory,
+  snapshotInventoryState, restoreInventoryState,
 } from '../ge_engine.js';
 
 const LOOT_PRIVATE_MS      = 60_000;
@@ -203,21 +204,45 @@ export async function handleGroundItemsPickup(request, env) {
       }
 
       const stackable = g.stackable === 1;
+      const snap = snapshotInventoryState(invState);
+      const mark = stmts.length;
       const ok = tryDepositToInventory(stmts, invState, userId, g.item_id, g.qty, stackable, now);
       if (!ok) {
         skipped.push({ id: g.id, reason: 'inventory_full' });
         continue;
       }
-      stmts.push({
-        sql: 'DELETE FROM ground_items WHERE id = ?',
-        params: [g.id],
-      });
-      pickedUp.push({ id: g.id, item_id: g.item_id, qty: g.qty });
+      // Sesión 50 — seguridad: RECLAMAR el objeto antes de dártelo. Si dos
+      // peticiones (o dos jugadores) lo cogen a la vez, solo una borra la
+      // fila; la otra no recibe nada (antes se duplicaba).
+      const claim = await db.run('DELETE FROM ground_items WHERE id = ? AND despawn_at > ?', [g.id, now]);
+      if (!claim?.meta?.changes) {
+        restoreInventoryState(invState, snap);
+        stmts.length = mark;
+        skipped.push({ id: g.id, reason: 'gone' });
+        continue;
+      }
+      pickedUp.push({ id: g.id, item_id: g.item_id, qty: g.qty, _row: g });
     }
 
     if (stmts.length > 0) {
-      await db.batch(stmts);
+      try {
+        await db.batch(stmts);
+      } catch (e) {
+        // No se pudo meter en la mochila → devolver al suelo lo reclamado.
+        for (const p of pickedUp) {
+          const r = p._row;
+          try {
+            await db.run(
+              `INSERT OR IGNORE INTO ground_items (id, item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [r.id, r.item_id, r.qty, r.x, r.z, r.dropped_at, r.dropped_by_user, r.despawn_at]
+            );
+          } catch {}
+        }
+        throw e;
+      }
     }
+    for (const p of pickedUp) delete p._row;
 
     return json({
       picked_up: pickedUp,
@@ -280,10 +305,13 @@ export async function handleGroundItemsDrop(request, env) {
     }
 
     // Sacar del inventario (la pila entera) y crear el ground item.
-    await db.run(
-      'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?',
-      [userId, slot]
+    // Sesión 50 — seguridad: solo creamos el objeto en el suelo si ESTA
+    // petición fue la que lo sacó de la mochila (dos drops a la vez = uno).
+    const del = await db.run(
+      'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = ?',
+      [userId, slot, inv.item_id, inv.quantity]
     );
+    if (!del?.meta?.changes) return json({ error: 'empty_slot' }, 400);
     const despawnAt = now + 120_000;  // mismo lifetime que el loot (2 min)
     await db.run(
       `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)

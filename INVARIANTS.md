@@ -718,3 +718,13 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - `POST /api/magic/tablet { slot }`: gasta 1 tableta (condicional), el server decide el destino y guarda la posición en online_users + users. Evento de misión 'teleport'.
 - Tienda `magic_store` (shop_stock): la abren Morgana (Concejo, nueva) y Eldric (Torre del Mago) desde el diálogo (`actions: ['shop:magic_store']`). Seed 007 (ejecutado).
 - Cliente: `client/src/teleport_tablets.js` (efecto + mover), tocar la tableta en la mochila = romperla. Misión `primer_viaje` (Morgana).
+
+## 31. Seguridad: duplicados y validaciones (Sesión 50)
+- **Regla de oro al mover objetos**: primero QUITAR con guarda (`WHERE ... AND item_id=? AND quantity=?` / `quantity > ?`) y comprobar `meta.changes`; solo si se quitó, DAR. Nunca borrar+recrear con valores leídos antes; mover de hueco = `UPDATE slot_index` (swap vía hueco temporal negativo).
+- Banco depósito/retiro: una transacción; las cantidades se leen DENTRO con subconsultas (`MIN(?, COALESCE((SELECT quantity ...),0))`), luego DELETE si `quantity <= take` y UPDATE si `> take`.
+- Banco: depositar/retirar exige estar a ≤10 m de un cofre (`shared/banks.js`), de un NPC con `actions:['bank']`, del banquero del castillo (-80,-80) o dentro de la sala del banco (10000,10000). `isNearAnyBank`.
+- Tienda: cobrar (`debitCoins`) y reservar stock ANTES de entregar; vender quita el objeto antes de pagar (`creditCoins`).
+- Suelo: el pickup reclama cada fila con `DELETE ... WHERE id=?` antes de darla; el drop borra con guarda antes de crear.
+- Carcaj: igual (quitar → poner, con devolución si falla).
+- GE: `placeOrder` retira con guardas una a una (devuelve si falla); `cancelOrder` mueve el escrow dentro de la sentencia `WHERE status=open`; `claimAll` pone pending a 0 condicionado antes de entregar; `applyMatch` empieza con una GUARDA `SELECT json(CASE ... ELSE 'stale')` que aborta y deshace todo el lote si otra ejecución tocó las órdenes.
+- Tala: `shared/trees.js` (BIOME_TREES + `treeCandidatesForChunk` = mismo generador que terrain.js). El server rechaza árboles que no existan (`no_tree`), gate de ritmo 1500 ms (`too_fast`, 429) y XP relativa. Si cambias el generador de árboles de terrain.js, cámbialo en trees.js.

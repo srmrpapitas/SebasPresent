@@ -361,7 +361,12 @@ async function attemptChop(treeType, tx, tz, gen = chopGen) {
   } catch (err) {
     if (activeChop) activeChop.waitingResponse = false;
     const code = err?.code;
-    if (code === 'tree_depleted') {
+    if (code === 'too_fast') {
+      // Sesión 50 — el server marca el ritmo; reintentamos en el siguiente tick.
+      return;
+    } else if (code === 'no_tree') {
+      stopChop('no_tree');
+    } else if (code === 'tree_depleted') {
       feedLog('info', 'El árbol se cayó.');
       stopChop('depleted');
     } else if (code === 'inventory_full') {

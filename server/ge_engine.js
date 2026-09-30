@@ -226,7 +226,25 @@ export async function placeOrder(db, userId, { itemId, side, price, qty }) {
     params: [userId, itemId, side, price, qty, STATUS_OPEN, coinEscrow, itemEscrow, now],
   });
 
-  await db.batch(stmts);
+  // Sesión 50 — seguridad: cada retirada de la mochila va con guarda y se
+  // comprueba. Si otra petición se llevó algo a la vez, devolvemos lo cogido
+  // y no se crea la orden (antes dos órdenes a la vez duplicaban el escrow).
+  const insertOrder = stmts.pop();
+  const done = [];
+  for (const st of stmts) {
+    const r = await db.run(st.sql, st.params);
+    if (!r?.meta?.changes) {
+      await refundTaken(db, userId, done, now);
+      throw makeErr(side === SIDE_BUY ? 'insufficient_coins' : 'insufficient_items');
+    }
+    done.push(st.undo);
+  }
+  try {
+    await db.run(insertOrder.sql, insertOrder.params);
+  } catch (e) {
+    await refundTaken(db, userId, done, now);
+    throw e;
+  }
 
   const row = await db.first(
     `SELECT id FROM ge_orders
@@ -292,18 +310,17 @@ export async function cancelOrder(db, userId, orderId) {
     return { ok: true };
   }
 
-  const deltaPendingCoins = order.side === SIDE_BUY ? order.coin_escrow : 0;
-  const deltaPendingItems = order.side === SIDE_SELL ? order.item_escrow : 0;
-
-  stmts.push({
-    sql: `UPDATE ge_orders
-            SET status = ?, coin_escrow = 0, item_escrow = 0, completed_at = ?,
-                pending_coins = pending_coins + ?, pending_items = pending_items + ?
-          WHERE id = ?`,
-    params: [STATUS_CANCELLED, now, deltaPendingCoins, deltaPendingItems, orderId],
-  });
-
-  await db.batch(stmts);
+  // Sesión 50 — seguridad: el escrow se mueve DENTRO de la sentencia y solo
+  // si la orden sigue abierta (dos cancelaciones a la vez = una).
+  const r = await db.run(
+    `UPDATE ge_orders
+        SET status = ?, completed_at = ?,
+            pending_coins = pending_coins + coin_escrow, pending_items = pending_items + item_escrow,
+            coin_escrow = 0, item_escrow = 0
+      WHERE id = ? AND user_id = ? AND status = ?`,
+    [STATUS_CANCELLED, now, orderId, userId, STATUS_OPEN]
+  );
+  if (!r?.meta?.changes) throw makeErr('not_open');
   return { ok: true };
 }
 
@@ -368,7 +385,8 @@ export async function matchItem(db, itemId) {
       || (buy.created_at === sell.created_at && buy.id < sell.id);
     const matchPrice = buyOlder ? buy.price : sell.price;
 
-    await applyMatch(db, buy, sell, qty, matchPrice);
+    const applied = await applyMatch(db, buy, sell, qty, matchPrice);
+    if (!applied) break;   // otro matcher se adelantó; el cron reintenta
     matches++;
 
     // Actualiza snapshot in-memory.
@@ -473,7 +491,23 @@ export async function applyMatch(db, buy, sell, qty, matchPrice) {
              matchPrice, qty, now],
   });
 
-  await db.batch(stmts);
+  // Sesión 50 — seguridad: GUARDA al principio del lote. Si otro matcher ya
+  // tocó alguna de las dos órdenes, json('x') lanza error y D1 deshace TODO
+  // el lote (antes una orden podía llenarse dos veces = duplicar).
+  stmts.unshift({
+    sql: `SELECT json(CASE WHEN
+              (SELECT qty_filled FROM ge_orders WHERE id = ? AND status = ?) = ?
+          AND (SELECT qty_filled FROM ge_orders WHERE id = ? AND status = ?) = ?
+          THEN '1' ELSE 'stale' END) AS guard`,
+    params: [buy.id, STATUS_OPEN, buy.qty_filled, sell.id, STATUS_OPEN, sell.qty_filled],
+  });
+  try {
+    await db.batch(stmts);
+    return true;
+  } catch (e) {
+    console.warn('[ge] applyMatch skipped (stale):', buy.id, sell.id, e?.message);
+    return false;
+  }
 }
 
 // ============================================================
@@ -500,6 +534,23 @@ export async function applyMatch(db, buy, sell, qty, matchPrice) {
  *
  * reason posible para remaining: 'inventory_full'
  */
+/** Sesión 50 — reclamar = poner a 0 lo pendiente SOLO si sigue igual (una petición gana). */
+async function takePending(db, order, now) {
+  const r = await db.run(
+    `UPDATE ge_orders SET pending_coins = 0, pending_items = 0,
+            claimed_at = CASE WHEN status != ? THEN ? ELSE claimed_at END
+      WHERE id = ? AND pending_coins = ? AND pending_items = ?`,
+    [STATUS_OPEN, now, order.id, order.pending_coins, order.pending_items]
+  );
+  return !!r?.meta?.changes;
+}
+async function givePendingBack(db, order) {
+  await db.run(
+    'UPDATE ge_orders SET pending_coins = pending_coins + ?, pending_items = pending_items + ? WHERE id = ?',
+    [order.pending_coins, order.pending_items, order.id]
+  );
+}
+
 export async function claimAll(db, userId, target) {
   if (userId === SYSTEM_USER_ID) throw makeErr('cannot_claim_for_system');
   if (target !== CLAIM_TARGET_INVENTORY && target !== CLAIM_TARGET_BANK) {
@@ -561,15 +612,9 @@ export async function claimAll(db, userId, target) {
       }
 
       const now = Date.now();
-      const shouldClaim = order.status !== STATUS_OPEN;
-      tentative.push({
-        sql: shouldClaim
-          ? `UPDATE ge_orders SET pending_coins = 0, pending_items = 0, claimed_at = ? WHERE id = ?`
-          : `UPDATE ge_orders SET pending_coins = 0, pending_items = 0 WHERE id = ?`,
-        params: shouldClaim ? [now, order.id] : [order.id],
-      });
-
-      await db.batch(tentative);
+      if (!(await takePending(db, order, now))) { restoreInventoryState(invState, snapshot); continue; }
+      try { await db.batch(tentative); }
+      catch (e) { await givePendingBack(db, order); restoreInventoryState(invState, snapshot); continue; }
       claimed.push({ orderId: order.id, coins: pCoins, items: pItems, item_id: order.item_id });
     } else {
       // BANK: siempre cabe.
@@ -578,14 +623,9 @@ export async function claimAll(db, userId, target) {
       for (const d of deposits) {
         addBankDeposit(stmts, bankState, userId, d.itemId, d.qty, now);
       }
-      const shouldClaim = order.status !== STATUS_OPEN;
-      stmts.push({
-        sql: shouldClaim
-          ? `UPDATE ge_orders SET pending_coins = 0, pending_items = 0, claimed_at = ? WHERE id = ?`
-          : `UPDATE ge_orders SET pending_coins = 0, pending_items = 0 WHERE id = ?`,
-        params: shouldClaim ? [now, order.id] : [order.id],
-      });
-      await db.batch(stmts);
+      if (!(await takePending(db, order, now))) { bankState = await loadBankState(db, userId); continue; }
+      try { await db.batch(stmts); }
+      catch (e) { await givePendingBack(db, order); bankState = await loadBankState(db, userId); continue; }
       claimed.push({ orderId: order.id, coins: pCoins, items: pItems, item_id: order.item_id });
     }
   }
@@ -692,6 +732,29 @@ export function sumInventory(state, itemId) {
  * Retira qty unidades de itemId del inventario. Toma de los slots
  * con MAYOR qty primero. Asume que sumInventory >= qty (validar antes).
  */
+/** Sesión 50 — devuelve a la mochila lo retirado por removeFromInventory. */
+async function refundTaken(db, userId, undos, now) {
+  for (const u of undos) {
+    if (!u) continue;
+    const r = await db.run(
+      'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?',
+      [u.qty, now, userId, u.slot, u.itemId]
+    );
+    if (r?.meta?.changes) continue;
+    try {
+      await db.run('INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)',
+        [userId, u.slot, u.itemId, u.qty, now]);
+    } catch {
+      // hueco ocupado → al banco
+      await db.run(
+        `INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at)
+         SELECT ?, COALESCE(MAX(slot_index), -1) + 1, ?, ?, ? FROM user_bank WHERE user_id = ?`,
+        [userId, u.itemId, u.qty, now, userId]
+      );
+    }
+  }
+}
+
 export function removeFromInventory(stmts, state, userId, itemId, qty, now) {
   const candidates = [];
   for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
@@ -707,14 +770,16 @@ export function removeFromInventory(stmts, state, userId, itemId, qty, now) {
     const take = Math.min(toRemove, s.quantity);
     if (take === s.quantity) {
       stmts.push({
-        sql: 'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?',
-        params: [userId, idx],
+        sql: 'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = ?',
+        params: [userId, idx, itemId, take],
+        undo: { itemId, qty: take, slot: idx },
       });
       state.slots[idx] = null;
     } else {
       stmts.push({
-        sql: 'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ?',
-        params: [take, now, userId, idx],
+        sql: 'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity > ?',
+        params: [take, now, userId, idx, itemId, take],
+        undo: { itemId, qty: take, slot: idx },
       });
       s.quantity -= take;
     }
