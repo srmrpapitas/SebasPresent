@@ -20,7 +20,8 @@ import * as api from './api.js';
 import { MOUNTS, MOUNT_COMBAT_LOCK_MS } from './shared/mounts.js';
 
 const HIP = 0.95;                  // altura de la cadera del personaje sobre sus pies
-const SEAT = { caballo: 1.55, pardela: 1.45 };   // silla sobre la base de la montura
+const SEAT = { caballo: 1.85, pardela: 1.45 };   // silla sobre la base de la montura (caballo +0.3: iba muy hundido)
+// Ajuste en vivo desde Eruda: window.__mountSeat('caballo', 1.9)
 
 let scene = null;
 let getPlayer = () => null;
@@ -385,7 +386,8 @@ export function start(opts) {
   started = true;
   buildOrb();
   refresh();
-  if (typeof window !== 'undefined') window.__mounts = { refresh, id: () => current, toggle, onAttacked, setLevel: (l) => { combatLevel = l; } };
+  if (typeof window !== 'undefined') window.__mountSeat = (id, v) => { if (SEAT[id] != null && Number.isFinite(v)) SEAT[id] = v; return { ...SEAT }; };
+    window.__mounts = { refresh, id: () => current, toggle, onAttacked, setLevel: (l) => { combatLevel = l; } };
 }
 
 export function stop() {
