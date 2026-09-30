@@ -15,7 +15,9 @@ import { requireSession } from '../lib/auth.js';
 import { xpToLevel, MAX_XP } from '../lib/skills_engine.js';
 import { getPlayerPosition, isWithinDistance } from './skills/_shared.js';
 import { questEvent } from '../lib/quests.js';
+import { pushRealtime } from '../lib/realtime.js';   // Sesión 50 — plegaria sobre la cabeza en directo
 import {
+  overheadPrayer,
   BONES, PRAYERS_BY_ID, ALTARS, ALTAR_USE_DIST_M, currentPrayerState,
 } from '../../client/src/shared/prayer.js';
 
@@ -107,6 +109,7 @@ export async function handlePrayerToggle(request, env) {
     active.push(p.id);
   }
   await saveState(env, userId, st.points, active, now);
+  try { await pushRealtime(env, { t: 'pr', id: userId, o: overheadPrayer(active) }); } catch {}
   return json({ ok: true, ...stateJson(level, st.points, active, now) });
 }
 

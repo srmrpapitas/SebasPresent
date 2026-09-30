@@ -34,6 +34,7 @@ import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 // Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
 import { tickNpcAggro, tickNpcWander } from '../combat_engine.js';
+import { currentPrayerState, overheadPrayer } from '../../client/src/shared/prayer.js';   // Sesión 50
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
 // Para 90 NPCs en un mundo de 4096m, 500m típicamente devuelve 30-50 NPCs.
@@ -118,6 +119,7 @@ export async function handleWorldSnapshot(request, env) {
                 c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
                 c.last_attack_at,
                 c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit, c.skulled_until,
+                c.prayer_points, c.prayer_updated_at, c.active_prayers,
                 pm.party_id,
                 ueq.item_id AS weapon_item_id,
                 wi.weapon_type AS weapon_type,
@@ -144,6 +146,7 @@ export async function handleWorldSnapshot(request, env) {
                 c.hp_current, c.hp_xp, c.attack_xp, c.strength_xp, c.defence_xp,
                 c.last_attack_at,
                 c.last_hit_damage, c.last_hit_at, c.last_hit_is_crit, c.skulled_until,
+                c.prayer_points, c.prayer_updated_at, c.active_prayers,
                 ueq.item_id AS weapon_item_id,
                 wi.weapon_type AS weapon_type,
                 (SELECT group_concat(e2.slot_id || ':' || e2.item_id, ',')
@@ -220,6 +223,8 @@ export async function handleWorldSnapshot(request, env) {
           last_hit_at:      typeof r.last_hit_at === 'number'     ? r.last_hit_at     : null,
           last_hit_is_crit: r.last_hit_is_crit === 1,
           skulled: (r.skulled_until || 0) > now,   // Sesión 50 — calavera
+          // Sesión 50 — plegaria sobre la cabeza
+          ovh: r.active_prayers ? overheadPrayer(currentPrayerState(r.prayer_points, r.prayer_updated_at, r.active_prayers, now).active) : null,
         };
       });
 

@@ -35,6 +35,8 @@ export const PRAYERS = [
   { id: 'steel_skin',     name: 'Piel de acero',        level: 28, drain: 20, group: 'def', def: 0.15, icon: '⚙', desc: '+15 % Defensa' },
   { id: 'ultimate_str',   name: 'Fuerza suprema',       level: 31, drain: 20, group: 'str', str: 0.15, icon: '🔥', desc: '+15 % Fuerza' },
   { id: 'incredible_ref', name: 'Reflejos increíbles',  level: 34, drain: 20, group: 'atk', atk: 0.15, icon: '🌟', desc: '+15 % Ataque' },
+  { id: 'protect_magic',  name: 'Protección contra magia',     level: 37, drain: 20, group: 'protect', protectMagic: true, icon: '🔮', desc: 'Los monstruos no te dañan con magia (PvP: −40 %)' },
+  { id: 'protect_ranged', name: 'Protección contra proyectiles', level: 40, drain: 20, group: 'protect', protectRanged: true, icon: '🏹', desc: 'Los monstruos no te dañan a distancia (PvP: −40 %)' },
   { id: 'protect_melee',  name: 'Protección cuerpo a cuerpo', level: 43, drain: 20, group: 'protect', protectMelee: true, icon: '⚔', desc: 'Los monstruos no te dañan cuerpo a cuerpo (PvP: −40 %)' },
 ];
 
@@ -74,13 +76,25 @@ export function currentPrayerState(points, updatedAt, activeStr, now) {
 
 /** Efectos combinados de las plegarias activas. */
 export function prayerEffects(activeIds) {
-  const e = { atk: 0, str: 0, def: 0, rng: 0, mag: 0, protectMelee: false, rapidHeal: false };
+  const e = { atk: 0, str: 0, def: 0, rng: 0, mag: 0, protectMelee: false, protectRanged: false, protectMagic: false, rapidHeal: false };
   for (const id of activeIds) {
     const p = PRAYERS_BY_ID[id];
     if (!p) continue;
     for (const k of ['atk', 'str', 'def', 'rng', 'mag']) if (p[k]) e[k] += p[k];
     if (p.protectMelee) e.protectMelee = true;
+    if (p.protectRanged) e.protectRanged = true;
+    if (p.protectMagic) e.protectMagic = true;
     if (p.rapidHeal) e.rapidHeal = true;
   }
   return e;
+}
+
+/** Sesión 50 — plegaria que se ve sobre la cabeza (la de protección si hay; si no, la de nivel más alto). */
+export function overheadPrayer(activeIds) {
+  const ids = (activeIds || []).filter(id => PRAYERS_BY_ID[id]);
+  const prot = ids.find(id => PRAYERS_BY_ID[id].group === 'protect');
+  if (prot) return prot;
+  let best = null;
+  for (const id of ids) if (!best || PRAYERS_BY_ID[id].level > PRAYERS_BY_ID[best].level) best = id;
+  return best;
 }

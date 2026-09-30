@@ -1663,6 +1663,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   // Sesión 50 — Protección cuerpo a cuerpo en PvP: −40 % contra golpes de melé.
   if (targetFx.protectMelee && !isRanged && !(isMagicPvp && spellPvp)) dmgRaw = Math.floor(dmgRaw * 0.6);
+  if (targetFx.protectRanged && isRanged) dmgRaw = Math.floor(dmgRaw * 0.6);             // Sesión 50
+  if (targetFx.protectMagic && isMagicPvp && spellPvp) dmgRaw = Math.floor(dmgRaw * 0.6); // Sesión 50
   const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
   if (specHitsPvp) {
     specHitsPvp[0] = Math.min(specHitsPvp[0], dmgToTarget);

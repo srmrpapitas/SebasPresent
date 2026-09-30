@@ -12,12 +12,13 @@
  * (el server es la verdad) + respuesta inmediata de /toggle para no esperar.
  */
 
+import { PROTECT_SVG } from './overhead.js';   // Sesión 50
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as skills from './skills.js';
 import * as audio from './audio.js';
 import {
-  PRAYERS, PRAYERS_BY_ID, ALTARS, currentPrayerState, parseActive, drainPerMin,
+  PRAYERS, PRAYERS_BY_ID, ALTARS, currentPrayerState, parseActive, drainPerMin, overheadPrayer,
 } from './shared/prayer.js';
 
 const USE_DIST_M = 3.2;
@@ -44,6 +45,11 @@ function live() {
   const lvl = level();
   const pts = st.points == null ? lvl : Math.min(lvl, st.points);
   return currentPrayerState(pts, st.updatedAt, st.active, Date.now());
+}
+
+/** Sesión 50 — plegaria que se ve sobre tu cabeza. */
+export function getOverheadPrayer() {
+  try { return overheadPrayer(live().active); } catch { return null; }
 }
 
 function applyServer(obj) {
@@ -158,7 +164,7 @@ function render(force = false) {
     const locked = lvl < p.level;
     const on = lv.active.includes(p.id);
     html += `<button class="pr-cell${locked ? ' locked' : ''}${on ? ' on' : ''}" data-pr="${p.id}" title="${p.name}">
-      <span class="pr-ico">${p.icon}</span><span class="pr-lvl">${locked ? '🔒' : ''}${p.level}</span></button>`;
+      <span class="pr-ico">${PROTECT_SVG[p.id] ? `<span class="pr-svg">${PROTECT_SVG[p.id]}</span>` : p.icon}</span><span class="pr-lvl">${locked ? '🔒' : ''}${p.level}</span></button>`;
   }
   html += `</div><div class="pr-info" id="prInfo">Toca una plegaria para activarla. Entierra huesos para subir de nivel y recarga puntos en un altar.</div></div>`;
   pane.innerHTML = html;
@@ -342,6 +348,8 @@ function ensureCss() {
     .pr-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
     .pr-cell { position: relative; aspect-ratio: 1; background: rgba(0,0,0,0.3); border: 1px solid #5a4520; border-radius: 5px; color: inherit; padding: 0; }
     .pr-cell .pr-ico { font-size: 20px; }
+    .pr-cell .pr-svg { display: inline-block; width: 24px; height: 24px; vertical-align: middle; }
+    .pr-cell .pr-svg svg { width: 100%; height: 100%; }
     .pr-cell .pr-lvl { position: absolute; right: 2px; bottom: 1px; font-size: 9px; color: #d8c89a; }
     .pr-cell.locked { opacity: 0.35; filter: grayscale(1); }
     .pr-cell.on { background: radial-gradient(circle, rgba(255,224,122,0.55), rgba(120,90,20,0.4)); border-color: #ffe07a; box-shadow: 0 0 8px rgba(255,224,122,0.8); }

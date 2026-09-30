@@ -40,6 +40,7 @@
  *   En consola: window.__mpPlayers()  → tabla de peers activos.
  */
 
+import { overheadHtml, ensureOverheadCss } from './overhead.js';   // Sesión 50
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as worldSnapshot from './world_snapshot.js';
@@ -806,10 +807,10 @@ function upsertPeer(p) {
   if (typeof p.combat_lvl === 'number') peer.combatLvl = p.combat_lvl;
   // Sesión 50 — calavera PvP sobre el nameplate del peer.
   const sk = !!p.skulled;
-  if (peer.skulled !== sk) {
-    peer.skulled = sk;
-    try { peer.nameplate?.root?.classList.toggle('skulled', sk); } catch {}
-  }
+  if (peer.skulled !== sk) { peer.skulled = sk; renderPeerOverhead(peer); }
+  // Sesión 50 — plegaria sobre la cabeza (el push 'pr' manda sobre el snapshot 2 s)
+  const ov = p.ovh || null;
+  if (peer.ovh !== ov && !(peer._ovhAt && Date.now() - peer._ovhAt < 2000)) { peer.ovh = ov; renderPeerOverhead(peer); }
   if (typeof p.attack_lvl === 'number') peer.attackLvl = p.attack_lvl;
   if (typeof p.strength_lvl === 'number') peer.strengthLvl = p.strength_lvl;
   if (typeof p.defence_lvl === 'number') peer.defenceLvl = p.defence_lvl;
@@ -940,6 +941,9 @@ function onRealtime(m, myId) {
       target._lastAttackAtSeen = Math.max(target._lastAttackAtSeen || 0, m.at || 0);
       triggerPeerAttackAnim(target);
     }
+  } else if (m.t === 'pr') {
+    const peer = m.id !== myId ? mpLastPeerMap.get(m.id) : null;
+    if (peer) { peer.ovh = m.o || null; peer._ovhAt = Date.now(); renderPeerOverhead(peer); }
   } else if (m.t === 'hp') {
     const peer = m.id !== myId ? mpLastPeerMap.get(m.id) : null;
     if (peer) { peer.hp = m.hp; peer.hpMax = m.hpMax || peer.hpMax; peer._hpAt = Date.now(); }
@@ -1508,4 +1512,17 @@ function debugListPlayers() {
   }
   console.table(list);
   return list;
+}
+
+// Sesión 50 — calavera + plegaria encima del nameplate del peer
+function renderPeerOverhead(peer) {
+  const root = peer?.nameplate?.root;
+  if (!root) return;
+  ensureOverheadCss();
+  let el = root.querySelector(':scope > .ovh-stack');
+  if (!el) { el = document.createElement('div'); el.className = 'ovh-stack'; root.prepend(el); }
+  const key = `${peer.skulled ? 1 : 0}|${peer.ovh || ''}`;
+  if (el.dataset.k === key) return;
+  el.dataset.k = key;
+  el.innerHTML = overheadHtml(!!peer.skulled, peer.ovh || null);
 }

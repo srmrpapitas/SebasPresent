@@ -846,6 +846,7 @@ export async function startWorld(loggedInUser, token) {
     try {
       skull.start({
         getSnapshot: () => worldSnapshot.getSnapshot(),
+        getOverheadPrayer: () => prayer.getOverheadPrayer?.(),
         getPlayer:   () => player,
         getCamera:   () => camera,
         feedLog:     (type, msg) => combat.feedLog?.(type, msg),
