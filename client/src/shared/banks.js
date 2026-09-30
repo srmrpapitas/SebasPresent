@@ -59,6 +59,12 @@ export const BANK_USE_DIST_SERVER_M = 10;
 const EXTRA_BANK_POINTS = [
   { x: -80, z: -80, r: 14 },            // banquero del castillo (castle.js)
   { x: 10000, z: 10000, r: 30 },        // sala del banco (interiors.js)
+  // Edificios del banco (buildings.js). Dentro de la sala el cliente NO manda
+  // su posición (10000,10000 está fuera del mapa y el Realm la descarta), así
+  // que el server te ve en la puerta: se entra a ≤10 m del edificio.
+  { x: 30, z: 0, r: 18 },               // plaza de La Laguna
+  { x: -260, z: -660, r: 18 },          // La Orotava
+  { x: 1460, z: 60, r: 18 },            // Güímar
 ];
 
 export function isNearAnyBank(x, z) {
