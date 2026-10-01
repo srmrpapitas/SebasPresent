@@ -109,6 +109,7 @@ export async function start(opts) {
   canvas = opts.canvas || null;
   getPlayer = opts.getPlayer || (() => null);
   onEnterCallback = opts.onEnter || (() => {});
+  onBeforeEnter = opts.onBeforeEnter || null;   // Sesión 50 — fija la posición en el server antes de entrar
   onLeaveCallback = opts.onLeave || (() => {});
   onOpenBank = opts.onOpenBank || (() => { console.warn('[interiors] onOpenBank no asignado'); });
   onOpenGE   = opts.onOpenGE   || (() => { console.warn('[interiors] onOpenGE no asignado'); });
@@ -245,6 +246,7 @@ export function stop() {
  *   applyCollision(x0,z0,x1,z1), onTap(clientX,clientY)→bool, update(dt), onLeave()
  * Todo lo demás (botón Salir, volver a la puerta, cielo/niebla) es igual.
  */
+let onBeforeEnter = null;
 export function enterRoom(r, fromId = 'house') {
   if (active || !r) return false;
   room = r;
@@ -266,6 +268,10 @@ export function enter(fromBuildingId) {
 
   lastExteriorPos = { x: player.position.x, z: player.position.z };
   lastExteriorRotY = player.rotation.y;
+  // Sesión 50 — dentro no se manda posición (está fuera del mapa), así que el
+  // server se queda con la última que guardó. Si entraste corriendo, esa podía
+  // ser de hace unos segundos y lejos de la puerta → el banco te rechazaba.
+  try { onBeforeEnter?.(lastExteriorPos.x, lastExteriorPos.z); } catch {}
 
   if (room) {
     player.position.x = room.spawn.x;

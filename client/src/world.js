@@ -335,6 +335,14 @@ export async function startWorld(loggedInUser, token) {
         try { audio.sfx('coins'); } catch {}
         try { shop.open('general_store'); } catch (e) { console.warn('[world] shop.open:', e); }
       },
+      onBeforeEnter: (x, z) => {
+        if (!authToken) return;
+        fetch(`${API_BASE}/api/world/heartbeat`, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ x, z, yaw: player?.rotation?.y || 0, state: 'idle' }),
+        }).catch(() => {});
+      },
       onEnter: (buildingId) => {
         // Forzar disengage de combat si engaged (el NPC queda lejos)
         try { window.__playerExitCombat?.(); } catch {}
