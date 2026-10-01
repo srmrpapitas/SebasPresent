@@ -2667,3 +2667,12 @@ body:has(#worldScreen:not(.hidden)) #splash {
   .hs-row { font-size: 12px; grid-template-columns: 2em minmax(0, 1fr) 3em 3em 4.6em; }
   .hs-title { font-size: 16px; }
 }
+
+/* Sesión 50 — el botón "Abrir mapa" va pegado a la esquina inferior del
+   MINIMAPA (130 px), no al fondo del bloque: con el orbe de montura la
+   columna de orbes es más alta y lo empujaba debajo del botón "Grupo". */
+.osrs-minimap-open-btn {
+  top: 94px !important;
+  bottom: auto !important;
+  right: 6px !important;
+}

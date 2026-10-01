@@ -173,7 +173,7 @@ function buildExterior() {
     exterior.add(main.group);
     addOBB(m.wx, m.wz, m.rot, main.w / 2 + 0.3, main.d / 2 + 0.3);
     const hit = box(main.w + 1, 4, main.d + 1.5, M.hit, 0, 2, 0.4);
-    hit.userData = { kind: 'house-portal', portal: p };
+    hit.userData = { kind: 'house-portal', portal: p, door: { x: m.wx + Math.sin(m.rot) * (main.d / 2 + 1.7), z: m.wz + Math.cos(m.rot) * (main.d / 2 + 1.7) } };
     main.group.add(hit); portalHits.push(hit);
     // Vecinos (decorativos)
     const nb = [
@@ -187,6 +187,11 @@ function buildExterior() {
       const q = place(c.group, p, n.lx, n.lz, n.back ? Math.PI : 0);
       exterior.add(c.group);
       addOBB(q.wx, q.wz, q.rot, c.w / 2 + 0.3, c.d / 2 + 0.3);
+      // Sesión 50 — TODAS las casas de la urbanización llevan a tu casa
+      // (antes solo la del cartel y la gente intentaba entrar en las demás)
+      const nh = box(c.w + 1, 4, c.d + 1.5, M.hit, 0, 2, 0.4);
+      nh.userData = { kind: 'house-portal', portal: p, door: { x: q.wx + Math.sin(q.rot) * (c.d / 2 + 1.7), z: q.wz + Math.cos(q.rot) * (c.d / 2 + 1.7) } };
+      c.group.add(nh); portalHits.push(nh);
     }
     // Calle empedrada delante
     const street = box(34, 0.04, 6, M.stoneD, 0, 0.02, 8.5);
@@ -542,21 +547,17 @@ export function tryHandleTap(raycaster) {
   if (!started || interiors.isActive() || !portalHits.length) return false;
   const hits = raycaster.intersectObjects(portalHits, false);
   if (!hits.length) return false;
-  const portal = hits[0].object.userData.portal;
-  goPortal(portal);
+  const ud = hits[0].object.userData;
+  goPortal(ud.portal, ud.door);
   return true;
 }
-function portalDoor(p) {
-  // puerta: 3.5 m delante de la fachada
-  return { x: p.x + Math.sin(p.dir) * 5.2, z: p.z + Math.cos(p.dir) * 5.2 };
-}
-function goPortal(p) {
+let pendingDoor = null;
+function goPortal(p, door) {
   const pl = getPlayer();
   if (!pl) return;
-  const door = portalDoor(p);
   const d = Math.hypot(pl.position.x - door.x, pl.position.z - door.z);
   if (d <= HOUSE_PORTAL_USE_M) { pendingPortal = null; enterHouse(p); return; }
-  pendingPortal = p;
+  pendingPortal = p; pendingDoor = door;
   setPlayerTarget(door.x, door.z);
 }
 export function cancel() { pendingPortal = null; }
@@ -564,7 +565,8 @@ export function cancel() { pendingPortal = null; }
 export function update(dt) {
   if (!started || !pendingPortal || interiors.isActive()) return;
   const pl = getPlayer(); if (!pl) return;
-  const door = portalDoor(pendingPortal);
+  const door = pendingDoor;
+  if (!door) { pendingPortal = null; return; }
   if (Math.hypot(pl.position.x - door.x, pl.position.z - door.z) <= HOUSE_PORTAL_USE_M) {
     const p = pendingPortal; pendingPortal = null; enterHouse(p);
   }
