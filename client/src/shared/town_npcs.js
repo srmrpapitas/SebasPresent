@@ -18,13 +18,13 @@
 export const TALK_DIST_M = 3.0;        // cliente
 export const TALK_DIST_SERVER_M = 9.0; // server (posición del heartbeat con algo de retraso)
 
-import { CASTLES, bankerSpot } from './castles.js';
+import { CASONAS, bankerSpot } from './casonas.js';
 const CASONA_LOOK = {
   banquera_dacil:    { name: 'Dácil',    title: 'Banquera de Santa Cruz',     look: { skin: 0xc8946a, shirt: 0x2a4a6a, pants: 0x1f1f24, hair: 0x1a1008, acc: 'apron' } },
   banquero_acaymo:   { name: 'Acaymo',   title: 'Banquero de Adeje',          look: { skin: 0xb07a52, shirt: 0x5a1f2a, pants: 0x1f1f24, hair: 0x1a1a1a, acc: 'hat' } },
   banquera_cathaysa: { name: 'Cathaysa', title: 'Banquera de Los Cristianos', look: { skin: 0xd9a57a, shirt: 0x2f6a3a, pants: 0x1f1f24, hair: 0x3a2010, acc: 'apron' } },
 };
-const CASONA_BANKERS = CASTLES.map(c => {
+const CASONA_BANKERS = CASONAS.map(c => {
   const s = bankerSpot(c), L = CASONA_LOOK[c.banker];
   return { id: c.banker, name: L.name, title: L.title, x: s.x, z: s.z, rotY: s.rotY, role: '🏦', look: L.look,
     actions: ['bank', 'ge', 'shop:general_store'],
@@ -211,7 +211,7 @@ export const TOWN_NPCS = [
       'Mis cabras suben hasta el páramo de Erjos… y algunas no vuelven. Dicen que allí vive la bruja Chona.',
       'Por las noches se ven luces rojas en el monte de Las Mercedes. Gente con capucha. Yo no me acerco.',
     ] },
-  // Sesión 50 — banqueros de las casonas del banco (shared/castles.js)
+  // Sesión 50 — banqueros de las casonas del banco (shared/casonas.js)
   ...CASONA_BANKERS,
   // Sesión 50 — Cronistas de Achinech (la historia de Tenerife, misión "Crónicas de Achinech")
   { id: 'cronista_elena', name: 'Doña Elena', title: 'Cronista de La Laguna', x: 26, z: -34, rotY: 2.6, role: '📜',

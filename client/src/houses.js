@@ -17,7 +17,7 @@ import * as THREE from 'three';
 import * as api from './api.js';
 import * as interiors from './interiors.js';
 import { hangingLine } from './item_tex.js';   // tendedero del porche
-import { CASTLES, CASONA_W, CASONA_D } from './shared/castles.js';   // casonas del banco
+import { CASONAS, CASONA_W, CASONA_D } from './shared/casonas.js';   // casonas del banco
 import { puebloHouses } from './shared/pueblo_blanco.js';          // Arico, el pueblo blanco
 import {
   HOUSE_PORTALS, HOUSE_TIERS, HOUSE_CENTER, HOUSE_PORTAL_USE_M,
@@ -197,8 +197,8 @@ function buildExterior() {
     const street = box(34, 0.04, 6, M.stoneD, 0, 0.02, 8.5);
     place(street, p, 0, 8.5); street.position.y = 0.02; exterior.add(street);
   });
-  // Casonas del banco (sustituyen a los castillos GLB)
-  for (const c of CASTLES) {
+  // Casonas del banco
+  for (const c of CASONAS) {
     const k = buildCasa({ w: CASONA_W, d: CASONA_D, twoFloors: true, balcony: true, sign: ['🏦 Banco', c.name.replace('Casona del banco de ', '')] });
     k.group.position.set(c.x, 0, c.z); k.group.rotation.y = c.dir;
     exterior.add(k.group);
@@ -594,14 +594,14 @@ export function registerKeepouts(terrain) {
   for (const p of HOUSE_PORTALS) {
     try { terrain.addKeepout?.(p.x, p.z, 26); terrain.clearTreesNear?.(p.x, p.z, 26); } catch {}
   }
-  for (const c of CASTLES) { try { terrain.addKeepout?.(c.x, c.z, 14); terrain.clearTreesNear?.(c.x, c.z, 14); } catch {} }
+  for (const c of CASONAS) { try { terrain.addKeepout?.(c.x, c.z, 14); terrain.clearTreesNear?.(c.x, c.z, 14); } catch {} }
   for (const h of puebloHouses()) { try { terrain.addKeepout?.(h.x, h.z, 8); terrain.clearTreesNear?.(h.x, h.z, 8); } catch {} }
 }
 
 export function getMapIcons() {
   return [
     ...HOUSE_PORTALS.map(p => ({ x: p.x, z: p.z, kind: 'house', name: p.name })),
-    ...CASTLES.map(c => ({ x: c.x, z: c.z, kind: 'bank', name: c.name })),
+    ...CASONAS.map(c => ({ x: c.x, z: c.z, kind: 'bank', name: c.name })),
   ];
 }
 

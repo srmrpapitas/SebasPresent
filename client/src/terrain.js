@@ -229,7 +229,7 @@ const cDark  = new THREE.Color();
 let started = false;
 
 // Sesión 40 — Zonas keep-out: regiones donde NO se plantan árboles (ej. el
-// castillo, para que no se ensarten dentro). Las registra castle.js vía
+// edificios, para que no se ensarten dentro). Las registran los módulos vía
 // terrain.addKeepout(x, z, radius). Como los chunks ya cargados no se
 // re-generan, conviene registrarlas ANTES de explorar la zona, o llamar a
 // terrain.clearTreesNear() para limpiar lo ya plantado.

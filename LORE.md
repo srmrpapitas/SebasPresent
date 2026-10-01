@@ -106,7 +106,7 @@ Carmita habla en canario de la calle. Para comprar hay que ser socio:
 Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o venta en la tienda `aso` de quien no sea socio.
 
 
-## Casas y castillos
+## Casas y casonas del banco
 - **Nauzet** (Inmobiliaria Achinech, junto a la urbanización de La Laguna) vende casas:
   - Casa cueva: 5.000 monedas. Tiene cama.
   - Casa terrera: 30.000. Cama y cofre del banco.
@@ -118,7 +118,7 @@ Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o ven
   - cofre: tu banco;
   - altar: recarga la plegaria.
   El server lo valida como "estás en una urbanización y tu casa tiene ese mueble", porque dentro de la casa el cliente no manda su posición.
-- **Castillos** (mismo modelo que el de La Laguna, `shared/castles.js`): Castillo de San Cristóbal en Santa Cruz (Dácil), Casa Fuerte de Adeje (Acaymo) y Fortaleza de Los Cristianos (Cathaysa). Cada banquero tiene Banco, Mercado (GE) y Tienda.
+- **Casonas del banco** (`shared/casonas.js`): Santa Cruz (Dácil), Adeje (Acaymo) y Los Cristianos (Cathaysa), con el banquero detrás del mostrador del porche: Banco, Mercado (GE) y Tienda. (Los castillos GLB se quitaron: la montaña tapaba las puertas.)
 
 
 ## Caminos y monturas

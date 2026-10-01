@@ -3,13 +3,13 @@
  *
  * Red de caminos de tierra que une todas las ciudades y pueblos. Cada tramo
  * es una curva suave (Bézier con un desvío fijo) que esquiva lagos,
- * castillos, urbanizaciones, guaridas de jefes y la Fosa.
+ * casonas del banco, urbanizaciones, guaridas de jefes y la Fosa.
  *
  * Lo usan: terrain.js (no plantar árboles encima), roads_render.js (la cinta
  * del camino + postes indicadores) y map_render.js (minimapa y mapa).
  */
 import { PONDS } from './fishing.js';
-import { CASTLES } from './castles.js';
+import { CASONAS } from './casonas.js';
 import { HOUSE_PORTALS } from './houses.js';
 import { BOSSES } from './bosses.js';
 import { FOSA } from './fosa.js';
@@ -51,7 +51,7 @@ export const ROAD_EDGES = [
 function obstacles() {
   const o = [];
   for (const p of PONDS) o.push([p.x, p.z, p.r + 7]);
-  for (const c of CASTLES) o.push([c.x, c.z, 30]);
+  for (const c of CASONAS) o.push([c.x, c.z, 30]);
   for (const h of HOUSE_PORTALS) o.push([h.x, h.z, 30]);
   for (const b of Object.values(BOSSES)) o.push([b.x, b.z, (b.lairR || 12) + 4]);
   o.push([FOSA.x, FOSA.z, FOSA.r + 8]);

@@ -722,7 +722,7 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 ## 31. Seguridad: duplicados y validaciones (Sesión 50)
 - **Regla de oro al mover objetos**: primero QUITAR con guarda (`WHERE ... AND item_id=? AND quantity=?` / `quantity > ?`) y comprobar `meta.changes`; solo si se quitó, DAR. Nunca borrar+recrear con valores leídos antes; mover de hueco = `UPDATE slot_index` (swap vía hueco temporal negativo).
 - Banco depósito/retiro: una transacción; las cantidades se leen DENTRO con subconsultas (`MIN(?, COALESCE((SELECT quantity ...),0))`), luego DELETE si `quantity <= take` y UPDATE si `> take`.
-- Banco: depositar/retirar exige estar a ≤10 m de un cofre (`shared/banks.js`), de un NPC con `actions:['bank']`, del banquero del castillo (-80,-80) o dentro de la sala del banco (10000,10000). `isNearAnyBank`.
+- Banco: depositar/retirar exige estar a ≤10 m de un cofre (`shared/banks.js`), de un NPC con `actions:['bank']`, dentro de una casona del banco (`shared/casonas.js`, 16 m), junto a la puerta de un edificio del banco (la sala 10000,10000 no manda posición), o en tu casa con cofre (`atHouseWith`). `isNearAnyBank`.
 - Tienda: cobrar (`debitCoins`) y reservar stock ANTES de entregar; vender quita el objeto antes de pagar (`creditCoins`).
 - Suelo: el pickup reclama cada fila con `DELETE ... WHERE id=?` antes de darla; el drop borra con guarda antes de crear.
 - Carcaj: igual (quitar → poner, con devolución si falla).

@@ -889,7 +889,7 @@ export async function startWorld(loggedInUser, token) {
     try { guancheVillage.start({ scene }); } catch (e) { console.warn('[world] poblado:', e); }
     try { roadsRender.start({ scene, biomeAt: terrain.biomeAt }); } catch (e) { console.warn('[world] caminos:', e); }
     try { menceyes.start({ scene, feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] menceyes:', e); }
-    // Sesión 50 — castillos y casas de jugador
+    // Sesión 50 — casas de jugador, casonas del banco, Arico
     const openBankHere = () => {
       try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
       try { audio.sfx('coins'); } catch {}

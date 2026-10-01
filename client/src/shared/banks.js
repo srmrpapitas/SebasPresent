@@ -5,7 +5,7 @@
  * donde abrir TU banco (es el mismo en todos). En la wilderness no hay.
  * MÓDULO COMPARTIDO (cliente dibuja; el server podrá validar distancias).
  */
-import { CASTLES, CASTLE_BANK_R } from './castles.js';   // Sesión 50
+import { CASONAS, CASONA_BANK_R } from './casonas.js';   // Sesión 50
 import { TOWN_NPCS } from './town_npcs.js';
 
 export const BANK_USE_DIST_M = 3.2;
@@ -52,7 +52,7 @@ export function nearestBankChest(x, z) {
 
 // ------------------------------------------------------------
 // Sesión 50 — Seguridad: el server solo deja meter/sacar cosas del banco si
-// estás junto a un cofre, un banquero (Gerardo, el del castillo) o dentro de
+// estás junto a un cofre, un banquero (los habitantes con banco, las casonas) o dentro de
 // la sala del banco. Tolerancia amplia porque la posición que guarda el
 // server llega con ~1 s de retraso mientras caminas.
 // ------------------------------------------------------------
@@ -68,7 +68,7 @@ const EXTRA_BANK_POINTS = [
 ];
 
 export function isNearAnyBank(x, z) {
-  // (castillos: shared/castles.js)
+  // (casonas del banco: shared/casonas.js)
   if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
   const R = BANK_USE_DIST_SERVER_M;
   for (const b of BANK_CHESTS) if (Math.hypot(b.x - x, b.z - z) <= R) return true;
@@ -76,6 +76,6 @@ export function isNearAnyBank(x, z) {
     if (n.actions?.includes('bank') && Math.hypot(n.x - x, n.z - z) <= R) return true;
   }
   for (const p of EXTRA_BANK_POINTS) if (Math.hypot(p.x - x, p.z - z) <= p.r) return true;
-  for (const c of CASTLES) if (Math.hypot(c.x - x, c.z - z) <= CASTLE_BANK_R) return true;
+  for (const c of CASONAS) if (Math.hypot(c.x - x, c.z - z) <= CASONA_BANK_R) return true;
   return false;
 }

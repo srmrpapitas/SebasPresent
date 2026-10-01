@@ -268,15 +268,6 @@ export function drawIcon(ctx, kind, x, y, r = 6, extra = {}) {
       ctx.quadraticCurveTo(x - r * 0.6, y + r * 0.1, x, y - r * 0.6); ctx.fill();
       break;
     }
-    case 'castle': {   // Sesión 50 — castillo: torre almenada
-      disc(ctx, x, y, r, '#6a5a4a', '#1a1208');
-      ctx.fillStyle = '#e8dcc0';
-      const w = r * 1.1, h = r * 0.9;
-      ctx.fillRect(x - w / 2, y - h / 2 + r * 0.15, w, h);
-      for (let k = 0; k < 3; k++) ctx.fillRect(x - w / 2 + k * (w / 2.5), y - h / 2 - r * 0.2, w / 5, r * 0.4);
-      ctx.fillStyle = '#3a2a1a'; ctx.fillRect(x - r * 0.18, y + r * 0.05, r * 0.36, r * 0.5);
-      break;
-    }
     case 'house': {    // Sesión 50 — urbanización: casita blanca, tejado rojo
       disc(ctx, x, y, r, '#2f6a3a', '#0f200f');
       ctx.fillStyle = '#f4f0e6'; ctx.fillRect(x - r * 0.5, y - r * 0.05, r, r * 0.6);
