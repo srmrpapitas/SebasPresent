@@ -69,6 +69,7 @@ export function preloadAnims(set) {
     return { clips, hipsY0: ht ? ht.values[1] : 100 };
   }).catch(err => { console.warn('[mixamo_rig] anims', set, err?.message); return null; });
   _anims.set(set, p);
+  p.then(a => { if (!a) setTimeout(() => _anims.delete(set), 8000); });   // si falló, se reintenta en 8 s
   return p;
 }
 const _animReady = new Map();
@@ -132,6 +133,7 @@ export function preload(id, animSet = null) {
     return t;
   }).catch(err => { console.warn('[mixamo_rig] no se pudo cargar', id, err?.message); return null; });
   _tpl.set(id, p);
+  p.then(t => { if (!t) setTimeout(() => _tpl.delete(id), 8000); });   // si falló (red), se reintenta en 8 s
   return Promise.all([p, pa]).then(r => r[0]);
 }
 export function animsLoaded(set) { return !set || _animReady.has(set); }

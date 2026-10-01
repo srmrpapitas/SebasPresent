@@ -90,14 +90,15 @@ import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — enemigos con p
 // Sesión 50 — enemigos que usan personajes Mixamo (client/assets/npcs). Mientras el
 // modelo carga se ve el de siempre y en cuanto está listo se cambia solo.
 export const RIG_ENEMIES = {
+  // fb = modelo provisional (de los de siempre) mientras el bueno descarga — nunca un bloque gris
   goblin:         { model: 'goblin2', anims: 'mutant', h: 1.45 },
-  guardia_ciudad: { model: 'guardia1', weapon: 'sword_hierro', anims: 'mago', h: 1.85 },
-  zombi:          { model: 'zombi', anims: 'mutant', h: 1.9 },                          // el zombi tal cual
-  zombi_igneo:    { model: 'zombi', anims: 'mutant', tint: { fire: true }, h: 1.95 },   // ser de fuego del wilderness
-  bandido:        { model: 'killer_08', anims: 'mago', h: 1.82 },
-  ogro_anaga:     { model: 'warrok', anims: 'mutant', h: 2.3 },
-  fosa_bruto:     { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 2.4 }, h: 2.3 },   // Bruto de magma (la Fosa)
-  bruto_echeyde:  { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 3.0 }, h: 2.6, scale: 1.15 },   // jefe de la Cueva de Echeyde
+  guardia_ciudad: { model: 'guardia1', weapon: 'sword_hierro', anims: 'mago', h: 1.85, fb: 'guardia_ciudad' },
+  zombi:          { model: 'zombi', anims: 'mutant', h: 1.9, fb: 'skeleton' },                          // el zombi tal cual
+  zombi_igneo:    { model: 'zombi', anims: 'mutant', tint: { fire: true }, h: 1.95, fb: 'fosa_espiritu' },   // ser de fuego del wilderness
+  bandido:        { model: 'killer_08', anims: 'mago', h: 1.82, fb: 'guanche_guerrero' },
+  ogro_anaga:     { model: 'warrok', anims: 'mutant', h: 2.3, fb: 'yeti' },
+  fosa_bruto:     { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 2.4 }, h: 2.3, fb: 'fosa_bruto' },   // Bruto de magma (la Fosa)
+  bruto_echeyde:  { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 3.0 }, h: 2.6, scale: 1.15, fb: 'fosa_bruto' },   // jefe de la Cueva de Echeyde
 };
 function rigReady(R) { return mixamoRig.isLoaded(R.model) && mixamoRig.animsLoaded(R.anims); }
 
@@ -377,7 +378,8 @@ function upgradeBakedGoblins() {
     if (!npc) continue;
     const R = RIG_ENEMIES[npc.def_id];
     if (R) {
-      if (mesh.userData.rig || !rigReady(R)) continue;   // ya es Mixamo, o aún cargando
+      if (mesh.userData.rig) continue;                   // ya es Mixamo
+      if (!rigReady(R)) { mixamoRig.preload(R.model, R.anims); continue; }   // aún cargando (o reintenta si falló)
     } else {
       if (!npcAnimated.isReady()) continue;
       if (!npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id)) continue;
@@ -761,7 +763,7 @@ function createMesh(npc) {
       group.add(mesh);
       group.userData.bodyMaterials.push(ownMat);
     }
-  } else if ((proc = buildProceduralNpc(typeId))) {
+  } else if ((proc = buildProceduralNpc(R?.fb || typeId))) {
     // Sesión 50 — modelo low-poly con animación propia (ver npc_procedural.js)
     proc.root.traverse(o => { if (o.isMesh) o.userData = { kind: 'npc-body', npcId: npc.id }; });
     group.add(proc.root);
