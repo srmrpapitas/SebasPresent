@@ -42,6 +42,8 @@ import * as worldSnapshot from './world_snapshot.js'; // Sesión 27 Bloque 3 —
 import * as audio from './audio.js';               // Sesión 32 — SFX de combat
 import * as combatStyles from './combat_styles.js'; // Sesión 33 día 2 — selector de estilo
 import { hasSpecialAttack, specialOf } from './shared/equip_reqs.js';   // Sesión 50/51
+import * as specFx from './spec_fx.js';                                  // Sesión 51
+import * as realtime from './realtime.js';                               // Sesión 51 — los demás ven el especial
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -440,7 +442,11 @@ async function doAttackTickNpc(gen = attackGen) {
   // Sesión 41 — info del hechizo (null si no fue magia).
   const spellCast = result.spell_cast || null;
 
-  if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
+  // Sesión 51 — especial: coreografía + efectos; specDelay = ms hasta el impacto
+  let specDelay = 0;
+  if (result.special) {
+    try { specDelay = runSpecialVisuals(result, npc ? { x: npc.x, y: 0, z: npc.z } : null); } catch (e) { console.warn('[combat] spec fx', e); }
+  } else if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
       const animResult = window.__playerPlayAttack(
         uiSelectedStance,
@@ -575,7 +581,7 @@ async function doAttackTickNpc(gen = attackGen) {
       // Sesión 51 — un hitsplat por golpe del especial (garras = 4)
       result.special.hits.forEach((h, i) => setTimeout(() => {
         try { window.__worldSpawnHitsplat(npcId, h || 0); } catch {}
-      }, i * 220));
+      }, specDelay + i * 220));
     } else {
       try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
     }
@@ -584,13 +590,15 @@ async function doAttackTickNpc(gen = attackGen) {
   // al proximo poll) y desarmar si el spec se ejecuto.
   if (result.special) {
     // Sesión 47 — cue del especial (mismo que PvP): SFX grave + flash + aviso.
-    try { audio.sfx('hit_blade', { pitch: 0.65, volume: 1 }); } catch {}
-    if (typeof window !== 'undefined' && typeof window.__worldFlashNpcHit === 'function') {
-      try {
-        window.__worldFlashNpcHit(npcId);
-        setTimeout(() => { try { window.__worldFlashNpcHit(npcId); } catch {} }, 120);
-      } catch {}
-    }
+    setTimeout(() => {
+      try { audio.sfx('hit_blade', { pitch: 0.65, volume: 1 }); } catch {}
+      if (typeof window !== 'undefined' && typeof window.__worldFlashNpcHit === 'function') {
+        try {
+          window.__worldFlashNpcHit(npcId);
+          setTimeout(() => { try { window.__worldFlashNpcHit(npcId); } catch {} }, 120);
+        } catch {}
+      }
+    }, specDelay);
     if (result.special.healed > 0) feedLog('hit', `💚 El especial te cura ${result.special.healed} HP.`);
     specArmed = false;
   }
@@ -802,8 +810,14 @@ async function doAttackTickPlayer(gen = attackGen) {
   const peer = multiplayer.getPeerById?.(targetId);
   const targetName = peer?.username || 'el jugador';
 
-  // Animación de swing del player (igual que NPC)
-  if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
+  // Animación de swing del player (igual que NPC). Sesión 51 — especial con coreografía.
+  let specDelayPvp = 0;
+  if (result.special) {
+    try {
+      const pp = multiplayer.getPeerVisualPosition?.(targetId);
+      specDelayPvp = runSpecialVisuals(result, pp ? { x: pp.x, y: 0, z: pp.z } : null);
+    } catch (e) { console.warn('[combat] spec fx pvp', e); }
+  } else if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
       const animResult = window.__playerPlayAttack(
         uiSelectedStance,
@@ -895,7 +909,7 @@ async function doAttackTickPlayer(gen = attackGen) {
     if (result.special && Array.isArray(result.special.hits)) {
       result.special.hits.forEach((h, i) => setTimeout(() => {
         try { window.__worldSpawnPlayerHitsplat(targetId, h || 0); } catch {}
-      }, i * 220));
+      }, specDelayPvp + i * 220));
     } else {
       try { window.__worldSpawnPlayerHitsplat(targetId, result.your_damage || 0); } catch {}
     }
@@ -1169,6 +1183,52 @@ let autoRetaliate = false;  // TODO: persistir cuando server lo soporte
 // use_special=true. Se desarma al ejecutarse (o si el server rechaza por
 // energia). Estado local del cliente; el server es quien valida y descuenta.
 let specArmed = false;
+
+// Sesión 51 — coreografía + efectos de un especial propio. Devuelve los ms
+// hasta el impacto (para retrasar hitsplats/destellos al golpe real).
+const SLAM_IMPACT_MS = Math.round(1.36 / 1.3 * 1000);   // = character.js SPEC_SLAM_IMPACT_MS
+function runSpecialVisuals(result, targetPos) {
+  const sp = result.special;
+  if (!sp) return 0;
+  const weaponItem = equipment.getEquipped?.('weapon')?.item_id || '';
+  const pal = specFx.paletteFor(weaponItem);
+  const wt = result.weapon_type;
+  const me = (typeof window !== 'undefined' && window.__getPlayerPosition?.()) || null;
+  const slam = wt === '2h_sword' && ['gs', 'heal', 'smash'].includes(sp.fx);
+  try { realtime?.sendFx?.({ k: slam ? 'slam' : (sp.fx || 'spec'), c: weaponItem, tx: targetPos?.x, tz: targetPos?.z }); } catch {}
+  if (slam && typeof window.__playerPlaySpecial === 'function') {
+    const r = window.__playerPlaySpecial(sp.fx, wt, {
+      stance: uiSelectedStance, cooldownMs: result.cooldown_ms, glowColor: pal.light, hop: sp.fx === 'smash' ? 0.42 : 0.65,
+      onImpact: () => {
+        const at = specFx.impactPoint(window.__getPlayerPosition?.() || me, targetPos);
+        if (at) specFx.slam(at, pal, sp.fx === 'smash' ? 0.75 : 1);
+        if (sp.fx === 'heal' || sp.healed > 0) specFx.heal(() => window.__getPlayerPosition?.(), specFx.PALETTES.heal);
+        try { audio.sfx('hit_blade', { pitch: 0.42, volume: 1 }); } catch {}
+        try { audio.synth?.('altar', { volume: 1, pitch: 0.38 }); } catch {}
+      },
+    });
+    if (r === 'special_slam') {
+      specFx.trail(() => window.__playerWeaponSegment?.(), SLAM_IMPACT_MS + 120, pal);
+      try { audio.synth?.('altar', { volume: 0.55, pitch: 0.95 }); } catch {}
+      return SLAM_IMPACT_MS;
+    }
+    return 0;
+  }
+  // Resto: ataque normal + efecto en el objetivo
+  try { window.__playerPlayAttack?.(uiSelectedStance, wt, result.cooldown_ms, result.spell_cast?.spell_id || null); } catch {}
+  const yaw = me && targetPos ? Math.atan2(targetPos.x - me.x, targetPos.z - me.z) : 0;
+  if (targetPos) {
+    if (sp.fx === 'claws') specFx.slashes(targetPos, 4, specFx.PALETTES.basaltita, yaw);
+    else if (sp.fx === 'double') specFx.slashes(targetPos, 2, specFx.PALETTES.oro, yaw);
+    else if (sp.fx === 'cleave') specFx.slashes(targetPos, 1, specFx.PALETTES.obsidiana, yaw);
+    else if (sp.fx === 'feint') { specFx.slashes(targetPos, 1, specFx.PALETTES.teiderio, yaw); specFx.burst(targetPos, specFx.PALETTES.teiderio, 120); }
+    else if (sp.fx === 'volatile') specFx.burst(targetPos, specFx.PALETTES.dragon, 380);
+    else if (sp.fx === 'arcane') specFx.burst(targetPos, specFx.PALETTES.arcane, 380);
+    else if (sp.fx === 'dragon') specFx.burst(targetPos, specFx.PALETTES.dragon, 560);
+  }
+  if (sp.healed > 0) specFx.heal(() => window.__getPlayerPosition?.(), specFx.PALETTES.heal);
+  return 0;
+}
 
 // Sesión 51 — texto del feed para cualquier especial
 const SPEC_FX_EMOJI = { dragon: '🐉', claws: '🩸', heal: '💚', gs: '⚔', smash: '💥', volatile: '🔥', arcane: '✨', snapshot: '🏹' };

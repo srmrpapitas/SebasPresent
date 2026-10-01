@@ -41,6 +41,9 @@ const WRITE_MOVING_MS = 1500;
 const WRITE_COMBAT_MS = 500;
 const WRITE_IDLE_MS = 5000;
 
+// Sesión 51 — efectos de especiales que se reenvían a los demás
+const FX_KINDS = new Set(['slam', 'claws', 'double', 'cleave', 'feint', 'volatile', 'arcane', 'dragon', 'snapshot', 'heal', 'gs', 'smash', 'spec']);
+
 export class Realm {
   constructor(ctx, env) {
     this.ctx = ctx;
@@ -137,6 +140,16 @@ export class Realm {
       }
     } else if (m.t === 'ping') {
       try { ws.send('{"t":"pong"}'); } catch {}
+    } else if (m.t === 'fx') {
+      // Sesión 51 — efecto visual de un ataque especial: solo se reenvía
+      // (cosmético), con límite de frecuencia y lista cerrada de efectos.
+      const now = Date.now();
+      if (a.x == null || now - (a.fxAt || 0) < 600 || !FX_KINDS.has(m.k)) return;
+      a.fxAt = now;
+      ws.serializeAttachment(a);
+      const c = typeof m.c === 'string' ? m.c.replace(/[^a-z0-9_]/g, '').slice(0, 32) : '';
+      const num = (v) => (Number.isFinite(+v) && v !== null ? Math.round(+v * 100) / 100 : null);
+      this.broadcast(JSON.stringify({ t: 'fx', id: a.uid, k: m.k, c, x: a.x, z: a.z, tx: num(m.tx), tz: num(m.tz) }), ws);
     }
   }
 

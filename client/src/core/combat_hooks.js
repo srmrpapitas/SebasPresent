@@ -90,6 +90,14 @@ export function register(opts) {
     catch (e) { console.warn('[combat_hooks] playAttack:', e); return 'threw'; }
   };
 
+  // Sesión 51 — ataque especial con coreografía (giro + salto + golpe al suelo)
+  window.__playerPlaySpecial = (fx, weaponType, opts) => {
+    const ch = _getCharacter();
+    try { return ch?.playSpecial?.(fx, weaponType, opts || {}); }
+    catch (e) { console.warn('[combat_hooks] playSpecial:', e); return 'threw'; }
+  };
+  window.__playerWeaponSegment = () => { try { return _getCharacter()?.getWeaponSegment?.() || null; } catch { return null; } };
+
   // Slice 5d: animaciones de combate (engage/disengage = draw/sheath espada;
   // death/revive cuando mueres/respawneas).
   //

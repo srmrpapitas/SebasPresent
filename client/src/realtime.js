@@ -54,6 +54,17 @@ export function stop() {
 }
 
 export function isConnected() { return connected; }
+
+// Sesión 51 — efecto de ataque especial (lo ven los demás). Cosmético.
+let lastFxAt = 0;
+export function sendFx(fx) {
+  if (!connected || !ws || ws.readyState !== 1 || !fx) return;
+  const now = performance.now();
+  if (now - lastFxAt < 700) return;
+  lastFxAt = now;
+  const num = (v) => (Number.isFinite(v) ? +(+v).toFixed(2) : null);
+  try { ws.send(JSON.stringify({ t: 'fx', k: String(fx.k || '').slice(0, 12), c: String(fx.c || '').slice(0, 32), tx: num(fx.tx), tz: num(fx.tz) })); stats.sent++; } catch {}
+}
 export function getMyId() { return myId; }
 export function onMessage(fn) { handlers.add(fn); return () => handlers.delete(fn); }
 

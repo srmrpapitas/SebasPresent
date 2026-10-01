@@ -75,6 +75,7 @@ import * as firemaking  from './skills/firemaking.js';
 // Sesión 31 — extraído de world.js: setup de three.js + cámara orbital.
 import * as sceneSetup    from './core/scene.js';
 import * as cameraOrbital from './core/camera.js';
+import * as specFx from './spec_fx.js';   // Sesión 51 — efectos de los especiales
 import * as combatHooks   from './core/combat_hooks.js';
 import { getSkillIconHtml } from './item_icons.js';
 import { openSkillGuide } from './skill_guides.js';   // Sesión 50 — libro por skill
@@ -761,6 +762,7 @@ export async function startWorld(loggedInUser, token) {
     // combat.js lo dispare tras recibir respuesta del server con arrow_consumed.
     try {
       combatProjectiles.start({ scene });
+      try { specFx.start({ scene }); window.__specFx = specFx; } catch {}
       window.__worldFireProjectile = (from, to, opts) => {
         try { combatProjectiles.fireProjectile(from, to, opts); } catch {}
       };
@@ -787,6 +789,29 @@ export async function startWorld(loggedInUser, token) {
       });
       // Sesión 50 — el servidor rechazó un movimiento imposible: volver a la
       // última posición válida (rubber band, como en cualquier MMO).
+      // Sesión 51 — especiales de otros jugadores (solo si están cerca)
+      realtime.onMessage((m, me) => {
+        if (m.t !== 'fx' || m.id === me || !player) return;
+        const peer = multiplayer.getPeerById?.(m.id);
+        const pos = peer?.group?.position || { x: m.x, z: m.z };
+        if (Math.hypot(pos.x - player.position.x, pos.z - player.position.z) > 60) return;
+        const pal = specFx.paletteFor(m.c);
+        const tgt = Number.isFinite(m.tx) && Number.isFinite(m.tz) ? { x: m.tx, y: 0, z: m.tz } : null;
+        const yaw = tgt ? Math.atan2(tgt.x - pos.x, tgt.z - pos.z) : 0;
+        try {
+          if (m.k === 'slam') {
+            if (peer?.group) specFx.peerSlam(peer.group, pal, tgt);
+            else setTimeout(() => specFx.slam(specFx.impactPoint(pos, tgt), pal), 1046);
+          } else if (tgt) {
+            if (m.k === 'claws') specFx.slashes(tgt, 4, specFx.PALETTES.basaltita, yaw);
+            else if (m.k === 'double') specFx.slashes(tgt, 2, specFx.PALETTES.oro, yaw);
+            else if (m.k === 'cleave') specFx.slashes(tgt, 1, specFx.PALETTES.obsidiana, yaw);
+            else if (m.k === 'feint') specFx.slashes(tgt, 1, specFx.PALETTES.teiderio, yaw);
+            else if (m.k === 'volatile' || m.k === 'dragon') specFx.burst(tgt, specFx.PALETTES.dragon, 400);
+            else if (m.k === 'arcane') specFx.burst(tgt, specFx.PALETTES.arcane, 400);
+          }
+        } catch (e) { console.warn('[world] fx peer', e); }
+      });
       realtime.onMessage((m) => {
         if (m.t !== 'fix' || !player || interiors.isActive()) return;
         if (!Number.isFinite(m.x) || !Number.isFinite(m.z)) return;
@@ -3080,6 +3105,7 @@ function animate() {
   terrain.update(dt, player.position.x, player.position.z);
   // Sesión 31 — cámara delegada a core/camera.js
   cameraOrbital.update();
+  try { specFx.update(dt); specFx.applyShake(camera); } catch {}   // Sesión 51
   updateMarker();
   // Sesión 34 — proyectiles ranged (stub líneas + futuro arrow mesh)
   try { combatProjectiles.update(); } catch {}

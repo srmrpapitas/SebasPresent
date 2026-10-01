@@ -156,6 +156,10 @@ const CLIPS_TO_STRIP_ROOT = new Set([
 ]);
 
 const CHARACTER_SCALE = 0.01;
+// Sesión 51 — especial de espadón: velocidad del clip y segundo (del clip) del golpe
+export const SPEC_SLAM_SPEED = 1.3;
+export const SPEC_SLAM_IMPACT_CLIP_S = 1.36;
+export const SPEC_SLAM_IMPACT_MS = Math.round(SPEC_SLAM_IMPACT_CLIP_S / SPEC_SLAM_SPEED * 1000);
 const CROSSFADE = 0.22;
 // Sesión 25 — ATTACK_TICK_MS 600 → 900 (sincronizado con TICK_MS de
 // combat_engine y combat.js). Anim de ataque se escala a este tiempo.
@@ -554,6 +558,7 @@ export class Character {
     this._legsAction = null;
     this._legLayerActive = false;
     this._attackEndTimeoutId = null;
+    this._spec = null;   // Sesión 51 — ataque especial en curso
     this._layeredEnabled = true;
     // Sesion 43 - ultimo estado de locomocion que pidio world.js (lo actualiza
     // play() en cada frame). playAttack lo usa para primear la capa de piernas
@@ -2119,6 +2124,9 @@ export class Character {
       const LEG_RE = /(Hips|UpLeg|Leg|Foot|Toe)/i;
       let n = 0;
       for (const c of g.animations) {
+        // Sesión 51 — copia para el especial de espadón (giro + golpe al suelo)
+        // conservando la altura de las caderas (agacharse de verdad al golpear).
+        if (c.name === 'area2h_1') { try { this._registerSpecClip(c, 'spx_area2h_1'); } catch (e) { console.warn('[character] spx:', e?.message); } }
         if (!MAGIC_CLIP_NAMES.has(c.name)) continue;
         const name = 'mg_' + c.name;
         if (!this._registerClip({ animations: [c] }, name, true)) continue;
@@ -2133,6 +2141,126 @@ export class Character {
       }
       console.log('[character] gestos de magia cargados:', n);
     } catch (e) { console.warn('[character] pack de magia no cargó:', e?.message); }
+  }
+
+  /** Sesión 51 — registra un clip de especial con la Y de caderas (X/Z fijas). */
+  _registerSpecClip(srcClip, name) {
+    if (!this._registerClip({ animations: [srcClip] }, name, true)) return;
+    const clip = this.clips[name];
+    const t = clip.tracks.find(tr => /Hips\.position$/.test(tr.name));
+    if (t) {
+      const v = t.values, y0 = v[1];
+      const base = Number.isFinite(this._hipsInitialY) ? this._hipsInitialY : y0;
+      let ratio = y0 ? base / y0 : 1;
+      if (!(ratio > 0.2 && ratio < 5)) ratio = 1;
+      for (let i = 0; i < v.length / 3; i++) { v[i * 3] = 0; v[i * 3 + 2] = 0; v[i * 3 + 1] = base + (v[i * 3 + 1] - y0) * ratio; }
+    }
+    const a = this.actions[name];
+    a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true;
+  }
+
+  // ============================================================
+  // Sesión 51 — ATAQUES ESPECIALES con coreografía
+  //   Espadones (Juicio del Teide, Hoja de Guayota, Magma vital, Golpe
+  //   aplastante): giro completo + salto + golpe al suelo (clip area2h_1 del
+  //   pack de magia, que ya trae el giro y el golpe) con un salto procedural
+  //   encima. onImpact() se llama justo cuando el arma toca el suelo.
+  //   Resto de armas: ataque normal (los efectos los pone spec_fx.js).
+  // ============================================================
+  playSpecial(fx, weaponType, opts = {}) {
+    if (!this.loaded || this.isDead || !this.mesh) return 'not_loaded_or_dead';
+    const slam = weaponType === '2h_sword' && (fx === 'gs' || fx === 'heal' || fx === 'smash');
+    const act = slam ? (this.actions.spx_area2h_1 || this.actions.mg_area2h_1) : null;
+    if (!act) {
+      this.isAttacking = false; this.isInTransition = false;
+      return this.playAttack(opts.stance, weaponType, opts.cooldownMs, opts.spellId);
+    }
+    if (this._attackEndTimeoutId !== null) { clearTimeout(this._attackEndTimeoutId); this._attackEndTimeoutId = null; }
+    if (this._spec) this._endSpecial();
+    try { this._stopLegLayer(); } catch {}
+    const SPEED = SPEC_SLAM_SPEED;
+    act.setLoop(THREE.LoopOnce, 1); act.clampWhenFinished = true;
+    act.setEffectiveWeight(1);
+    this._crossFadeTo(act, 0.08);
+    act.setEffectiveTimeScale(SPEED);
+    this.isAttacking = true;
+    this.isInTransition = false;
+    // Luz del arma mientras dura
+    let light = null;
+    if (opts.glowColor != null && this._equippedWeaponMesh) {
+      light = new THREE.PointLight(opts.glowColor, 0, 4, 1.5);
+      this._equippedWeaponMesh.add(light);
+    }
+    this._spec = {
+      t: 0, speed: SPEED,
+      hopFrom: 0.42, hopTo: 1.34, hop: opts.hop ?? 0.6,          // en segundos del clip
+      impactAt: SPEC_SLAM_IMPACT_CLIP_S, impacted: false,
+      endAt: Math.min(act.getClip().duration, 2.35),
+      baseY: this.mesh.position.y,
+      onImpact: opts.onImpact, light,
+    };
+    return 'special_slam';
+  }
+
+  _updateSpecial(dt) {
+    const S = this._spec;
+    if (!S) return;
+    if (this.isDead) { this._endSpecial(); return; }
+    S.t += dt * S.speed;
+    let y = 0;
+    if (S.t > S.hopFrom && S.t < S.hopTo) {
+      const k = (S.t - S.hopFrom) / (S.hopTo - S.hopFrom);
+      // sube despacio, cae de golpe (pico al 62 %)
+      y = k < 0.62 ? 1 - Math.pow((0.62 - k) / 0.62, 2) : 1 - Math.pow((k - 0.62) / 0.38, 2);
+      y *= S.hop;
+    }
+    this.mesh.position.y = S.baseY + y;
+    if (S.light) {
+      const g = S.t < S.impactAt ? Math.min(1, S.t / 0.5) : Math.max(0, 1 - (S.t - S.impactAt) / 0.5);
+      S.light.intensity = 6 * g;
+    }
+    if (!S.impacted && S.t >= S.impactAt) {
+      S.impacted = true;
+      try { S.onImpact?.(); } catch (e) { console.warn('[character] onImpact', e); }
+    }
+    if (S.t >= S.endAt) this._endSpecial();
+  }
+
+  _endSpecial() {
+    const S = this._spec;
+    if (!S) return;
+    this._spec = null;
+    if (this.mesh) this.mesh.position.y = S.baseY;
+    if (S.light) { S.light.parent?.remove(S.light); S.light.dispose?.(); }
+    this.isAttacking = false;
+  }
+
+  isDoingSpecial() { return !!this._spec; }
+
+  /** [base, punta] de la hoja en coordenadas de mundo (para la estela). */
+  getWeaponSegment() {
+    const w = this._equippedWeaponMesh;
+    if (!w) return null;
+    if (!w.userData._tip) {
+      w.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(w.matrixWorld).invert();
+      let best = null, bd = -1;
+      const v = new THREE.Vector3();
+      w.traverse(o => {
+        if (!o.isMesh || o.isInstancedMesh || !o.geometry?.attributes?.position) return;
+        const p = o.geometry.attributes.position;
+        const step = Math.max(1, Math.floor(p.count / 400));
+        for (let i = 0; i < p.count; i += step) {
+          v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+          const d = v.lengthSq();
+          if (d > bd) { bd = d; best = v.clone(); }
+        }
+      });
+      w.userData._tip = best || new THREE.Vector3(0, 1, 0);
+    }
+    const tip = w.userData._tip.clone().applyMatrix4(w.matrixWorld);
+    const base = w.userData._tip.clone().multiplyScalar(0.3).applyMatrix4(w.matrixWorld);
+    return [base, tip];
   }
 
   _buildLayeredClips() {
@@ -2257,6 +2385,7 @@ export class Character {
 
   update(dt) {
     if (this.mixer) this.mixer.update(dt);
+    if (this._spec) this._updateSpecial(dt);   // Sesión 51
   }
 
   dispose() {
