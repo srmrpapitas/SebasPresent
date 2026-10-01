@@ -65,6 +65,7 @@ import * as teleport from './handlers/teleport.js';               // Sesión 50 
 import * as potions from './handlers/potions.js';                 // Sesión 50 — pociones
 import * as aso from './handlers/aso.js';
 import * as house from './handlers/house.js';
+import * as caves from './handlers/caves.js';   // Sesión 50 — cuevas
 import * as mounts from './handlers/mounts.js';
 import * as trade from './handlers/trade.js';
 import * as friends from './handlers/friends.js';
@@ -320,6 +321,10 @@ export default {
         response = await house.handleHouseRest(request, env);
       } else if (path === '/api/house/friends' && method === 'GET') {
         response = await house.handleHouseFriends(request, env);
+      } else if (path === '/api/cave/enter' && method === 'POST') {
+        response = await caves.handleCaveEnter(request, env);
+      } else if (path === '/api/cave/leave' && method === 'POST') {
+        response = await caves.handleCaveLeave(request, env);
       } else if (path === '/api/aso' && method === 'GET') {
         response = await aso.handleAsoStatus(request, env);
       } else if (path === '/api/aso/join' && method === 'POST') {

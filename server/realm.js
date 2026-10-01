@@ -23,6 +23,7 @@
 
 import { maxSpeed, SPEED_TOLERANCE, BURST_MAX_M, WARP_WINDOW_MS, WARP_NEAR_M, LOGIN_NEAR_M } from '../client/src/shared/movement.js';
 import { combatLevelFrom } from '../client/src/shared/mounts.js';
+import { inCaveZone } from '../client/src/shared/caves.js';   // Sesión 50
 
 const WORLD_HALF = 2048;
 const FIX_MIN_MS = 400;          // no mandar correcciones más a menudo que esto
@@ -99,7 +100,7 @@ export class Realm {
     if (m.t === 'p') {
       const x = Number(m.x), z = Number(m.z), y = Number(m.y) || 0;
       if (!Number.isFinite(x) || !Number.isFinite(z)) return;
-      if (Math.abs(x) > WORLD_HALF + 5 || Math.abs(z) > WORLD_HALF + 5) return;
+      if ((Math.abs(x) > WORLD_HALF + 5 || Math.abs(z) > WORLD_HALF + 5) && !inCaveZone(x, z)) return;   // Sesión 50 — las cuevas están fuera del mapa
       const s = m.s === 'run' ? 'run' : 'idle';
       const mt = (m.m === 'caballo' || m.m === 'pardela') ? m.m : '';   // Sesión 50 — montura
       // Sesión 50 — ¿movimiento posible? Si no, no se acepta y se le corrige.

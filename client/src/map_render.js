@@ -276,6 +276,14 @@ export function drawIcon(ctx, kind, x, y, r = 6, extra = {}) {
       ctx.fillStyle = '#2f6a3a'; ctx.fillRect(x - r * 0.13, y + r * 0.2, r * 0.26, r * 0.35);
       break;
     }
+    case 'cave': {     // Sesión 50 — boca de cueva: montaña gris con arco negro
+      disc(ctx, x, y, r, '#5a5048', '#1a1410');
+      ctx.fillStyle = '#8a7e70'; ctx.beginPath();
+      ctx.moveTo(x - r * 0.8, y + r * 0.45); ctx.lineTo(x - r * 0.15, y - r * 0.7); ctx.lineTo(x + r * 0.8, y + r * 0.45); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#0a0806'; ctx.beginPath();
+      ctx.arc(x, y + r * 0.45, r * 0.32, Math.PI, 0); ctx.closePath(); ctx.fill();
+      break;
+    }
     case 'landmark': default: {
       disc(ctx, x, y, r, extra.color || '#9090c0');
       break;

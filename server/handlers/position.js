@@ -10,6 +10,7 @@ import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
 const WORLD_HALF = 2048;
+import { inCaveZone } from '../../client/src/shared/caves.js';
 
 export async function handleGetPosition(request, env) {
   const session = await requireSession(request, env);
@@ -41,8 +42,11 @@ export async function handleSavePosition(request, env) {
     return json({ error: 'invalid_position', message: 'x e z deben ser números finitos.' }, 400);
   }
 
-  let x = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawX));
-  let z = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawZ));
+  let x = rawX, z = rawZ;
+  if (!inCaveZone(x, z)) {   // Sesión 50 — dentro de una cueva (fuera del mapa) no se recorta
+    x = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawX));
+    z = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawZ));
+  }
 
   // Sesión 50 — anti teleport hack: la posición guardada (la que se usa al
   // entrar al juego) solo se acepta si está cerca de la posición en vivo que

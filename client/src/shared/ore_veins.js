@@ -24,6 +24,7 @@
 // Constantes del mundo (espejo de terrain.js — mantener en sync)
 // ------------------------------------------------------------
 import { PONDS } from './fishing.js';   // Sesión 50
+import { caveVeins } from './caves.js';   // Sesión 50 — vetas dentro de las cuevas
 
 export const WORLD_HALF = 2048;
 export const WILDERNESS_X = -1024;
@@ -143,6 +144,7 @@ const STATIC_VEINS = [
   ['acero', 1180, -1520], ['acero', 1186, -1526], ['acero', 1214, -1522],
   ['oro', 1222, -1514], ['oro', 1176, -1478], ['acero', 1222, -1484],
   ['oro', 1230, -1490], ['acero', 1170, -1486],
+  ...caveVeins(),   // Sesión 50 — s14 en adelante: las cuevas (fuera del mapa)
 ];
 export const STARTER_QUARRY = { x: 121, z: -95, name: 'Cantera de La Laguna' };
 

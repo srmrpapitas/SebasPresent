@@ -39,6 +39,8 @@ import * as trade from './trade.js';                       // Sesión 50 — com
 import * as follow from './follow.js';                     // Sesión 50 — seguir a un jugador
 import * as social from './social.js';                     // Sesión 50 — pestaña Amigos / Monturas
 import * as menceyes from './menceyes.js';
+import * as caves from './caves.js';   // Sesión 50 — montañas con cueva
+import { inCaveZone } from './shared/caves.js';
 import * as thieving from './thieving.js';                 // Sesión 50 — Robo (pickpocket)                 // Sesión 50 — estatuas de los menceyes (Candelaria)
 import { insideFosa } from './shared/fosa.js';
 import { BOSSES } from './shared/bosses.js';
@@ -272,6 +274,7 @@ export async function startWorld(loggedInUser, token) {
     try { guancheVillage.registerKeepouts(terrain); } catch {}
     try { houses.registerKeepouts(terrain); } catch {}
     try { menceyes.registerKeepouts(terrain); } catch {}
+    try { caves.registerKeepouts(terrain); } catch {}
     // Sesión 50 — guaridas de jefes sin árboles
     try { for (const b of Object.values(BOSSES)) { terrain.addKeepout?.(b.x, b.z, b.lairR + 2); terrain.clearTreesNear?.(b.x, b.z, b.lairR + 2); } } catch {}
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -898,6 +901,21 @@ export async function startWorld(loggedInUser, token) {
     try { guancheVillage.start({ scene }); } catch (e) { console.warn('[world] poblado:', e); }
     try { roadsRender.start({ scene, biomeAt: terrain.biomeAt }); } catch (e) { console.warn('[world] caminos:', e); }
     try { menceyes.start({ scene, feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] menceyes:', e); }
+    try {
+      caves.start({
+        scene, getPlayer: () => player,
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog: (type, msg) => combat.feedLog?.(type, msg),
+        onMode: (inside) => { if (ocean) ocean.visible = !inside; },   // dentro no hay mar
+        warp: (x, z) => {
+          if (!player) return;
+          try { mounts.dismount(); } catch {}
+          player.position.x = x; player.position.z = z;
+          playerTarget = null; if (marker) marker.visible = false;
+          try { terrain.primeChunks(x, z); } catch {}
+        },
+      });
+    } catch (e) { console.warn('[world] caves:', e); }
     // Sesión 50 — casas de jugador, casonas del banco, Arico
     const openBankHere = () => {
       try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
@@ -921,6 +939,7 @@ export async function startWorld(loggedInUser, token) {
         findLanding: (x, z) => findLandingSpot(x, z),
         canMountHere: () => {
           if (interiors.isActive()) return 'No puedes montar dentro de un edificio.';
+          if (caves.isActive()) return 'No puedes montar dentro de una cueva.';
           if (character?.isDead) return 'No puedes montar ahora.';
           if (player && insideFosa(player.position.x, player.position.z, 2)) return 'No puedes montar en la Fosa.';
           let inCombat = false;
@@ -1083,6 +1102,7 @@ export function stopWorld() {
   try { guancheVillage.stop(); } catch {}
   try { roadsRender.stop(); } catch {}
   try { menceyes.stop(); } catch {}
+  try { caves.stop(); } catch {}
   try { houses.stop(); } catch {}
   try { mounts.stop(); } catch {}
   try { trade.stop(); social.stop(); follow.stop(true); } catch {}
@@ -1321,7 +1341,7 @@ function drawMinimap() {
       const [sx, sy] = S(b.x, b.z);
       mapRender.drawIcon(ctx, 'bank', sx, sy, IR);
     }
-    for (const m of houses.getMapIcons()) {   // Sesión 50
+    for (const m of [...houses.getMapIcons(), ...caves.getMapIcons()]) {   // Sesión 50
       if (!inView(m.x, m.z)) continue;
       const [sx, sy] = S(m.x, m.z);
       mapRender.drawIcon(ctx, m.kind, sx, sy, IR * 1.1);
@@ -1694,7 +1714,7 @@ function drawFullMap() {
   if (ppm >= 0.18) {
     try {
       for (const b of bankChests.getBanksForMinimap()) if (vis(b.x, b.z)) mapRender.drawIcon(ctx, 'bank', ...S(b.x, b.z), IR);
-      for (const m of houses.getMapIcons()) if (vis(m.x, m.z)) mapRender.drawIcon(ctx, m.kind, ...S(m.x, m.z), IR * 1.15);
+      for (const m of [...houses.getMapIcons(), ...caves.getMapIcons()]) if (vis(m.x, m.z)) mapRender.drawIcon(ctx, m.kind, ...S(m.x, m.z), IR * 1.15);
       for (const st of smithing.getStationsForMinimap()) if (vis(st.x, st.z)) mapRender.drawIcon(ctx, st.kind === 'furnace' ? 'furnace' : 'anvil', ...S(st.x, st.z), IR);
       for (const a of prayer.getAltarsForMinimap()) if (vis(a.x, a.z)) mapRender.drawIcon(ctx, 'altar', ...S(a.x, a.z), IR);
       for (const pd of fishing.getPondsForMinimap()) if (vis(pd.x, pd.z)) mapRender.drawIcon(ctx, 'fish', ...S(pd.x, pd.z + pd.r + 6), IR * 0.9);
@@ -2741,6 +2761,7 @@ function showWelcomeBanner(region) {
 function applyWildernessVisuals(isWild) {
   if (!scene) return;
   if (interiors.isActive()) return; // interiors gestiona bg/fog mientras dentro
+  if (caves.isActive()) return;     // Sesión 50 — la cueva pone su oscuridad
   scene.background.setHex(isWild ? PALETTE.skyWild : PALETTE.sky);
   scene.fog.color.setHex(isWild ? PALETTE.fogWild : PALETTE.fog);
 }
@@ -2886,6 +2907,7 @@ function doCanvasTap(clientX, clientY) {
   try { smithing.stopWork?.('tap_ground'); } catch {}
   try { prayer.cancel?.(); } catch {}
   try { houses.cancel?.(); } catch {}
+  try { caves.cancel?.(); } catch {}
   try { follow.stop(); } catch {}   // Sesión 50 — tocar en cualquier sitio deja de seguir
   try { bankChests.cancel?.(); } catch {}
   try { townNpcs.cancel?.(); } catch {}
@@ -2914,6 +2936,7 @@ function doCanvasTap(clientX, clientY) {
 
   // Sesión 50 — estatuas de los menceyes / puerta de tu casa.
   try { if (menceyes.tryHandleTap(raycaster)) return; } catch {}
+  try { if (caves.tryHandleTap(raycaster)) return; } catch (e) { console.warn('[caves] tap', e); }
   try { if (houses.tryHandleTap(raycaster)) return; } catch (e) { console.warn('[houses] tap', e); }
 
   // 2a-) Tap cofre de banco → caminar + abrir banco (Sesión 50).
@@ -3097,6 +3120,7 @@ function animate() {
   try { potions.update(dt); } catch {}
   try { guancheVillage.update(dt); } catch {}
   try { houses.update(dt); } catch {}
+  try { caves.update(dt); } catch {}
   try { follow.update(dt); } catch {}
   try { mounts.update(dt); } catch (e) { if (!window.__mtErr) { window.__mtErr = e; console.warn('[mounts]', e); } }
   try { fosa.update(dt); } catch (e) { if (!window.__fosaErr) { window.__fosaErr = e; console.warn('[fosa]', e); } }
@@ -3156,7 +3180,8 @@ function collideStep(x0, z0, x1, z1) {
   const a4 = guancheVillage.applyCollision(x0, z0, a3.x, a3.z);  // casas guanches
   const a6 = houses.applyCollision(x0, z0, a4.x, a4.z);          // urbanizaciones, casonas, Arico
   const a7 = menceyes.applyCollision(x0, z0, a6.x, a6.z);        // estatuas de Candelaria
-  return interiors.applyCollision(x0, z0, a7.x, a7.z);
+  const a8 = caves.applyCollision(x0, z0, a7.x, a7.z);           // montañas / paredes de las cuevas
+  return interiors.applyCollision(x0, z0, a8.x, a8.z);
 }
 // ¿Se puede estar de pie aquí? (para aterrizar al bajar de la pardela)
 function groundFreeAt(x, z) {
@@ -3302,7 +3327,7 @@ function updatePlayer(dt) {
   // Sesión 11c-1 — skip clamp si estamos en el interior (coords 10000,10000
   // exceden WORLD_HALF=2048 y los clamps lo metían de vuelta dentro del mundo,
   // sacándolo del interior).
-  if (!interiors.isActive()) {
+  if (!interiors.isActive() && !inCaveZone(player.position.x, player.position.z)) {   // Sesión 50 — las cuevas están fuera del mapa
     player.position.x = Math.max(-WORLD_HALF + 1, Math.min(WORLD_HALF - 1, player.position.x));
     player.position.z = Math.max(-WORLD_HALF + 1, Math.min(WORLD_HALF - 1, player.position.z));
   }

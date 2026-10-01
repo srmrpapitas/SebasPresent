@@ -97,6 +97,7 @@ export const RIG_ENEMIES = {
   bandido:        { model: 'killer_08', h: 1.82 },
   ogro_anaga:     { model: 'warrok', anims: 'mutant', h: 2.3 },
   fosa_bruto:     { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 2.4 }, h: 2.3 },   // Bruto de magma (la Fosa)
+  bruto_echeyde:  { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 3.0 }, h: 2.6, scale: 1.15 },   // jefe de la Cueva de Echeyde
 };
 function rigReady(R) { return mixamoRig.isLoaded(R.model) && mixamoRig.animsLoaded(R.anims); }
 
@@ -733,7 +734,7 @@ function createMesh(npc) {
   const R = RIG_ENEMIES[typeId];
   if (R) {
     if (rigReady(R)) {
-      try { rig = mixamoRig.create(R.model, { tint: R.tint, weapon: R.weapon, armor: R.armor, style: R.style, anims: R.anims, ownMaterials: true }); } catch (e) { rig = null; }
+      try { rig = mixamoRig.create(R.model, { tint: R.tint, weapon: R.weapon, armor: R.armor, style: R.style, anims: R.anims, scale: R.scale, ownMaterials: true }); } catch (e) { rig = null; }
     } else mixamoRig.preload(R.model, R.anims);
   }
   if (rig) {
