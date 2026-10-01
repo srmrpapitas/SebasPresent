@@ -1,0 +1,21 @@
+-- Sesión 50 — Enemigos con modelos Mixamo (zombi, zombi ígneo, bandido, ogro de Anaga)
+INSERT OR REPLACE INTO npc_defs (id,name,max_hp,attack_lvl,strength_lvl,defence_lvl,attack_speed_ticks,max_hit,xp_per_kill,respawn_ms,spawn_x,spawn_z,attack_range,model,behavior,aggro_radius,style) VALUES ('zombi','Zombi',45,28,30,22,5,6,0,50000,-1250,-760,1.5,'zombi','aggressive',5,'melee');
+DELETE FROM npc_loot_table WHERE npc_def_id = 'zombi';
+INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always) VALUES ('zombi','bones',1,1,1,1),('zombi','coins',15,50,6,0),('zombi','ore_hierro',1,2,2,0),('zombi','raw_beef',1,1,2,0);
+DELETE FROM npc_instances WHERE def_id = 'zombi';
+INSERT INTO npc_instances (def_id,hp_current,x,z,status,spawn_x,spawn_z) VALUES ('zombi',45,-1261.9,-759.8,0,-1261.9,-759.8),('zombi',45,-1257.4,-768.6,0,-1257.4,-768.6),('zombi',45,-1277.0,-755.4,0,-1277.0,-755.4),('zombi',45,-1238.8,-753.4,0,-1238.8,-753.4),('zombi',45,-1253.5,-767.0,0,-1253.5,-767.0),('zombi',45,-1236.2,-740.2,0,-1236.2,-740.2),('zombi',45,-1237.1,-761.7,0,-1237.1,-761.7),('zombi',45,-1239.8,-734.6,0,-1239.8,-734.6);
+INSERT OR REPLACE INTO npc_defs (id,name,max_hp,attack_lvl,strength_lvl,defence_lvl,attack_speed_ticks,max_hit,xp_per_kill,respawn_ms,spawn_x,spawn_z,attack_range,model,behavior,aggro_radius,style) VALUES ('zombi_igneo','Zombi ígneo',80,50,48,40,4,11,0,70000,-1720,-880,1.6,'zombi_igneo','aggressive',7,'melee');
+DELETE FROM npc_loot_table WHERE npc_def_id = 'zombi_igneo';
+INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always) VALUES ('zombi_igneo','bones',1,1,1,1),('zombi_igneo','coins',40,120,6,0),('zombi_igneo','bar_obsidiana',1,1,1,0),('zombi_igneo','ore_basaltita',1,2,2,0),('zombi_igneo','ore_oro',1,1,1,0);
+DELETE FROM npc_instances WHERE def_id = 'zombi_igneo';
+INSERT INTO npc_instances (def_id,hp_current,x,z,status,spawn_x,spawn_z) VALUES ('zombi_igneo',80,-1729.2,-863.0,0,-1729.2,-863.0),('zombi_igneo',80,-1735.6,-892.5,0,-1735.6,-892.5),('zombi_igneo',80,-1696.6,-893.8,0,-1696.6,-893.8),('zombi_igneo',80,-1728.4,-902.6,0,-1728.4,-902.6),('zombi_igneo',80,-1714.5,-899.4,0,-1714.5,-899.4),('zombi_igneo',80,-1730.0,-875.3,0,-1730.0,-875.3);
+INSERT OR REPLACE INTO npc_defs (id,name,max_hp,attack_lvl,strength_lvl,defence_lvl,attack_speed_ticks,max_hit,xp_per_kill,respawn_ms,spawn_x,spawn_z,attack_range,model,behavior,aggro_radius,style) VALUES ('bandido','Bandido del Malpaís',40,30,28,24,4,6,0,45000,-1180,420,1.5,'bandido','aggressive',6,'melee');
+DELETE FROM npc_loot_table WHERE npc_def_id = 'bandido';
+INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always) VALUES ('bandido','bones',1,1,1,1),('bandido','coins',30,90,8,0),('bandido','pan',1,2,3,0),('bandido','arrow_hierro',5,15,2,0);
+DELETE FROM npc_instances WHERE def_id = 'bandido';
+INSERT INTO npc_instances (def_id,hp_current,x,z,status,spawn_x,spawn_z) VALUES ('bandido',40,-1182.7,446.3,0,-1182.7,446.3),('bandido',40,-1182.6,412.1,0,-1182.6,412.1),('bandido',40,-1169.9,413.6,0,-1169.9,413.6),('bandido',40,-1185.7,404.9,0,-1185.7,404.9),('bandido',40,-1181.3,430.5,0,-1181.3,430.5),('bandido',40,-1193.2,412.8,0,-1193.2,412.8);
+INSERT OR REPLACE INTO npc_defs (id,name,max_hp,attack_lvl,strength_lvl,defence_lvl,attack_speed_ticks,max_hit,xp_per_kill,respawn_ms,spawn_x,spawn_z,attack_range,model,behavior,aggro_radius,style) VALUES ('ogro_anaga','Ogro de Anaga',90,40,45,35,6,12,0,90000,1500,-1150,1.8,'ogro_anaga','aggressive',5,'melee');
+DELETE FROM npc_loot_table WHERE npc_def_id = 'ogro_anaga';
+INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always) VALUES ('ogro_anaga','bones',1,1,1,1),('ogro_anaga','coins',40,100,6,0),('ogro_anaga','bar_hierro',1,2,3,0),('ogro_anaga','ore_oro',1,1,1,0);
+DELETE FROM npc_instances WHERE def_id = 'ogro_anaga';
+INSERT INTO npc_instances (def_id,hp_current,x,z,status,spawn_x,spawn_z) VALUES ('ogro_anaga',90,1484.9,-1165.0,0,1484.9,-1165.0),('ogro_anaga',90,1510.5,-1172.4,0,1510.5,-1172.4),('ogro_anaga',90,1480.8,-1169.3,0,1480.8,-1169.3),('ogro_anaga',90,1474.5,-1149.4,0,1474.5,-1149.4);

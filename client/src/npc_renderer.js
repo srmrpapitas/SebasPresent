@@ -85,6 +85,20 @@ import { bakeGlbModel } from './terrain.js';
 import * as npcAnimated from './npc_animated.js';
 // Sesión 50 — mobs nuevos low-poly (rata, araña, jabalí, lobo, escorpión, gólem, yeti, esqueleto).
 import { buildProceduralNpc, PROC_NPC_HEIGHTS } from './npc_procedural.js';
+import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — enemigos con personajes Mixamo
+
+// Sesión 50 — enemigos que usan personajes Mixamo (client/assets/npcs). Mientras el
+// modelo carga se ve el de siempre y en cuanto está listo se cambia solo.
+export const RIG_ENEMIES = {
+  goblin:         { model: 'goblin2', anims: 'mutant', h: 1.45 },
+  guardia_ciudad: { model: 'guardia1', weapon: 'sword_hierro', h: 1.85 },
+  zombi:          { model: 'zombi', anims: 'mutant', h: 1.9 },                          // el zombi tal cual
+  zombi_igneo:    { model: 'zombi', anims: 'mutant', tint: { fire: true }, h: 1.95 },   // ser de fuego del wilderness
+  bandido:        { model: 'killer_08', h: 1.82 },
+  ogro_anaga:     { model: 'warrok', anims: 'mutant', h: 2.3 },
+  fosa_bruto:     { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 2.4 }, h: 2.3 },   // Bruto de magma (la Fosa)
+};
+function rigReady(R) { return mixamoRig.isLoaded(R.model) && mixamoRig.animsLoaded(R.anims); }
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -109,6 +123,7 @@ export const NPC_TARGET_HEIGHTS = {
   cow:     1.4,
   goblin:  1.6,
   ...PROC_NPC_HEIGHTS,   // Sesión 50
+  ...Object.fromEntries(Object.entries(RIG_ENEMIES).map(([k, v]) => [k, v.h])),
 };
 
 const NPC_GLB_FORCE_NO_ZUP = { cow: true };
@@ -340,6 +355,7 @@ export function stop() {
 
 export function update(dt) {
   if (!started) return;
+  mixamoRig.fireTime.value += dt || 0;   // Sesión 50 — el fuego de los zombis ígneos late
   pollSnapshotForNpcs();
   upgradeBakedGoblins();     // Sesión 40 — barrido por-frame: si un goblin quedó
                              // horneado (T-pose) y el template YA cargó, lo pasa a
@@ -355,12 +371,17 @@ export function update(dt) {
 // siempre. Ahora barremos cada frame: barato (un Set.has + flag) y definitivo.
 function upgradeBakedGoblins() {
   if (!scene) return;
-  if (!npcAnimated.isReady()) return;       // template aún no listo: nada que hacer
   for (const [id, mesh] of npcMeshes.entries()) {
     const npc = mesh.userData?.npc;
     if (!npc) continue;
-    if (!npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id)) continue;
-    if (mesh.userData.anim) continue;        // ya es animado
+    const R = RIG_ENEMIES[npc.def_id];
+    if (R) {
+      if (mesh.userData.rig || !rigReady(R)) continue;   // ya es Mixamo, o aún cargando
+    } else {
+      if (!npcAnimated.isReady()) continue;
+      if (!npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id)) continue;
+      if (mesh.userData.anim) continue;        // ya es animado
+    }
     // Recrear como animado, conservando posición/rotación visual actual.
     const curX = mesh.position.x, curZ = mesh.position.z, curRotY = mesh.rotation.y;
     scene.remove(mesh);
@@ -572,7 +593,7 @@ function syncMeshes() {
       // cargar, quedó HORNEADO (sin esqueleto) para siempre → se veía en T-pose
       // y flotando, sin animar nunca. Ahora que el template está listo, lo
       // UPGRADEAMOS: quitamos el mesh horneado y creamos el animado.
-      if (npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id)
+      if (npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id) && !RIG_ENEMIES[npc.def_id]
           && !mesh.userData.anim
           && npcAnimated.isReady()) {
         scene.remove(mesh);
@@ -661,6 +682,7 @@ function syncMeshes() {
       if (mesh.userData?.anim) {
         try { npcAnimated.disposeAnimatedInstance(mesh.userData.anim); } catch {}
       }
+      try { mesh.userData?.rig?.dispose(); } catch {}
       mesh.traverse?.(obj => {
         if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
         if (obj.material && !obj.userData?.shared) {
@@ -707,7 +729,20 @@ function createMesh(npc) {
   // listo (assets fallaron o aún cargando), cae al horneado de abajo.
   let animInst = null;
   let proc = null;
-  if (npcAnimated.ANIMATED_NPC_TYPES.has(typeId)) {
+  let rig = null;
+  const R = RIG_ENEMIES[typeId];
+  if (R) {
+    if (rigReady(R)) {
+      try { rig = mixamoRig.create(R.model, { tint: R.tint, weapon: R.weapon, armor: R.armor, style: R.style, anims: R.anims, ownMaterials: true }); } catch (e) { rig = null; }
+    } else mixamoRig.preload(R.model, R.anims);
+  }
+  if (rig) {
+    rig.root.traverse(o => { if (o.isMesh) o.userData = { ...o.userData, kind: 'npc-body', npcId: npc.id }; });
+    group.add(rig.root);
+    group.userData.rig = rig;
+    group.userData.bodyMaterials.push(...rig.materials.filter(m => m.emissive && !R.tint?.fire));
+    group.userData._lastAtk = npc.last_attack_at || 0;
+  } else if (npcAnimated.ANIMATED_NPC_TYPES.has(typeId)) {
     try { animInst = npcAnimated.createAnimatedInstance(); } catch (e) { animInst = null; }
   }
 
@@ -840,6 +875,16 @@ function updateInterpolation(dt = 0) {
       } catch {}
     }
 
+    // ---- Sesión 50 — personajes Mixamo ----
+    if (ud.rig) {
+      const moving = moveLen2 > 0.01 && t < 1;
+      const speed = moving ? Math.sqrt(moveLen2) / Math.max(0.2, I.durationMs / 1000) : 0;
+      const la = ud.npc?.last_attack_at || 0;
+      const attack = la > (ud._lastAtk || 0);
+      if (attack) ud._lastAtk = la;
+      try { ud.rig.update(dt, { moving, speed, attack, hurt: ud._hurt, dead: ud.npc?.status && ud.npc.status !== 0 }); } catch {}
+      ud._hurt = false;
+    }
     // ---- Sesión 50 — animación de los mobs procedurales ----
     if (ud.proc) {
       try { ud.proc.animate(dt, moveLen2 > 0.01 && t < 1); } catch {}
@@ -850,7 +895,7 @@ function updateInterpolation(dt = 0) {
     // flinch del React (animación) reemplaza el empujón. Mantenemos el flash.
     const r = ud.reaction;
     let kickX = 0, kickZ = 0;
-    if (!ud.anim && r && r.until > nowS) {
+    if (!ud.anim && !ud.rig && r && r.until > nowS) {
       const remaining = (r.until - nowS) / NPC_REACT_DURATION_S;
       kickX = r.kickX * remaining;
       kickZ = r.kickZ * remaining;
@@ -884,6 +929,13 @@ function flashHit(npcId) {
 
   // Sesión 39 — Si el NPC es animado, disparar la animación React (flinch).
   // El flash rojo se mantiene (abajo, vía r.wasFlashing) pero el kick NO.
+  if (group.userData.rig) {
+    group.userData._hurt = true;
+    const r = group.userData.reaction;
+    r.until = (performance.now() / 1000) + NPC_REACT_DURATION_S;
+    r.wasFlashing = true;
+    return;
+  }
   if (group.userData.anim) {
     try { npcAnimated.triggerReact(group.userData.anim); } catch {}
     const r = group.userData.reaction;

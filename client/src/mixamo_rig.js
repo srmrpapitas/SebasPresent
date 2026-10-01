@@ -154,13 +154,13 @@ function tintMaterial(src, tint) {
   if (fire) { m.emissive = new THREE.Color(0xffffff); m.emissiveIntensity = 1; }
   m.onBeforeCompile = (sh) => {
     sh.uniforms.spHue = { value: hue }; sh.uniforms.spSat = { value: sat }; sh.uniforms.spVal = { value: val };
-    sh.uniforms.spSatMin = { value: satMin }; sh.uniforms.spTime = fireTime;
+    sh.uniforms.spSatMin = { value: satMin }; sh.uniforms.spTime = fireTime; sh.uniforms.spGain = { value: tint.fireGain ?? 1 };
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float spHue, spSat, spVal, spSatMin, spTime;\nvarying vec3 vSpPos;\n' + HSV_GLSL)
+      .replace('#include <common>', '#include <common>\nuniform float spHue, spSat, spVal, spSatMin, spTime, spGain;\nvarying vec3 vSpPos;\n' + HSV_GLSL)
       .replace('#include <map_fragment>', fire ? `#include <map_fragment>
         float spL = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
         float spN = sin(vSpPos.y * 9.0 - spTime * 4.0) * 0.5 + sin(vSpPos.x * 13.0 + spTime * 3.1) * 0.5;
-        float spK = clamp(spL * 1.9 + spN * 0.12, 0.0, 1.0);
+        float spK = clamp(spL * 1.9 * spGain + spN * 0.12, 0.0, 1.0);
         vec3 spFire = spK < 0.35 ? mix(vec3(0.02,0.0,0.0), vec3(0.55,0.04,0.0), spK / 0.35)
                     : spK < 0.7 ? mix(vec3(0.55,0.04,0.0), vec3(1.0,0.45,0.02), (spK - 0.35) / 0.35)
                     : mix(vec3(1.0,0.45,0.02), vec3(1.0,0.92,0.35), (spK - 0.7) / 0.3);
