@@ -459,17 +459,40 @@ export function toggleMute() {
 }
 export function isMuted() { return prefs.muted; }
 
-// Sesión 50 — voces de NPCs (clips cortos). Respeta silencio y volumen de efectos.
-let _voice = null;
-export function voice(url, opts = {}) {
+// Sesión 50 — voces de NPCs (clips cortos). Van por Web Audio como los SFX:
+// así suenan aunque se reproduzcan tras caminar hasta el NPC (fuera del
+// gesto del usuario, que en móvil bloquea new Audio().play()) y aunque la
+// música esté silenciada (el mute solo afecta a la música).
+const _voiceBufs = new Map();   // url → Promise<AudioBuffer|null>
+let _voiceSrc = null;
+export function preloadVoice(url) {
+  if (_voiceBufs.has(url)) return _voiceBufs.get(url);
+  const p = fetch(url).then(r => r.ok ? r.arrayBuffer() : null).then(ab => {
+    if (!ab) return null;
+    const ctx = ensureAudioContext();
+    if (!ctx) return null;
+    return new Promise((res) => { try { ctx.decodeAudioData(ab, res, () => res(null)); } catch { res(null); } });
+  }).catch(() => null);
+  _voiceBufs.set(url, p);
+  p.then(b => { if (!b) _voiceBufs.delete(url); });
+  return p;
+}
+export async function voice(url, opts = {}) {
+  if (!initialized) init();
+  const ctx = ensureAudioContext();
+  if (!ctx) return null;
+  try { if (ctx.state === 'suspended') await ctx.resume(); } catch {}
+  const buf = await preloadVoice(url);
+  if (!buf) return null;
   try {
-    if (prefs.muted) return null;
-    if (_voice) { _voice.pause(); _voice = null; }
-    const a = new Audio(url);
-    a.volume = Math.max(0, Math.min(1, (opts.volume ?? 1) * prefs.sfx * prefs.master * 1.4));
-    a.play().catch(() => {});
-    _voice = a;
-    return a;
+    if (_voiceSrc) { try { _voiceSrc.stop(); } catch {} _voiceSrc = null; }
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain();
+    g.gain.value = Math.max(0, Math.min(1.5, (opts.volume ?? 1) * prefs.sfx * prefs.master * 1.8));
+    src.connect(g).connect(ctx.destination);
+    src.start(0);
+    _voiceSrc = src;
+    return src;
   } catch { return null; }
 }
 export function getPrefs() { return { ...prefs }; }

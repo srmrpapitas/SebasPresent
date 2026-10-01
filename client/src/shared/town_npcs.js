@@ -249,16 +249,124 @@ export const TOWN_NPCS = [
       'Las chimeneas redondas y las azoteas son de toda la vida. Y un cactus o una palmera en cada jardín, que el desierto también es bonito.',
       'Dicen que en Lanzarote lo hicieron así primero. Yo solo copié lo bueno.',
     ] },
-  // Sesión 50 — Adonay, el vagabundo borracho de La Laguna (habla con voz)
-  { id: 'adonay_vagabundo', name: 'Adonay', title: 'Vagabundo de La Laguna', x: -40, z: 8, rotY: 1.4, role: '🍾',
+  // Sesión 50 — los borrachos de cada pueblo: dan vueltas a la plaza, se tambalean y hablan con voz
+  { id: 'adonay_vagabundo', name: 'Adonay', title: 'Vagabundo de La Laguna', x: 11, z: -4, rotY: 0, role: '🍾',
     look: { skin: 0xc08a60, shirt: 0x5a5242, pants: 0x3a382e, hair: 0x2a2018, acc: 'bottle' },
-    drunk: true, voice: 'assets/voices/adonay.mp3', callout: '🍾 ADONAY quiere hablar contigo',
+    drunk: true, wander: { cx: 4, cz: -4, r: 7 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 ADONAY quiere hablar contigo',
     lines: [
       '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
       'Yo antes era alguien, ¿eh? Yo tenía un barco… o era una barca… o un barraquito. No me acuerdo.',
+      'Los del Cabildo me quitaron el banco donde dormía. ¡El banco, mi niño! Ahora duermo en la guagua.',
       '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
       'El Teide me habla por las noches, ¿sabes? Me dice: "Adonay, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
-      'Los del Cabildo me quitaron el banco donde dormía. ¡El banco, mi niño! Ahora duermo en la guagua.',
+    ] },
+  { id: 'yeray_borracho', name: 'Yeray', title: 'Vagabundo de La Orotava', x: -279, z: -682, rotY: 0, role: '🍾',
+    look: { skin: 0xa87650, shirt: 0x4a5a6a, pants: 0x2e2e2e, hair: 0x1a1a1a, acc: 'bottle' },
+    drunk: true, wander: { cx: -290, cz: -682, r: 11 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 YERAY quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'En La Orotava las alfombras de flores son pa\' el Corpus… yo me eché una siesta encima de una. Casi me linchan.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Yeray, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'adexe_borracho', name: 'Adexe', title: 'Vagabundo de Icod', x: -671, z: -184, rotY: 0, role: '🍾',
+    look: { skin: 0xd09a70, shirt: 0x6a4a3a, pants: 0x3a3a2a, hair: 0x4a3020, acc: 'bottle' },
+    drunk: true, wander: { cx: -686, cz: -184, r: 15 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 ADEXE quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'El Drago tiene mil años, mi niño. Y yo me siento como si tuviera dos mil.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Adexe, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'ancor_borracho', name: 'Ancor', title: 'Vagabundo de Vilaflor', x: -375, z: 396, rotY: 0, role: '🍾',
+    look: { skin: 0xc08a60, shirt: 0x5a5242, pants: 0x3a382e, hair: 0x2a2018, acc: 'bottle' },
+    drunk: true, wander: { cx: -390, cz: 396, r: 15 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 ANCOR quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'Aquí arriba en Vilaflor hace un frío que pela… menos mal que la botella calienta.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Ancor, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'dailos_borracho', name: 'Dailos', title: 'Vagabundo de Los Cristianos', x: -277, z: 1694, rotY: 0, role: '🍾',
+    look: { skin: 0xa87650, shirt: 0x4a5a6a, pants: 0x2e2e2e, hair: 0x1a1a1a, acc: 'bottle' },
+    drunk: true, wander: { cx: -286, cz: 1694, r: 9 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 DAILOS quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'Los guiris me dan monedas por hacerme una foto. Soy patrimonio, chacho.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Dailos, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'jonay_borracho', name: 'Jonay', title: 'Vagabundo de La Esperanza', x: 731, z: -1078, rotY: 0, role: '🍾',
+    look: { skin: 0xd09a70, shirt: 0x6a4a3a, pants: 0x3a3a2a, hair: 0x4a3020, acc: 'bottle' },
+    drunk: true, wander: { cx: 722, cz: -1078, r: 9 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 JONAY quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'En La Esperanza hay más niebla que en mi cabeza. Y eso es decir mucho.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Jonay, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'ayoze_borracho', name: 'Ayoze', title: 'Vagabundo de Güímar', x: 1503, z: 92, rotY: 0, role: '🍾',
+    look: { skin: 0xc08a60, shirt: 0x5a5242, pants: 0x3a382e, hair: 0x2a2018, acc: 'bottle' },
+    drunk: true, wander: { cx: 1494, cz: 92, r: 9 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 AYOZE quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      '¿Las pirámides de Güímar? Las hice yo, de chico. Bueno… ayudé a mirar.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Ayoze, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'aday_borracho', name: 'Aday', title: 'Vagabundo de Adeje', x: 1021, z: 1196, rotY: 0, role: '🍾',
+    look: { skin: 0xa87650, shirt: 0x4a5a6a, pants: 0x2e2e2e, hair: 0x1a1a1a, acc: 'bottle' },
+    drunk: true, wander: { cx: 1012, cz: 1196, r: 9 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 ADAY quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'En Adeje hay hoteles con piscina. Yo me bañé en una. Me sacaron con una red.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Aday, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'acoidan_borracho', name: 'Acoidan', title: 'Vagabundo de Santa Cruz', x: 1719, z: -788, rotY: 0, role: '🍾',
+    look: { skin: 0xd09a70, shirt: 0x6a4a3a, pants: 0x3a3a2a, hair: 0x4a3020, acc: 'bottle' },
+    drunk: true, wander: { cx: 1712, cz: -788, r: 7 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 ACOIDAN quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'En Carnaval me disfracé de borracho. Nadie notó la diferencia.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Acoidan, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'iriome_borracho', name: 'Iriome', title: 'Vagabundo de Arico', x: 1121, z: 600, rotY: 0, role: '🍾',
+    look: { skin: 0xc08a60, shirt: 0x5a5242, pants: 0x3a382e, hair: 0x2a2018, acc: 'bottle' },
+    drunk: true, wander: { cx: 1110, cz: 600, r: 11 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 IRIOME quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'Todas las casas de Arico son blancas, menos mi cartón. Mi cartón es marrón.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Iriome, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'haridian_borracho', name: 'Haridian', title: 'Vagabundo de Candelaria', x: 25, z: -1200, rotY: 0, role: '🍾',
+    look: { skin: 0xa87650, shirt: 0x4a5a6a, pants: 0x2e2e2e, hair: 0x1a1a1a, acc: 'bottle' },
+    drunk: true, wander: { cx: 0, cz: -1200, r: 25 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 HARIDIAN quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'Le pido a la Virgen todos los días. Ella me escucha… pero no me contesta.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Haridian, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'ruyman_borracho', name: 'Ruymán', title: 'Vagabundo de Chayofa', x: 699, z: 1450, rotY: 0, role: '🍾',
+    look: { skin: 0xd09a70, shirt: 0x6a4a3a, pants: 0x3a3a2a, hair: 0x4a3020, acc: 'bottle' },
+    drunk: true, wander: { cx: 690, cz: 1450, r: 9 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 RUYMÁN quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'En Chayofa hay unos mangos que… ay, mi niño. Y unas parras que… mejor no te cuento.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Ruymán, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+    ] },
+  { id: 'mayec_borracho', name: 'Mayec', title: 'Vagabundo de el Faro', x: -769, z: 1396, rotY: 0, role: '🍾',
+    look: { skin: 0xc08a60, shirt: 0x5a5242, pants: 0x3a382e, hair: 0x2a2018, acc: 'bottle' },
+    drunk: true, wander: { cx: -776, cz: 1396, r: 7 }, voice: 'assets/voices/adonay.mp3', callout: '🍾 MAYEC quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'El farero no me deja dormir en el faro. Dice que alumbro más yo que la bombilla.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Mayec, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
     ] },
   // Sesión 50 — mercaderes de los pueblos (puesto + tendedero con lo que venden)
   { id: 'yaiza_comidas', name: 'Yaiza', title: 'Comidas de Vilaflor', x: -412, z: 403, rotY: 1.83, role: '🍲',
@@ -330,5 +438,25 @@ export const TOWN_NPCS = [
       'Una cama pa\' recuperarte, un cofre del banco, un altar… Eso sí que es calidad de vida.',
     ] },
 ];
+
+/**
+ * Sesión 50 — NPCs que pasean (los borrachos): dan vueltas a su plaza con un
+ * zigzag de borracho. `t` es su reloj de paseo en segundos.
+ */
+export const WANDER_SPEED = 0.9;   // m/s
+export function wanderPos(n, t) {
+  const w = n.wander, per = (2 * Math.PI * w.r) / WANDER_SPEED;
+  const a = (t / per) * 2 * Math.PI;
+  const R = w.r + Math.sin(a * 6) * 1.2;
+  const x = w.cx + Math.cos(a) * R, z = w.cz + Math.sin(a) * R;
+  // mira hacia donde camina (tangente) con algo de bamboleo
+  const yaw = Math.atan2(-Math.sin(a), Math.cos(a)) + Math.sin(a * 9) * 0.35;
+  return { x, z, yaw };
+}
+/** Distancia de (x,z) al NPC; si pasea, a su recorrido (el server no sabe dónde va exactamente). */
+export function npcDist(n, x, z) {
+  if (!n.wander) return Math.hypot(x - n.x, z - n.z);
+  return Math.max(0, Math.abs(Math.hypot(x - n.wander.cx, z - n.wander.cz) - n.wander.r) - 1.2);
+}
 
 export const TOWN_NPCS_BY_ID = Object.fromEntries(TOWN_NPCS.map(n => [n.id, n]));

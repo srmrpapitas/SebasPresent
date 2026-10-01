@@ -15,7 +15,7 @@ import { pushRealtime } from '../lib/realtime.js';
 import { placeStmts } from '../lib/give.js';
 import { grantXp } from '../lib/quests.js';
 import { levelFromXp } from '../combat_engine.js';
-import { TOWN_NPCS_BY_ID } from '../../client/src/shared/town_npcs.js';
+import { TOWN_NPCS_BY_ID, npcDist } from '../../client/src/shared/town_npcs.js';
 import {
   THIEF_SKILL, PLAYER_STEAL_LEVEL, STEAL_DIST_SERVER_M, STEAL_COOLDOWN_MS, CAUGHT_LOCK_MS,
   profileOf, catchChance, playerCatchChance, rollLoot, PLAYER_STEAL_XP,
@@ -71,14 +71,14 @@ export async function handleStealNpc(request, env) {
   if (lvl < P.level) return json({ error: 'low_level', message: `Necesitas nivel ${P.level} de Robo para robar a ${npc.name}.`, need: P.level }, 400);
 
   const pos = await env.DB.prepare('SELECT x, z FROM online_users WHERE user_id = ?').bind(uid).first();
-  if (!pos || Math.hypot(pos.x - npc.x, pos.z - npc.z) > STEAL_DIST_SERVER_M) return json({ error: 'too_far', message: 'Acércate más.' }, 400);
+  if (!pos || npcDist(npc, pos.x, pos.z) > STEAL_DIST_SERVER_M) return json({ error: 'too_far', message: 'Acércate más.' }, 400);
   const st = await env.DB.prepare('SELECT hp_current FROM combat_stats WHERE user_id = ?').bind(uid).first();
   if (!st || st.hp_current <= 0) return json({ error: 'dead' }, 400);
   const turn = await takeTurn(env, uid, now); if (turn) return turn;
 
   const chance = catchChance(lvl, P.level);
   if (Math.random() < chance) {
-    const guards = await caught(env, uid, npc.x, npc.z, now);
+    const guards = await caught(env, uid, pos.x, pos.z, now);
     return json({ ok: true, caught: true, guards, chance, message: `¡${npc.name} te ha pillado! ${guards ? '¡Los guardias vienen a por ti, huye!' : ''}` });
   }
   const [item, qty] = rollLoot(P);

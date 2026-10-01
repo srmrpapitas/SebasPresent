@@ -23,7 +23,7 @@ import * as inventory from './inventory.js';
 import * as quests from './quests.js';
 import * as audio from './audio.js';
 import * as dialogue from './dialogue.js';
-import { TOWN_NPCS, TOWN_NPCS_BY_ID, TALK_DIST_M } from './shared/town_npcs.js';
+import { TOWN_NPCS, TOWN_NPCS_BY_ID, TALK_DIST_M, wanderPos } from './shared/town_npcs.js';
 import { QUESTS, QUEST_ORDER, questsOfNpc } from './shared/quests.js';
 
 const VIEW_DIST = 180;
@@ -322,6 +322,8 @@ const itemName = (id) => ITEM_NAMES[id] || id.replace(/_/g, ' ');
 
 // Sesión 50 — aviso "X quiere hablar contigo"
 let calloutEl = null, calloutFor = null;
+const WANDERERS = TOWN_NPCS.filter(n => n.wander);
+const wanderT = new Map(WANDERERS.map(n => [n.id, (Date.now() / 1000) % 100000]));
 function showCallout(o) {
   hideCallout();
   calloutFor = o;
@@ -333,6 +335,7 @@ function showCallout(o) {
   calloutEl.addEventListener('pointerup', (e) => { e.preventDefault(); e.stopPropagation(); const t = calloutFor; hideCallout(); if (t) goTalk(t); });
   document.body.appendChild(calloutEl);
   try { audio.synth?.('craft_done', { volume: 0.4 }); } catch {}
+  if (o.n.voice) { try { audio.preloadVoice?.(o.n.voice); } catch {} }
   setTimeout(() => { if (calloutFor === o) hideCallout(); }, 15_000);
 }
 function hideCallout() { if (calloutEl) { calloutEl.remove(); calloutEl = null; calloutFor = null; } }
@@ -599,7 +602,14 @@ async function afterProgress(d, q) {
 // API pública
 // ============================================================
 export function registerKeepouts(terrain) {
-  for (const n of TOWN_NPCS) { try { terrain.addKeepout?.(n.x, n.z, 2); terrain.clearTreesNear?.(n.x, n.z, 2); } catch {} }
+  for (const n of TOWN_NPCS) {
+    try {
+      if (n.wander) {
+        terrain.addRingKeepout?.(n.wander.cx, n.wander.cz, n.wander.r, 3);
+        for (let a = 0; a < 16; a++) terrain.clearTreesNear?.(n.wander.cx + Math.cos(a / 16 * 6.283) * n.wander.r, n.wander.cz + Math.sin(a / 16 * 6.283) * n.wander.r, n.wander.r * 0.45);
+      } else { terrain.addKeepout?.(n.x, n.z, 2); terrain.clearTreesNear?.(n.x, n.z, 2); }
+    } catch {}
+  }
 }
 
 export function start(opts) {
@@ -691,6 +701,14 @@ export function update(dt) {
     const o = pendingSteal; pendingSteal = null; window.__thieving?.stealNpc?.(o.n.id, o.n.name);
   }
 
+  // Sesión 50 — los borrachos pasean por la plaza (se paran si los llamas, hablas o robas)
+  for (const n of WANDERERS) {
+    const busy = talking?.n === n || pending?.n === n || pendingSteal?.n === n || calloutFor?.n === n;
+    if (!busy) wanderT.set(n.id, (wanderT.get(n.id) || 0) + dt);
+    const w = wanderPos(n, wanderT.get(n.id) || 0);
+    n.x = w.x; n.z = w.z; n._yaw = w.yaw; n._walking = !busy;
+  }
+
   syncTimer += dt;
   if (p && syncTimer >= 1) {
     syncTimer = 0;
@@ -720,6 +738,15 @@ export function update(dt) {
     } else {
       o.arms[1].rotation.z = 0;
     }
+    if (o.n.wander) {
+      o.root.position.set(o.n.x, 0, o.n.z);
+      if (o.n._walking) {
+        o.baseYaw = o.n._yaw;
+        const sw = Math.sin(timeAcc * 4.2 + o.phase) * 0.45;
+        if (o.legs?.length >= 2) { o.legs[0].rotation.x = sw; o.legs[1].rotation.x = -sw; }
+        o.arms[0].rotation.x = -sw * 0.6;
+      } else if (o.legs?.length >= 2) { o.legs[0].rotation.x = 0; o.legs[1].rotation.x = 0; }
+    }
     // Mirar al jugador si está cerca (cabeza; y el cuerpo si estáis hablando)
     let targetYaw = 0, bodyYaw = o.baseYaw;
     if (p) {
@@ -727,7 +754,7 @@ export function update(dt) {
       const dist = Math.hypot(dx, dz);
       if (dist < LOOK_DIST) {
         const want = Math.atan2(dx, dz);
-        if (talking === o) bodyYaw = want;
+        if (talking === o || (o.n.wander && !o.n._walking)) bodyYaw = want;
         let rel = want - (talking === o ? want : o.baseYaw);
         while (rel > Math.PI) rel -= Math.PI * 2;
         while (rel < -Math.PI) rel += Math.PI * 2;

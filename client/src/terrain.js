@@ -242,10 +242,14 @@ export function addKeepout(x, z, r) {
   }
   _keepouts.push({ x, z, r });
 }
-export function clearKeepouts() { _keepouts.length = 0; }
+export function clearKeepouts() { _keepouts.length = 0; _rings.length = 0; }
+// Sesión 50 — anillos sin árboles (el paseo de los borrachos alrededor de la plaza)
+const _rings = [];   // { x, z, r0, r1 }
+export function addRingKeepout(x, z, r, halfW) { _rings.push({ x, z, r0: r - halfW, r1: r + halfW }); }
 function inKeepout(wx, wz) {
   if (roadDist(wx, wz) < ROAD_HALF_W + 2.5) return true;   // Sesión 50 — caminos sin árboles
   for (const k of _keepouts) if (Math.hypot(wx - k.x, wz - k.z) < k.r) return true;
+  for (const k of _rings) { const d = Math.hypot(wx - k.x, wz - k.z); if (d > k.r0 && d < k.r1) return true; }
   return false;
 }
 // Quitar árboles YA plantados dentro de un radio (chunks ya cargados).

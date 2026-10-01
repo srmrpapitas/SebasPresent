@@ -9,7 +9,7 @@ import { levelFromXp } from '../combat_engine.js';
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { ensureQuests, getUserQuests, startQuest, deliverToNpc, questEvent } from '../lib/quests.js';
-import { TOWN_NPCS_BY_ID, TALK_DIST_SERVER_M } from '../../client/src/shared/town_npcs.js';   // Sesión 50
+import { TOWN_NPCS_BY_ID, TALK_DIST_SERVER_M, npcDist } from '../../client/src/shared/town_npcs.js';   // Sesión 50
 import { getPlayerPosition } from './skills/_shared.js';
 import { QUESTS } from '../../client/src/shared/quests.js';
 
@@ -55,7 +55,7 @@ async function nearNpc(env, userId, npcId) {
   if (!npc) return { error: 'invalid_npc' };
   const pos = await getPlayerPosition(env, userId);
   if (!pos) return { error: 'no_position' };
-  const d = Math.hypot(pos.x - npc.x, pos.z - npc.z);
+  const d = npcDist(npc, pos.x, pos.z);
   if (d > TALK_DIST_SERVER_M) return { error: 'too_far', distance: d };
   return { npc };
 }
