@@ -59,7 +59,7 @@ export const TOWN_NPCS = [
     ] },
   { id: 'morgana_maga', name: 'Morgana', title: 'Tienda de magia', x: -14, z: -19, rotY: 0.6, role: '🔮',
     look: { skin: 0xf0d0b0, shirt: 0x5a2a7a, pants: 0x3a1a4a, hair: 0x1a1a2a, acc: 'wizard' },
-    actions: ['shop:magic_store'],
+    actions: ['shop:magic_store'], stall: { sign: 'MAGIA', colors: ['#5a2a8a', '#e8d8f8'], signBg: '#2a1240', goods: [['tele_concejo', '📜'], ['tele_faro', '📜'], ['tele_mina', '📜'], ['staff_normal', '🪄'], ['tele_torre', '📜'], ['tele_verdis', '📜']] },
     lines: [
       'Bienvenido a mi tienda. Tabletas de teletransporte a todos los rincones de la isla.',
       'Rompe la tableta y ¡zas!, estás allí. Pero en lo profundo del Malpaís la magia no responde.',
@@ -154,7 +154,7 @@ export const TOWN_NPCS = [
     ] },
   { id: 'eldric_mago', name: 'Eldric', title: 'Mago del Observatorio', x: 410, z: -888, rotY: 0.4, role: '🔮',
     look: { skin: 0xe8c8a8, shirt: 0x3a3a8a, pants: 0x3a3a8a, hair: 0xe0e0e0, acc: 'wizard' },
-    actions: ['shop:magic_store'],
+    actions: ['shop:magic_store'], stall: { sign: 'MAGIA', colors: ['#5a2a8a', '#e8d8f8'], signBg: '#2a1240', goods: [['tele_concejo', '📜'], ['tele_faro', '📜'], ['tele_mina', '📜'], ['staff_normal', '🪄'], ['tele_torre', '📜'], ['tele_verdis', '📜']] },
     lines: [
       'La magia no es más que paciencia con buen gusto.',
       'Con un bastón equipado tu maná se regenera más rápido.',
@@ -190,7 +190,7 @@ export const TOWN_NPCS = [
   // Sesión 50 — La ASO (herboristería) y personajes canarios
   { id: 'carmita_aso', name: 'Carmita', title: 'Herbolaria de La ASO', x: -8, z: 28, rotY: 3.3, role: '🌿',
     look: { skin: 0xd9a57a, shirt: 0x2f6a3a, pants: 0x3a2a1a, hair: 0x2a1a10, acc: 'apron' },
-    actions: ['shop:aso'], stall: { sign: 'LA ASO' },
+    actions: ['shop:aso'], stall: { sign: 'LA ASO', props: 'herbs', goods: [['hierba_tabaiba', '🌿'], ['hierba_verode', '🌿'], ['hierba_salvia', '🌿'], ['hierba_oregano', '🌿'], ['hierba_retama', '🌿'], ['hierba_tajinaste', '🌺'], ['gofio', '🌾']] },
     lines: [
       '¿Qué pasó, muyayo? Esto es La ASO: las mejores hierbas de la isla. Pero solo pa\' socios, ¿eh?',
       'Hierba, un vial de agua y a mezclar: eso es una poción. Y si le echas gofio, ¡fuerte cosa, chacho!',

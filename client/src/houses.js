@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as interiors from './interiors.js';
+import { hangingLine } from './item_tex.js';   // tendedero del porche
 import { CASTLES, CASONA_W, CASONA_D } from './shared/castles.js';   // casonas del banco
 import { puebloHouses } from './shared/pueblo_blanco.js';          // Arico, el pueblo blanco
 import {
@@ -202,6 +203,10 @@ function buildExterior() {
     aw.add(box(3.6, 0.12, 2.6, M.cloth, 0, 3.0, CASONA_D / 2 + 1.3));
     for (const sx of [-1.7, 1.7]) aw.add(box(0.14, 3.0, 0.14, M.woodD, sx, 1.5, CASONA_D / 2 + 2.5));
     aw.add(box(2.8, 1.0, 0.5, M.wood, 0, 0.5, CASONA_D / 2 + 1.9));   // mostrador (el banquero, detrás)
+    // tendedero con lo que vende la tienda general
+    const line = hangingLine([['sword_bronze', '🗡️'], ['axe_bronze', '🪓'], ['pickaxe_bronze', '⛏️'], ['fishing_rod', '🎣'], ['bow_normal', '🏹'], ['shield_bronze', '🛡️'], ['tinderbox', '🔥']], 3.3, 2.75);
+    line.position.z = CASONA_D / 2 + 2.45;
+    aw.add(line);
   }
   // Arico, el pueblo blanco
   for (const h of puebloHouses()) {

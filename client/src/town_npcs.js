@@ -14,6 +14,7 @@
 import { LORE } from './shared/lore.js';   // Sesión 50 — Crónicas de Achinech
 import * as THREE from 'three';
 import * as api from './api.js';
+import { hangingLine } from './item_tex.js';   // Sesión 50 — tendedero de los puestos
 import { HOUSE_TIERS, HOUSE_TIER_LIST, upgradeCost } from './shared/houses.js';   // Sesión 50
 import { MOUNTS, MOUNT_LIST, combatLevelFrom } from './shared/mounts.js';   // Sesión 50
 import { checkReqs } from './shared/quests.js';
@@ -181,10 +182,11 @@ function buildStall(n) {
     post.position.set(sx, 1.3, sz);
     g.add(post);
   }
-  // Toldo a rayas verdes y blancas
+  // Toldo a rayas (colores de cada puesto)
+  const [cA, cB] = n.stall.colors || ['#2f8a3a', '#f4f0e0'];
   const c = document.createElement('canvas'); c.width = 128; c.height = 32;
   const x = c.getContext('2d');
-  for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#f4f0e0' : '#2f8a3a'; x.fillRect(i * 16, 0, 16, 32); }
+  for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? cB : cA; x.fillRect(i * 16, 0, 16, 32); }
   const tex = new THREE.CanvasTexture(c);
   const awning = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 1.7), new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }));
   awning.position.set(0, 2.55, 0.0);
@@ -193,13 +195,20 @@ function buildStall(n) {
   // Cartel
   const sc = document.createElement('canvas'); sc.width = 256; sc.height = 64;
   const sx = sc.getContext('2d');
-  sx.fillStyle = '#2a4a1a'; sx.fillRect(0, 0, 256, 64);
+  sx.fillStyle = n.stall.signBg || '#2a4a1a'; sx.fillRect(0, 0, 256, 64);
   sx.strokeStyle = '#d8c070'; sx.lineWidth = 4; sx.strokeRect(3, 3, 250, 58);
   sx.fillStyle = '#f4e8b0'; sx.font = 'bold 34px serif'; sx.textAlign = 'center'; sx.textBaseline = 'middle';
   sx.fillText(n.stall.sign || 'LA ASO', 128, 34);
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), side: THREE.DoubleSide }));
   sign.position.set(0, 2.95, 0.62);
   g.add(sign);
+  // Sesión 50 — tendedero con lo que vende (los iconos de la mochila)
+  if (n.stall.goods?.length) {
+    const line = hangingLine(n.stall.goods, 2.4, 2.2);
+    line.position.z = 0.55;
+    g.add(line);
+  }
+  if (n.stall.props !== 'herbs') return g;
   // Macetas de hierbas y frascos sobre el mostrador
   const pot = new THREE.MeshLambertMaterial({ color: 0xa0522d, flatShading: true });
   const leaf = [0x3a8a2a, 0x7ab040, 0xc03030, 0xe0c040];
