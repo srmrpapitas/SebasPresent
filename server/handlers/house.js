@@ -3,6 +3,7 @@
  *   GET  /api/house              → { tier, tiers, rest_ready_at }
  *   POST /api/house/buy { tier } → comprar o mejorar (junto a Nauzet)
  *   POST /api/house/rest         → dormir en tu cama: vida al máximo
+ *   GET  /api/house/friends      → casas que puedes visitar (de quien te tiene en su lista de amigos)
  *
  * Cambio de nivel con guarda (WHERE tier = el de antes) y cobro después; si el
  * cobro falla se deshace. Dos compras a la vez nunca cobran dos veces.
@@ -95,4 +96,24 @@ export async function handleHouseRest(request, env) {
   const hpMax = levelFromXp(stats.hp_xp || 0);
   await env.DB.prepare('UPDATE combat_stats SET hp_current = ? WHERE user_id = ? AND hp_current > 0').bind(hpMax, uid).run();
   return json({ ok: true, hp: hpMax, hp_max: hpMax, ready_at: now + HOUSE_REST_COOLDOWN_MS });
+}
+
+/**
+ * Sesión 50 — Visitas: puedes entrar a la casa de quien TE TIENE en su lista
+ * de amigos (él decide a quién deja pasar). Solo es mirar: los muebles
+ * (cama, cofre, altar) siguen siendo de su dueño y el server ya los valida
+ * contra TU casa, así que una visita no da nada.
+ */
+export async function handleHouseFriends(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  const rows = (await env.DB.prepare(
+    `SELECT u.id, u.username AS name, h.tier
+       FROM user_friends f
+       JOIN users u ON u.id = f.user_id
+       JOIN user_houses h ON h.user_id = f.user_id
+      WHERE f.friend_id = ?
+      ORDER BY u.username COLLATE NOCASE LIMIT 50`
+  ).bind(session.user_id).all()).results || [];
+  return json({ houses: rows.filter(r => HOUSE_TIERS[r.tier]) });
 }

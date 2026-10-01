@@ -413,13 +413,44 @@ async function ensureTier() {
   return myTier;
 }
 
+// Sesión 50 — al tocar la puerta: tu casa o la de un amigo que te deja pasar
+let chooserEl = null;
+function closeChooser() { if (chooserEl) { chooserEl.remove(); chooserEl = null; } }
 async function enterHouse(portal) {
   const tier = await ensureTier();
-  if (!tier) {
+  let friends = [];
+  try { friends = (await api.houseFriends())?.houses || []; } catch {}
+  if (!tier && !friends.length) {
     feedLog('info', '🏠 No tienes casa todavía. Habla con Nauzet, el agente inmobiliario de La Laguna (junto a la urbanización).');
     return;
   }
+  if (!friends.length) return enterInterior(tier, null);
+  closeChooser();
+  const esc = (x) => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  chooserEl = document.createElement('div');
+  chooserEl.className = 'mount-menu house-chooser';
+  chooserEl.style.cssText = 'position:fixed;left:50%;top:30%;transform:translateX(-50%);z-index:240;background:rgba(20,14,8,0.96);border:2px solid #c8a043;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:5px;min-width:220px;max-height:60vh;overflow:auto';
+  const btn = 'background:#3a2f1c;color:#f0e6d2;border:1px solid #a88040;border-radius:6px;padding:9px 12px;font:bold 14px sans-serif;text-align:left';
+  chooserEl.innerHTML = '<div style="color:#e8c560;font:bold 13px sans-serif;padding:2px 4px">🏠 ¿A qué casa entras?</div>'
+    + (tier ? `<button style="${btn}" data-h="">🏠 Mi casa · ${esc(HOUSE_TIERS[tier].name)}</button>` : '')
+    + friends.map((f, i) => `<button style="${btn}" data-h="${i}">👥 Casa de ${esc(f.name)} · ${esc(HOUSE_TIERS[f.tier].name)}</button>`).join('')
+    + `<button style="${btn};color:#c0a080" data-x="1">Cancelar</button>`;
+  chooserEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+  chooserEl.addEventListener('pointerup', (e) => {
+    e.stopPropagation();
+    const b = e.target.closest('button'); if (!b) return;
+    closeChooser();
+    if (b.dataset.x) return;
+    if (b.dataset.h === '') enterInterior(tier, null);
+    else { const f = friends[Number(b.dataset.h)]; if (f) enterInterior(f.tier, f.name); }
+  });
+  document.body.appendChild(chooserEl);
+}
+
+let visitingOwner = null;   // nombre del dueño si estás de visita
+function enterInterior(tier, owner) {
   if (interiors.isActive()) return;
+  visitingOwner = owner;
   inside_lights.length = 0;
   const h = buildInterior(tier);
   scene.add(h.group); scene.add(h.floor);
@@ -438,7 +469,8 @@ async function enterHouse(portal) {
     onLeave: () => cleanupInside(),
   }, 'house');
   if (!ok) { cleanupInside(); return; }
-  feedLog('info', `🏠 Bienvenido a tu ${HOUSE_TIERS[tier].name}. ${featuresText(tier)}`);
+  if (owner) feedLog('info', `🏠 Estás de visita en la ${HOUSE_TIERS[tier].name} de ${owner}. Los muebles son suyos: mira, pero no toques.`);
+  else feedLog('info', `🏠 Bienvenido a tu ${HOUSE_TIERS[tier].name}. ${featuresText(tier)}`);
 }
 
 function featuresText(tier) {
@@ -456,7 +488,7 @@ function cleanupInside() {
   for (const l of inside_lights) try { scene.remove(l); } catch {}
   inside.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
   inside.floor.geometry.dispose();
-  inside = null; pendingUse = null; fireLight = null;
+  inside = null; pendingUse = null; fireLight = null; visitingOwner = null;
 }
 
 // ============================================================
@@ -519,6 +551,7 @@ let busy = false;
 async function useItem(item) {
   if (busy) return;
   if (item.kind === 'salida') { interiors.leave(); return; }
+  if (visitingOwner) { feedLog('info', `🙅 Eso es de ${visitingOwner}. En casa ajena no se toca nada.`); return; }
   busy = true;
   try {
     if (item.kind === 'cama') {

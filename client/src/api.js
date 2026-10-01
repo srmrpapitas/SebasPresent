@@ -677,6 +677,9 @@ export async function houseBuy(tier) {
 export async function houseRest() {
   return apiFetch('/api/house/rest', { method: 'POST', auth: true });
 }
+export async function houseFriends() {
+  return apiFetch('/api/house/friends', { auth: true });
+}
 
 // Sesión 50 — monturas
 export async function mountsGet() {

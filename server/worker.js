@@ -318,6 +318,8 @@ export default {
         response = await house.handleHouseBuy(request, env);
       } else if (path === '/api/house/rest' && method === 'POST') {
         response = await house.handleHouseRest(request, env);
+      } else if (path === '/api/house/friends' && method === 'GET') {
+        response = await house.handleHouseFriends(request, env);
       } else if (path === '/api/aso' && method === 'GET') {
         response = await aso.handleAsoStatus(request, env);
       } else if (path === '/api/aso/join' && method === 'POST') {
