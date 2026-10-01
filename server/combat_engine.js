@@ -997,7 +997,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const staffMagicBonus = STAFF_MAGIC_BONUS[weaponItemId] || 0;
   const staffManaBonus = STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemId] || 0);
   if (isMagic && !spell) return { error: 'invalid_spell', weapon_type: weaponType };
-  if (isMagic && spell.kind === 'self') return { error: 'self_spell', weapon_type: weaponType };   // Sesión 50 — se lanzan aparte
+  if (isMagic && spell.kind) return { error: 'self_spell', weapon_type: weaponType };   // Sesión 50 — se lanzan aparte
   const stanceKey = STYLE_TO_STANCE[style] || 'smash';
   const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
   const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
@@ -1643,7 +1643,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   if (isMagicPvp && opts.spellId) {
     spellPvp = magic.getSpell(opts.spellId);
     if (!spellPvp) return { error: 'unknown_spell' };
-    if (spellPvp.kind === 'self') return { error: 'self_spell' };   // Sesión 50
+    if (spellPvp.kind) return { error: 'self_spell' };   // Sesión 50
     magicLevelPvp = levelsOf(attackerStats).magic || 1;
     // Sesión 47 — gate de nivel de magia en PvP (faltaba; el de NPC lo tenía).
     if (magicLevelPvp < spellPvp.magic_level_req) {

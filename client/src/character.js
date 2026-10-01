@@ -121,6 +121,10 @@ const SPELL_ANIM_MG = {
   tormenta_echeyde: 'mg_area2h_2',
   juicio_teide:     'mg_area2h_1',
 };
+// teletransportes: conjuro a dos manos · alquimia: a una mano
+for (const id of ['tele_orotava','tele_icod','tele_vilaflor','tele_cristianos','tele_guimar','tele_santacruz','tele_adeje','tele_esperanza','tele_izana','tele_canadas','tele_guajara','tele_faro','tele_teno']) SPELL_ANIM_MG[id] = 'mg_cast2h';
+SPELL_ANIM_MG.alquimia_baja = 'mg_cast1h';
+SPELL_ANIM_MG.alquimia_alta = 'mg_cast1h';
 const MAGIC_CLIP_NAMES = new Set(Object.values(SPELL_ANIM_MG).map(n => n.slice(3)));
 
 const CRITICAL_ANIMS = ['idle', 'walk_forward', 'run_forward'];

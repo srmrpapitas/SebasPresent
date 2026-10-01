@@ -494,6 +494,7 @@ export async function startWorld(loggedInUser, token) {
     // nivel de Magia del snapshot (me block).
     spellbook.start({
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
+      onTeleportCast: (r) => { try { tablets.spellTeleport(r); } catch (e) { console.warn('[spellbook] tele', e); } },
       // Sesión 50 — Sanación / Escudo de lava: vida al momento + burbuja de lava mientras dura
       onSelfCast: (r) => {
         try { if (Number.isFinite(r.hp)) window.__setHpInstant?.(r.hp, r.hp_max); } catch {}

@@ -88,6 +88,27 @@ export async function breakTablet(slot, itemId) {
   }
 }
 
+/** Sesión 50 — teletransporte por hechizo (el server ya te movió): mismo efecto que la tableta. */
+export function spellTeleport(res) {
+  const player = getPlayer?.();
+  if (!player || busy) return;
+  busy = true;
+  const tab = TABLETS[res.dest] || { color: '#b080ff' };
+  try { onBeforeTeleport(); } catch {}
+  feedLog('info', `✨ Recitas el conjuro… ¡${res.name}!`);
+  try { audio.synth?.('pray_on', { volume: 0.8, pitch: 0.9 }); } catch {}
+  spawnEffect(player.position.x, player.position.z, tab.color);
+  setTimeout(() => {
+    flashScreen();
+    const p = getPlayer?.();
+    if (p) { p.position.x = res.x; p.position.z = res.z; }
+    try { onTeleported(res); } catch (e) { console.warn('[tablets] onTeleported:', e); }
+    spawnEffect(res.x, res.z, tab.color);
+    try { audio.synth?.('altar', { volume: 0.7 }); } catch {}
+    busy = false;
+  }, TABLET_CAST_MS);
+}
+
 export function update(dt) {
   for (let i = effects.length - 1; i >= 0; i--) {
     const e = effects[i];

@@ -108,6 +108,27 @@ const SPELLS = {
     id: 'juicio_teide', name: 'Juicio del Teide', magic_level_req: 90, mana_cost: 32,
     base_max_hit: 27, color: 0x5fffe0,
   },
+  // ------------------------------------------------------------
+  // Sesión 50 — Hechizos de utilidad (como el libro de OSRS)
+  //   kind 'teleport' → te lleva a `dest` (destinos de shared/teleports.js)
+  //   kind 'alch'     → convierte un objeto de la mochila en monedas (pct del precio base)
+  // No necesitan bastón (sin bastón el maná máximo es 20).
+  // ------------------------------------------------------------
+  tele_orotava:    { id: 'tele_orotava',    name: 'Teletransporte a La Orotava',   kind: 'teleport', dest: 'tele_robledal',   magic_level_req: 6,  mana_cost: 8,  xp: 35 },
+  tele_icod:       { id: 'tele_icod',       name: 'Teletransporte a Icod',         kind: 'teleport', dest: 'tele_cazador',    magic_level_req: 12, mana_cost: 9,  xp: 45 },
+  tele_vilaflor:   { id: 'tele_vilaflor',   name: 'Teletransporte a Vilaflor',     kind: 'teleport', dest: 'tele_cruce',      magic_level_req: 18, mana_cost: 10, xp: 55 },
+  alquimia_baja:   { id: 'alquimia_baja',   name: 'Alquimia menor',                kind: 'alch', pct: 0.4, magic_level_req: 21, mana_cost: 10, xp: 31 },
+  tele_cristianos: { id: 'tele_cristianos', name: 'Teletransporte a Los Cristianos', kind: 'teleport', dest: 'tele_sirena',   magic_level_req: 27, mana_cost: 11, xp: 65 },
+  tele_guimar:     { id: 'tele_guimar',     name: 'Teletransporte a Güímar',       kind: 'teleport', dest: 'tele_solquemado', magic_level_req: 33, mana_cost: 12, xp: 75 },
+  tele_santacruz:  { id: 'tele_santacruz',  name: 'Teletransporte a Santa Cruz',   kind: 'teleport', dest: 'tele_marpiedra',  magic_level_req: 39, mana_cost: 13, xp: 85 },
+  tele_adeje:      { id: 'tele_adeje',      name: 'Teletransporte a Adeje',        kind: 'teleport', dest: 'tele_verdis',     magic_level_req: 44, mana_cost: 14, xp: 95 },
+  tele_esperanza:  { id: 'tele_esperanza',  name: 'Teletransporte a La Esperanza', kind: 'teleport', dest: 'tele_vientos',    magic_level_req: 51, mana_cost: 15, xp: 105 },
+  alquimia_alta:   { id: 'alquimia_alta',   name: 'Alquimia mayor',                kind: 'alch', pct: 0.6, magic_level_req: 55, mana_cost: 15, xp: 65 },
+  tele_izana:      { id: 'tele_izana',      name: 'Teletransporte al Observatorio', kind: 'teleport', dest: 'tele_torre',     magic_level_req: 58, mana_cost: 16, xp: 115 },
+  tele_canadas:    { id: 'tele_canadas',    name: 'Teletransporte a Las Cañadas',  kind: 'teleport', dest: 'tele_picoblanco', magic_level_req: 64, mana_cost: 17, xp: 125 },
+  tele_guajara:    { id: 'tele_guajara',    name: 'Teletransporte a la Mina de Guajara', kind: 'teleport', dest: 'tele_mina',  magic_level_req: 68, mana_cost: 18, xp: 135 },
+  tele_faro:       { id: 'tele_faro',       name: 'Teletransporte al Faro',        kind: 'teleport', dest: 'tele_faro',       magic_level_req: 75, mana_cost: 19, xp: 145 },
+  tele_teno:       { id: 'tele_teno',       name: 'Teletransporte a las Ruinas de Teno ☠', kind: 'teleport', dest: 'tele_ruinas', magic_level_req: 85, mana_cost: 20, xp: 160 },
 };
 
 function getSpell(spellId) {

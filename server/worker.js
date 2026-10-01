@@ -66,7 +66,8 @@ import * as potions from './handlers/potions.js';                 // Sesión 50 
 import * as aso from './handlers/aso.js';
 import * as house from './handlers/house.js';
 import * as caves from './handlers/caves.js';   // Sesión 50 — cuevas
-import { handleMagicSelf } from './handlers/magic_self.js';   // Sesión 50 — hechizos sobre uno mismo
+import { handleMagicSelf } from './handlers/magic_self.js';
+import { handleMagicUtility } from './handlers/magic_util.js';   // Sesión 50 — teletransportes y alquimia   // Sesión 50 — hechizos sobre uno mismo
 import * as mounts from './handlers/mounts.js';
 import * as trade from './handlers/trade.js';
 import * as friends from './handlers/friends.js';
@@ -324,6 +325,8 @@ export default {
         response = await house.handleHouseFriends(request, env);
       } else if (path === '/api/magic/self' && method === 'POST') {
         response = await handleMagicSelf(request, env);
+      } else if (path === '/api/magic/utility' && method === 'POST') {
+        response = await handleMagicUtility(request, env);
       } else if (path === '/api/cave/enter' && method === 'POST') {
         response = await caves.handleCaveEnter(request, env);
       } else if (path === '/api/cave/leave' && method === 'POST') {

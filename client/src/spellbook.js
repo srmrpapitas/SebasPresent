@@ -109,6 +109,32 @@ Object.assign(SVG, {
     '<rect x="14" y="0" width="4" height="14" fill="FILL" opacity=".85"/><circle cx="16" cy="13" r="3" fill="#ffffff"/>'),
 });
 
+
+// Sesión 50 — iconos de teletransporte (portal del color de la ciudad) y alquimia
+function teleIcon(id, color, glyph) {
+  return '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs>' +
+    '<radialGradient id="sbT' + id + '" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="' + color + '"/><stop offset="1" stop-color="#2a1a48"/></radialGradient></defs>' +
+    '<circle cx="16" cy="16" r="13" fill="url(#sbT' + id + ')" stroke="#120a20" stroke-width="1.2"/>' +
+    '<path d="M16 5 a11 11 0 0 1 11 11" fill="none" stroke="#e8d8ff" stroke-width="1.4" stroke-linecap="round" opacity=".8"/>' +
+    '<path d="M16 27 a11 11 0 0 1 -11 -11" fill="none" stroke="#e8d8ff" stroke-width="1.4" stroke-linecap="round" opacity=".8"/>' +
+    '<text x="16" y="20.5" text-anchor="middle" font-family="serif" font-weight="bold" font-size="12" fill="#1a0a2a">' + glyph + '</text></svg>';
+}
+const TELE_ICONS = {
+  tele_orotava: ['#4a8a30', 'O'], tele_icod: ['#6a4828', 'I'], tele_vilaflor: ['#c8a043', 'V'], tele_cristianos: ['#6090c0', 'C'],
+  tele_guimar: ['#e8a448', 'G'], tele_santacruz: ['#a08070', 'S'], tele_adeje: ['#5aaa3a', 'A'], tele_esperanza: ['#c0d0e0', 'E'],
+  tele_izana: ['#7090d0', '★'], tele_canadas: ['#c8d8e8', '▲'], tele_guajara: ['#8a8a8a', '⛏'], tele_faro: ['#c0d8e8', 'F'], tele_teno: ['#8a2a2a', '☠'],
+};
+for (const [k, [c, g]] of Object.entries(TELE_ICONS)) SVG[k] = teleIcon(k, c, g);
+function alchIcon(id, flame) {
+  return '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs>' +
+    '<radialGradient id="sbA' + id + '" cx="40%" cy="35%" r="65%"><stop offset="0" stop-color="#fff6b0"/><stop offset=".6" stop-color="#e8b830"/><stop offset="1" stop-color="#8a5a00"/></radialGradient></defs>' +
+    '<path d="M16 3 C19 8 24 10 23 17 a7 7 0 0 1 -14 0 C8 11 13 9 16 3Z" fill="' + flame + '" opacity=".85"/>' +
+    '<circle cx="16" cy="21" r="8" fill="url(#sbA' + id + ')" stroke="#5a3a00" stroke-width="1.1"/>' +
+    '<text x="16" y="25" text-anchor="middle" font-family="serif" font-weight="bold" font-size="10" fill="#6a4000">$</text></svg>';
+}
+SVG.alquimia_baja = alchIcon('b', '#4ad04a');
+SVG.alquimia_alta = alchIcon('a', '#ff7a20');
+
 // Espejo de SPELLS de server/magic.js (lo que la UI necesita).
 // Sesión 50 — ordenado por nivel. self:true = se lanza sobre ti al tocarlo (no autocast).
 const SPELLBOOK = [
@@ -125,7 +151,23 @@ const SPELLBOOK = [
   { id: 'furia_magec',      name: 'Furia de Magec',        level: 70, mana: 26, desc: 'El sol de los guanches cae sobre tu enemigo.' },
   { id: 'tormenta_echeyde', name: 'Tormenta de Echeyde',   level: 80, mana: 34, desc: 'Arrasa a 5 enemigos cercanos (75 %).' },
   { id: 'juicio_teide',     name: 'Juicio del Teide',      level: 90, mana: 32, desc: 'El hechizo más poderoso de la isla.' },
-];
+  // Utilidad (como OSRS): teletransportes y alquimia. No necesitan bastón.
+  { id: 'tele_orotava',    name: 'Teletransporte a La Orotava',   level: 6,  mana: 8,  tele: true, desc: 'Te lleva a La Orotava.' },
+  { id: 'tele_icod',       name: 'Teletransporte a Icod',         level: 12, mana: 9,  tele: true, desc: 'Te lleva a Icod de los Vinos.' },
+  { id: 'tele_vilaflor',   name: 'Teletransporte a Vilaflor',     level: 18, mana: 10, tele: true, desc: 'Te lleva a Vilaflor.' },
+  { id: 'alquimia_baja',   name: 'Alquimia menor',                level: 21, mana: 10, alch: true, desc: 'Convierte un objeto en monedas (40 % de su valor).' },
+  { id: 'tele_cristianos', name: 'Teletransporte a Los Cristianos', level: 27, mana: 11, tele: true, desc: 'Te lleva a Los Cristianos.' },
+  { id: 'tele_guimar',     name: 'Teletransporte a Güímar',       level: 33, mana: 12, tele: true, desc: 'Te lleva a Güímar.' },
+  { id: 'tele_santacruz',  name: 'Teletransporte a Santa Cruz',   level: 39, mana: 13, tele: true, desc: 'Te lleva a Santa Cruz.' },
+  { id: 'tele_adeje',      name: 'Teletransporte a Adeje',        level: 44, mana: 14, tele: true, desc: 'Te lleva a Adeje.' },
+  { id: 'tele_esperanza',  name: 'Teletransporte a La Esperanza', level: 51, mana: 15, tele: true, desc: 'Te lleva a La Esperanza.' },
+  { id: 'alquimia_alta',   name: 'Alquimia mayor',                level: 55, mana: 15, alch: true, desc: 'Convierte un objeto en monedas (60 % de su valor).' },
+  { id: 'tele_izana',      name: 'Teletransporte al Observatorio', level: 58, mana: 16, tele: true, desc: 'Te lleva al Observatorio de Izaña.' },
+  { id: 'tele_canadas',    name: 'Teletransporte a Las Cañadas',  level: 64, mana: 17, tele: true, desc: 'Te lleva a Las Cañadas.' },
+  { id: 'tele_guajara',    name: 'Teletransporte a la Mina de Guajara', level: 68, mana: 18, tele: true, desc: 'Te lleva a la Mina de Guajara.' },
+  { id: 'tele_faro',       name: 'Teletransporte al Faro',        level: 75, mana: 19, tele: true, desc: 'Te lleva al Faro de Punta Rasca.' },
+  { id: 'tele_teno',       name: 'Teletransporte a Teno ☠',       level: 85, mana: 20, tele: true, desc: 'Te lleva a las Ruinas de Teno, en pleno Malpaís. ¡Peligro!' },
+].sort((a, b) => a.level - b.level);
 
 function spellMeta(id) { return SPELLBOOK.find(s => s.id === id) || null; }
 
@@ -159,6 +201,7 @@ export function start(opts = {}) {
   feedLog          = opts.feedLog          || (() => {});
   onAutocastChange = opts.onAutocastChange || (() => {});
   onSelfCast       = opts.onSelfCast       || (() => {});
+  onTeleportCast   = opts.onTeleportCast   || (() => {});
 
   ensureCss();
   if (!injectSpells()) { started = false; return; }
@@ -220,8 +263,7 @@ function injectSpells() {
     btn.className = 'magic-spell-cell spellbook-cell';
     btn.dataset.spellId = sp.id;
     btn.innerHTML =
-      '<div class="spellbook-svg">' + (SVG[sp.id] || '') + '</div>' +
-      '<div class="spellbook-meta">Niv ' + sp.level + ' · ' + sp.mana + '💧</div>';
+      '<div class="spellbook-svg">' + (SVG[sp.id] || '') + '</div>';
     btn.title = sp.name + ' — ' + (sp.desc || '');
     // Click izquierdo = seleccionar
     btn.addEventListener('click', (e) => { e.preventDefault(); onSelectSpell(sp.id); });
@@ -270,6 +312,43 @@ async function castSelf(sp) {
   } finally { selfBusy = false; }
 }
 
+// Sesión 50 — teletransportes y alquimia
+let onTeleportCast = () => {};
+async function castUtility(sp, slot) {
+  if (selfBusy) return;
+  selfBusy = true;
+  try {
+    const r = await api.tradeCall('/api/magic/utility', slot == null ? { spell_id: sp.id } : { spell_id: sp.id, slot });
+    try { window.__playerPlayAttack?.('accurate', 'staff', 1300, sp.id); } catch {}
+    if (r.kind === 'teleport') { try { onTeleportCast(r); } catch {} }
+    else {
+      feedLog('info', '💰 ' + sp.name + ': ' + r.item_name + ' → ' + r.coins + ' monedas.');
+      try { await window.inventory?.refresh?.(); } catch {}
+    }
+  } catch (e) {
+    feedLog('warning', e?.message || 'No puedes lanzar ' + sp.name + ' ahora.');
+  } finally { selfBusy = false; }
+}
+// Alquimia: elegir qué objeto de la mochila convertir
+async function pickItemForAlch(sp) {
+  let inv = [];
+  try { inv = (await api.tradeCall('/api/inventory'))?.slots || []; } catch {}
+  const items = inv.filter(x => x && x.item_id && x.item_id !== 'coins');
+  if (!items.length) { feedLog('info', 'No tienes nada que convertir.'); return; }
+  closeMenu();
+  menuEl = document.createElement('div');
+  menuEl.className = 'spellbook-menu spellbook-alch';
+  menuEl.innerHTML = '<div class="spellbook-menu-title">' + sp.name + ' — ¿qué conviertes?</div>' +
+    items.map(x => '<button data-slot="' + x.slot + '">' + (x.icon || '📦') + ' ' + (x.name || x.item_id) + (x.quantity > 1 ? ' ×' + x.quantity : '') + '</button>').join('');
+  document.body.appendChild(menuEl);
+  menuEl.style.left = Math.max(8, (window.innerWidth - menuEl.offsetWidth) / 2) + 'px';
+  menuEl.style.top = Math.max(8, (window.innerHeight - menuEl.offsetHeight) / 2) + 'px';
+  menuEl.querySelectorAll('button[data-slot]').forEach(b => b.addEventListener('click', (e) => {
+    e.preventDefault(); const slot = Number(b.dataset.slot); closeMenu(); castUtility(sp, slot);
+  }));
+  setTimeout(() => { document.addEventListener('click', closeMenuOnOutside, { once: true }); }, 0);
+}
+
 function onSelectSpell(spellId) {
   const sp = spellMeta(spellId);
   if (!sp) return;
@@ -278,6 +357,8 @@ function onSelectSpell(spellId) {
     return;
   }
   if (sp.self) { castSelf(sp); return; }
+  if (sp.tele) { castUtility(sp); return; }
+  if (sp.alch) { pickItemForAlch(sp); return; }
   // Seleccionar = contorno blanco + lo fija como autocast activo (práctico para
   // un juego con auto-ataque: atacar lo repite). El detalle Cast-una-vez vs
   // autocast se afina con la cola (pieza 3) desde el menú.
@@ -303,7 +384,8 @@ function openMenu(spellId, x, y) {
     '<div class="spellbook-menu-title">' + sp.name + (locked ? ' (Niv ' + sp.level + ')' : '') + '</div>' +
     '<div class="spellbook-menu-desc">' + (sp.desc || '') + '</div>' +
     '<button data-act="cast">Cast</button>' +
-    (sp.self ? '' : '<button data-act="autocast">Autocast</button><button data-act="nextcast">Next cast</button>');
+    '<div class="spellbook-menu-desc">Nivel ' + sp.level + ' · ' + sp.mana + ' de maná</div>' +
+    ((sp.self || sp.tele || sp.alch) ? '' : '<button data-act="autocast">Autocast</button><button data-act="nextcast">Next cast</button>');
   document.body.appendChild(menuEl);
   // posición (clamp a la pantalla)
   const r = menuEl.getBoundingClientRect();
@@ -318,6 +400,8 @@ function openMenu(spellId, x, y) {
       const act = b.dataset.act;
       if (locked) { feedLog('warning', 'Necesitas nivel ' + sp.level + ' de Magia.'); closeMenu(); return; }
       if (act === 'cast' && sp.self) { castSelf(sp); closeMenu(); return; }
+      if (act === 'cast' && sp.tele) { closeMenu(); castUtility(sp); return; }
+      if (act === 'cast' && sp.alch) { closeMenu(); pickItemForAlch(sp); return; }
       if (act === 'cast') {
         // Cast (una vez): por ahora = seleccionar + autocast on. La semántica
         // "una sola vez y para" llega con la cola (pieza 3).
@@ -380,8 +464,12 @@ function ensureCss() {
   const css = document.createElement('style');
   css.id = 'spellbook-css';
   css.textContent = [
-    '.spellbook-cell{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 4px;cursor:pointer;background:transparent;border:none;border-radius:8px}',
-    '.spellbook-cell .spellbook-svg{width:34px;height:34px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.8));transition:transform .12s}',
+    /* Sesión 50 — libro estilo OSRS: rejilla densa de iconos, con scroll */
+    '.osrs-tab-pane[data-tab="magic"]{overflow-y:auto!important;-webkit-overflow-scrolling:touch}',
+    '#magicSpellGrid{grid-template-columns:repeat(5,1fr)!important;gap:2px!important}',
+    '#magicSpellGrid > *{min-width:0}',
+    '.spellbook-cell{position:relative;display:flex;align-items:center;justify-content:center;aspect-ratio:1/1;padding:2px;cursor:pointer;background:transparent;border:none;border-radius:6px}',
+    '.spellbook-cell .spellbook-svg{width:88%;max-width:34px;aspect-ratio:1/1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.8));transition:transform .12s}',
     '.spellbook-cell:active .spellbook-svg{transform:scale(1.15)}',
     '.spellbook-cell.selected .spellbook-svg{animation:sbPulse 1.4s ease-in-out infinite}',
     '@keyframes sbPulse{50%{filter:drop-shadow(0 0 6px rgba(255,240,180,.9))}}',
@@ -390,7 +478,8 @@ function ensureCss() {
     /* contorno blanco estilo OSRS */
     '.spellbook-cell.selected{outline:2px solid #ffffff;box-shadow:0 0 0 1px #000,0 0 6px rgba(255,255,255,0.5) inset;background:rgba(255,255,255,0.08)}',
     '.spellbook-cell.queued{outline:1px dashed rgba(255,255,255,0.55)}',
-    '.spellbook-cell.locked{opacity:0.4;filter:grayscale(0.7)}',
+    '.spellbook-cell.locked{opacity:0.35;filter:grayscale(1) brightness(.7)}',
+    '.spellbook-alch{max-height:70vh;overflow-y:auto}',
     /* menú contextual */
     '.spellbook-menu{position:fixed;z-index:9999;background:#1a1f2e;border:1px solid #3a4a6a;border-radius:8px;padding:4px;min-width:128px;box-shadow:0 6px 20px rgba(0,0,0,0.5)}',
     '.spellbook-menu-desc{font-size:11px;opacity:.75;padding:2px 8px 6px;max-width:200px}',
