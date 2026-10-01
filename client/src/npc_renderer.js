@@ -106,7 +106,7 @@ const MINIBOSS_SCALE = 1.55;
 export const baseTypeOf = (id) => String(id || '').replace(/_jefe$/, '');
 const isMiniBoss = (id) => /_jefe$/.test(String(id || ''));
 // Tope de personajes Mixamo animados a la vez (móvil): el resto usa el modelo ligero
-const RIG_CAP = 26;
+const RIG_CAP = 14;
 let _rigCount = 0;
 function tintHue(mat, dh, sat = 1.35, val = 1.0) {
   if (!mat?.color) return;
@@ -182,7 +182,7 @@ function getNpcEngageRange() {
 const NPC_TAP_SCREEN_PX    = 90;
 
 // Culling: solo dibujamos NPCs dentro de este radio del player.
-const NPC_RENDER_RADIUS    = 100;
+const NPC_RENDER_RADIUS    = 75;    // Sesión 50 — 100→75 m: con el mundo lleno, menos modelos a la vez
 export const NPC_MINIMAP_RADIUS = 500;
 
 // ------------------------------------------------------------

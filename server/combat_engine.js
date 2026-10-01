@@ -2497,7 +2497,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
   if (!viewer || !Number.isFinite(viewer.x) || !Number.isFinite(viewer.z)) return changes;
 
   // 1) NPCs agresivos vivos cerca del viewer (bounding box ~aggro+leash).
-  const R = 60; // margen generoso de búsqueda
+  const R = 40; // Sesión 50 — 60→40 m: con el mundo lleno, menos trabajo por tick
   let npcs;
   try {
     npcs = await env.DB.prepare(
@@ -2519,6 +2519,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
 
   const rows = (npcs && npcs.results) || [];
   if (rows.length === 0) return changes;
+  const aggroStmts = [];
 
   // Stats del viewer (HP + defensa) para el contraataque.
   let viewerStats;
@@ -2665,8 +2666,8 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
     }
 
     if (moved || targetChanged || attacked) {
-      try {
-        await env.DB.prepare(
+      // Sesión 50 — se juntan todas y se escriben de una vez (antes: una espera por monstruo)
+      aggroStmts.push(env.DB.prepare(
           `UPDATE npc_instances
              SET x = ?, z = ?, in_combat_with = ?, last_attack_at = ?, last_moved_at = ?
            WHERE id = ?`
@@ -2676,11 +2677,11 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
           attacked ? now : npc.last_attack_at,
           moved ? now : (npc.last_moved_at || null),
           npc.id
-        ).run();
-      } catch {}
+        ));
       changes.set(npc.id, { x: newX, z: newZ, in_combat_with: target || null });
     }
   }
+  if (aggroStmts.length) { try { await env.DB.batch(aggroStmts); } catch {} }
 
   return changes;
 }
@@ -2710,7 +2711,7 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
   const changes = new Map();
   if (!viewer || !Number.isFinite(viewer.x) || !Number.isFinite(viewer.z)) return changes;
 
-  const R = 60;
+  const R = 40;   // Sesión 50 — 60→40 m
   let npcs;
   try {
     npcs = await env.DB.prepare(
@@ -2728,6 +2729,7 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
 
   const rows = (npcs && npcs.results) || [];
   const bucket = Math.floor(now / WANDER_BUCKET_MS);
+  const wanderStmts = [];
 
   for (const npc of rows) {
     // No mover si por alguna razón está en combate (defensivo).
@@ -2754,13 +2756,12 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
     const newX = npc.x + (dx / d) * step;
     const newZ = npc.z + (dz / d) * step;
 
-    try {
-      await env.DB.prepare(
+    wanderStmts.push(env.DB.prepare(
         `UPDATE npc_instances SET x = ?, z = ?, last_moved_at = ? WHERE id = ?`
-      ).bind(newX, newZ, now, npc.id).run();
-    } catch {}
+      ).bind(newX, newZ, now, npc.id));
     changes.set(npc.id, { x: newX, z: newZ });
   }
+  if (wanderStmts.length) { try { await env.DB.batch(wanderStmts); } catch {} }   // Sesión 50 — de una vez
 
   return changes;
 }

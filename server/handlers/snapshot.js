@@ -43,7 +43,7 @@ import { currentPrayerState, overheadPrayer } from '../../client/src/shared/pray
 const SNAPSHOT_RADIUS_M       = 500;
 // Sesión 50 — monstruos: solo los cercanos (el cliente los dibuja a ≤100 m). Con miles
 // de monstruos en el mapa, mandar 500 m saturaba la base de datos y la red.
-const NPC_SNAPSHOT_RADIUS_M   = 130;
+const NPC_SNAPSHOT_RADIUS_M   = 95;
 // Timeout para considerar a un player "online" según online_users.last_seen.
 const SNAPSHOT_PEER_TIMEOUT_MS = 10_000;
 // Si last_attack_at fue hace menos de esto, el actor está in_combat.
