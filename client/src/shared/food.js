@@ -14,6 +14,7 @@ export const EDIBLE = {
   cooked_chicken: { heal: 3 },
   raw_beef:       { heal: 1 },
   cooked_beef:    { heal: 5 },
+  pan:            { heal: 4 },   // Sesión 50 — se roba a los vecinos (Robo)
 };
 // Qué se puede cocinar: resultado, quemado, nivel de Cocina y XP.
 export const COOKABLE = {

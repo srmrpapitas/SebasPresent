@@ -37,7 +37,8 @@ import * as mounts from './mounts.js';                     // Sesión 50 — mon
 import * as trade from './trade.js';                       // Sesión 50 — comercio entre jugadores
 import * as follow from './follow.js';                     // Sesión 50 — seguir a un jugador
 import * as social from './social.js';                     // Sesión 50 — pestaña Amigos / Monturas
-import * as menceyes from './menceyes.js';                 // Sesión 50 — estatuas de los menceyes (Candelaria)
+import * as menceyes from './menceyes.js';
+import * as thieving from './thieving.js';                 // Sesión 50 — Robo (pickpocket)                 // Sesión 50 — estatuas de los menceyes (Candelaria)
 import { insideFosa } from './shared/fosa.js';
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
@@ -923,6 +924,7 @@ export async function startWorld(loggedInUser, token) {
     try {
       const fl = (type, msg) => combat.feedLog?.(type, msg);
       trade.start({ userId: user?.id, feedLog: fl, onInventoryChanged: () => { try { inventory.refresh(); } catch {} } });
+      thieving.start({ userId: user?.id, feedLog: fl, onInventoryChanged: () => { try { inventory.refresh(); } catch {} } });
       follow.start({ getPlayer: () => player, setPlayerTarget: (x, z) => setPlayerTarget(x, z), getPeers: () => multiplayer.getPeerPositions(), feedLog: fl });
       social.start({
         getPlayer: () => player, getPeers: () => multiplayer.getPeerPositions(), feedLog: fl,

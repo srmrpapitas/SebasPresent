@@ -67,7 +67,8 @@ import * as aso from './handlers/aso.js';
 import * as house from './handlers/house.js';
 import * as mounts from './handlers/mounts.js';
 import * as trade from './handlers/trade.js';
-import * as friends from './handlers/friends.js';                 // Sesión 50 — amigos                     // Sesión 50 — comercio                   // Sesión 50 — monturas                     // Sesión 50 — casas                         // Sesión 50 — socios de La ASO
+import * as friends from './handlers/friends.js';
+import * as thieving from './handlers/thieving.js';               // Sesión 50 — Robo                 // Sesión 50 — amigos                     // Sesión 50 — comercio                   // Sesión 50 — monturas                     // Sesión 50 — casas                         // Sesión 50 — socios de La ASO
 import * as fosa from './handlers/minigame.js';                   // Sesión 50 — Fosa de Guayota
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
@@ -283,6 +284,10 @@ export default {
         response = await crafting.handleCraftingMake(request, env);
       } else if (path === '/api/magic/tablet' && method === 'POST') {
         response = await teleport.handleTabletBreak(request, env);
+      } else if (path === '/api/thieving/npc' && method === 'POST') {
+        response = await thieving.handleStealNpc(request, env);
+      } else if (path === '/api/thieving/player' && method === 'POST') {
+        response = await thieving.handleStealPlayer(request, env);
       } else if (path === '/api/friends' && method === 'GET') {
         response = await friends.handleFriendsGet(request, env);
       } else if (path === '/api/friends/add' && method === 'POST') {

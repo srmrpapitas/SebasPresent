@@ -237,6 +237,8 @@ export async function handleWorldSnapshot(request, env) {
     // El SELECT de abajo ya lee las posiciones nuevas. Envuelto en try/catch:
     // si falla (migración no corrida, etc.), el snapshot sigue normal.
     try {
+      // Sesión 50 — criaturas temporales caducadas (guardias del Robo)
+      try { await env.DB.prepare('DELETE FROM npc_instances WHERE expires_at IS NOT NULL AND expires_at < ?').bind(now).run(); } catch {}
       await tickNpcAggro(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
     } catch (err) {
       console.error('[snapshot/npc-ai]', err);

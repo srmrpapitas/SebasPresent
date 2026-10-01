@@ -512,7 +512,7 @@ export const QUEST_REQS = {
 export const SKILL_NAMES = {
   attack: 'Ataque', strength: 'Fuerza', defence: 'Defensa', hitpoints: 'Vitalidad', ranged: 'Distancia', magic: 'Magia',
   prayer: 'Plegaria', woodcutting: 'Tala', fishing: 'Pesca', mining: 'Minería', cooking: 'Cocina', firemaking: 'Fuego',
-  smithing: 'Herrería', fletching: 'Flechería', herblore: 'Herbología', crafting: 'Artesanía',
+  smithing: 'Herrería', fletching: 'Flechería', herblore: 'Herbología', crafting: 'Artesanía', thieving: 'Robo',
 };
 
 /** Dificultad orientativa según el combate que pide. */

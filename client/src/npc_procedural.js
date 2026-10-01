@@ -21,7 +21,7 @@ export const PROC_NPC_HEIGHTS = {
   rey_yeti: 4.6, coloso_obsidiana: 5.0, reina_escorpion: 2.4, bruja_pantano: 2.6, leviatan: 5.5,
   rey_esqueleto: 3.3, dragon_rojo: 5.2, dragon_negro: 6.2,
   acolito_cabildo: 2.3, magister_cabildo: 3.2,
-  guanche_guerrero: 1.8, guanche_hondero: 1.75, guanche_faycan: 1.8, guanche_mencey: 2.1, cabra: 0.9,
+  guardia_ciudad: 1.9, guanche_guerrero: 1.8, guanche_hondero: 1.75, guanche_faycan: 1.8, guanche_mencey: 2.1, cabra: 0.9,
   // Sesión 50 — Fosa de Guayota
   fosa_diablillo: 1.2, fosa_escupefuego: 1.3, fosa_espiritu: 1.9, fosa_bruto: 2.6, fosa_ignaroth: 5.2,
 };
@@ -684,6 +684,17 @@ Object.assign(BUILDERS, {
   guanche_faycan: () => guanche({ weapon: 'staff', hide: 0xe8e0c8, fur: 0xfff8e8, band: 0xd8b030, beard: true, skin: 0xa86a40 }),
   guanche_mencey: () => guanche({ weapon: 'anepa', hide: 0x5a3a20, fur: 0xf0e8d0, band: 0xc02020, beard: true, feathers: true, shield: true, scale: 1.15 }),
   cabra: goat,
+  // Sesión 50 — guardia de la ciudad (te persigue si te pillan robando)
+  guardia_ciudad: () => {
+    const g = guanche({ weapon: 'banot', shield: true, hide: 0x2a3a6a, fur: 0x9aa2aa, band: 0xd8b030, skin: 0xd9a57a });
+    const body = g.root.children[0];
+    const steel = mat(0xb0b8c0);
+    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55), steel); helm.position.y = 1.8; body.add(helm);
+    const brim = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.03, 4, 14), steel); brim.rotation.x = Math.PI / 2; brim.position.y = 1.8; body.add(brim);
+    const crest = box(0.04, 0.12, 0.3, steel); crest.position.set(0, 2.0, 0); body.add(crest);
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.33, 0.5, 8), steel); plate.position.y = 1.25; body.add(plate);
+    return g;
+  },
   fosa_diablillo: imp,
   fosa_escupefuego: spitter,
   fosa_espiritu: fireSpirit,

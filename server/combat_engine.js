@@ -2458,8 +2458,9 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
          AND d.behavior = 'aggressive'
+         AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
          AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`
-    ).bind(viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
+    ).bind(viewer.user_id, viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
   } catch (err) {
     // Si la migración no corrió (no existe columna behavior), no-op silencioso.
     return changes;

@@ -623,12 +623,24 @@ export function openActionMenuAt(raycaster, cx, cy, openMenu) {
   if (!o) return false;
   openMenu(`${o.n.name} — ${o.n.title || ''}`, [
     { label: '💬 Hablar', onPick: () => goTalk(o) },
+    // Sesión 50 — Robo (pickpocket). Hay que estar al lado: si estás lejos, va andando.
+    { label: window.__thieving?.npcMenuLabel?.(o.n.id) || '🫳 Robar', onPick: () => goSteal(o) },
     { label: '🔍 Examinar', onPick: () => feedLog('info', `${o.n.name}, ${(o.n.title || 'habitante').toLowerCase()}.${o.mark === 'offer' ? ' Parece que tiene trabajo para ti.' : ''}`) },
   ], cx, cy);
   return true;
 }
 
-export function cancel() { pending = null; }
+// Sesión 50 — andar hasta el habitante y robarle
+let pendingSteal = null;
+function goSteal(o) {
+  const p = getPlayer?.(); if (!p) return;
+  const d = Math.hypot(p.position.x - o.n.x, p.position.z - o.n.z);
+  if (d <= 2.6) { window.__thieving?.stealNpc?.(o.n.id, o.n.name); return; }
+  pendingSteal = o;
+  setPlayerTargetCb(o.n.x + (p.position.x - o.n.x) / d * 1.6, o.n.z + (p.position.z - o.n.z) / d * 1.6);
+}
+
+export function cancel() { pending = null; pendingSteal = null; }
 
 /** Para el minimapa: [{ x, z, mark }] */
 export function getMinimapMarks() {
@@ -643,6 +655,9 @@ export function update(dt) {
   if (!started) return;
   timeAcc += dt;
   const p = getPlayer?.();
+  if (pendingSteal && p && Math.hypot(p.position.x - pendingSteal.n.x, p.position.z - pendingSteal.n.z) <= 2.6) {
+    const o = pendingSteal; pendingSteal = null; window.__thieving?.stealNpc?.(o.n.id, o.n.name);
+  }
 
   syncTimer += dt;
   if (p && syncTimer >= 1) {

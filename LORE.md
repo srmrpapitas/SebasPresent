@@ -158,3 +158,19 @@ Misión de Aldric, en La Laguna: escuchar en orden a seis cronistas. Cada uno cu
 5. **Don Rafael** (La Orotava): la modorra, Aguere (1495, muere Tinguaro), La Victoria de Acentejo, la leyenda de Bentor en Tigaiga, la paz de Los Realejos (1496) y la fundación de La Laguna. En el juego, los de Chinamada descienden de los "alzados".
 6. **Doña Carmen** (drago de Icod): Garachico en 1706, el Chinyero en 1909, el drago y lo que queda de lo guanche: palabras (gofio, baifo, guirre, tabaiba, tajinaste, gánigo) y nombres.
 - **Estatuas de los nueve menceyes** junto a la Basílica de Candelaria, como en la plaza real: Bencomo, Añaterve, Beneharo, Acaymo, Tegueste, Pelinor, Romen, Pelicar y Adjoña. Al tocar una, sale quién era.
+
+
+## Robo (pickpocket)
+Habilidad nueva, **Robo**. Para robar, mantén pulsado sobre un habitante y elige **🫳 Robar**.
+- **A quién se le roba:**
+  - vecinos: nivel 1 (pan, monedas);
+  - pastores: nivel 5;
+  - artesanos: nivel 15;
+  - herbolarias: nivel 25;
+  - guardias: nivel 35;
+  - magos: nivel 45 (tabletas);
+  - mercaderes: nivel 55;
+  - banqueros: nivel 70.
+- **Que te pillen** (regla de Nico): a su mismo nivel, 50 %; baja a 0 % cuando le sacas 4 + (su nivel / 2) niveles. Por ejemplo, contra un vecino: nivel 1 → 50 %, nivel 5 → 0 %.
+- **Si te pillan:** aparecen guardias que solo te atacan a ti y te persiguen hasta que huyes lejos. Desaparecen al minuto, y durante 6 s no puedes robar.
+- **A jugadores:** desde nivel 50 de Robo; te pillan el 50 % a nivel 50 y nunca a nivel 99. Se roba un objeto de su MOCHILA (nunca lo equipado): una pieza, o un 1–5 % de sus monedas. Si te pilla, se entera.

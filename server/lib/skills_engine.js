@@ -72,6 +72,7 @@ export const SKILLS = [
   { id: 'fletching',   name: 'Flechería',   icon: '🏹', gathering: true, startLvl: 1 },
   { id: 'herblore',    name: 'Herbología',  icon: '🌿', gathering: true, startLvl: 1 },   // Sesión 50
   { id: 'crafting',    name: 'Artesanía',   icon: '🧵', gathering: true, startLvl: 1 },
+  { id: 'thieving',    name: 'Robo',        icon: '🫳', gathering: true, startLvl: 1 },   // Sesión 50
 ];
 
 /** Mapa id → def para lookup rápido. */

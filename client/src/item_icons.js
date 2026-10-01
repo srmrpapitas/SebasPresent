@@ -369,6 +369,12 @@ const SKILL_ICONS = {
     <polygon points="22,5 28,4 27,10" fill="#b8b8c0" stroke="#000" stroke-width="0.8"/>
     <polygon points="4,24 9,23 8,28" fill="#f0f0f0" stroke="#000" stroke-width="0.7"/>
     <polygon points="6,21 11,21 9,25" fill="#e05050" stroke="#000" stroke-width="0.7"/></svg>`,
+  // Sesión 50 — Robo: mano con una bolsita de monedas
+  thieving: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <path d="M18 9 Q24 9 25 15 Q26 22 19 24 Q12 25 11 18 Q11 11 18 9 Z" fill="#8a6a3a" stroke="#000" stroke-width="1"/>
+    <path d="M16 9 L18 6 L21 9" fill="#6a4a24" stroke="#000" stroke-width="0.8"/>
+    <circle cx="18" cy="17" r="2.2" fill="#f2c230" stroke="#4a3000" stroke-width="0.6"/>
+    <path d="M3 20 Q6 16 10 17 L14 19 Q15 21 13 22 L9 22 Q6 26 3 25 Z" fill="#e0b080" stroke="#000" stroke-width="0.9"/></svg>`,
   // Sesión 50 — Artesanía: aguja con hilo sobre cuero
   crafting: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
     <path d="M5 9 Q16 4 27 9 L25 26 Q16 29 7 26 Z" fill="#8a5a30" stroke="#000" stroke-width="1"/>
@@ -731,6 +737,11 @@ ICONS.cape_fuego = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
     <path d="M11 20 Q10 24 12 26" stroke="#fff" stroke-width="1.2" fill="none" opacity=".7"/>
   </svg>`;
   ICONS.vial_agua = flask('#7ac8ff', 0.75);
+  // Sesión 50 — Pan (se roba a los vecinos)
+  ICONS.pan = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="16" cy="19" rx="12" ry="8" fill="#c8843a" stroke="#000" stroke-width="1"/>
+    <ellipse cx="16" cy="17" rx="10.5" ry="6" fill="#e0a050"/>
+    <path d="M9 15 Q11 18 13 15 M14 14 Q16 17 18 14 M19 15 Q21 18 23 15" fill="none" stroke="#8a5420" stroke-width="1.2"/></svg>`;
   ICONS.gofio = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
     <path d="M8 10 Q6 28 10 29 H22 Q26 28 24 10 Z" fill="#d8b878" stroke="#000" stroke-width="1.1"/>
     <path d="M8 10 Q16 6 24 10 Q16 13 8 10Z" fill="#c0a060" stroke="#000" stroke-width=".9"/>
