@@ -2,8 +2,23 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-  <script>eruda.init();</script>
+  <script>
+    // Eruda (consola de depuración) solo si lo pides: añade ?debug=1 a la URL (se recuerda) y ?debug=0 para quitarlo.
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search).get('debug');
+        if (q === '1') localStorage.setItem('sp.debug', '1');
+        if (q === '0') localStorage.removeItem('sp.debug');
+        if (localStorage.getItem('sp.debug') === '1') {
+          window.__SP_DEBUG = true;
+          var s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+          s.onload = function () { try { eruda.init(); } catch (e) {} };
+          document.head.appendChild(s);
+        }
+      } catch (e) {}
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#1a1410" />
   <title>SebasPresent</title>

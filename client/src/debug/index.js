@@ -57,7 +57,7 @@ export function initDebugSystem() {
   installErrorHandlers();
   installDiag();
   installHealthCheck();
-  installOverlay();
+  if (window.__SP_DEBUG) installOverlay();   // badge de FPS/errores: solo con ?debug=1
   installWeaponDebugBridge();
   installInspector();
   // Sesión 39 — log de combate (observer puro: trampea hooks globales + fetch).
