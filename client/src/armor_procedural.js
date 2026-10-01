@@ -21,6 +21,7 @@
  */
 
 import * as THREE from 'three';
+import { buildDragonArmor } from './armor_dragon.js';   // Sesión 51 — set de dragón propio
 
 export const ARMOR_COLORS = {
   bronze:    { base: 0xb87333, trim: 0xe6a064, gem: null,     metal: 0.75, rough: 0.38 },
@@ -981,6 +982,11 @@ export function buildProceduralArmor(itemId, slot, root) {
   const matId = materialOf(itemId);
   if (!matId || !root) return null;
   let parts = null;
+  if (matId === 'dragon') {
+    try { parts = buildDragonArmor(slot, root, DRAGON_HELPERS); }
+    catch (e) { console.warn('[armor] dragón falló, uso el genérico:', e?.message); parts = null; }
+    if (parts) return parts;
+  }
   if (slot === 'helm') parts = buildHelm(root, matId);
   else if (slot === 'body') parts = buildBody(root, matId);
   else if (slot === 'shield') parts = buildShield(root, matId);
@@ -991,6 +997,8 @@ export function buildProceduralArmor(itemId, slot, root) {
   for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
   return parts;
 }
+
+export const DRAGON_HELPERS = { findBone, childNamed, boneBasis, orient, boneVerts, fitBox, framed, tune, spineFrame };
 
 // ---------------- Capa de fuego (Sesión 50) ----------------
 let _fireTex = null;
