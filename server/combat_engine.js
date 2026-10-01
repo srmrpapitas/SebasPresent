@@ -32,7 +32,7 @@ import * as magic from './magic.js';   // Sesión 41 — sistema de mago
 import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.js';   // Sesión 50
 import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jefes
 import { activeBoosts } from '../client/src/shared/herblore.js';   // Sesión 50 — pociones
-import { hasSpecialAttack, DRAGON_SPEC_MULT, DRAGON_SPEC_MIN_HIT, DRAGON_SPEC_COST, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
+import { specialOf, resolveSpecial, clipSpecHits, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
 // tengan stats de maná/magia propios (llega con smithing/crafting). Base 20 +
@@ -1101,22 +1101,25 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // al regenerar el engine para el quiver). Mismo patron que attackPlayer:
   // valida energia, hace DOS rolls independientes, descuenta la barra.
   // Sesión 50 — solo las armas buenas tienen especial
-  const specCost = hasSpecialAttack(weaponItemId) ? DRAGON_SPEC_COST : null;
+  // Sesión 51 — especiales por arma estilo OSRS (shared/equip_reqs.js).
+  const specDef = specialOf(weaponItemId);
+  const specCost = specDef ? specDef.cost : null;
   let specActive = false;
   let specEnergyNow = null;
-  if (opts.useSpecial && !isMagic && specCost) {
+  if (opts.useSpecial && specDef && !!specDef.magic === !!isMagic) {
     specEnergyNow = computeSpecEnergy(stats, now);
     if (specEnergyNow >= specCost) specActive = true;
   }
 
-  const doRoll = () => (
+  // acc > 1 = más precisión (divide la defensa del rival)
+  const doRoll = (acc = 1) => (
     isMagic
-      ? magic.rollHitMagic(rng, Math.floor(magicLevel * (1 + userFx.mag)) + (userFx.flat?.magic || 0), npc.defence_lvl,
+      ? magic.rollHitMagic(rng, Math.floor(magicLevel * (1 + userFx.mag)) + (userFx.flat?.magic || 0), Math.max(1, Math.floor(npc.defence_lvl / acc)),
           magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, staffMagicBonus))
       : isRanged
       ? rollHitRanged(rng, userLvls.ranged, npc.defence_lvl,
-          totalRangedBonus, calcMaxHitRanged(userLvls.ranged, totalRangedBonus))
-      : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength), atkMultOf(userEq), 1)
+          totalRangedBonus, calcMaxHitRanged(userLvls.ranged, totalRangedBonus), 1 / acc)
+      : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength), atkMultOf(userEq), 1 / acc)
   );
   const userHit = doRoll();
 
@@ -1148,23 +1151,18 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // golpes (para dos hitsplats en el cliente).
   let specHits = null;
   if (specActive) {
-    const h2 = doRoll();
-    const m2 = applyDamageMults(h2);
-    // Sesión 50 — Aliento del dragón: cada cabeza ×1.5 y con daño mínimo
-    m1.dmg = Math.max(DRAGON_SPEC_MIN_HIT, Math.floor(m1.dmg * DRAGON_SPEC_MULT));
-    m2.dmg = Math.max(DRAGON_SPEC_MIN_HIT, Math.floor(m2.dmg * DRAGON_SPEC_MULT));
-    h2.hit = true; userHit.hit = true;
-    specHits = [m1.dmg, m2.dmg];
-    dmgRaw = m1.dmg + m2.dmg;
-    isCrit = m1.crit || m2.crit;
-    userHit.hit = userHit.hit || h2.hit;
+    // Sesión 51 — el especial sustituye al golpe normal (rolls propios)
+    const baseMax = isMagic || isRanged ? 0 : calcMaxHit(userLvls.strength) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
+    const sp = resolveSpecial(specDef, doRoll, applyDamageMults, baseMax);
+    const resist = (bossDef?.meleeResist && !isRangedLike) ? (1 - bossDef.meleeResist) : 1;
+    specHits = sp.hits.map(h => Math.floor(h * resist));
+    dmgRaw = specHits.reduce((a, b) => a + b, 0);
+    isCrit = sp.crit;
+    userHit.hit = specHits.some(h => h > 0);
   }
 
   const dmgToNpc = Math.min(dmgRaw, npc.hp_current);
-  if (specHits) {
-    specHits[0] = Math.min(specHits[0], dmgToNpc);
-    specHits[1] = Math.max(0, dmgToNpc - specHits[0]);
-  }
+  if (specHits) specHits = clipSpecHits(specHits, dmgToNpc);
   userHit.damage = dmgToNpc;
   const npcHpAfter = npc.hp_current - dmgToNpc;
   const npcKilled = npcHpAfter <= 0;
@@ -1201,6 +1199,13 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
       areaHits.push({ id: o.id, dmg, x: o.x, z: o.z });
     }
     if (areaTotal > 0) stats.magic_xp = (stats.magic_xp || 0) + areaTotal * 2;
+  }
+  let specHealed = 0;
+  if (specActive && specDef.heal && dmgToNpc > 0 && stats.hp_current > 0) {
+    const maxHp = levelFromXp(stats.hp_xp || 0);
+    const before = stats.hp_current;
+    stats.hp_current = Math.max(before, Math.min(maxHp, stats.hp_current + Math.max(1, Math.floor(dmgToNpc * specDef.heal))));
+    specHealed = stats.hp_current - before;
   }
   if (isMagic && spell.drain && dmgToNpc > 0 && stats.hp_current > 0) {
     const maxHp = levelFromXp(stats.hp_xp || 0);
@@ -1390,7 +1395,8 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     // hitsplats); energy_after = barra tras descontar. spec_energy siempre
     // presente (derivado) para que el cliente actualice la barra.
     special: specActive
-      ? { hits: specHits, cost: specCost, energy_after: specAfter, dragon: true }
+      ? { hits: specHits, cost: specCost, energy_after: specAfter, name: specDef.name, fx: specDef.fx,
+          dragon: specDef.fx === 'dragon', healed: specHealed }
       : null,
     spec_energy: specActive ? specAfter : computeSpecEnergy(stats, now),
     spec_max: SPEC_MAX,
@@ -1611,10 +1617,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   // -------- Spec: validar energia ANTES de consumir flechas --------
   const weaponItemIdPvp = await getUserWeaponItemId(db, attackerId);   // Sesión 50
-  const specCostPvp = hasSpecialAttack(weaponItemIdPvp) ? DRAGON_SPEC_COST : null;
+  const specDefPvp = specialOf(weaponItemIdPvp);                      // Sesión 51
+  const specCostPvp = specDefPvp ? specDefPvp.cost : null;
   let specActivePvp = false;
   let specEnergyNowPvp = null;
-  if (opts.useSpecial && !isMagicPvp && specCostPvp) {
+  if (opts.useSpecial && specDefPvp && !!specDefPvp.magic === !!(isMagicPvp && opts.spellId)) {
     specEnergyNowPvp = computeSpecEnergy(attackerStats, now);
     if (specEnergyNowPvp < specCostPvp) {
       return { error: 'no_spec_energy', spec_energy: specEnergyNowPvp, spec_cost: specCostPvp };
@@ -1673,15 +1680,15 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const targetDefMult   = defMultOf(targetEq, targetStanceKey);
   const attackerDefMult = defMultOf(attackerEq, stanceKey);
 
-  const doRollPvp = () => (
+  const doRollPvp = (acc = 1) => (
     isMagicPvp && spellPvp
-      ? magic.rollHitMagic(rng, Math.floor(magicLevelPvp * (1 + attackerFx.mag)) + (attackerFx.flat?.magic || 0), Math.round(targetLvls.defence * targetDefMult),
+      ? magic.rollHitMagic(rng, Math.floor(magicLevelPvp * (1 + attackerFx.mag)) + (attackerFx.flat?.magic || 0), Math.max(1, Math.round(targetLvls.defence * targetDefMult / acc)),
           magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, STAFF_MAGIC_BONUS[weaponItemIdPvp] || 0))
       : isRanged
       ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
-          totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp), targetDefMult)
+          totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp), targetDefMult / acc)
       : rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength),
-          atkMultOf(attackerEq), targetDefMult)
+          atkMultOf(attackerEq), targetDefMult / acc)
   );
   const userHit = doRollPvp();
 
@@ -1706,15 +1713,12 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   let isCrit = m1pvp.crit;
   let specHitsPvp = null;
   if (specActivePvp) {
-    const h2 = doRollPvp();
-    const m2 = applyMultsPvp(h2);
-    m1pvp.dmg = Math.max(DRAGON_SPEC_MIN_HIT, Math.floor(m1pvp.dmg * DRAGON_SPEC_MULT));
-    m2.dmg = Math.max(DRAGON_SPEC_MIN_HIT, Math.floor(m2.dmg * DRAGON_SPEC_MULT));
-    h2.hit = true; userHit.hit = true;
-    specHitsPvp = [m1pvp.dmg, m2.dmg];
-    dmgRaw = m1pvp.dmg + m2.dmg;
-    isCrit = m1pvp.crit || m2.crit;
-    userHit.hit = userHit.hit || h2.hit;
+    const baseMaxPvp = (isMagicPvp && spellPvp) || isRanged ? 0 : calcMaxHit(attackerLvls.strength) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
+    const sp = resolveSpecial(specDefPvp, doRollPvp, applyMultsPvp, baseMaxPvp);
+    specHitsPvp = sp.hits;
+    dmgRaw = specHitsPvp.reduce((a, b) => a + b, 0);
+    isCrit = sp.crit;
+    userHit.hit = specHitsPvp.some(h => h > 0);
   }
 
   // Sesión 50 — Protección cuerpo a cuerpo en PvP: −40 % contra golpes de melé.
@@ -1724,8 +1728,19 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   if (targetFx.shield) dmgRaw = Math.floor(dmgRaw * (1 - targetFx.shield));                 // Sesión 50 — Escudo de lava
   const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
   if (specHitsPvp) {
-    specHitsPvp[0] = Math.min(specHitsPvp[0], dmgToTarget);
-    specHitsPvp[1] = Math.max(0, dmgToTarget - specHitsPvp[0]);
+    // protecciones/escudo ya recortaron dmgRaw → repartir proporcional y recortar
+    const sum = specHitsPvp.reduce((a, b) => a + b, 0) || 1;
+    const scale = Math.min(1, dmgRaw / sum);
+    specHitsPvp = clipSpecHits(specHitsPvp.map(h => Math.floor(h * scale)), dmgToTarget);
+    const rest = dmgToTarget - specHitsPvp.reduce((a, b) => a + b, 0);
+    if (rest > 0) specHitsPvp[0] += rest;
+  }
+  let specHealedPvp = 0;
+  if (specActivePvp && specDefPvp.heal && dmgToTarget > 0 && attackerStats.hp_current > 0) {
+    const maxHpA = levelFromXp(attackerStats.hp_xp || 0);
+    const beforeA = attackerStats.hp_current;
+    attackerStats.hp_current = Math.max(beforeA, Math.min(maxHpA, attackerStats.hp_current + Math.max(1, Math.floor(dmgToTarget * specDefPvp.heal))));
+    specHealedPvp = attackerStats.hp_current - beforeA;
   }
   userHit.damage = dmgToTarget;
   const targetHpAfter = targetStats.hp_current - dmgToTarget;
@@ -1991,7 +2006,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     // Sesion 46 — spec + ranged (misma forma que attackNpc para que el
     // cliente reutilice el mismo handler de hitsplats y barra de spec).
     special: specActivePvp
-      ? { hits: specHitsPvp, cost: specCostPvp, energy_after: specAfterPvp, dragon: true }
+      ? { hits: specHitsPvp, cost: specCostPvp, energy_after: specAfterPvp, name: specDefPvp.name, fx: specDefPvp.fx,
+          dragon: specDefPvp.fx === 'dragon', healed: specHealedPvp }
       : null,
     spec_energy: specActivePvp ? specAfterPvp : computeSpecEnergy(attackerStats, now),
     spec_max: SPEC_MAX,

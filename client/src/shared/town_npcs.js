@@ -94,7 +94,7 @@ export const TOWN_NPCS = [
     lines: [
       'Funde el mineral en el horno y forja en el yunque. Espada, 1 lingote; escudo, 2; espadón, 3.',
       'El bronce es para aprender. Con acero ya se nota la diferencia.',
-      'Las espadas buenas, de oro para arriba, tienen ataque especial. Barra verde en la pestaña de combate.',
+      'Las espadas de oro para arriba, el arco mágico, el de dragón y los bastones tienen ataque especial, cada uno el suyo. Barra verde en la pestaña de combate.',
     ] },
   { id: 'gus_minero', name: 'Gus', title: 'Minero', x: 127, z: -86, rotY: 3.9, role: '⛏',
     look: { skin: 0xd9a57a, shirt: 0x6a4a2a, pants: 0x3a3a3a, hair: 0x8a6a3a, acc: 'helm' },

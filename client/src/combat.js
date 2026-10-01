@@ -41,7 +41,7 @@ import * as multiplayer from './multiplayer.js';   // Sesión 27 Bloque 3 — PV
 import * as worldSnapshot from './world_snapshot.js'; // Sesión 27 Bloque 3 — auto-retaliate
 import * as audio from './audio.js';               // Sesión 32 — SFX de combat
 import * as combatStyles from './combat_styles.js'; // Sesión 33 día 2 — selector de estilo
-import { hasSpecialAttack } from './shared/equip_reqs.js';   // Sesión 50
+import { hasSpecialAttack, specialOf } from './shared/equip_reqs.js';   // Sesión 50/51
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -504,6 +504,8 @@ async function doAttackTickNpc(gen = attackGen) {
           try { audio.synth?.('altar', { volume: 0.9, pitch: 0.55 }); } catch {}
         } else {
           window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 });
+          if (result.special?.fx === 'snapshot')   // Sesión 51 — Disparo rápido: 2ª flecha
+            window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 330, arcHeight: 0.35 });
         }
       }
     } catch {}
@@ -543,9 +545,7 @@ async function doAttackTickNpc(gen = attackGen) {
 
   if (result.your_hit) {
     if (result.special) {
-      feedLog('hit', result.special.dragon
-        ? `🐉 ¡ALIENTO DEL DRAGÓN! ${npcName}: ${result.special.hits[0]} + ${result.special.hits[1]} HP.`
-        : `⚡ ¡ESPECIAL! Doble golpe a ${npcName}: ${result.special.hits[0]} + ${result.special.hits[1]} HP.`);
+      feedLog('hit', specFeedText(result.special, npcName));
     } else if (result.is_crit) {
       feedLog('hit', `⚡ ¡CRÍTICO! Golpe demoledor a ${npcName}: ${result.your_damage} HP.`);
     } else {
@@ -571,11 +571,11 @@ async function doAttackTickNpc(gen = attackGen) {
   // Sesion 44 — SPECIAL: dos hitsplats (el 2º con delay, como dos golpes
   // reales). Normal: un hitsplat con el daño total (comportamiento de siempre).
   if (typeof window !== 'undefined' && typeof window.__worldSpawnHitsplat === 'function') {
-    if (result.special) {
-      try { window.__worldSpawnHitsplat(npcId, result.special.hits[0] || 0); } catch {}
-      setTimeout(() => {
-        try { window.__worldSpawnHitsplat(npcId, result.special.hits[1] || 0); } catch {}
-      }, 260);
+    if (result.special && Array.isArray(result.special.hits)) {
+      // Sesión 51 — un hitsplat por golpe del especial (garras = 4)
+      result.special.hits.forEach((h, i) => setTimeout(() => {
+        try { window.__worldSpawnHitsplat(npcId, h || 0); } catch {}
+      }, i * 220));
     } else {
       try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
     }
@@ -591,7 +591,7 @@ async function doAttackTickNpc(gen = attackGen) {
         setTimeout(() => { try { window.__worldFlashNpcHit(npcId); } catch {} }, 120);
       } catch {}
     }
-    feedLog('hit', '⚡ ¡ATAQUE ESPECIAL!');
+    if (result.special.healed > 0) feedLog('hit', `💚 El especial te cura ${result.special.healed} HP.`);
     specArmed = false;
   }
   if (typeof result.spec_energy === 'number' && state && state.stats) {
@@ -852,6 +852,8 @@ async function doAttackTickPlayer(gen = attackGen) {
           window.__worldFireProjectile(from, to, { type: 'dragonhead', windupMs: 430, arcHeight: 0.9 });
         } else {
           window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 });
+          if (result.special?.fx === 'snapshot')
+            window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 330, arcHeight: 0.35 });
         }
       }
     } catch {}
@@ -867,7 +869,9 @@ async function doAttackTickPlayer(gen = attackGen) {
         setTimeout(() => { try { window.__worldFlashPeerHit(targetId); } catch {} }, 120);
       } catch {}
     }
-    feedLog('hit', '⚡ ¡ATAQUE ESPECIAL!');
+    feedLog('hit', specFeedText(result.special, targetName));
+    if (result.special.healed > 0) feedLog('hit', `💚 El especial te cura ${result.special.healed} HP.`);
+    specArmed = false;
   }
 
   // Mensaje de hit/miss
@@ -888,7 +892,13 @@ async function doAttackTickPlayer(gen = attackGen) {
   }
   // Hitsplat sobre el peer (gota roja / escudo azul)
   if (typeof window !== 'undefined' && typeof window.__worldSpawnPlayerHitsplat === 'function') {
-    try { window.__worldSpawnPlayerHitsplat(targetId, result.your_damage || 0); } catch {}
+    if (result.special && Array.isArray(result.special.hits)) {
+      result.special.hits.forEach((h, i) => setTimeout(() => {
+        try { window.__worldSpawnPlayerHitsplat(targetId, h || 0); } catch {}
+      }, i * 220));
+    } else {
+      try { window.__worldSpawnPlayerHitsplat(targetId, result.your_damage || 0); } catch {}
+    }
   }
 
   // XP drops (igual que NPC)
@@ -1160,6 +1170,15 @@ let autoRetaliate = false;  // TODO: persistir cuando server lo soporte
 // energia). Estado local del cliente; el server es quien valida y descuenta.
 let specArmed = false;
 
+// Sesión 51 — texto del feed para cualquier especial
+const SPEC_FX_EMOJI = { dragon: '🐉', claws: '🩸', heal: '💚', gs: '⚔', smash: '💥', volatile: '🔥', arcane: '✨', snapshot: '🏹' };
+function specFeedText(sp, who) {
+  const hits = (sp.hits || []).filter(h => h !== undefined);
+  const total = hits.reduce((a, b) => a + (b || 0), 0);
+  const parts = hits.length > 1 ? `${hits.join(' + ')} = ${total}` : `${total}`;
+  return `${SPEC_FX_EMOJI[sp.fx] || '⚡'} ¡${(sp.name || 'Especial').toUpperCase()}! ${who}: ${parts} HP.`;
+}
+
 // Sesión 41 — Diagnóstico del auto-ataque/retaliate. Activar en Eruda con
 // window.__combatDebug(true). Loguea CADA decisión del flujo de combate para
 // ver exactamente qué dispara un ataque y si la animación se ejecutó o se
@@ -1271,12 +1290,14 @@ function render() {
   ensureCompactCss();
 
   // Sesión 50 — el especial solo aparece con armas buenas (shared/equip_reqs.js)
-  const specOk = weapon.hasSpecial && hasSpecialAttack(equippedWeaponItem?.item_id);
+  // Sesión 51 — cada arma buena tiene su especial (nombre + coste)
+  const specDef = specialOf(equippedWeaponItem?.item_id);
+  const specOk = !!specDef;
   if (!specOk) specArmed = false;
   const specPct = Math.max(0, Math.min(100, Math.round(s.spec_energy ?? 100)));
   const specialHtml = specOk ? `
-      <div class="combat-osrs-special ${specArmed ? 'armed' : ''}" data-action="toggle-special">
-        <div class="combat-osrs-special-label">⚡ Especial ${specPct}%${specArmed ? ' · ARMADO' : ''}</div>
+      <div class="combat-osrs-special ${specArmed ? 'armed' : ''}" data-action="toggle-special" title="${escapeHtml(specDef.desc)}">
+        <div class="combat-osrs-special-label">⚡ ${escapeHtml(specDef.name)} (${specDef.cost}%) · ${specPct}%${specArmed ? ' · ARMADO' : ''}</div>
         <div class="combat-osrs-special-bar"><div class="combat-osrs-special-fill" style="width:${specPct}%"></div></div>
       </div>` : '';
 
@@ -1409,7 +1430,11 @@ function attachHandlers() {
         // local (energia visible < costo aprox = feedback inmediato), pero
         // el server es quien decide de verdad en el proximo tick.
         specArmed = !specArmed;
-        if (specArmed) { try { audio.sfx('book_open'); } catch {} }
+        if (specArmed) {
+          try { audio.sfx('book_open'); } catch {}
+          const sd = specialOf(equipment.getEquipped?.('weapon')?.item_id);
+          if (sd) feedLog('info', `⚡ ${sd.name}: ${sd.desc}${sd.magic ? ' (lanza un hechizo)' : ''}`);
+        }
         render();
       } else if (action === 'respawn') {
         try {

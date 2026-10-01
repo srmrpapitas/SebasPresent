@@ -58,17 +58,87 @@ export function requirementText(req) {
 }
 
 // ------------------------------------------------------------
-// Sesión 50 — Ataque especial: SOLO el arco de garras de dragón.
-//   "Aliento del dragón": dispara dos cabezas de dragón (dos golpes, cada
-//   uno ×1.5 y mínimo DRAGON_SPEC_MIN_HIT).
+// Sesión 51 — Ataques especiales estilo OSRS, uno por arma (de oro para
+// arriba + arcos/bastones buenos). Campos:
+//   cost     energía (barra 100, +10 cada 30 s)
+//   hits     nº de golpes (rolls independientes)      dmg   multiplicador de daño
+//   acc      precisión (divide la defensa del rival)  heal  % del daño que te curas
+//   minHit   daño mínimo por golpe (garantizado)      minFrac  mínimo = % del golpe máx.
+//   claws    cascada de 4 zarpazos (X, X/2, X/4, X/4+1)
+//   magic    se aplica al próximo hechizo (bastones)  fx  estilo visual del cliente
 // ------------------------------------------------------------
-const SPECIAL_ITEMS = new Set(['bow_dragon']);
+export const WEAPON_SPECS = {
+  sword_oro:          { name: 'Puñalada doble',   osrs: 'Daga de dragón',      cost: 25, hits: 2, dmg: 1.15, acc: 1.25, fx: 'double',
+                        desc: 'Dos golpes seguidos con +15 % de daño y +25 % de precisión.' },
+  sword_obsidiana:    { name: 'Tajo de obsidiana', osrs: 'Espada larga de dragón', cost: 25, hits: 1, dmg: 1.25, acc: 1, fx: 'cleave',
+                        desc: 'Un tajo con +25 % de daño.' },
+  sword_basaltita:    { name: 'Garras de magma',  osrs: 'Garras de dragón',     cost: 50, claws: true, acc: 1.25, fx: 'claws',
+                        desc: 'Cuatro zarpazos en cascada: el golpe, la mitad, un cuarto y un cuarto +1.' },
+  sword_teiderio:     { name: 'Finta de Echeyde', osrs: 'Espada larga de Vesta', cost: 25, hits: 1, dmg: 1.2, acc: 1.5, minFrac: 0.2, fx: 'feint',
+                        desc: '+20 % de daño, +50 % de precisión y nunca pega menos del 20 % del golpe máximo.' },
+  sword_oro_2h:       { name: 'Golpe aplastante', osrs: 'Martillo de dragón',   cost: 50, hits: 1, dmg: 1.5, acc: 1, fx: 'smash',
+                        desc: 'Un golpe con +50 % de daño.' },
+  sword_obsidiana_2h: { name: 'Hoja de Guayota',  osrs: 'Espadón de Bandos',    cost: 50, hits: 1, dmg: 1.21, acc: 2, fx: 'gs',
+                        desc: '+21 % de daño y precisión doble.' },
+  sword_basaltita_2h: { name: 'Magma vital',      osrs: 'Espadón de Saradomin', cost: 50, hits: 1, dmg: 1.1, acc: 2, heal: 0.5, fx: 'heal',
+                        desc: '+10 % de daño, precisión doble y te curas la mitad del daño hecho.' },
+  sword_teiderio_2h:  { name: 'Juicio del Teide', osrs: 'Espadón de Armadyl',   cost: 50, hits: 1, dmg: 1.375, acc: 2, fx: 'gs',
+                        desc: '+37,5 % de daño y precisión doble.' },
+  bow_magic:          { name: 'Disparo rápido',   osrs: 'Arco corto mágico',    cost: 55, hits: 2, dmg: 1, acc: 1, fx: 'snapshot',
+                        desc: 'Dos flechas casi a la vez.' },
+  bow_dragon:         { name: 'Aliento del dragón', osrs: 'Arco oscuro',        cost: 55, hits: 2, dmg: 1.5, minHit: 4, acc: 1, fx: 'dragon',
+                        desc: 'Dos cabezas de dragón en llamas, cada una ×1,5 y mínimo 4 de daño.' },
+  staff_normal:       { name: 'Descarga arcana',  osrs: 'Bastón volátil',       cost: 50, hits: 1, dmg: 1.25, acc: 1.25, magic: true, fx: 'arcane',
+                        desc: 'El próximo hechizo pega +25 % y acierta +25 %.' },
+  staff_dragomante:   { name: 'Llama de Guayota', osrs: 'Bastón de pesadilla',  cost: 55, hits: 1, dmg: 1.5, acc: 1.5, magic: true, heal: 0.2, fx: 'volatile',
+                        desc: 'El próximo hechizo pega +50 %, acierta +50 % y te cura el 20 % del daño.' },
+};
+// Compat (Sesión 50)
 export const DRAGON_SPEC_MULT = 1.5;
 export const DRAGON_SPEC_MIN_HIT = 4;
 export const DRAGON_SPEC_COST = 55;
 
+export function specialOf(itemId) {
+  return (itemId && WEAPON_SPECS[itemId]) || null;
+}
 export function hasSpecialAttack(itemId) {
-  return !!itemId && SPECIAL_ITEMS.has(itemId);
+  return !!specialOf(itemId);
+}
+
+/**
+ * Resuelve un especial. roll(acc) → {hit, damage} (ya con la precisión
+ * aplicada); mult(hitRes) → {dmg, crit} (multiplicadores normales del arma).
+ * baseMax = golpe máximo normal (para minFrac). Devuelve {hits:[...], crit}.
+ */
+export function resolveSpecial(spec, roll, mult, baseMax = 0) {
+  const acc = spec.acc || 1;
+  let crit = false;
+  const one = () => {
+    const h = roll(acc);
+    const m = mult(h);
+    crit = crit || !!m.crit;
+    let d = h.hit ? Math.floor(m.dmg * (spec.dmg || 1)) : 0;
+    if (spec.minHit) d = Math.max(spec.minHit, d);
+    if (spec.minFrac && h.hit) d = Math.max(d, Math.floor(baseMax * spec.minFrac));
+    return d;
+  };
+  if (spec.claws) {
+    // OSRS: si el 1º falla prueba el 2º; si los dos fallan → 0,0,1,1
+    let first = one();
+    if (!first) first = one();
+    if (!first) return { hits: [0, 0, 1, 1], crit };
+    const q = Math.floor(first / 4);
+    return { hits: [first, Math.floor(first / 2), q, q + 1], crit };
+  }
+  const hits = [];
+  for (let i = 0; i < (spec.hits || 1); i++) hits.push(one());
+  return { hits, crit };
+}
+
+/** Recorta los golpes en orden para que no sumen más que `total`. */
+export function clipSpecHits(hits, total) {
+  let left = total;
+  return hits.map(h => { const v = Math.max(0, Math.min(h, left)); left -= v; return v; });
 }
 
 // Bonus de magia de bastones (se suma al golpe máximo del hechizo y al maná).
