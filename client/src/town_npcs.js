@@ -125,12 +125,26 @@ function buildModel(n) {
     ring.position.y = 0.44; head.add(ring);
   } else if (L.acc === 'bandana') {
     head.add(box(0.32, 0.07, 0.3, 0xa02a2a, 0, 0.36, 0));
+  } else if (L.acc === 'bottle') {   // Sesión 50 — Adonay: barba de días, gorro de lana
+    head.add(box(0.3, 0.12, 0.08, shade(hair, 1.2), 0, 0.1, 0.12));
+    head.add(box(0.33, 0.1, 0.31, 0x7a2a2a, 0, 0.42, 0));
+    head.add(box(0.06, 0.06, 0.02, 0xc85050, 0, 0.19, 0.155));   // nariz colorada
   } else if (L.acc === 'glasses') {   // Sesión 50 — Nauzet
     head.add(box(0.1, 0.07, 0.02, 0x101010, -0.075, 0.25, 0.16));
     head.add(box(0.1, 0.07, 0.02, 0x101010, 0.075, 0.25, 0.16));
     head.add(box(0.06, 0.02, 0.02, 0x101010, 0, 0.26, 0.16));
   }
   torso.add(head);
+  // Sesión 50 — la botella en la mano derecha (y parches en la ropa)
+  if (L.acc === 'bottle') {
+    const glass = new THREE.MeshLambertMaterial({ color: 0x2a6a3a, transparent: true, opacity: 0.85 });
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.24, 8), glass); b.position.set(0, -0.66, 0.06);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.12, 6), glass); neck.position.set(0, -0.5, 0.06);
+    arms[1].add(b); arms[1].add(neck);
+    arms[1].rotation.x = -0.7;
+    torso.add(box(0.14, 0.12, 0.02, 0x8a7a50, -0.12, 0.42, 0.155));
+    torso.add(box(0.12, 0.1, 0.02, 0x4a5a6a, 0.14, 0.2, 0.155));
+  }
 
   // Hitbox
   const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 2.1, 8), new THREE.MeshBasicMaterial({ visible: false }));
@@ -306,8 +320,26 @@ const ITEM_NAMES = {
 };
 const itemName = (id) => ITEM_NAMES[id] || id.replace(/_/g, ' ');
 
+// Sesión 50 — aviso "X quiere hablar contigo"
+let calloutEl = null, calloutFor = null;
+function showCallout(o) {
+  hideCallout();
+  calloutFor = o;
+  calloutEl = document.createElement('div');
+  calloutEl.className = 'npc-callout';
+  calloutEl.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);z-index:235;background:rgba(30,22,12,0.96);border:2px solid #c8a043;border-radius:10px;padding:9px 14px;color:#ffe8a0;font:bold 15px sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.6);cursor:pointer;display:flex;gap:10px;align-items:center';
+  calloutEl.innerHTML = `<span>${o.n.callout}</span><button style="background:#2f6a3a;color:#fff;border:1px solid #c8a043;border-radius:6px;padding:6px 10px;font-weight:bold">Hablar</button>`;
+  calloutEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+  calloutEl.addEventListener('pointerup', (e) => { e.preventDefault(); e.stopPropagation(); const t = calloutFor; hideCallout(); if (t) goTalk(t); });
+  document.body.appendChild(calloutEl);
+  try { audio.synth?.('craft_done', { volume: 0.4 }); } catch {}
+  setTimeout(() => { if (calloutFor === o) hideCallout(); }, 15_000);
+}
+function hideCallout() { if (calloutEl) { calloutEl.remove(); calloutEl = null; calloutFor = null; } }
+
 async function talkTo(o) {
   const n = o.n;
+  if (n.voice) { try { audio.voice?.(n.voice); } catch {} }   // Sesión 50 — habla con su voz
   talking = o;
   o.gestureT = 1.2;
   try { audio.sfx?.('book_open'); } catch {}
@@ -678,6 +710,8 @@ export function update(dt) {
     o.torso.scale.y = 1 + Math.sin(t * 2.2) * 0.012;
     o.arms[0].rotation.x = Math.sin(t * 1.3) * 0.05;
     o.arms[1].rotation.x = -Math.sin(t * 1.3) * 0.05;
+    // Sesión 50 — el borracho: brazo de la botella medio alzado, y de vez en cuando un trago
+    if (o.n.drunk) { const sip = Math.max(0, Math.sin(t * 0.45)) ** 8; o.arms[1].rotation.x = -0.7 - sip * 1.6; }
     // Gesto al hablar (levanta el brazo derecho)
     if (o.gestureT > 0) {
       o.gestureT -= dt;
@@ -706,6 +740,17 @@ export function update(dt) {
     while (dy > Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
     o.root.rotation.y += dy * Math.min(1, dt * 4);
+    // Sesión 50 — borracho: se tambalea
+    if (o.n.drunk) {
+      o.root.rotation.z = Math.sin(timeAcc * 1.3 + o.phase) * 0.09;
+      o.root.rotation.x = Math.sin(timeAcc * 0.9 + o.phase) * 0.05;
+    }
+    // Sesión 50 — "X quiere hablar contigo" al acercarte
+    if (o.n.callout && p) {
+      const d = Math.hypot(p.position.x - o.n.x, p.position.z - o.n.z);
+      if (d < 10 && talking !== o && !calloutEl && Date.now() - (o.calloutAt || 0) > 90_000) { o.calloutAt = Date.now(); showCallout(o); }
+      else if (calloutEl && calloutFor === o && (d > 16 || talking === o)) hideCallout();
+    }
     // Marcas que flotan
     const bob = Math.sin(timeAcc * 3 + o.phase) * 0.08;
     for (const m of [o.bang, o.qGold, o.qGray]) m.position.y = 2.65 + bob;

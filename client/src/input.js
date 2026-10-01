@@ -167,7 +167,7 @@ export function setup(opts) {
       '.osrs-action-menu, ' +
       // Sesión 50 — diálogo con NPCs (texto incluido: tocarlo = seguir
       // hablando, nunca andar) y menús de castillo/casas
-      '.dlg, #castleBankerMenu, .pvp-action-menu, .trade-win, .trade-toast, .trade-qty, .mount-menu, .follow-banner'
+      '.dlg, .npc-callout, #castleBankerMenu, .pvp-action-menu, .trade-win, .trade-toast, .trade-qty, .mount-menu, .follow-banner'
     )) return true;
     // Eruda usa el id="eruda" y a veces emite events desde divs sin clase
     // específica. Como fallback: si el target tiene attribute o ancestor

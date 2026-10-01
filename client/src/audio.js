@@ -458,6 +458,20 @@ export function toggleMute() {
   return prefs.muted;
 }
 export function isMuted() { return prefs.muted; }
+
+// Sesión 50 — voces de NPCs (clips cortos). Respeta silencio y volumen de efectos.
+let _voice = null;
+export function voice(url, opts = {}) {
+  try {
+    if (prefs.muted) return null;
+    if (_voice) { _voice.pause(); _voice = null; }
+    const a = new Audio(url);
+    a.volume = Math.max(0, Math.min(1, (opts.volume ?? 1) * prefs.sfx * prefs.master * 1.4));
+    a.play().catch(() => {});
+    _voice = a;
+    return a;
+  } catch { return null; }
+}
 export function getPrefs() { return { ...prefs }; }
 
 function cancelMusicFade() {

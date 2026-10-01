@@ -248,6 +248,17 @@ export const TOWN_NPCS = [
       'Las chimeneas redondas y las azoteas son de toda la vida. Y un cactus o una palmera en cada jardín, que el desierto también es bonito.',
       'Dicen que en Lanzarote lo hicieron así primero. Yo solo copié lo bueno.',
     ] },
+  // Sesión 50 — Adonay, el vagabundo borracho de La Laguna (habla con voz)
+  { id: 'adonay_vagabundo', name: 'Adonay', title: 'Vagabundo de La Laguna', x: -40, z: 8, rotY: 1.4, role: '🍾',
+    look: { skin: 0xc08a60, shirt: 0x5a5242, pants: 0x3a382e, hair: 0x2a2018, acc: 'bottle' },
+    drunk: true, voice: 'assets/voices/adonay.mp3', callout: '🍾 ADONAY quiere hablar contigo',
+    lines: [
+      '¡Eeeeh, mi niiiño! Ven pa\'cá, que te cuento una cosa…',
+      'Yo antes era alguien, ¿eh? Yo tenía un barco… o era una barca… o un barraquito. No me acuerdo.',
+      '¿Tienes un pavo? Es pa\' un bocadillo. Bueno, pa\' la botella. Pero la botella también es comida, ¿no?',
+      'El Teide me habla por las noches, ¿sabes? Me dice: "Adonay, vete pa\' casa". Y yo le digo: "¿Qué casa?".',
+      'Los del Cabildo me quitaron el banco donde dormía. ¡El banco, mi niño! Ahora duermo en la guagua.',
+    ] },
   // Sesión 50 — monturas
   { id: 'tanausu_cuadra', name: 'Tanausú', title: 'Cuadrero', x: -38, z: 38, rotY: 2.3, role: '🐎',
     look: { skin: 0xb07a52, shirt: 0x6a4a2a, pants: 0x2a2a2a, hair: 0x1a1a1a, acc: 'hat' },
