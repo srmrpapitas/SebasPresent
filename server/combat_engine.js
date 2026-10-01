@@ -1982,9 +1982,11 @@ async function respawnUser(db, userId, opts = {}) {
   // visualmente; ahora el server fuerza last_x/last_z al respawn para que
   // la posición sea consistente entre cliente y server.
   await db.run(
-    'UPDATE users SET last_x = ?, last_z = ? WHERE id = ?',
-    [SPAWN_X, SPAWN_Z, userId]
+    'UPDATE users SET last_x = ?, last_z = ?, warp_x = ?, warp_z = ?, warp_at = ? WHERE id = ?',
+    [SPAWN_X, SPAWN_Z, SPAWN_X, SPAWN_Z, now, userId]
   );
+  // Sesión 50 — también la posición en vivo (si no, el Realm lo vería como un salto)
+  await db.run('UPDATE online_users SET x = ?, z = ?, last_seen = ? WHERE user_id = ?', [SPAWN_X, SPAWN_Z, now, userId]);
   // Sesión 16 — respawn no cambia XP pero garantizamos consistencia.
   try {
     await mirrorCombatXpToUserSkills(db, userId, stats, now);

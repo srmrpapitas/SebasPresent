@@ -4,6 +4,7 @@
  * El destino lo decide el server (shared/teleports.js). La posición nueva se
  * guarda en online_users y users (igual que el teleport a casa).
  */
+import { serverWarp } from '../lib/warp.js';
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { getPlayerPosition } from './skills/_shared.js';
@@ -47,10 +48,7 @@ export async function handleTabletBreak(request, env) {
 
   // Mover (un pequeño desvío para que no caigan todos en el mismo punto)
   const x = tab.x + (Math.random() - 0.5) * 3, z = tab.z + (Math.random() - 0.5) * 3;
-  await env.DB.batch([
-    env.DB.prepare('UPDATE online_users SET x = ?, z = ?, last_seen = ? WHERE user_id = ?').bind(x, z, now, userId),
-    env.DB.prepare('UPDATE users SET last_x = ?, last_z = ? WHERE id = ?').bind(x, z, userId),
-  ]);
+  await serverWarp(env, userId, x, z, now);   // Sesión 50 — salto autorizado
   await questEvent(env, userId, 'teleport', row.item_id);
   return json({ ok: true, tablet: row.item_id, name: tab.name, x, z });
 }

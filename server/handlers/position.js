@@ -41,8 +41,15 @@ export async function handleSavePosition(request, env) {
     return json({ error: 'invalid_position', message: 'x e z deben ser números finitos.' }, 400);
   }
 
-  const x = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawX));
-  const z = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawZ));
+  let x = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawX));
+  let z = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, rawZ));
+
+  // Sesión 50 — anti teleport hack: la posición guardada (la que se usa al
+  // entrar al juego) solo se acepta si está cerca de la posición en vivo que
+  // el servidor ya validó. Si no, se guarda la validada.
+  const live = await env.DB.prepare('SELECT x, z, last_seen FROM online_users WHERE user_id = ?').bind(session.user_id).first();
+  if (!live || Date.now() - live.last_seen > 60_000) return json({ ok: true, ignored: true });
+  if (Math.hypot(x - live.x, z - live.z) > 30) { x = live.x; z = live.z; }
 
   await env.DB.prepare(
     'UPDATE users SET last_x = ?, last_z = ? WHERE id = ?'

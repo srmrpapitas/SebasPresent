@@ -747,6 +747,15 @@ export async function startWorld(loggedInUser, token) {
         getPlayer: () => player,
         isInCombat: () => worldSnapshot.isInCombat?.(),
       });
+      // Sesión 50 — el servidor rechazó un movimiento imposible: volver a la
+      // última posición válida (rubber band, como en cualquier MMO).
+      realtime.onMessage((m) => {
+        if (m.t !== 'fix' || !player || interiors.isActive()) return;
+        if (!Number.isFinite(m.x) || !Number.isFinite(m.z)) return;
+        player.position.x = m.x; player.position.z = m.z;
+        playerTarget = null; if (marker) marker.visible = false;
+        try { terrain.primeChunks(m.x, m.z); } catch {}
+      });
     } catch (e) { console.warn('[world] realtime start:', e); }
 
     // Sesión 30 — Woodcutting + Firemaking
@@ -3230,7 +3239,7 @@ function groundFreeAt(x, z) {
 }
 function findLandingSpot(x, z) {
   if (groundFreeAt(x, z)) return { x, z };
-  for (let r = 1.5; r <= 40; r += 1.5) {
+  for (let r = 1.5; r <= 12; r += 1.5) {   // el server solo admite saltos cortos
     const n = Math.ceil(r * 3);
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;

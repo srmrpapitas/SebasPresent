@@ -8,6 +8,7 @@
  * Endpoints (handlers/minigame.js): start (junto a Kargath) y leave.
  * Morir dentro NO hace perder objetos: vida llena y fuera de la Fosa.
  */
+import { serverWarp } from './lib/warp.js';
 import { FOSA, FOSA_MOBS, FOSA_WAVES, FOSA_WAVE_DELAY_MS, FOSA_REWARDS, insideFosa } from '../client/src/shared/fosa.js';
 import { playerDefProfile, monsterRoll, levelFromXp } from './combat_engine.js';
 
@@ -28,8 +29,7 @@ export async function clearMobs(env, uid) {
 
 /** Mueve al jugador (server) a (x,z). El cliente lo aplica al recibir la respuesta/snapshot. */
 export async function setPlayerPos(env, uid, x, z, now) {
-  await env.DB.prepare('UPDATE online_users SET x = ?, z = ?, last_seen = ? WHERE user_id = ?').bind(x, z, now, uid).run();
-  try { await env.DB.prepare('UPDATE users SET last_x = ?, last_z = ? WHERE id = ?').bind(x, z, uid).run(); } catch {}
+  await serverWarp(env, uid, x, z, now);   // Sesión 50 — salto autorizado
 }
 
 async function giveItem(env, uid, itemId, qty, now) {

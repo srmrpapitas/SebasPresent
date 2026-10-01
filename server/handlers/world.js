@@ -8,6 +8,7 @@
  * (<10s) dentro de un radio de 100m del que pregunta.
  */
 
+import { maxSpeed, SPEED_TOLERANCE, BURST_MAX_M } from '../../client/src/shared/movement.js';   // Sesión 50
 import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
@@ -39,6 +40,17 @@ export async function handleWorldHeartbeat(request, env) {
     ).bind(session.user_id).first();
     const username = userRow?.username || `user${session.user_id}`;
 
+    // Sesión 50 — anti speed hack (respaldo HTTP del Realm): si el salto es
+    // imposible desde la última posición conocida, solo se renueva last_seen.
+    const prev = await env.DB.prepare('SELECT x, z, last_seen FROM online_users WHERE user_id = ?').bind(session.user_id).first();
+    if (prev && now - prev.last_seen < 60_000) {
+      const dt = Math.max(0.2, (now - prev.last_seen) / 1000);
+      const allowed = maxSpeed('pardela', true) * SPEED_TOLERANCE * dt + BURST_MAX_M;
+      if (Math.hypot(x - prev.x, z - prev.z) > allowed) {
+        await env.DB.prepare('UPDATE online_users SET last_seen = ?, state = ? WHERE user_id = ?').bind(now, state, session.user_id).run();
+        return json({ ok: true, ts: now, fix: { x: prev.x, z: prev.z } });
+      }
+    }
     // Upsert: si ya existe, actualiza; si no, inserta.
     await env.DB.prepare(
       `INSERT INTO online_users (user_id, username, x, z, yaw, state, last_seen)

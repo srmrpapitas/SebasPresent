@@ -16,6 +16,7 @@
  * el cooldown ya está activo.
  */
 
+import { serverWarp } from '../lib/warp.js';
 import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
@@ -79,8 +80,9 @@ export async function handleHomeTeleportFinish(request, env) {
     }
     const newCooldownUntil = now + HOME_TELE_COOLDOWN_MS;
     await env.DB.prepare(
-      'UPDATE users SET home_tele_cooldown_until = ?, last_x = ?, last_z = ? WHERE id = ?'
-    ).bind(newCooldownUntil, HOME_TELE_SPAWN.x, HOME_TELE_SPAWN.z, session.user_id).run();
+      'UPDATE users SET home_tele_cooldown_until = ? WHERE id = ?'
+    ).bind(newCooldownUntil, session.user_id).run();
+    await serverWarp(env, session.user_id, HOME_TELE_SPAWN.x, HOME_TELE_SPAWN.z, now);   // Sesión 50
     return json({
       ok: true,
       teleported: true,
