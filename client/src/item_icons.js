@@ -611,79 +611,155 @@ const SKILL_ICONS = {
     cuero:     { base: '#8a5a30', hi: '#b88050', lo: '#4a2e18', gem: '#c89060' },   // Sesión 50
     dragon:    { base: '#a3161a', hi: '#e8443a', lo: '#2a1412', gem: '#ffa030' },   // Sesión 50 — jefes
   };
-  const svg = (inner) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision">${inner}</svg>`;
-  const S = 'stroke="#000" stroke-width="1" stroke-linejoin="round"';
+  // Sesión 51 — iconos rehechos: degradados metálicos, sombreado, remaches,
+  // brillos y adornos por material (cuernos/púas en dragón, gema en los altos).
+  const svg = (defs, inner) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision"><defs>${defs}</defs><ellipse cx="16" cy="29.6" rx="10" ry="1.5" fill="#000" opacity=".28"/>${inner}</svg>`;
+  const S = 'stroke="#140d08" stroke-width=".9" stroke-linejoin="round"';
+  const SH = 'fill="none" stroke="#fff" stroke-linecap="round"';
   for (const [m, c] of Object.entries(MATS)) {
-    const ore = svg(`
-      <polygon points="5,24 8,13 15,8 24,10 28,19 25,27 11,28" fill="#7d766e" ${S}/>
-      <polygon points="8,13 15,8 17,14 10,18" fill="#9a928a"/>
-      <polygon points="12,19 15,12 18,19 15,22" fill="${c.base}" ${S}/>
-      <polygon points="18,17 22,11 24,18 21,21" fill="${c.hi}" ${S}/>
-      <polygon points="9,23 11,18 14,24" fill="${c.lo}" ${S}/>
-      <circle cx="21" cy="13" r="1" fill="${c.gem}"/>`);
-    const bar = svg(`
-      <polygon points="4,20 10,13 28,13 22,20" fill="${c.hi}" ${S}/>
-      <polygon points="4,20 22,20 22,26 4,26" fill="${c.base}" ${S}/>
-      <polygon points="22,20 28,13 28,19 22,26" fill="${c.lo}" ${S}/>
-      <line x1="8" y1="17" x2="20" y2="17" stroke="#fff" stroke-opacity="0.45" stroke-width="1"/>`);
-    const helm = svg(`
-      <path d="M6 20 Q6 6 16 6 Q26 6 26 20 L26 25 L20 25 L20 18 L12 18 L12 25 L6 25 Z" fill="${c.base}" ${S}/>
-      <path d="M9 12 Q12 8 16 8" fill="none" stroke="${c.hi}" stroke-width="1.5"/>
-      <rect x="15" y="4" width="2" height="4" fill="${c.lo}" ${S}/>`);
-    const body = svg(`
-      <path d="M8 6 L13 5 Q16 8 19 5 L24 6 L28 12 L24 14 L24 27 L8 27 L8 14 L4 12 Z" fill="${c.base}" ${S}/>
-      <path d="M10 10 L14 10 L14 24 L10 24 Z" fill="${c.hi}" opacity="0.5"/>
-      <line x1="16" y1="9" x2="16" y2="26" stroke="${c.lo}" stroke-width="1"/>`);
-    const legs = svg(`
-      <path d="M8 5 L24 5 L25 28 L18 28 L16 13 L14 28 L7 28 Z" fill="${c.base}" ${S}/>
-      <rect x="8" y="5" width="16" height="3" fill="${c.lo}" ${S}/>
-      <line x1="10" y1="10" x2="10" y2="25" stroke="${c.hi}" stroke-width="1.2"/>`);
-    const boots = svg(`
-      <path d="M5 26 L5 10 L12 10 L12 20 L15 22 L15 26 Z" fill="${c.base}" ${S}/>
-      <path d="M17 26 L17 10 L24 10 L24 20 L28 22 L28 26 Z" fill="${c.base}" ${S}/>
-      <rect x="5" y="24" width="10" height="2" fill="${c.lo}"/><rect x="17" y="24" width="11" height="2" fill="${c.lo}"/>
-      <line x1="7" y1="12" x2="7" y2="20" stroke="${c.hi}" stroke-width="1"/><line x1="19" y1="12" x2="19" y2="20" stroke="${c.hi}" stroke-width="1"/>`);
-    const gloves = svg(`
-      <path d="M9 28 L9 17 L6 13 L8 11 L11 14 L11 6 L13.5 6 L14 13 L15 5 L17.5 5 L18 13 L19 6 L21.5 6 L22 14 L23 9 L25.5 9 L25 20 L22 28 Z" fill="${c.base}" ${S}/>
-      <rect x="9" y="24" width="13" height="4" fill="${c.lo}" ${S}/>
-      <line x1="14" y1="15" x2="14" y2="22" stroke="${c.hi}" stroke-width="1"/>`);
+    const k = `im${m}`;
+    // A = diagonal (luz arriba-izq), C = cilíndrico horizontal, V = vertical
+    const defs = `
+      <linearGradient id="${k}A" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c.hi}"/><stop offset=".5" stop-color="${c.base}"/><stop offset="1" stop-color="${c.lo}"/></linearGradient>
+      <linearGradient id="${k}C" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${c.lo}"/><stop offset=".28" stop-color="${c.hi}"/><stop offset=".62" stop-color="${c.base}"/><stop offset="1" stop-color="${c.lo}"/></linearGradient>
+      <linearGradient id="${k}V" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.hi}"/><stop offset=".55" stop-color="${c.base}"/><stop offset="1" stop-color="${c.lo}"/></linearGradient>
+      <radialGradient id="${k}G" cx=".35" cy=".35" r=".7"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="${c.gem}"/><stop offset="1" stop-color="${c.lo}"/></radialGradient>`;
+    const A = `url(#${k}A)`, C = `url(#${k}C)`, V = `url(#${k}V)`, G = `url(#${k}G)`;
+    const isDr = m === 'dragon';
+    const gemOn = ['obsidiana', 'basaltita', 'teiderio', 'dragon'].includes(m);
+    const gem = (x, y, r) => gemOn ? `<circle cx="${x}" cy="${y}" r="${r * 1.9}" fill="${c.gem}" opacity=".22"/><circle cx="${x}" cy="${y}" r="${r}" fill="${G}" stroke="#140d08" stroke-width=".5"/>` : '';
+    const rivet = (x, y) => `<circle cx="${x}" cy="${y}" r=".75" fill="${c.hi}" stroke="${c.lo}" stroke-width=".4"/>`;
+    const bone = '#eadfc4';
+
+    const ore = svg(defs, `
+      <path d="M4.5 24 L7.5 13 L14.5 7.5 L23.5 9 L28 18.5 L25.5 27 L11 28 Z" fill="#7a7168" ${S}/>
+      <path d="M7.5 13 L14.5 7.5 L23.5 9 L19 13.5 L11 16 Z" fill="#a39a90"/>
+      <path d="M25.5 27 L28 18.5 L22 21 L19 27.5 Z" fill="#4e4842"/>
+      <path d="M11.5 20 L14.5 12.5 L18 19 L15 22.5 Z" fill="${A}" ${S}/>
+      <path d="M18 17.5 L22 11 L24.5 18 L21 21.5 Z" fill="${A}" ${S}/>
+      <path d="M8.5 24 L11 18.5 L14 24.5 Z" fill="${A}" ${S}/>
+      <path d="M13.2 14.5 L14.5 13" ${SH} stroke-width=".8" opacity=".8"/>
+      <circle cx="21" cy="13.5" r=".9" fill="#fff" opacity=".85"/>`);
+    const bar = svg(defs, `
+      <path d="M3.5 20.5 L10 13 L28.5 13 L22 20.5 Z" fill="${V}" ${S}/>
+      <path d="M3.5 20.5 H22 V26.5 H3.5 Z" fill="${A}" ${S}/>
+      <path d="M22 20.5 L28.5 13 V19 L22 26.5 Z" fill="${c.lo}" ${S}/>
+      <path d="M9 15.8 L20 15.8" ${SH} stroke-width="1" opacity=".55"/>
+      <path d="M5.5 22.5 H12" ${SH} stroke-width=".8" opacity=".35"/>`);
+
+    const helm = svg(defs, `
+      ${isDr ? `<path d="M8.5 13 L2.5 4.5 L5 4.2 L10.5 10.5 Z" fill="${bone}" ${S}/><path d="M23.5 13 L29.5 4.5 L27 4.2 L21.5 10.5 Z" fill="${bone}" ${S}/>` : ''}
+      <path d="M7 21.5 C7 10 10.5 4.5 16 4.5 C21.5 4.5 25 10 25 21.5 L25 26 Q16 29 7 26 Z" fill="${C}" ${S}/>
+      ${isDr ? `<path d="M16 4.5 L14.6 1.5 L17.4 1.5 Z" fill="${c.lo}" ${S}/>` : ''}
+      <path d="M16 5 V14.5" stroke="${c.lo}" stroke-width="1.6"/><path d="M15.4 5.4 V14" stroke="${c.hi}" stroke-width=".6" opacity=".9"/>
+      <path d="M9.6 15.4 H22.4 V17.6 H17.3 V24.5 H14.7 V17.6 H9.6 Z" fill="#0b0705" stroke="${c.lo}" stroke-width=".6"/>
+      <path d="M7.4 22 Q16 24.6 24.6 22" fill="none" stroke="${c.lo}" stroke-width="1"/>
+      ${rivet(9.4, 20)}${rivet(22.6, 20)}${rivet(9.6, 12)}${rivet(22.4, 12)}
+      <path d="M9.6 11 Q10.6 7.4 13.6 5.9" ${SH} stroke-width="1.1" opacity=".55"/>
+      ${gem(16, 12, 1.1)}`);
+
+    const body = svg(defs, `
+      <path d="M9 7 L13 5.8 Q16 8.6 19 5.8 L23 7 L23.6 12 L23 27 Q16 29.2 9 27 L8.4 12 Z" fill="${C}" ${S}/>
+      <path d="M9 7 Q4 7.3 3.4 13.6 L8.6 15 Z" fill="${A}" ${S}/>
+      <path d="M23 7 Q28 7.3 28.6 13.6 L23.4 15 Z" fill="${A}" ${S}/>
+      ${isDr ? `<path d="M4.6 9.6 L1.6 7 L5.6 8 Z M6.8 7.8 L5.2 4.4 L8.4 7.2 Z" fill="${bone}" ${S}/><path d="M27.4 9.6 L30.4 7 L26.4 8 Z M25.2 7.8 L26.8 4.4 L23.6 7.2 Z" fill="${bone}" ${S}/>` : ''}
+      <path d="M12.6 6 Q16 10.4 19.4 6 Q16 8.2 12.6 6 Z" fill="#0b0705"/>
+      <path d="M10 12 Q13 15.2 16 13.2 Q19 15.2 22 12" fill="none" stroke="${c.lo}" stroke-width=".9"/>
+      <path d="M16 9.6 V21" stroke="${c.lo}" stroke-width="1.1"/><path d="M15.3 10 V20.6" stroke="${c.hi}" stroke-width=".5" opacity=".8"/>
+      ${isDr ? `<path d="M11 17 q1.2 1.4 2.4 0 q1.2 1.4 2.4 0 M16.2 17 q1.2 1.4 2.4 0 q1.2 1.4 2.4 0 M12.2 19.2 q1.2 1.4 2.4 0 M17.4 19.2 q1.2 1.4 2.4 0" fill="none" stroke="${c.lo}" stroke-width=".7"/>` : ''}
+      <rect x="8.8" y="21.4" width="14.4" height="2.5" fill="${c.lo}" ${S}/>
+      <rect x="14.6" y="21" width="2.8" height="3.3" rx=".5" fill="#d8b040" stroke="#140d08" stroke-width=".6"/>
+      <path d="M11.4 24.4 V27.6 M16 24.4 V28.4 M20.6 24.4 V27.6" stroke="${c.lo}" stroke-width=".8"/>
+      ${rivet(5.6, 11)}${rivet(26.4, 11)}
+      <path d="M10.4 9.2 Q10 14 10.6 20" ${SH} stroke-width="1" opacity=".45"/>
+      <path d="M4.8 11.5 Q5.4 8.8 8 8" ${SH} stroke-width=".9" opacity=".6"/>
+      ${gem(16, 15.6, 1.05)}`);
+
+    const legs = svg(defs, `
+      <path d="M7.8 6.5 H24.2 L25.2 27.6 H18.6 L16.6 13.5 H15.4 L13.4 27.6 H6.8 Z" fill="${C}" ${S}/>
+      <rect x="7.4" y="4" width="17.2" height="3.4" rx=".6" fill="${A}" ${S}/>
+      <rect x="14.6" y="4" width="2.8" height="3.4" fill="#d8b040" stroke="#140d08" stroke-width=".5"/>
+      <ellipse cx="10.3" cy="17.6" rx="2.6" ry="2" fill="${A}" ${S}/><ellipse cx="21.7" cy="17.6" rx="2.6" ry="2" fill="${A}" ${S}/>
+      ${isDr ? `<path d="M10.3 15.6 L9.6 12.8 L11.2 15.4 Z M21.7 15.6 L22.4 12.8 L20.8 15.4 Z" fill="${bone}" ${S}/>` : ''}
+      <path d="M6.9 25 H13.7 M18.3 25 H25.1" stroke="${c.lo}" stroke-width="1"/>
+      <path d="M9 9 L8.6 15 M8.4 20.4 L8 24" ${SH} stroke-width="1" opacity=".5"/>
+      <path d="M19.7 9 L20 15" ${SH} stroke-width=".7" opacity=".3"/>
+      ${gem(10.3, 17.6, .8)}${gem(21.7, 17.6, .8)}`);
+
+    const boot = (dx, dy, f) => `
+      <path d="M${6 + dx} ${8 + dy} H${13.4 + dx} V${19.5 + dy} L${19.4 + dx} ${22.4 + dy} Q${21 + dx} ${23.8 + dy} ${20.6 + dx} ${26 + dy} H${6 + dx} Z" fill="${f}" ${S}/>
+      <path d="M${6 + dx} ${26 + dy} H${20.6 + dx} V${27.4 + dy} H${6 + dx} Z" fill="#2a1c12" ${S}/>
+      <rect x="${5.4 + dx}" y="${7 + dy}" width="8.6" height="2.6" rx=".5" fill="${A}" ${S}/>
+      <path d="M${13.4 + dx} ${19.5 + dy} Q${11 + dx} ${22 + dy} ${13 + dx} ${26 + dy}" fill="none" stroke="${c.lo}" stroke-width=".8"/>
+      <path d="M${7.6 + dx} ${11 + dy} V${23 + dy}" ${SH} stroke-width="1" opacity=".45"/>
+      ${isDr ? `<path d="M${13.4 + dx} ${12 + dy} L${16 + dx} ${11 + dy} L${13.4 + dx} ${14 + dy} Z" fill="${bone}" ${S}/>` : ''}`;
+    const boots = svg(defs, `${boot(7, -3.4, `url(#${k}V)`)}<g opacity="1">${boot(-1.6, 0, C)}</g>${gem(9.7, 8.3, .7)}`);
+
+    const gloves = svg(defs, `
+      <path d="M10 22 L9 18.6 L5.4 15 Q4.8 13.2 6.6 12.8 L11 15.4 L11 7 Q11 5.4 12.4 5.4 Q13.8 5.4 13.8 7 L14 12.6 L14.6 5 Q14.8 3.6 16.2 3.6 Q17.6 3.7 17.6 5.2 L17.6 12.6 L18.6 5.8 Q18.9 4.5 20.2 4.6 Q21.5 4.8 21.3 6.2 L21 13.6 L22.4 9 Q22.9 7.8 24.1 8.1 Q25.2 8.5 24.9 9.8 L24 20 L23 22 Z" fill="${C}" ${S}/>
+      <path d="M11.1 10 H13.8 M14.4 8.6 H17.6 M18.4 9.4 H21.2 M21.6 12.6 L23.8 13.2" stroke="${c.lo}" stroke-width=".8"/>
+      <path d="M11.2 15.6 Q16 17.4 22.8 15.4" fill="none" stroke="${c.lo}" stroke-width=".9"/>
+      ${isDr ? `<path d="M12.4 5.4 L12.4 2.6 L13.4 5.2 Z M16.2 3.6 L16.4 0.8 L17.2 3.6 Z M20 4.6 L20.6 2 L21 4.8 Z" fill="${bone}" stroke="#140d08" stroke-width=".5"/>` : ''}
+      <path d="M8.4 21.6 H24.2 L25.4 29 H7.2 Z" fill="${A}" ${S}/>
+      <path d="M8 24.6 H24.8" stroke="${c.lo}" stroke-width=".8"/>
+      ${rivet(10, 23.1)}${rivet(22.6, 23.1)}
+      <path d="M12 7.2 V13" ${SH} stroke-width=".8" opacity=".55"/>
+      ${gem(16.3, 26.8, .9)}`);
+
+    // Espadas: se dibujan en vertical y se rotan 45°
+    const guard1 = isDr
+      ? `<path d="M8.6 21.2 Q12 23.4 16 21.6 Q20 23.4 23.4 21.2 L22.6 24 Q19 24.6 16 23.8 Q13 24.6 9.4 24 Z" fill="${A}" ${S}/>`
+      : `<rect x="10" y="21" width="12" height="2.6" rx="1.1" fill="${A}" ${S}/>`;
+    const sword = svg(defs, `<g transform="rotate(45 16 16)">
+      <path d="M16 -1.6 L18.6 2.6 V21.2 H13.4 V2.6 Z" fill="${C}" ${S}/>
+      <path d="M16 3 V20.4" stroke="${c.lo}" stroke-width=".9" opacity=".75"/>
+      <path d="M14.3 3.4 V20.4" ${SH} stroke-width=".7" opacity=".55"/>
+      ${guard1}
+      <rect x="14.6" y="23.6" width="2.8" height="6.6" fill="#4a2c18" ${S}/>
+      <path d="M14.6 25.2 L17.4 24.2 M14.6 27 L17.4 26 M14.6 28.8 L17.4 27.8" stroke="#2a180c" stroke-width=".6"/>
+      <circle cx="16" cy="31.4" r="1.9" fill="${A}" ${S}/>
+      ${gem(16, 22.3, .9)}</g>`);
+    const guard2 = isDr
+      ? `<path d="M6.4 20 Q11 22.8 16 20.4 Q21 22.8 25.6 20 L24.6 23.4 Q20 24.2 16 23.2 Q12 24.2 7.4 23.4 Z" fill="${A}" ${S}/>`
+      : `<rect x="7.6" y="20" width="16.8" height="3" rx="1.3" fill="${A}" ${S}/>`;
+    const sword2h = svg(defs, `<g transform="rotate(45 16 16)">
+      <path d="M16 -4 L19.8 1 V20.2 H12.2 V1 Z" fill="${C}" ${S}/>
+      <path d="M16 1.6 V19.4" stroke="${c.lo}" stroke-width="1.2" opacity=".75"/>
+      <path d="M13.3 2 V19.4" ${SH} stroke-width=".8" opacity=".55"/>
+      ${isDr ? `<path d="M19.8 6 L22 7.4 L19.8 9 Z M19.8 12 L22 13.4 L19.8 15 Z M12.2 6 L10 7.4 L12.2 9 Z M12.2 12 L10 13.4 L12.2 15 Z" fill="${c.lo}" ${S}/>` : ''}
+      ${guard2}
+      <rect x="14.5" y="23" width="3" height="9" fill="#4a2c18" ${S}/>
+      <path d="M14.5 24.8 L17.5 23.8 M14.5 26.8 L17.5 25.8 M14.5 28.8 L17.5 27.8 M14.5 30.8 L17.5 29.8" stroke="#2a180c" stroke-width=".6"/>
+      <circle cx="16" cy="33.2" r="2" fill="${A}" ${S}/>
+      ${gem(16, 21.6, 1.1)}</g>`);
+
+    const shield = svg(defs, `
+      <path d="M16 2.6 Q24.4 2.6 27.4 5.8 Q27.8 17.4 16 29.6 Q4.2 17.4 4.6 5.8 Q7.6 2.6 16 2.6 Z" fill="${A}" ${S}/>
+      <path d="M16 5.2 Q22.8 5.2 25.1 7.4 Q25.3 16.6 16 26.8 Q6.7 16.6 6.9 7.4 Q9.2 5.2 16 5.2 Z" fill="${V}" stroke="${c.lo}" stroke-width="1"/>
+      ${isDr
+        ? `<path d="M16 8 L19.4 12.6 L24 11.6 L20.6 15.6 L22 21 L16 17.6 L10 21 L11.4 15.6 L8 11.6 L12.6 12.6 Z" fill="${c.lo}" opacity=".85"/>`
+        : `<path d="M16 5.6 V26.4 M7.2 12.6 H24.8" stroke="${c.lo}" stroke-width="1.1" opacity=".7"/>`}
+      <circle cx="16" cy="13.6" r="3.1" fill="${C}" ${S}/>
+      <path d="M8.2 7.6 Q11.4 5.4 15.4 5.6" ${SH} stroke-width="1.1" opacity=".6"/>
+      ${rivet(7.4, 6.4)}${rivet(24.6, 6.4)}${rivet(16, 25.2)}
+      ${gem(16, 13.6, 1.4)}`);
+
     const add = (id, v) => { if (!Object.prototype.hasOwnProperty.call(ICONS, id)) ICONS[id] = v; };
-    add(`ore_${m}`, ore);
-    add(`bar_${m}`, bar);
+    // Dragón: solo drop de jefes (no hay mena, lingote, espadas ni flechas)
+    if (!isDr) { add(`ore_${m}`, ore); add(`bar_${m}`, bar); }
     add(`helm_${m}`, helm);
     add(m === 'bronze' ? 'chest_bronze' : `body_${m}`, body);
     add(`legs_${m}`, legs);
     add(`boots_${m}`, boots);
     add(`gloves_${m}`, gloves);
-    // Sesión 50 — espada, espadón y escudo (se pisan también los de bronce
-    // para que todo tenga el mismo estilo que el modelo 3D procedural)
-    const gemOn = ['obsidiana', 'basaltita', 'teiderio', 'dragon'].includes(m);
-    const sword = svg(`
-      <polygon points="23,4 28,4 28,9 13,22 10,19" fill="${c.hi}" ${S}/>
-      <line x1="26" y1="6" x2="13" y2="19" stroke="${c.lo}" stroke-width="1"/>
-      <polygon points="7,17 9,15 17,23 15,25" fill="${c.base}" ${S}/>
-      <polygon points="11,21 13,23 8,28 6,26" fill="#5a3a20" ${S}/>
-      <circle cx="5.5" cy="28" r="2" fill="${c.base}" ${S}/>
-      ${gemOn ? `<circle cx="12" cy="20" r="1.3" fill="${c.gem}"/>` : ''}`);
-    const sword2h = svg(`
-      <polygon points="22,2 30,2 30,10 12,24 8,20" fill="${c.hi}" ${S}/>
-      <line x1="27" y1="5" x2="11" y2="21" stroke="${c.lo}" stroke-width="1.2"/>
-      <polygon points="4,17 7,14 18,25 15,28" fill="${c.base}" ${S}/>
-      <polygon points="9,22 12,25 5,31 2,28" fill="#5a3a20" ${S}/>
-      ${gemOn ? `<circle cx="11" cy="21" r="1.5" fill="${c.gem}"/>` : ''}`);
-    const shield = svg(`
-      <circle cx="16" cy="16" r="12.5" fill="${c.base}" ${S}/>
-      <circle cx="16" cy="16" r="10.5" fill="none" stroke="${c.lo}" stroke-width="1.2"/>
-      <path d="M8 11 Q12 6 18 6" fill="none" stroke="${c.hi}" stroke-width="1.5"/>
-      <circle cx="16" cy="16" r="4" fill="${c.hi}" ${S}/>
-      ${gemOn ? `<circle cx="16" cy="16" r="1.8" fill="${c.gem}"/>` : ''}`);
-    ICONS[`sword_${m}`] = sword;
-    ICONS[`sword_${m}_2h`] = sword2h;
+    if (!isDr) { ICONS[`sword_${m}`] = sword; ICONS[`sword_${m}_2h`] = sword2h; }
     ICONS[`shield_${m}`] = shield;
+    if (isDr) continue;
     // Sesión 50 — flechas por material (punta del color del metal)
-    add(`arrow_${m}`, svg(`
+    add(`arrow_${m}`, svg(defs, `
       <line x1="5" y1="27" x2="23" y2="9" stroke="#8a5a2b" stroke-width="2.2" stroke-linecap="round"/>
-      <polygon points="21,6 28,4 26,11" fill="${c.hi}" ${S}/>
+      <line x1="5.6" y1="26" x2="22.6" y2="9" stroke="#c08a50" stroke-width=".7" stroke-linecap="round"/>
+      <polygon points="21,6 28,4 26,11" fill="${A}" ${S}/>
       <polygon points="3,25 8,24 7,29" fill="#f0f0f0" stroke="#000" stroke-width="0.7"/>
       <polygon points="5,22 10,22 8,26" fill="#e8e8e8" stroke="#000" stroke-width="0.7"/>`));
   }
