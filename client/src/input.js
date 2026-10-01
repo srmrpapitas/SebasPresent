@@ -400,6 +400,9 @@ export function setup(opts) {
     //      natural es 2 dedos juntos que se separan. Si están muy separados
     //      al inicio, no es un pinch — es un toque accidental con 2 manos.
     if (touchInsideJoystick(e.touches[0]) || touchInsideJoystick(e.touches[1])) return;
+    // Sesión 50 — moviéndote con el joystick NUNCA hay zoom (el dedo del joystick se sale
+    // de su círculo al girar y antes contaba como pinch)
+    if (joyState.active) return;
     const dx = e.touches[0].clientX - e.touches[1].clientX;
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const initialDist = Math.hypot(dx, dy);
@@ -411,6 +414,7 @@ export function setup(opts) {
   }
 
   function onTouchMoveCanvas(e) {
+    if (pinchActive && joyState.active) { pinchActive = false; return; }   // Sesión 50
     if (!pinchActive || e.touches.length !== 2) return;
     e.preventDefault();
     // Sesión 13 — Pinch 2 dedos: SOLO zoom. La rotación queda para drag
