@@ -1911,6 +1911,7 @@ function injectInventoryGridCss() {
     .osrs-tab-pane[data-tab="inventory"].active {
       overflow: hidden !important;
       padding: 8px !important;
+      box-sizing: border-box !important;
       display: flex !important;
       flex-direction: column !important;
       align-items: center !important;
@@ -1925,11 +1926,15 @@ function injectInventoryGridCss() {
     .osrs-tab-pane[data-tab="inventory"] [class*="inventory-grid"],
     .osrs-tab-pane[data-tab="inventory"] [class*="inv-grid"] {
       display: grid !important;
-      grid-template-columns: repeat(4, 42px) !important;
-      grid-auto-rows: 42px !important;
+      /* Sesión 50 — columnas fluidas: antes 4×42px fijos eran más anchos que
+         el panel y se cortaban por los lados (sobre todo en PC con el zoom). */
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      grid-auto-rows: auto !important;
       gap: 4px !important;
       overflow: hidden !important;
-      width: auto !important;
+      width: 100% !important;
+      max-width: 196px !important;
+      box-sizing: border-box !important;
       flex: 0 0 auto !important;
       padding: 0 !important;
       margin: 0 !important;
@@ -1940,12 +1945,13 @@ function injectInventoryGridCss() {
     .osrs-tab-pane[data-tab="inventory"] .osrs-inv-slot,
     .osrs-tab-pane[data-tab="inventory"] [class*="inventory-slot"],
     .osrs-tab-pane[data-tab="inventory"] [class*="inv-slot"] {
-      width: 42px !important;
-      height: 42px !important;
-      min-width: 42px !important;
-      min-height: 42px !important;
-      max-width: 42px !important;
-      max-height: 42px !important;
+      width: auto !important;
+      height: auto !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
+      aspect-ratio: 1 / 1 !important;
       box-sizing: border-box !important;
       overflow: visible !important;
     }
@@ -1965,10 +1971,10 @@ function injectInventoryGridCss() {
     }
     /* Asegurar que el icono SVG NO se sale de su slot */
     .osrs-tab-pane[data-tab="inventory"] .inv-icon {
-      width: 36px !important;
-      height: 36px !important;
-      max-width: 36px !important;
-      max-height: 36px !important;
+      width: 82% !important;
+      height: 82% !important;
+      max-width: 82% !important;
+      max-height: 82% !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
