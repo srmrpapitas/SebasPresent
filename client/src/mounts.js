@@ -133,7 +133,7 @@ function attachDragon(g) {
 // ------------------------------------------------------------
 const HORSE_URL = 'assets/npcs/caballo_montura.glb';
 const HORSE_SCALE = 0.0072;           // ~2,15 m hasta las orejas, lomo a ~1,2 m
-const HORSE_SEAT = 1.42;              // silla (live: __mountSeat('caballo', v))
+const HORSE_SEAT = 1.78;              // cadera del jinete: lomo a 1,62 m + silla (live: __mountSeat('caballo', v))
 let _horse = null, _horseP = null;
 function loadHorse() {
   if (_horseP) return _horseP;
@@ -168,9 +168,15 @@ function animateHorse(H, moving, time) {
   H.mixer.update(dt);
 }
 
+// Mientras carga el modelo de verdad NO se enseña el de cajas (se veía un instante y
+// luego cambiaba); solo aparece si el modelo nuevo no se puede cargar.
+function hideUntil(g, p, attach) {
+  for (const ch of g.children) ch.visible = false;
+  p.then(ok => { if (ok) attach(g); else for (const ch of g.children) ch.visible = true; });
+}
 export function buildPardela() {
   const g = buildPardelaBird();
-  if (_dragon) attachDragon(g); else loadDragon().then(() => attachDragon(g));
+  if (_dragon) attachDragon(g); else hideUntil(g, loadDragon(), attachDragon);
   return g;
 }
 function animateDragon(D, moving, time, flying, bank) {
@@ -264,7 +270,7 @@ function buildPardelaBird() {
 export function buildMount(id) {
   if (id === 'pardela') return buildPardela();
   const g = buildHorse();
-  if (_horse) attachHorse(g); else loadHorse().then(() => attachHorse(g));
+  if (_horse) attachHorse(g); else hideUntil(g, loadHorse(), attachHorse);
   return g;
 }
 
@@ -486,6 +492,9 @@ function closeChooser() { document.removeEventListener('pointerdown', outside, t
 
 export async function refresh() {
   try { const r = await api.mountsGet(); owned = r?.owned || []; combatLevel = r?.combat_level || combatLevel; } catch {}
+  // precargar los modelos de las monturas que tienes, para que al montar ya estén listos
+  if (owned.includes('caballo')) loadHorse();
+  if (owned.includes('pardela')) loadDragon();
   renderOrb();
 }
 
