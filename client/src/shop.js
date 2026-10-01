@@ -44,7 +44,14 @@ export function init(opts) {
 }
 
 // Sesión 50 — varias tiendas
-const SHOP_TITLES = { general_store: '🛒 Tienda', magic_store: '🔮 Tienda de magia', aso: '🌿 La ASO · Herboristería' };
+const SHOP_TITLES = { general_store: '🛒 Tienda', magic_store: '🔮 Tienda de magia', aso: '🌿 La ASO · Herboristería',
+  comidas_vilaflor: '🍲 Comidas de Vilaflor',
+  armeria_icod: '⚔️ Armería de Icod',
+  pieles_esperanza: '🧥 Pieles de La Esperanza',
+  ferreteria_arico: '🔧 Ferretería de Arico',
+  flecheria_chayofa: '🏹 Flechería de Chayofa',
+  pescaderia_faro: '🐟 Pescadería del Faro',
+  bazar_guimar: '🐫 Bazar de Samir' };
 
 export async function open(shopId = 'general_store') {
   currentShopId = shopId;

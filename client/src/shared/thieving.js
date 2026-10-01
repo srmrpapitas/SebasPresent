@@ -43,6 +43,8 @@ export const NPC_PROFILE = {
   guardia_concejo: 'guardia', sven_guardia: 'guardia', kargath: 'guardia', airam_forzudo: 'guardia',
   morgana_maga: 'mago', eldric_mago: 'mago',
   samir_mercader: 'mercader', tanausu_cuadra: 'mercader', nauzet_inmobiliaria: 'mercader', alcalde_faustino: 'mercader', guia_aldric: 'mercader',
+  yaiza_comidas: 'artesano', gara_pieles: 'artesano', bentejui_ferretero: 'artesano', fayna_pescadera: 'artesano',
+  echedey_armero: 'mercader', guacimara_flechas: 'mercader',
   banquero_gerardo: 'banquero', banquera_dacil: 'banquero', banquero_acaymo: 'banquero', banquera_cathaysa: 'banquero',
 };
 
