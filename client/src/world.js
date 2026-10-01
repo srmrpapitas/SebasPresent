@@ -34,6 +34,7 @@ import * as guancheVillage from './guanche_village.js';   // Sesión 50 — pobl
 import * as houses from './houses.js';                     // Sesión 50 — casas de jugador
 import * as roadsRender from './roads_render.js';          // Sesión 50 — caminos y postes
 import * as mounts from './mounts.js';                     // Sesión 50 — monturas
+import { MOUNT_RUN_MULT } from './shared/mounts.js';
 import * as trade from './trade.js';                       // Sesión 50 — comercio entre jugadores
 import * as follow from './follow.js';                     // Sesión 50 — seguir a un jugador
 import * as social from './social.js';                     // Sesión 50 — pestaña Amigos / Monturas
@@ -3274,7 +3275,7 @@ function updatePlayer(dt) {
   // el toggle esté activo. La velocidad efectiva se calcula AQUÍ.
   const effectiveRun = runMode && runEnergy > 0;
   const maxSpeed = mounts.isMounted()
-    ? PLAYER_RUN * PLAYER_RUN_BOOST * mounts.speedMult()     // Sesión 50 — montado: rápido y sin gastar energía
+    ? PLAYER_RUN * PLAYER_RUN_BOOST * mounts.speedMult() * (effectiveRun ? MOUNT_RUN_MULT : 1)   // Sesión 50 — montado; con correr, galope (+50 %)
     : (effectiveRun ? PLAYER_RUN * PLAYER_RUN_BOOST : PLAYER_RUN);
 
   // Sesión 25 — Si el player está muerto, NO procesar input. El joystick
@@ -3454,8 +3455,8 @@ function updatePlayer(dt) {
   //   - Drena si efectivamente corriendo y el player se mueve.
   //   - Regenera siempre que no esté corriendo (incluso parado).
   //   - Si runEnergy llega a 0 mientras runMode=true, se desactiva el toggle.
-  if (effectiveRun && isMoving && !mounts.isMounted()) {
-    runEnergy = Math.max(0, runEnergy - RUN_DRAIN_PER_SEC * dt);
+  if (effectiveRun && isMoving) {
+    runEnergy = Math.max(0, runEnergy - RUN_DRAIN_PER_SEC * dt * (mounts.isMounted() ? 0.5 : 1));
     if (runEnergy <= 0 && runMode) {
       // Se acabó la energía: apagar toggle. El próximo frame ya irá a walk.
       runMode = false;

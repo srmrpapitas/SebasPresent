@@ -60,9 +60,9 @@ function render() {
       return `<div class="soc-mount ${has ? 'has' : ''} ${on ? 'on' : ''}" data-mount="${has ? id : ''}">
         <div class="soc-mi">${M.icon}</div>
         <div class="soc-mt"><b>${esc(M.name)}</b><small>${has ? (on ? 'Montado · toca para bajar' : 'Toca para montar') : `Tanausú (La Laguna) · ${M.price.toLocaleString('es-ES')} monedas · nivel ${M.level}`}</small>
-        <small>Velocidad ×${(M.fly && mounts.canFly() ? M.flySpeed : M.speed).toFixed(1)} · ${flyTxt}</small></div>
+        <small>Velocidad ×${(M.fly && mounts.canFly() ? M.flySpeed : M.speed).toFixed(1)} (corriendo ×${((M.fly && mounts.canFly() ? M.flySpeed : M.speed) * 1.5).toFixed(1)}) · ${flyTxt}</small></div>
       </div>`;
-    }).join('') + '<div class="soc-empty">Si te atacan no puedes montar en 10 s, y si te golpean te caes.</div>';
+    }).join('') + '<div class="soc-empty">Activa correr 🏃 montado para galopar un 50 % más rápido. Si te atacan no puedes montar en 10 s, y si te golpean te caes.</div>';
   }
   pane.innerHTML = `
     <div class="soc-tabs"><button data-sub="friends" class="${sub === 'friends' ? 'act' : ''}">👥 Amigos</button><button data-sub="mounts" class="${sub === 'mounts' ? 'act' : ''}">🐎 Monturas</button></div>
