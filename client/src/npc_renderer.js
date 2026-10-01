@@ -101,6 +101,19 @@ export const RIG_ENEMIES = {
   bruto_echeyde:  { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 3.0 }, h: 2.6, scale: 1.15, fb: 'fosa_bruto' },   // jefe de la Cueva de Echeyde
 };
 function rigReady(R) { return mixamoRig.isLoaded(R.model) && mixamoRig.animsLoaded(R.anims); }
+// Sesión 50 — mini jefes: '<tipo>_jefe' usa el modelo de su tipo, más grande y de otro color
+const MINIBOSS_SCALE = 1.55;
+export const baseTypeOf = (id) => String(id || '').replace(/_jefe$/, '');
+const isMiniBoss = (id) => /_jefe$/.test(String(id || ''));
+// Tope de personajes Mixamo animados a la vez (móvil): el resto usa el modelo ligero
+const RIG_CAP = 26;
+let _rigCount = 0;
+function tintHue(mat, dh, sat = 1.35, val = 1.0) {
+  if (!mat?.color) return;
+  const hsl = {}; mat.color.getHSL(hsl);
+  mat.color.setHSL((hsl.h + dh + 1) % 1, Math.min(1, hsl.s * sat + 0.15), Math.min(1, hsl.l * val));
+  if (mat.userData?.baseColor) mat.userData.baseColor = mat.color.clone();
+}
 
 const R2_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
 
@@ -319,6 +332,7 @@ export async function start(opts) {
 
 export function stop() {
   if (!started) return;
+  _rigCount = 0;
   for (const m of npcMeshes.values()) {
     if (m.parent) m.parent.remove(m);
     m.traverse?.(obj => {
@@ -376,10 +390,11 @@ function upgradeBakedGoblins() {
   for (const [id, mesh] of npcMeshes.entries()) {
     const npc = mesh.userData?.npc;
     if (!npc) continue;
-    const R = RIG_ENEMIES[npc.def_id];
+    const R = RIG_ENEMIES[baseTypeOf(npc.def_id)];
     if (R) {
       if (mesh.userData.rig) continue;                   // ya es Mixamo
       if (!rigReady(R)) { mixamoRig.preload(R.model, R.anims); continue; }   // aún cargando (o reintenta si falló)
+      if (_rigCount >= RIG_CAP && !isMiniBoss(npc.def_id)) continue;      // tope: se queda con el modelo ligero
     } else {
       if (!npcAnimated.isReady()) continue;
       if (!npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id)) continue;
@@ -596,7 +611,7 @@ function syncMeshes() {
       // cargar, quedó HORNEADO (sin esqueleto) para siempre → se veía en T-pose
       // y flotando, sin animar nunca. Ahora que el template está listo, lo
       // UPGRADEAMOS: quitamos el mesh horneado y creamos el animado.
-      if (npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id) && !RIG_ENEMIES[npc.def_id]
+      if (npcAnimated.ANIMATED_NPC_TYPES.has(npc.def_id) && !RIG_ENEMIES[baseTypeOf(npc.def_id)]
           && !mesh.userData.anim
           && npcAnimated.isReady()) {
         scene.remove(mesh);
@@ -685,7 +700,7 @@ function syncMeshes() {
       if (mesh.userData?.anim) {
         try { npcAnimated.disposeAnimatedInstance(mesh.userData.anim); } catch {}
       }
-      try { mesh.userData?.rig?.dispose(); } catch {}
+      if (mesh.userData?.rig) { _rigCount = Math.max(0, _rigCount - 1); try { mesh.userData.rig.dispose(); } catch {} }
       mesh.traverse?.(obj => {
         if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
         if (obj.material && !obj.userData?.shared) {
@@ -699,7 +714,9 @@ function syncMeshes() {
 }
 
 function createMesh(npc) {
-  const typeId = npc.def_id;
+  const realType = npc.def_id;
+  const typeId = baseTypeOf(realType);   // Sesión 50 — los mini jefes usan el modelo de su tipo
+  const boss = isMiniBoss(realType);
   const group = new THREE.Group();
   group.position.set(npc.x, 0, npc.z);
 
@@ -735,8 +752,10 @@ function createMesh(npc) {
   let rig = null;
   const R = RIG_ENEMIES[typeId];
   if (R) {
-    if (rigReady(R)) {
-      try { rig = mixamoRig.create(R.model, { tint: R.tint, weapon: R.weapon, armor: R.armor, style: R.style, anims: R.anims, scale: R.scale, ownMaterials: true }); } catch (e) { rig = null; }
+    if (rigReady(R) && (_rigCount < RIG_CAP || boss)) {
+      const tint = boss ? (R.tint?.fire ? { fire: true, fireGain: (R.tint.fireGain || 1) * 1.8 } : { hue: 0.55, sat: 1.5, val: 0.9 }) : R.tint;
+      try { rig = mixamoRig.create(R.model, { tint, weapon: R.weapon, armor: R.armor, style: R.style, anims: R.anims, scale: R.scale, ownMaterials: true }); } catch (e) { rig = null; }
+      if (rig) _rigCount++;
     } else mixamoRig.preload(R.model, R.anims);
   }
   if (rig) {
@@ -782,7 +801,12 @@ function createMesh(npc) {
     group.userData.bodyMaterials.push(mat);
   }
 
-  const hpBar = createHpBar(npc.hp_current, npc.max_hp, NPC_TARGET_HEIGHTS[typeId] || 1.0);
+  if (boss) {
+    // mini jefe: más grande y de otro color (en los Mixamo ya va teñido por shader)
+    for (const c of group.children) c.scale.multiplyScalar(MINIBOSS_SCALE);
+    if (!group.userData.rig) for (const m of group.userData.bodyMaterials) tintHue(m, 0.5);
+  }
+  const hpBar = createHpBar(npc.hp_current, npc.max_hp, (NPC_TARGET_HEIGHTS[typeId] || 1.0) * (boss ? MINIBOSS_SCALE : 1));
   group.add(hpBar);
   group.userData.hpBar = hpBar;
   return group;

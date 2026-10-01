@@ -41,6 +41,9 @@ import { currentPrayerState, overheadPrayer } from '../../client/src/shared/pray
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
 // Para 90 NPCs en un mundo de 4096m, 500m típicamente devuelve 30-50 NPCs.
 const SNAPSHOT_RADIUS_M       = 500;
+// Sesión 50 — monstruos: solo los cercanos (el cliente los dibuja a ≤100 m). Con miles
+// de monstruos en el mapa, mandar 500 m saturaba la base de datos y la red.
+const NPC_SNAPSHOT_RADIUS_M   = 130;
 // Timeout para considerar a un player "online" según online_users.last_seen.
 const SNAPSHOT_PEER_TIMEOUT_MS = 10_000;
 // Si last_attack_at fue hace menos de esto, el actor está in_combat.
@@ -280,14 +283,14 @@ export async function handleWorldSnapshot(request, env) {
          AND i.z BETWEEN ? AND ?`
     ).bind(
       session.user_id,
-      centerX - margin, centerX + margin,
-      centerZ - margin, centerZ + margin,
+      centerX - NPC_SNAPSHOT_RADIUS_M, centerX + NPC_SNAPSHOT_RADIUS_M,
+      centerZ - NPC_SNAPSHOT_RADIUS_M, centerZ + NPC_SNAPSHOT_RADIUS_M,
     ).all();
 
     const npcs = (npcRows.results || [])
       .filter(r => {
         const dx = r.x - centerX, dz = r.z - centerZ;
-        return (dx * dx + dz * dz) <= radiusSq;
+        return (dx * dx + dz * dz) <= NPC_SNAPSHOT_RADIUS_M * NPC_SNAPSHOT_RADIUS_M;
       })
       .map(r => ({
         id:             r.id,
