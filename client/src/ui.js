@@ -98,7 +98,9 @@ export function formatDate(unixMs) {
 export function tryPlayLoginMusic() {
   const audio = els.loginMusic;
   if (!audio) return;
-  audio.volume = 0.35;
+  // Sesión 50 — 90 % más baja y respeta el mute de música
+  try { if (JSON.parse(localStorage.getItem('sp_audio_prefs') || '{}').muted) return; } catch {}
+  audio.volume = 0.035;
   audio.play().catch(() => {});
 }
 export function fadeOutLoginMusic(durationMs = 800) {

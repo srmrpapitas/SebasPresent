@@ -112,7 +112,7 @@ const DEFAULT_PREFS = {
   sfx: 0.6,
   // Sesión 32 — bajado de 0.035 a 0.007 (80% menos) por feedback de Nico.
   // La música ambient debe sentirse "de fondo", no competir con SFX.
-  music: 0.007,
+  music: 0.0007,   // Sesión 50 — otro 90 % menos: súper sutil
   ui: 0.5,
   muted: false,
 };
@@ -446,7 +446,7 @@ export function toggleMute() {
   } else {
     // Desmutear
     prefs.muted = false;
-    prefs.music = 0.035;
+    prefs.music = 0.0007;
     if (musicAudio) {
       musicAudio.volume = prefs.music * prefs.master;
       if (musicAudio.src && musicAudio.paused) {
@@ -519,7 +519,7 @@ function loadPrefs() {
   // valor guardado en localStorage de antes (cuando el default era más
   // alto), recapear al nuevo máximo. Sin esto, el cambio de DEFAULT_PREFS
   // no surte efecto para users existentes.
-  const MUSIC_CAP = 0.01;  // 1% del max — ambient muy de fondo
+  const MUSIC_CAP = 0.001;  // Sesión 50 — 0,1 % del máximo: ambient súper sutil
   if (prefs.music > MUSIC_CAP) {
     prefs.music = MUSIC_CAP;
     savePrefs();
