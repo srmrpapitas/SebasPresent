@@ -16,8 +16,8 @@ export const MOUNTS = {
     blurb: 'Un caballo criollo, fuerte y tranquilo. Corre mucho más que tú y no se cansa.',
   },
   pardela: {
-    id: 'pardela', name: 'Súper pardela', icon: '🕊️', level: 5, price: 20000, speed: 1.45, fly: true, flyLevel: 25, flySpeed: 3.2, alt: 9,   // volando: el doble que el caballo (1.6 × 2)
-    blurb: 'Una pardela cenicienta de las grandes, criada en los riscos. Por tierra anda ligera; con nivel de combate 25 vuela por encima de todo.',
+    id: 'pardela', name: 'Dragón', icon: '🐉', level: 5, price: 20000, speed: 1.45, fly: true, flyLevel: 25, flySpeed: 3.2, alt: 9,   // volando: el doble que el caballo (1.6 × 2)
+    blurb: 'Un dragón de los riscos de Anaga, criado desde el huevo. Por tierra corre a cuatro patas; con nivel de combate 25 te lleva volando por encima del Teide.',
   },
 };
 export const MOUNT_LIST = ['caballo', 'pardela'];

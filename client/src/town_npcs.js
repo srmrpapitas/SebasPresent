@@ -461,7 +461,7 @@ async function stableAgent(d) {
   const owned = new Set(st?.owned || []);
   const lvl = st?.combat_level || 3;
   const avail = MOUNT_LIST.filter(id => !owned.has(id));
-  if (!avail.length) { await d.npc('Ya tienes el caballo y la pardela. ¡Más que el mencey!'); return; }
+  if (!avail.length) { await d.npc('Ya tienes el caballo y el dragón. ¡Más que el mencey!'); return; }
   await d.npc(owned.size ? '¿Otra montura? Tú sí que sabes.' : 'Tengo dos animales buenos. Tú eliges.');
   if (d.closed) return;
   const labels = [...avail.map(id => {

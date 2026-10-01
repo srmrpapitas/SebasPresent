@@ -18,9 +18,12 @@
 import * as THREE from 'three';
 import * as api from './api.js';
 import { MOUNTS, MOUNT_COMBAT_LOCK_MS } from './shared/mounts.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 const HIP = 0.95;                  // altura de la cadera del personaje sobre sus pies
-const SEAT = { caballo: 1.85, pardela: 1.45 };   // silla sobre la base de la montura (caballo +0.3: iba muy hundido)
+const SEAT = { caballo: 1.85, pardela: 1.45 };
+const DRAGON_SEAT = 1.42;          // silla sobre el lomo del dragón (live: __mountSeat('pardela', v))   // silla sobre la base de la montura (caballo +0.3: iba muy hundido)
 // Ajuste en vivo desde Eruda: window.__mountSeat('caballo', 1.9)
 
 let scene = null;
@@ -91,7 +94,63 @@ export function buildHorse(color = 0x6a3f22) {
 // dorso pardo-grisáceo, vientre blanco, pico amarillo pálido con punta oscura
 // y "tubo" nasal, alas largas y estrechas de planeador, patas palmeadas
 // rosadas. En tierra lleva las alas plegadas y camina; volando planea.
+// ------------------------------------------------------------
+// Sesión 50 — El dragón (sustituye a la pardela; el id interno sigue siendo 'pardela')
+// GLB con 3 clips: idle, running, flying. Mira a +Z. Mientras carga se ve la pardela.
+// ------------------------------------------------------------
+const DRAGON_URL = 'assets/npcs/dragon_montura.glb';
+const DRAGON_SCALE = 21;              // pelvis a ~1,2 m: ~6 m de largo, ~17 m de alas
+const DRAGON_SEAT_Z = -0.03 * DRAGON_SCALE;   // la silla (vértebra 4) queda ~0,6 m por delante de la pelvis
+let _dragon = null, _dragonP = null;
+function loadDragon() {
+  if (_dragonP) return _dragonP;
+  _dragonP = new GLTFLoader().loadAsync(DRAGON_URL).then(g => {
+    g.scene.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    _dragon = { scene: g.scene, clips: Object.fromEntries(g.animations.map(a => [a.name, a])) };
+    SEAT.pardela = DRAGON_SEAT;
+    return _dragon;
+  }).catch(e => { console.warn('[mounts] dragón no cargó, se queda la pardela:', e?.message); return null; });
+  return _dragonP;
+}
+function attachDragon(g) {
+  if (!_dragon || g.userData.dragon) return;
+  const d = SkeletonUtils.clone(_dragon.scene);
+  d.scale.setScalar(DRAGON_SCALE);
+  d.position.z = DRAGON_SEAT_Z;
+  const mixer = new THREE.AnimationMixer(d);
+  const actions = {};
+  for (const [n, c] of Object.entries(_dragon.clips)) actions[n] = mixer.clipAction(c);
+  for (const ch of g.children) ch.visible = false;   // fuera la pardela
+  g.add(d);
+  let rootB = null, pelvis = null;
+  d.traverse(o => { if (!o.isBone) return; if (!rootB && /^root/i.test(o.name)) rootB = o; if (!pelvis && /^pelvis/i.test(o.name)) pelvis = o; });
+  const fixed = [rootB, pelvis].filter(Boolean).map(b => ({ b, p: b.position.clone() }));
+  g.userData.dragon = { d, mixer, actions, cur: null, lastT: null, fixed };
+}
 export function buildPardela() {
+  const g = buildPardelaBird();
+  if (_dragon) attachDragon(g); else loadDragon().then(() => attachDragon(g));
+  return g;
+}
+function animateDragon(D, moving, time, flying, bank) {
+  const want = flying ? 'flying' : (moving > 0.15 ? 'running' : 'idle');
+  const a = D.actions[want] || D.actions.idle;
+  if (a && D.cur !== a) { a.reset().play(); if (D.cur) a.crossFadeFrom(D.cur, 0.35, true); D.cur = a; }
+  if (a && want === 'running') a.setEffectiveTimeScale(Math.max(0.6, Math.min(1.6, moving * 1.3)));
+  const dt = D.lastT == null ? 0 : Math.max(0, Math.min(0.1, time - D.lastT));
+  D.lastT = time;
+  D.mixer.update(dt);
+  // los clips traen desplazamiento propio (el de volar sube varios metros): raíz y pelvis
+  // vuelven a su sitio y solo se deja un vaivén suave, así el jinete va siempre en la silla
+  for (const f of D.fixed) {
+    const dy = f.b.position.y - f.p.y;
+    f.b.position.copy(f.p);
+    f.b.position.y += dy * 0.12;
+  }
+  D.d.rotation.z = flying ? bank * 0.5 : 0;
+}
+
+function buildPardelaBird() {
   const g = new THREE.Group(); g.userData.kind = 'mount-pardela';
   const S = (c, r = 0.75) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0 });
   const back = S(0x7a6a58), backD = S(0x5a4c3e), belly = S(0xf2efe8), bill = S(0xe8d27a, 0.5), tip = S(0x3a3228, 0.5),
@@ -166,6 +225,7 @@ export function buildMount(id) { return id === 'pardela' ? buildPardela() : buil
 /** Anima una montura. moving: 0..1 (velocidad relativa), time en s. */
 export function animateMount(o, id, moving, time, flying, bank = 0) {
   if (!o) return;
+  if (id === 'pardela' && o.userData.dragon) { animateDragon(o.userData.dragon, moving, time, flying, bank); return; }
   if (id === 'pardela') {
     const U = o.userData;
     if (flying) {
@@ -240,7 +300,7 @@ export function mount(which) {
   alt = 0;
   sync(0);
   feedLog('info', which === 'pardela'
-    ? (canFly() ? '🕊️ Te subes a la súper pardela y levantas el vuelo.' : `🕊️ Te subes a la súper pardela. Volará cuando tengas nivel de combate ${MOUNTS.pardela.flyLevel}.`)
+    ? (canFly() ? '🐉 Te subes al dragón y levantas el vuelo.' : `🐉 Te subes al dragón. Volará cuando tengas nivel de combate ${MOUNTS.pardela.flyLevel}.`)
     : '🐎 Te subes al caballo.');
   try { window.__playSfx?.('door_open'); } catch {}
   renderOrb();
@@ -349,7 +409,7 @@ function renderOrb() {
   if (!orbEl) return;
   orbEl.classList.toggle('active', !!current);
   const icon = orbEl.querySelector('.osrs-stat-icon');
-  icon.textContent = current ? '⬇' : (preferred ? MOUNTS[preferred].icon : (owned.includes('pardela') ? '🕊️' : '🐎'));
+  icon.textContent = current ? '⬇' : (preferred ? MOUNTS[preferred].icon : (owned.includes('pardela') ? '🐉' : '🐎'));
 }
 
 function openChooser() {

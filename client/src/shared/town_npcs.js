@@ -469,7 +469,7 @@ export const TOWN_NPCS = [
       '¡Epa! Tanausú, de la cuadra. ¿Cansado de patear la isla? Súbete a un caballo, mi niño.',
       'Por los caminos se va rápido. Sigue los postes y no te pierdes: cada flecha dice cuánto falta.',
       'Si te pegan, te caes del caballo. Y si te atacan, el animal se asusta: espera un poquito antes de volver a montar.',
-      'Mis pardelas son de las grandes, criadas en los riscos de Anaga. Por tierra caminan; cuando seas fuerte (nivel 25), te llevan volando por encima del Teide.',
+      'Mis dragones nacen en los riscos de Anaga. Por tierra corren a cuatro patas; cuando seas fuerte (nivel 25), te llevan volando por encima del Teide.',
     ] },
   // Sesión 50 — casas de jugador
   { id: 'nauzet_inmobiliaria', name: 'Nauzet', title: 'Agente inmobiliario', x: 50, z: 50, rotY: 0.8, role: '🏠',
