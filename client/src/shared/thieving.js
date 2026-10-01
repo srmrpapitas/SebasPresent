@@ -40,7 +40,7 @@ export const NPC_PROFILE = {
   lia_artesana: 'artesano', brom_herrero: 'artesano', gus_minero: 'artesano', nuria_herrera: 'artesano', ramiro_capataz: 'artesano',
   irene_farera: 'artesano', pregonero: 'artesano', cronista_elena: 'artesano', maestro_rafael: 'artesano', dona_carmen: 'artesano',
   carmita_aso: 'herbolaria', alma_sacerdotisa: 'herbolaria', ermitano_candelaria: 'herbolaria',
-  guardia_concejo: 'guardia', sven_guardia: 'guardia', kargath: 'guardia', airam_forzudo: 'guardia',
+  guardia_concejo: 'guardia', caballero_anaga: 'guardia', caballera_teide: 'guardia', caballero_abona: 'guardia', sven_guardia: 'guardia', kargath: 'guardia', airam_forzudo: 'guardia',
   morgana_maga: 'mago', eldric_mago: 'mago',
   samir_mercader: 'mercader', tanausu_cuadra: 'mercader', nauzet_inmobiliaria: 'mercader', alcalde_faustino: 'mercader', guia_aldric: 'mercader',
   yaiza_comidas: 'artesano', gara_pieles: 'artesano', bentejui_ferretero: 'artesano', fayna_pescadera: 'artesano',

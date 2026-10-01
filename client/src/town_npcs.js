@@ -24,6 +24,8 @@ import * as quests from './quests.js';
 import * as audio from './audio.js';
 import * as dialogue from './dialogue.js';
 import { TOWN_NPCS, TOWN_NPCS_BY_ID, TALK_DIST_M, wanderPos } from './shared/town_npcs.js';
+import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — personajes Mixamo
+import { lookFor } from './town_npc_looks.js';
 import { QUESTS, QUEST_ORDER, questsOfNpc } from './shared/quests.js';
 
 const VIEW_DIST = 180;
@@ -262,11 +264,30 @@ function build(n) {
   const o = { n, ...m, name, bang, qGold, qGray, mark: null, baseYaw: n.rotY || 0, phase: Math.random() * 6, gestureT: 0 };
   if (n.stall) { o.stall = buildStall(n); scene.add(o.stall); }   // Sesión 50 — puesto (La ASO)
   objs.set(n.id, o);
+  attachRig(o);
   updateMark(o);
   return o;
 }
 
+// Sesión 50 — cambia el muñeco de cajas por el personaje Mixamo en cuanto carga
+function attachRig(o) {
+  const L = lookFor(o.n);
+  if (!L || !mixamoRig.RIG_MODELS[L.model]) return;
+  const put = () => {
+    if (!objs.has(o.n.id) || objs.get(o.n.id) !== o || o.rig) return;
+    const rig = mixamoRig.create(L.model, { tint: L.tint, armor: L.armor, weapon: L.weapon, bottle: L.bottle || o.n.drunk, phase: o.phase, style: L.style });
+    if (!rig) return;
+    // fuera las cajas (se quedan la hitbox, el nombre y las marcas)
+    for (const part of [o.torso, ...(o.legs || []), ...(o.arms || [])]) if (part) part.visible = false;
+    if (o.head) o.head.visible = false;
+    o.root.add(rig.root);
+    o.rig = rig;
+  };
+  if (mixamoRig.isLoaded(L.model)) put(); else mixamoRig.preload(L.model).then(put);
+}
+
 function dispose(o) {
+  try { o.rig?.dispose(); } catch {}
   scene?.remove(o.root);
   if (o.stall) scene?.remove(o.stall);
   const i = pickMeshes.indexOf(o.hit);
@@ -768,7 +789,7 @@ export function update(dt) {
     while (dy < -Math.PI) dy += Math.PI * 2;
     o.root.rotation.y += dy * Math.min(1, dt * 4);
     // Sesión 50 — borracho: se tambalea
-    if (o.n.drunk) {
+    if (o.n.drunk && !o.rig) {
       o.root.rotation.z = Math.sin(timeAcc * 1.3 + o.phase) * 0.09;
       o.root.rotation.x = Math.sin(timeAcc * 0.9 + o.phase) * 0.05;
     }
@@ -777,6 +798,18 @@ export function update(dt) {
       const d = Math.hypot(p.position.x - o.n.x, p.position.z - o.n.z);
       if (d < 10 && talking !== o && !calloutEl && Date.now() - (o.calloutAt || 0) > 90_000) { o.calloutAt = Date.now(); showCallout(o); }
       else if (calloutEl && calloutFor === o && (d > 16 || talking === o)) hideCallout();
+    }
+    // Sesión 50 — personaje Mixamo: animación por huesos (solo si está cerca)
+    if (o.rig) {
+      const dd = p ? Math.hypot(p.position.x - o.n.x, p.position.z - o.n.z) : 0;
+      if (dd < 70) {
+        o.rig.update(dt, {
+          moving: !!(o.n.wander && o.n._walking), speed: 0.9,
+          talk: talking === o || o.gestureT > 0,
+          drunk: !!o.n.drunk,
+          lookYaw: o.head ? o.head.rotation.y : 0,
+        });
+      }
     }
     // Marcas que flotan
     const bob = Math.sin(timeAcc * 3 + o.phase) * 0.08;
