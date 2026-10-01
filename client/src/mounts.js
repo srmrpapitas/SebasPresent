@@ -22,7 +22,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 const HIP = 0.95;                  // altura de la cadera del personaje sobre sus pies
-const SEAT = { caballo: 1.85, pardela: 1.45 };
+const SEAT = { caballo: 1.85, pardela: 1.45, dragon_vuelo: 1.35 };
 const DRAGON_SEAT = 1.42;          // silla sobre el lomo del dragón (live: __mountSeat('pardela', v))   // silla sobre la base de la montura (caballo +0.3: iba muy hundido)
 // Ajuste en vivo desde Eruda: window.__mountSeat('caballo', 1.9)
 
@@ -304,9 +304,15 @@ export function animateMount(o, id, moving, time, flying, bank = 0) {
 }
 
 /** Altura extra del jinete (sobre su altura normal). */
+// Sesión 50 — en vuelo el dragón lleva el cuerpo más alto que en tierra: el jinete sube
+// (se mezcla según la altura de vuelo). Live: __mountSeat('dragon_vuelo', v)
+const FLY_SEAT_EXTRA = { pardela: 1.35 };
 export function riderLift(id, altitude = 0) {
   if (!id) return 0;
-  return SEAT[id] - HIP + (id === 'pardela' ? altitude : 0);
+  if (id !== 'pardela') return SEAT[id] - HIP;
+  const k = Math.max(0, Math.min(1, altitude / 4));
+  const extra = (SEAT.dragon_vuelo ?? FLY_SEAT_EXTRA.pardela) * (_dragon ? k : 0);
+  return SEAT[id] - HIP + altitude + extra;
 }
 
 // ============================================================
