@@ -9,9 +9,12 @@ import {
   hashPassword, verifyPassword,
 } from '../lib/auth.js';
 import { initSkillsForNewUser } from './skills.js';
+import { clientIp, hit, peek, clear, over } from '../lib/ratelimit.js';
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,16}$/;
 const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MAX_LENGTH = 128;   // Sesión 50 — evita hashes gigantes (DoS)
+const limited = () => json({ error: 'rate_limited', message: 'Demasiados intentos. Espera unos minutos y vuelve a probar.' }, 429);
 
 export async function handleRegister(request, env) {
   const body = await readJson(request);
@@ -26,14 +29,18 @@ export async function handleRegister(request, env) {
       message: 'El nombre debe tener 3-16 caracteres alfanuméricos o guión bajo.',
     }, 400);
   }
-  if (password.length < PASSWORD_MIN_LENGTH) {
+  if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
     return json({
       error: 'invalid_password',
-      message: `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres.`,
+      message: `La contraseña debe tener entre ${PASSWORD_MIN_LENGTH} y ${PASSWORD_MAX_LENGTH} caracteres.`,
     }, 400);
   }
+  // Sesión 50 — límite de cuentas nuevas por IP
+  const ip = clientIp(request);
+  if (over('reg_ip', await peek(env, 'reg_ip', ip) + 1)) return limited();
 
-  const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ?')
+  // Sesión 50 — sin distinguir mayúsculas: "Nico" y "nico" son el mismo nombre
+  const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE')
     .bind(username).first();
   if (existing) {
     return json({ error: 'username_taken', message: 'Ese nombre ya está en uso.' }, 409);
@@ -47,6 +54,7 @@ export async function handleRegister(request, env) {
   ).bind(username, passwordHash, now, now).run();
 
   const userId = result.meta.last_row_id;
+  try { await hit(env, 'reg_ip', ip); } catch {}
 
   // Starter pack: hacha de bronce + yesquero + 25 monedas + pico de bronce (S50).
   // Sesión 32 — migrado de 'axe' a 'axe_bronze' (unificación de tiers).
@@ -98,22 +106,27 @@ export async function handleLogin(request, env) {
   const username = (body.username || '').trim();
   const password = body.password || '';
 
-  if (!username || !password) {
+  if (!username || !password || password.length > PASSWORD_MAX_LENGTH) {
     return json({ error: 'missing_credentials' }, 400);
   }
+  // Sesión 50 — fuerza bruta: límite por IP y por cuenta
+  const ip = clientIp(request), uname = username.toLowerCase();
+  if (over('login_ip', await hit(env, 'login_ip', ip))) return limited();
+  if (over('login_fail', await peek(env, 'login_fail', uname) + 1)) return limited();
+  const fail = async () => {
+    try { await hit(env, 'login_fail', uname); } catch {}
+    return json({ error: 'invalid_credentials', message: 'Usuario o contraseña incorrectos.' }, 401);
+  };
 
   const user = await env.DB.prepare(
     'SELECT id, username, password_hash, created_at FROM users WHERE username = ?'
   ).bind(username).first();
 
-  if (!user) {
-    return json({ error: 'invalid_credentials', message: 'Usuario o contraseña incorrectos.' }, 401);
-  }
+  if (!user) return fail();
 
   const valid = await verifyPassword(password, user.password_hash);
-  if (!valid) {
-    return json({ error: 'invalid_credentials', message: 'Usuario o contraseña incorrectos.' }, 401);
-  }
+  if (!valid) return fail();
+  try { await clear(env, 'login_fail', uname); } catch {}
 
   const now = Date.now();
   await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?')

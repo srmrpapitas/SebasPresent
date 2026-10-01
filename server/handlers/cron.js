@@ -127,4 +127,9 @@ export async function scheduledHandler(event, env, ctx) {
   } catch {
     // Tabla puede no existir — silencioso.
   }
+
+  // 9) auth_limits: ventanas de intentos de login ya caducadas (Sesión 50).
+  try {
+    await env.DB.prepare('DELETE FROM auth_limits WHERE win < ?').bind(Date.now() - 2 * 3600_000).run();
+  } catch {}
 }

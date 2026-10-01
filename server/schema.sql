@@ -408,3 +408,10 @@ CREATE TABLE IF NOT EXISTS user_thieving (
 );
 -- Criaturas temporales (los guardias que te persiguen si te pillan robando)
 ALTER TABLE npc_instances ADD COLUMN expires_at INTEGER;
+
+-- Sesión 50 — Límite de intentos de login/registro (fuerza bruta)
+CREATE TABLE IF NOT EXISTS auth_limits (
+  k   TEXT PRIMARY KEY,          -- 'login_ip:1.2.3.4', 'login_fail:nico', 'reg_ip:1.2.3.4'
+  win INTEGER NOT NULL,          -- inicio de la ventana (ms)
+  n   INTEGER NOT NULL DEFAULT 0
+);
