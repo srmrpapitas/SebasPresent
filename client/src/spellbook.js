@@ -202,6 +202,7 @@ export function start(opts = {}) {
   onAutocastChange = opts.onAutocastChange || (() => {});
   onSelfCast       = opts.onSelfCast       || (() => {});
   onTeleportCast   = opts.onTeleportCast   || (() => {});
+  hasStaff         = opts.hasStaff         || (() => true);
 
   ensureCss();
   if (!injectSpells()) { started = false; return; }
@@ -314,6 +315,7 @@ async function castSelf(sp) {
 
 // Sesión 50 — teletransportes y alquimia
 let onTeleportCast = () => {};
+let hasStaff = () => true;
 async function castUtility(sp, slot) {
   if (selfBusy) return;
   selfBusy = true;
@@ -356,8 +358,14 @@ function onSelectSpell(spellId) {
     feedLog('warning', 'Necesitas nivel ' + sp.level + ' de Magia para ' + sp.name + '.');
     return;
   }
-  if (sp.self) { castSelf(sp); return; }
   if (sp.tele) { castUtility(sp); return; }
+  if (sp.alch) { pickItemForAlch(sp); return; }
+  // Sesión 50 — los de combate y los de curar/escudo se canalizan con un bastón
+  if (!hasStaff()) {
+    feedLog('warning', '🪄 Para lanzar ' + sp.name + ' necesitas un bastón equipado. (Los teletransportes y la alquimia no lo necesitan.)');
+    return;
+  }
+  if (sp.self) { castSelf(sp); return; }
   if (sp.alch) { pickItemForAlch(sp); return; }
   // Seleccionar = contorno blanco + lo fija como autocast activo (práctico para
   // un juego con auto-ataque: atacar lo repite). El detalle Cast-una-vez vs
