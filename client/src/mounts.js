@@ -127,6 +127,47 @@ function attachDragon(g) {
   const fixed = [rootB, pelvis].filter(Boolean).map(b => ({ b, p: b.position.clone() }));
   g.userData.dragon = { d, mixer, actions, cur: null, lastT: null, fixed };
 }
+// ------------------------------------------------------------
+// Sesión 50 — Caballo con modelo de verdad (blanco moteado, crines), clips idle/walk/run.
+// Mira a +X en el GLB → se gira -90°. Mientras carga se ve el caballo de cajas.
+// ------------------------------------------------------------
+const HORSE_URL = 'assets/npcs/caballo_montura.glb';
+const HORSE_SCALE = 0.0072;           // ~2,15 m hasta las orejas, lomo a ~1,2 m
+const HORSE_SEAT = 1.42;              // silla (live: __mountSeat('caballo', v))
+let _horse = null, _horseP = null;
+function loadHorse() {
+  if (_horseP) return _horseP;
+  _horseP = new GLTFLoader().loadAsync(HORSE_URL).then(g => {
+    g.scene.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    _horse = { scene: g.scene, clips: Object.fromEntries(g.animations.map(a => [a.name, a])) };
+    SEAT.caballo = HORSE_SEAT;
+    return _horse;
+  }).catch(e => { console.warn('[mounts] caballo no cargó, se queda el de cajas:', e?.message); return null; });
+  return _horseP;
+}
+function attachHorse(g) {
+  if (!_horse || g.userData.horse) return;
+  const d = SkeletonUtils.clone(_horse.scene);
+  d.scale.setScalar(HORSE_SCALE);
+  d.rotation.y = -Math.PI / 2;
+  const mixer = new THREE.AnimationMixer(d);
+  const actions = {};
+  for (const [n, c] of Object.entries(_horse.clips)) actions[n] = mixer.clipAction(c);
+  for (const ch of g.children) ch.visible = false;   // fuera el de cajas
+  g.add(d);
+  g.userData.horse = { d, mixer, actions, cur: null, lastT: null };
+}
+function animateHorse(H, moving, time) {
+  const want = moving > 0.55 ? 'run' : (moving > 0.06 ? 'walk' : 'idle');
+  const a = H.actions[want] || H.actions.idle;
+  if (a && H.cur !== a) { a.reset().play(); if (H.cur) a.crossFadeFrom(H.cur, 0.25, true); H.cur = a; }
+  if (a && want === 'run') a.setEffectiveTimeScale(Math.max(0.8, Math.min(1.5, moving)));
+  if (a && want === 'walk') a.setEffectiveTimeScale(Math.max(0.7, Math.min(1.6, moving * 3)));
+  const dt = H.lastT == null ? 0 : Math.max(0, Math.min(0.1, time - H.lastT));
+  H.lastT = time;
+  H.mixer.update(dt);
+}
+
 export function buildPardela() {
   const g = buildPardelaBird();
   if (_dragon) attachDragon(g); else loadDragon().then(() => attachDragon(g));
@@ -220,12 +261,18 @@ function buildPardelaBird() {
   return g;
 }
 
-export function buildMount(id) { return id === 'pardela' ? buildPardela() : buildHorse(); }
+export function buildMount(id) {
+  if (id === 'pardela') return buildPardela();
+  const g = buildHorse();
+  if (_horse) attachHorse(g); else loadHorse().then(() => attachHorse(g));
+  return g;
+}
 
 /** Anima una montura. moving: 0..1 (velocidad relativa), time en s. */
 export function animateMount(o, id, moving, time, flying, bank = 0) {
   if (!o) return;
   if (id === 'pardela' && o.userData.dragon) { animateDragon(o.userData.dragon, moving, time, flying, bank); return; }
+  if (o.userData.horse) { animateHorse(o.userData.horse, moving, time); return; }
   if (id === 'pardela') {
     const U = o.userData;
     if (flying) {
