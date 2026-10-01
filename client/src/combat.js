@@ -454,7 +454,9 @@ async function doAttackTickNpc(gen = attackGen) {
 
   // Sesión 41 — MAGIA: sonido de cast + proyectil del color del hechizo.
   if (spellCast && npc) {
-    const CAST_SFX = { fire_strike: 'spell_fire', ice_spear: 'spell_ice', thunderbolt: 'spell_zap', entangle: 'spell_entangle' };
+    const CAST_SFX = { fire_strike: 'spell_fire', ice_spear: 'spell_ice', thunderbolt: 'spell_zap', entangle: 'spell_entangle',
+      chorro_mar: 'spell_ice', aliento_guayota: 'spell_fire', erupcion: 'spell_fire', lanza_obsidiana: 'spell_ice',
+      furia_magec: 'spell_zap', tormenta_echeyde: 'spell_fire', juicio_teide: 'spell_zap' };
     try { audio.sfx(CAST_SFX[spellCast.spell_id] || 'spell_fire'); } catch {}
     if (typeof window !== 'undefined' && typeof window.__worldFireProjectile === 'function') {
       try {
@@ -465,8 +467,20 @@ async function doAttackTickNpc(gen = attackGen) {
             { x: npc.x, y: 0, z: npc.z },
             { type: 'spell', color: spellCast.color, spellId: spellCast.spell_id, targetNpcId: npcId, windupMs: 250 }
           );
+          // Sesión 50 — hechizo de área: la explosión salta a los de alrededor
+          for (const [i, h] of (spellCast.area || []).entries()) {
+            window.__worldFireProjectile(
+              { x: npc.x, y: 0, z: npc.z }, { x: h.x, y: 0, z: h.z },
+              { type: 'spell', color: spellCast.color, spellId: spellCast.spell_id, targetNpcId: h.id, windupMs: 650 + i * 90 }
+            );
+          }
         }
       } catch {}
+    }
+    if (spellCast.area?.length) feedLog('info', `💥 ${spellCast.name} alcanza a ${spellCast.area.length} enemigo${spellCast.area.length > 1 ? 's' : ''} más.`);
+    if (spellCast.drained > 0) {
+      feedLog('info', `🩸 ${spellCast.name}: recuperas ${spellCast.drained} de vida.`);
+      try { if (Number.isFinite(result.your_hp)) window.__setHpInstant?.(result.your_hp, result.your_hp_max ?? undefined); } catch {}
     }
   }
 
@@ -805,7 +819,9 @@ async function doAttackTickPlayer(gen = attackGen) {
   // no lo mandaba, por eso la magia PvP no tenía animación).
   const spellCastPvp = result.spell_cast || null;
   if (spellCastPvp) {
-    const CAST_SFX = { fire_strike: 'spell_fire', ice_spear: 'spell_ice', thunderbolt: 'spell_zap', entangle: 'spell_entangle' };
+    const CAST_SFX = { fire_strike: 'spell_fire', ice_spear: 'spell_ice', thunderbolt: 'spell_zap', entangle: 'spell_entangle',
+      chorro_mar: 'spell_ice', aliento_guayota: 'spell_fire', erupcion: 'spell_fire', lanza_obsidiana: 'spell_ice',
+      furia_magec: 'spell_zap', tormenta_echeyde: 'spell_fire', juicio_teide: 'spell_zap' };
     try { audio.sfx(CAST_SFX[spellCastPvp.spell_id] || 'spell_fire'); } catch {}
     if (typeof window !== 'undefined'
         && typeof window.__worldFireProjectile === 'function'

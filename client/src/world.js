@@ -494,6 +494,27 @@ export async function startWorld(loggedInUser, token) {
     // nivel de Magia del snapshot (me block).
     spellbook.start({
       feedLog: (type, msg) => combat.feedLog?.(type, msg),
+      // Sesión 50 — Sanación / Escudo de lava: vida al momento + burbuja de lava mientras dura
+      onSelfCast: (r) => {
+        try { if (Number.isFinite(r.hp)) window.__setHpInstant?.(r.hp, r.hp_max); } catch {}
+        try { combat.refresh?.(); } catch {}
+        if (r.shield_until && player) {
+          const old = player.getObjectByName('escudo_lava'); if (old) player.remove(old);
+          const bubble = new THREE.Mesh(new THREE.SphereGeometry(1.15, 20, 14),
+            new THREE.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }));
+          bubble.name = 'escudo_lava'; bubble.position.y = 1.0; player.add(bubble);
+          const until = r.shield_until, born = performance.now();
+          const tick = () => {
+            if (!bubble.parent) return;
+            if (Date.now() > until) { bubble.parent.remove(bubble); bubble.geometry.dispose(); bubble.material.dispose(); return; }
+            const t = (performance.now() - born) / 1000;
+            bubble.material.opacity = 0.16 + Math.sin(t * 5) * 0.06;
+            bubble.rotation.y = t * 0.8;
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }
+      },
       onAutocastChange: () => { try { combat.refreshCombatTab?.(); } catch {} },
       getMagicLevel: () => {
         try {

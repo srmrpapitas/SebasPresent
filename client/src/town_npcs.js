@@ -273,9 +273,12 @@ function build(n) {
 function attachRig(o) {
   const L = lookFor(o.n);
   if (!L || !mixamoRig.RIG_MODELS[L.model]) return;
+  // Sesión 50 — los vecinos van con animación por código (natural); los clips de criatura
+  // solo donde el aspecto lo pide (L.anims). Las posturas del pack de magia son de combate.
+  const anims = L.anims || null;
   const put = () => {
     if (!objs.has(o.n.id) || objs.get(o.n.id) !== o || o.rig) return;
-    const rig = mixamoRig.create(L.model, { tint: L.tint, armor: L.armor, weapon: L.weapon, bottle: L.bottle || o.n.drunk, phase: o.phase, style: L.style });
+    const rig = mixamoRig.create(L.model, { tint: L.tint, armor: L.armor, weapon: L.weapon, bottle: L.bottle || o.n.drunk, phase: o.phase, style: L.style, anims });
     if (!rig) return;
     // fuera las cajas (se quedan la hitbox, el nombre y las marcas)
     for (const part of [o.torso, ...(o.legs || []), ...(o.arms || [])]) if (part) part.visible = false;
@@ -283,7 +286,7 @@ function attachRig(o) {
     o.root.add(rig.root);
     o.rig = rig;
   };
-  if (mixamoRig.isLoaded(L.model)) put(); else mixamoRig.preload(L.model).then(put);
+  if (mixamoRig.isLoaded(L.model) && mixamoRig.animsLoaded(anims)) put(); else mixamoRig.preload(L.model, anims).then(put);
 }
 
 function dispose(o) {

@@ -91,10 +91,10 @@ import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — enemigos con p
 // modelo carga se ve el de siempre y en cuanto está listo se cambia solo.
 export const RIG_ENEMIES = {
   goblin:         { model: 'goblin2', anims: 'mutant', h: 1.45 },
-  guardia_ciudad: { model: 'guardia1', weapon: 'sword_hierro', h: 1.85 },
+  guardia_ciudad: { model: 'guardia1', weapon: 'sword_hierro', anims: 'mago', h: 1.85 },
   zombi:          { model: 'zombi', anims: 'mutant', h: 1.9 },                          // el zombi tal cual
   zombi_igneo:    { model: 'zombi', anims: 'mutant', tint: { fire: true }, h: 1.95 },   // ser de fuego del wilderness
-  bandido:        { model: 'killer_08', h: 1.82 },
+  bandido:        { model: 'killer_08', anims: 'mago', h: 1.82 },
   ogro_anaga:     { model: 'warrok', anims: 'mutant', h: 2.3 },
   fosa_bruto:     { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 2.4 }, h: 2.3 },   // Bruto de magma (la Fosa)
   bruto_echeyde:  { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 3.0 }, h: 2.6, scale: 1.15 },   // jefe de la Cueva de Echeyde

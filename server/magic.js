@@ -65,6 +65,49 @@ const SPELLS = {
     root_ms: 10000,         // 10s sin poder moverse
     color: 0x44cc55,        // verde (enredaderas)
   },
+  // ------------------------------------------------------------
+  // Sesión 50 — Pack de magia: un hechizo por cada movimiento de lanzamiento.
+  //   kind 'self'  → se lanza sobre uno mismo (POST /api/magic/self), con cooldown.
+  //   area         → además del objetivo, daña a `max` enemigos a `radius` m (×mult).
+  //                  Los secundarios no mueren por el área (quedan a 1 de vida).
+  //   drain        → te curas esa fracción del daño hecho.
+  // ------------------------------------------------------------
+  chorro_mar: {
+    id: 'chorro_mar', name: 'Chorro del Atlántico', magic_level_req: 8, mana_cost: 8,
+    base_max_hit: 5, color: 0x2a8cff,
+  },
+  sanacion: {
+    id: 'sanacion', name: 'Sanación de Chaxiraxi', magic_level_req: 15, mana_cost: 18,
+    kind: 'self', heal_base: 8, heal_per_lvl: 0.25, cooldown_ms: 25000, color: 0x8affb0,
+  },
+  escudo_lava: {
+    id: 'escudo_lava', name: 'Escudo de lava', magic_level_req: 25, mana_cost: 20,
+    kind: 'self', shield: 0.4, shield_ms: 12000, cooldown_ms: 40000, color: 0xff7a20,
+  },
+  aliento_guayota: {
+    id: 'aliento_guayota', name: 'Aliento de Guayota', magic_level_req: 45, mana_cost: 16,
+    base_max_hit: 11, drain: 0.5, color: 0xb02a2a,
+  },
+  erupcion: {
+    id: 'erupcion', name: 'Erupción del Teide', magic_level_req: 50, mana_cost: 22,
+    base_max_hit: 12, area: { radius: 3.5, max: 3, mult: 0.6 }, color: 0xff5a10,
+  },
+  lanza_obsidiana: {
+    id: 'lanza_obsidiana', name: 'Lanza de obsidiana', magic_level_req: 55, mana_cost: 18,
+    base_max_hit: 17, color: 0x9a6aff,
+  },
+  furia_magec: {
+    id: 'furia_magec', name: 'Furia de Magec', magic_level_req: 70, mana_cost: 26,
+    base_max_hit: 22, color: 0xffd040,
+  },
+  tormenta_echeyde: {
+    id: 'tormenta_echeyde', name: 'Tormenta de Echeyde', magic_level_req: 80, mana_cost: 34,
+    base_max_hit: 20, area: { radius: 4.5, max: 5, mult: 0.75 }, color: 0xff2a00,
+  },
+  juicio_teide: {
+    id: 'juicio_teide', name: 'Juicio del Teide', magic_level_req: 90, mana_cost: 32,
+    base_max_hit: 27, color: 0x5fffe0,
+  },
 };
 
 function getSpell(spellId) {

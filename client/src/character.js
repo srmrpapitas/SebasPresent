@@ -103,6 +103,25 @@ const SPELL_ANIM = {
   thunderbolt: 'staff_attack_5',
   entangle:    'staff_cast',
 };
+// Sesión 50 — Pack de magia (Mixamo, client/assets/npcs/anim_mago.glb): un gesto por
+// hechizo. Si el clip nuevo no cargó, se usa el de SPELL_ANIM (o el de la espada).
+const MAGIC_GLB = 'assets/npcs/anim_mago.glb';
+const SPELL_ANIM_MG = {
+  fire_strike:      'mg_atk1h_2',
+  chorro_mar:       'mg_atk1h_3',
+  sanacion:         'mg_cast1h',
+  ice_spear:        'mg_atk2h_1',
+  escudo_lava:      'mg_block',
+  entangle:         'mg_cast2h',
+  thunderbolt:      'mg_atk2h_2',
+  aliento_guayota:  'mg_atk2h_3',
+  erupcion:         'mg_area2h_1',
+  lanza_obsidiana:  'mg_atk2h_4',
+  furia_magec:      'mg_cast2h',
+  tormenta_echeyde: 'mg_area2h_2',
+  juicio_teide:     'mg_area2h_1',
+};
+const MAGIC_CLIP_NAMES = new Set(Object.values(SPELL_ANIM_MG).map(n => n.slice(3)));
 
 const CRITICAL_ANIMS = ['idle', 'walk_forward', 'run_forward'];
 
@@ -709,6 +728,7 @@ export class Character {
     // construir los clips partidos. ADITIVO: no toca las actions existentes
     // ni play(); solo crea actions extra `<name>__legs` / `<name>__torso`.
     this._buildLayeredClips();
+    this._loadMagicClips();   // Sesión 50 — pack de magia (en segundo plano)
 
     // Hook de prueba para validar EN EL JUEGO que el rig no se rompe con una
     // combinación piernas+torso, sin cablear nada al loop principal todavía.
@@ -1123,7 +1143,7 @@ export class Character {
     if (cloneClip) clip = clip.clone();
     clip.name = name;
     adaptTrackNamesToSkeleton(clip, this._boneNames);
-    if (CLIPS_TO_STRIP_ROOT.has(name)) {
+    if (CLIPS_TO_STRIP_ROOT.has(name) || name.startsWith('mg_')) {
       // Sesión 26 — bug fix:
       // Para ataques/punching/draw/sheath/drink/death usamos modo 'all'
       // (fija Y al valor inicial del frame 0). Antes usaban 'horizontal'
@@ -1132,7 +1152,7 @@ export class Character {
       // Solo locomoción (walk/run) sigue con 'horizontal' para preservar
       // micro-rebotes de paso si la anim los tuviera.
       let mode;
-      if (name === 'death' || name === 'sword_death') mode = 'all';
+      if (name === 'death' || name === 'sword_death' || name.startsWith('mg_')) mode = 'all';
       else if (name.startsWith('attack_') || name === 'punching'
             || name === 'draw' || name === 'sheath' || name === 'drink') {
         mode = 'all';
@@ -1639,6 +1659,9 @@ export class Character {
     // Sesión 42 — Staff CON hechizo → anim de casteo según el spell_id.
     // El server manda el spell_id por el 4º arg. Si el clip no cargó (warning
     // del loader), caemos abajo al cycle de sword para no quedarnos sin anim.
+    else if (weaponType === 'staff' && spellId && SPELL_ANIM_MG[spellId] && this.actions[SPELL_ANIM_MG[spellId]]) {
+      name = SPELL_ANIM_MG[spellId];   // Sesión 50 — pack de magia
+    }
     else if (weaponType === 'staff' && spellId && SPELL_ANIM[spellId] && this.actions[SPELL_ANIM[spellId]]) {
       name = SPELL_ANIM[spellId];
     }
@@ -2084,6 +2107,30 @@ export class Character {
   // quedan in-place. ADITIVO: crea actions `<name>__legs` / `<name>__torso`
   // sin tocar las existentes.
   // ============================================================
+  // Sesión 50 — gestos del pack de magia. Se cargan en segundo plano; mientras tanto
+  // los hechizos usan los gestos de siempre.
+  async _loadMagicClips() {
+    try {
+      const g = await new GLTFLoader().loadAsync(MAGIC_GLB);
+      const LEG_RE = /(Hips|UpLeg|Leg|Foot|Toe)/i;
+      let n = 0;
+      for (const c of g.animations) {
+        if (!MAGIC_CLIP_NAMES.has(c.name)) continue;
+        const name = 'mg_' + c.name;
+        if (!this._registerClip({ animations: [c] }, name, true)) continue;
+        const a = this.actions[name];
+        a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true;
+        const clip = this.clips[name];
+        const legT = clip.tracks.filter(t => LEG_RE.test(t.name.split('.')[0])).map(t => t.clone());
+        const torT = clip.tracks.filter(t => !LEG_RE.test(t.name.split('.')[0])).map(t => t.clone());
+        if (legT.length) { const lc = new THREE.AnimationClip(name + '__legs', clip.duration, legT); this.clips[name + '__legs'] = lc; this.actions[name + '__legs'] = this.mixer.clipAction(lc); }
+        if (torT.length) { const tc = new THREE.AnimationClip(name + '__torso', clip.duration, torT); this.clips[name + '__torso'] = tc; this.actions[name + '__torso'] = this.mixer.clipAction(tc); }
+        n++;
+      }
+      console.log('[character] gestos de magia cargados:', n);
+    } catch (e) { console.warn('[character] pack de magia no cargó:', e?.message); }
+  }
+
   _buildLayeredClips() {
     const LEG_RE = /(Hips|UpLeg|Leg|Foot|Toe)/i;
     const isLeg = (trackName) => LEG_RE.test(String(trackName).split('.')[0]);

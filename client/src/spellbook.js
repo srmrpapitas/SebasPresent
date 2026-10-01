@@ -23,6 +23,8 @@
  * (rechaza spell inválido / nivel insuficiente / sin maná).
  */
 
+import * as api from './api.js';   // Sesión 50 — hechizos sobre ti
+
 // ============================================================
 // Íconos SVG (mismo estilo dibujado a mano que los del HUD)
 // ============================================================
@@ -64,12 +66,65 @@ const SVG = {
     '<path d="M12 14 c-4-1-5 1-5 3 c3 0 4-1 5-3Z M20 12 c4-2 5 0 6 2 c-3 1-5 0-6-2Z M11 23 c-3 0-4 2-4 3 c2 0 3-1 4-3Z" fill="#6ae04a" stroke="#1f5a18" stroke-width=".7"/></svg>',
 };
 
+
+// Sesión 50 — iconos de los hechizos del pack de magia
+function sbIcon(id, c1, c2, c3, body) {
+  return '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs>' +
+    '<radialGradient id="sb' + id + 'h" cx="50%" cy="55%" r="50%"><stop offset="0" stop-color="' + c1 + '" stop-opacity=".75"/><stop offset="1" stop-color="' + c1 + '" stop-opacity="0"/></radialGradient>' +
+    '<linearGradient id="sb' + id + 'g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + c2 + '"/><stop offset="1" stop-color="' + c3 + '"/></linearGradient></defs>' +
+    '<circle cx="16" cy="16" r="15" fill="url(#sb' + id + 'h)"/>' + body.replace(/FILL/g, 'url(#sb' + id + 'g)') + '</svg>';
+}
+Object.assign(SVG, {
+  chorro_mar: sbIcon('Ch', '#6ab8ff', '#e0f4ff', '#1a5ab8',
+    '<path d="M3 20 C7 14 11 14 14 18 C17 22 21 22 24 17 C26 14 28 13 30 14 L30 24 C26 27 20 27 16 24 C12 21 8 22 3 26Z" fill="FILL" stroke="#0a2a5a" stroke-width="1"/>' +
+    '<path d="M6 12 c2-3 5-3 7 0 M17 9 c2-3 5-3 7 0" fill="none" stroke="#e0f4ff" stroke-width="1.6" stroke-linecap="round"/>'),
+  sanacion: sbIcon('Sa', '#8affb0', '#ffffff', '#3ac870',
+    '<path d="M16 27 C6 20 4 14 7 10 a5 5 0 0 1 9 1 a5 5 0 0 1 9 -1 C28 14 26 20 16 27Z" fill="FILL" stroke="#145a2a" stroke-width="1.1"/>' +
+    '<rect x="14.5" y="11" width="3" height="10" rx="1" fill="#fff"/><rect x="11" y="14.5" width="10" height="3" rx="1" fill="#fff"/>'),
+  escudo_lava: sbIcon('Es', '#ff9a40', '#ffe060', '#c83a08',
+    '<path d="M16 3 L27 7 C27 17 23 24 16 29 C9 24 5 17 5 7Z" fill="FILL" stroke="#5a1400" stroke-width="1.2" stroke-linejoin="round"/>' +
+    '<path d="M16 8 C18 11 21 12 20 16 a4 4 0 0 1 -8 0 c0-2 1-3 2-4 c0 1.5 1 2 1.5 2 c0-2 0-4 .5-6Z" fill="#fff4c0"/>'),
+  aliento_guayota: sbIcon('Al', '#ff4040', '#ff9090', '#6a0808',
+    '<path d="M9 8 a7 7 0 0 1 14 0 v5 a7 7 0 0 1 -3 6 v4 h-8 v-4 a7 7 0 0 1 -3 -6Z" fill="FILL" stroke="#2a0404" stroke-width="1.1"/>' +
+    '<circle cx="13" cy="11" r="2" fill="#2a0404"/><circle cx="19" cy="11" r="2" fill="#2a0404"/>' +
+    '<path d="M16 23 c-2 3 -1 5 0 7 c1-2 2-4 0-7Z" fill="#ff3030"/>'),
+  erupcion: sbIcon('Er', '#ff6a10', '#ffe060', '#5a1a08',
+    '<path d="M3 28 L12 13 L14 15 L18 15 L20 13 L29 28Z" fill="#4a2a1a" stroke="#1a0a04" stroke-width="1"/>' +
+    '<path d="M13 15 C12 9 14 6 16 3 C18 6 20 9 19 15Z" fill="FILL"/>' +
+    '<circle cx="9" cy="7" r="1.6" fill="#ff8a20"/><circle cx="24" cy="6" r="1.3" fill="#ffd040"/><circle cx="21" cy="3" r="1" fill="#ff6a10"/>'),
+  lanza_obsidiana: sbIcon('Lo', '#9a6aff', '#e8d8ff', '#2a1a48',
+    '<polygon points="27,4 17,20 13,17" fill="FILL" stroke="#120a20" stroke-width="1" stroke-linejoin="round"/>' +
+    '<line x1="14" y1="18" x2="5" y2="27" stroke="#3a2a1a" stroke-width="2.6" stroke-linecap="round"/>' +
+    '<path d="M8 9 l1 2 l2 1 l-2 1 l-1 2 l-1-2 l-2-1 l2-1Z" fill="#d8c8ff"/>'),
+  furia_magec: sbIcon('Fm', '#ffd040', '#ffffff', '#ffa020',
+    '<circle cx="16" cy="16" r="6.5" fill="FILL" stroke="#8a4a00" stroke-width="1"/>' +
+    '<g stroke="#ffc020" stroke-width="2" stroke-linecap="round"><line x1="16" y1="2" x2="16" y2="6.5"/><line x1="16" y1="25.5" x2="16" y2="30"/><line x1="2" y1="16" x2="6.5" y2="16"/><line x1="25.5" y1="16" x2="30" y2="16"/>' +
+    '<line x1="6" y1="6" x2="9.2" y2="9.2"/><line x1="22.8" y1="22.8" x2="26" y2="26"/><line x1="26" y1="6" x2="22.8" y2="9.2"/><line x1="9.2" y1="22.8" x2="6" y2="26"/></g>'),
+  tormenta_echeyde: sbIcon('Te', '#ff2a00', '#ffd060', '#5a0a04',
+    '<path d="M16 4 C25 4 28 11 23 15 C19 18 13 15 15 12 C17 9 21 12 19 14" fill="none" stroke="FILL" stroke-width="3" stroke-linecap="round"/>' +
+    '<path d="M16 28 C7 28 4 21 9 17 C13 14 19 17 17 20 C15 23 11 20 13 18" fill="none" stroke="FILL" stroke-width="3" stroke-linecap="round"/>' +
+    '<circle cx="16" cy="16" r="2.4" fill="#fff0a0"/>'),
+  juicio_teide: sbIcon('Ju', '#5fffe0', '#ffffff', '#1a8a7a',
+    '<path d="M2 28 L13 10 L16 13 L19 10 L30 28Z" fill="#4a5a6a" stroke="#0a1a2a" stroke-width="1"/><path d="M11 13 L13 10 L16 13 L19 10 L21 13 L18 14 L16 12.5 L14 14Z" fill="#f4f8ff"/>' +
+    '<rect x="14" y="0" width="4" height="14" fill="FILL" opacity=".85"/><circle cx="16" cy="13" r="3" fill="#ffffff"/>'),
+});
+
 // Espejo de SPELLS de server/magic.js (lo que la UI necesita).
+// Sesión 50 — ordenado por nivel. self:true = se lanza sobre ti al tocarlo (no autocast).
 const SPELLBOOK = [
-  { id: 'fire_strike', name: 'Rayo de fuego',  level: 1,  mana: 10 },
-  { id: 'ice_spear',   name: 'Lanza de hielo', level: 20, mana: 9  },
-  { id: 'thunderbolt', name: 'Rayo',           level: 40, mana: 14 },
-  { id: 'entangle',    name: 'Enredar',        level: 35, mana: 12 },
+  { id: 'fire_strike',      name: 'Rayo de fuego',         level: 1,  mana: 10, desc: 'Bola de fuego básica.' },
+  { id: 'chorro_mar',       name: 'Chorro del Atlántico',  level: 8,  mana: 8,  desc: 'Agua a presión. Barato y rápido.' },
+  { id: 'sanacion',         name: 'Sanación de Chaxiraxi', level: 15, mana: 18, self: true, desc: 'Te curas 8 + nivel/4 de vida. Recarga 25 s.' },
+  { id: 'ice_spear',        name: 'Lanza de hielo',        level: 20, mana: 9,  desc: 'Lanza de hielo certera.' },
+  { id: 'escudo_lava',      name: 'Escudo de lava',        level: 25, mana: 20, self: true, desc: '-40 % de daño recibido durante 12 s. Recarga 40 s.' },
+  { id: 'entangle',         name: 'Enredar',               level: 35, mana: 12, desc: 'Raíces que atan al enemigo 10 s.' },
+  { id: 'thunderbolt',      name: 'Rayo',                  level: 40, mana: 14, desc: 'Descarga eléctrica.' },
+  { id: 'aliento_guayota',  name: 'Aliento de Guayota',    level: 45, mana: 16, desc: 'Te curas la mitad del daño que haces.' },
+  { id: 'erupcion',         name: 'Erupción del Teide',    level: 50, mana: 22, desc: 'Salpica a 3 enemigos cercanos (60 %).' },
+  { id: 'lanza_obsidiana',  name: 'Lanza de obsidiana',    level: 55, mana: 18, desc: 'Gran daño a un objetivo.' },
+  { id: 'furia_magec',      name: 'Furia de Magec',        level: 70, mana: 26, desc: 'El sol de los guanches cae sobre tu enemigo.' },
+  { id: 'tormenta_echeyde', name: 'Tormenta de Echeyde',   level: 80, mana: 34, desc: 'Arrasa a 5 enemigos cercanos (75 %).' },
+  { id: 'juicio_teide',     name: 'Juicio del Teide',      level: 90, mana: 32, desc: 'El hechizo más poderoso de la isla.' },
 ];
 
 function spellMeta(id) { return SPELLBOOK.find(s => s.id === id) || null; }
@@ -78,6 +133,8 @@ function spellMeta(id) { return SPELLBOOK.find(s => s.id === id) || null; }
 // Estado
 // ============================================================
 let started = false;
+let onSelfCast = () => {};
+let selfBusy = false;
 let getMagicLevel = () => 1;
 let getMana = () => ({ current: 0, max: 0 });
 let feedLog = () => {};
@@ -101,6 +158,7 @@ export function start(opts = {}) {
   getMana          = opts.getMana          || (() => ({ current: 0, max: 0 }));
   feedLog          = opts.feedLog          || (() => {});
   onAutocastChange = opts.onAutocastChange || (() => {});
+  onSelfCast       = opts.onSelfCast       || (() => {});
 
   ensureCss();
   if (!injectSpells()) { started = false; return; }
@@ -164,6 +222,7 @@ function injectSpells() {
     btn.innerHTML =
       '<div class="spellbook-svg">' + (SVG[sp.id] || '') + '</div>' +
       '<div class="spellbook-meta">Niv ' + sp.level + ' · ' + sp.mana + '💧</div>';
+    btn.title = sp.name + ' — ' + (sp.desc || '');
     // Click izquierdo = seleccionar
     btn.addEventListener('click', (e) => { e.preventDefault(); onSelectSpell(sp.id); });
     // Click derecho (PC) = menú
@@ -195,6 +254,22 @@ function attachLongPress(btn, spellId) {
   btn.addEventListener('touchcancel', cancel);
 }
 
+// Sesión 50 — hechizos sobre ti (Sanación, Escudo de lava)
+async function castSelf(sp) {
+  if (selfBusy) return;
+  selfBusy = true;
+  try {
+    const r = await api.tradeCall('/api/magic/self', { spell_id: sp.id });
+    try { window.__playerPlayAttack?.('accurate', 'staff', 1200, sp.id); } catch {}
+    if (r.healed > 0) feedLog('info', '💚 ' + sp.name + ': recuperas ' + r.healed + ' de vida.');
+    else if (r.shield_until) feedLog('info', '🛡️ ' + sp.name + ': recibes un 40 % menos de daño durante 12 s.');
+    else feedLog('info', '✨ ' + sp.name + '.');
+    try { onSelfCast(r); } catch {}
+  } catch (e) {
+    feedLog('warning', e?.message || 'No puedes lanzar ' + sp.name + ' ahora.');
+  } finally { selfBusy = false; }
+}
+
 function onSelectSpell(spellId) {
   const sp = spellMeta(spellId);
   if (!sp) return;
@@ -202,6 +277,7 @@ function onSelectSpell(spellId) {
     feedLog('warning', 'Necesitas nivel ' + sp.level + ' de Magia para ' + sp.name + '.');
     return;
   }
+  if (sp.self) { castSelf(sp); return; }
   // Seleccionar = contorno blanco + lo fija como autocast activo (práctico para
   // un juego con auto-ataque: atacar lo repite). El detalle Cast-una-vez vs
   // autocast se afina con la cola (pieza 3) desde el menú.
@@ -225,9 +301,9 @@ function openMenu(spellId, x, y) {
   menuEl.className = 'spellbook-menu';
   menuEl.innerHTML =
     '<div class="spellbook-menu-title">' + sp.name + (locked ? ' (Niv ' + sp.level + ')' : '') + '</div>' +
+    '<div class="spellbook-menu-desc">' + (sp.desc || '') + '</div>' +
     '<button data-act="cast">Cast</button>' +
-    '<button data-act="autocast">Autocast</button>' +
-    '<button data-act="nextcast">Next cast</button>';
+    (sp.self ? '' : '<button data-act="autocast">Autocast</button><button data-act="nextcast">Next cast</button>');
   document.body.appendChild(menuEl);
   // posición (clamp a la pantalla)
   const r = menuEl.getBoundingClientRect();
@@ -241,6 +317,7 @@ function openMenu(spellId, x, y) {
       e.preventDefault();
       const act = b.dataset.act;
       if (locked) { feedLog('warning', 'Necesitas nivel ' + sp.level + ' de Magia.'); closeMenu(); return; }
+      if (act === 'cast' && sp.self) { castSelf(sp); closeMenu(); return; }
       if (act === 'cast') {
         // Cast (una vez): por ahora = seleccionar + autocast on. La semántica
         // "una sola vez y para" llega con la cola (pieza 3).
@@ -316,6 +393,7 @@ function ensureCss() {
     '.spellbook-cell.locked{opacity:0.4;filter:grayscale(0.7)}',
     /* menú contextual */
     '.spellbook-menu{position:fixed;z-index:9999;background:#1a1f2e;border:1px solid #3a4a6a;border-radius:8px;padding:4px;min-width:128px;box-shadow:0 6px 20px rgba(0,0,0,0.5)}',
+    '.spellbook-menu-desc{font-size:11px;opacity:.75;padding:2px 8px 6px;max-width:200px}',
     '.spellbook-menu-title{font-size:12px;font-weight:700;padding:4px 8px;opacity:0.85;border-bottom:1px solid #2a3550;margin-bottom:4px}',
     '.spellbook-menu button{display:block;width:100%;text-align:left;padding:8px 10px;background:transparent;border:none;color:#f0e6d2;font-size:13px;cursor:pointer;border-radius:6px}',
     '.spellbook-menu button:hover,.spellbook-menu button:active{background:#2d6cff}',

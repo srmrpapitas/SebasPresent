@@ -50,7 +50,14 @@ for (const n of [33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]) RIG_MODELS
 // Sesión 50 — clips de Mixamo (sin malla) convertidos a GLB: se aplican a cualquier esqueleto Mixamo
 export const ANIM_SETS = {
   mutant: 'anim_mutant.glb',   // idle, idle2, walk, run, attack, death, flex, jump, turn_l, turn_r
+  mago:   'anim_mago.glb',     // humanos: idle/idle2/idle3/idle4, walk, run, sprint, react, death, gestos de magia…
 };
+// Nombres que espera la animación de un NPC y qué clip del set los cubre
+const ANIM_ALIAS = {
+  mago: { attack: 'atk1h_2', talk: 'idle3' },
+};
+/** ¿Este modelo es humano? (los que usan el set 'mago') */
+export function isHumanModel(id) { return /^(f\d+|m\d+|sheriff_n(_01)?|killer_09|guardia[12])$/.test(id); }
 const _anims = new Map();     // set → Promise<{ clips: {name: clip}, hipsY0 }>
 export function preloadAnims(set) {
   if (_anims.has(set)) return _anims.get(set);
@@ -285,10 +292,16 @@ export function create(id, opts = {}) {
       mixer = new THREE.AnimationMixer(inner);
       actions = {};
       for (const [n, c] of Object.entries(clips)) actions[n] = mixer.clipAction(c);
-      for (const n of ['attack', 'death', 'flex', 'jump']) if (actions[n]) { actions[n].setLoop(THREE.LoopOnce, 1); actions[n].clampWhenFinished = true; }
+      for (const [k, v] of Object.entries(ANIM_ALIAS[opts.anims] || {})) if (!actions[k] && actions[v]) actions[k] = actions[v];
+      for (const n of ['attack', 'death', 'flex', 'jump', 'react']) if (actions[n]) { actions[n].setLoop(THREE.LoopOnce, 1); actions[n].clampWhenFinished = true; }
       mixer.addEventListener('finished', (e) => { if (e.action === oneShot && !dead) { oneShot = null; cur = null; } });
     }
   }
+  // variante de reposo estable por NPC (no todos respiran igual)
+  const idleName = (() => {
+    const opts2 = ['idle', 'idle2', 'idle4'].filter(n => actions?.[n]);
+    return opts2.length ? opts2[Math.floor(((opts.phase ?? 0) * 7.3) % opts2.length)] : 'idle';
+  })();
   const play = (name, fade = 0.2, ts = 1) => {
     const a = actions?.[name]; if (!a) return;
     a.setEffectiveTimeScale(ts);
@@ -319,12 +332,14 @@ export function create(id, opts = {}) {
     if (!dead) {
       if (S.attack && actions.attack) { oneShot = actions.attack; cur = null; play('attack', 0.1, 1.6); }
       if (!oneShot && style.flexEvery && !S.moving && actions.flex && Math.random() < dt / style.flexEvery) { oneShot = actions.flex; cur = null; play('flex', 0.3); }
+      if (!oneShot && S.hurt && actions.react) { oneShot = actions.react; cur = null; play('react', 0.08, 1.4); }
       if (!oneShot) {
         if (S.moving) {
           const sp = S.speed || 1.4;
           if (sp > 3.2 && actions.run) play('run', 0.2, Math.min(1.6, sp / 5));
           else play('walk', 0.2, Math.max(0.6, Math.min(1.8, sp / 1.4)) * (opts.stepMul || 1));
-        } else play('idle', 0.3);
+        } else if (S.talk && actions.talk) play('talk', 0.3);
+        else play(idleName, 0.3);
       }
     }
     mixer.update(dt);

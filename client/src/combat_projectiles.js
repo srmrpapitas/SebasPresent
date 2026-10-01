@@ -431,6 +431,14 @@ const SPELL_STYLE = {
   entangle:    { color: 0x59d34a, trail: [0xb8ff8a, 0x59d34a, 0x2a7a20], rate: 2, spread: 0.1, rise: 0.1 },
   stone:       { color: 0x8a8070, trail: [0xb0a890, 0x8a8070], rate: 1, spread: 0.05, rise: 0 },   // Sesión 50 — honda guanche
   sunbolt:     { color: 0xffd040, trail: [0xfff4b0, 0xffd040, 0xff9a20], rate: 2, spread: 0.1, rise: 0.3 },   // Sesión 50 — faycán (Magec)
+  // Sesión 50 — pack de magia
+  chorro_mar:       { color: 0x2a8cff, trail: [0xe0f4ff, 0x6ab8ff, 0x1a5ab8], rate: 3, spread: 0.14, rise: -0.4, core: 0xd8f0ff },
+  aliento_guayota:  { color: 0xb02a2a, trail: [0xff8080, 0xb02a2a, 0x3a0808], rate: 3, spread: 0.16, rise: 0.4, core: 0xffb0a0 },
+  erupcion:         { color: 0xff5a10, trail: [0xffe060, 0xff6a10, 0x5a1a08], rate: 4, spread: 0.2, rise: 1.0, core: 0xfff0a0, big: 1.3 },
+  lanza_obsidiana:  { color: 0x9a6aff, trail: [0xe8d8ff, 0x9a6aff, 0x2a1a48], rate: 2, spread: 0.08, rise: 0, spear: 0x2a2236 },
+  furia_magec:      { color: 0xffd040, trail: [0xffffff, 0xffe680, 0xffa020], rate: 3, spread: 0.18, rise: 0.4, core: 0xffffff, big: 1.4 },
+  tormenta_echeyde: { color: 0xff2a00, trail: [0xffd060, 0xff4a10, 0x200404], rate: 5, spread: 0.26, rise: 1.2, core: 0xffd0a0, big: 1.6 },
+  juicio_teide:     { color: 0x5fffe0, trail: [0xffffff, 0x9ffff0, 0x1a8a7a], rate: 4, spread: 0.18, rise: 0.6, core: 0xf0fffc, big: 1.7 },
 };
 
 function buildSpellFx(spellId, colorOverride) {
@@ -496,13 +504,20 @@ function buildSpellFx(spellId, colorOverride) {
       v.userData.k = k; vines.push(v); root.add(v);
     }
     fx.tick = (t) => { vines.forEach(v => { v.rotation.set(t * 9 + v.userData.k, t * 7 + v.userData.k * 2, 0); }); };
+  } else if (st.spear) {
+    // Sesión 50 — lanza (obsidiana): punta oscura con halo del color del hechizo
+    const spear = new THREE.Mesh(new THREE.ConeGeometry(0.1, 1.0, 5), new THREE.MeshStandardMaterial({ color: st.spear, metalness: 0.6, roughness: 0.15, emissive: st.color, emissiveIntensity: 0.4 }));
+    spear.rotation.x = Math.PI / 2; root.add(spear);
+    root.add(glowSprite(st.color, 1.0, 0.8));
+    fx.tick = (t) => { spear.rotation.z = t * 25; };
   } else {
-    // bola de fuego
-    root.add(new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffe6a0 })));
-    const halo = glowSprite(0xff7a1a, 1.0, 0.95);
-    const outer = glowSprite(0xff3a00, 1.6, 0.45);
+    // bola de energía (por defecto la de fuego; los hechizos nuevos con su color)
+    const big = st.big || 1;
+    root.add(new THREE.Mesh(new THREE.SphereGeometry(0.15 * big, 12, 10), new THREE.MeshBasicMaterial({ color: st.core || 0xffe6a0 })));
+    const halo = glowSprite(st.core ? st.color : 0xff7a1a, 1.0 * big, 0.95);
+    const outer = glowSprite(st.core ? st.trail[2] : 0xff3a00, 1.6 * big, 0.45);
     root.add(halo, outer);
-    fx.tick = (t) => { const k = 1 + Math.sin(t * 40) * 0.12; halo.scale.set(k, k, 1); };
+    fx.tick = (t) => { const k = 1 + Math.sin(t * 40) * 0.12; halo.scale.set(k * big, k * big, 1); };
   }
   return fx;
 }

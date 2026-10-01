@@ -479,7 +479,16 @@ function prayerFx(stats, now) {
   else fx = prayerEffects(currentPrayerState(stats.prayer_points, stats.prayer_updated_at, stats.active_prayers, now).active);
   // Sesión 50 — pociones: subida plana de niveles (Herbología)
   fx.flat = activeBoosts(stats?.boosts, now);
+  fx.shield = shieldOf(stats?.boosts, now);   // Sesión 50 — Escudo de lava
   return fx;
+}
+// Sesión 50 — Escudo de lava: fracción del daño recibido que se quita (0 si no hay)
+export function shieldOf(boostsRaw, now) {
+  try {
+    const b = typeof boostsRaw === 'string' ? JSON.parse(boostsRaw || '{}') : (boostsRaw || {});
+    const e = b.escudo;
+    return e && e.until > now ? Math.max(0, Math.min(0.8, Number(e.v) || 0)) : 0;
+  } catch { return 0; }
 }
 // Niveles con el % de las plegarias (como en OSRS: suben el nivel efectivo).
 function boostLvls(l, fx) {
@@ -988,6 +997,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const staffMagicBonus = STAFF_MAGIC_BONUS[weaponItemId] || 0;
   const staffManaBonus = STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemId] || 0);
   if (isMagic && !spell) return { error: 'invalid_spell', weapon_type: weaponType };
+  if (isMagic && spell.kind === 'self') return { error: 'self_spell', weapon_type: weaponType };   // Sesión 50 — se lanzan aparte
   const stanceKey = STYLE_TO_STANCE[style] || 'smash';
   const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
   const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
@@ -1166,6 +1176,38 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // Sesión 41 — para staff CON hechizo, la XP va a Magia. Staff sin hechizo
   // (golpe con el palo) cae a melee.
   const xpGained = awardXp(stats, dmgToNpc, style, weaponType, isMagic);
+  // Sesión 50 — efectos de los hechizos: área (daña a los de alrededor) y drenaje (te cura)
+  let areaHits = null, drained = 0;
+  if (isMagic && spell.area && npc.x != null) {
+    areaHits = [];
+    const A = spell.area;
+    const others = await db.all(
+      `SELECT i.id, i.hp_current, i.x, i.z, d.defence_lvl FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
+        WHERE i.status = 0 AND i.id != ? AND i.hp_current > 1
+          AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?
+          AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)`,
+      [npc.id, npc.x - A.radius, npc.x + A.radius, npc.z - A.radius, npc.z + A.radius, userId]
+    ).catch(() => []);
+    const near = (others || []).filter(o => dist(o.x, o.z, npc.x, npc.z) <= A.radius).slice(0, A.max);
+    const mh = Math.max(1, Math.floor(magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, staffMagicBonus) * A.mult));
+    let areaTotal = 0;
+    for (const o of near) {
+      const r = magic.rollHitMagic(rng, magicLevel, o.defence_lvl, mh);
+      const dmg = Math.min(r.hit ? Math.max(1, r.damage) : 0, Math.max(0, o.hp_current - 1));
+      if (dmg > 0) {
+        await db.run('UPDATE npc_instances SET hp_current = MAX(1, hp_current - ?), in_combat_with = COALESCE(in_combat_with, ?) WHERE id = ? AND status = 0', [dmg, userId, o.id]);
+        areaTotal += dmg;
+      }
+      areaHits.push({ id: o.id, dmg, x: o.x, z: o.z });
+    }
+    if (areaTotal > 0) stats.magic_xp = (stats.magic_xp || 0) + areaTotal * 2;
+  }
+  if (isMagic && spell.drain && dmgToNpc > 0 && stats.hp_current > 0) {
+    const maxHp = levelFromXp(stats.hp_xp || 0);
+    const before = stats.hp_current;
+    stats.hp_current = Math.min(maxHp, stats.hp_current + Math.max(1, Math.floor(dmgToNpc * spell.drain)));
+    drained = stats.hp_current - before;
+  }
   const xpAfter = levelsOf(stats);
   const levelUps = detectLevelUps(xpBefore, xpAfter);
 
@@ -1213,6 +1255,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     if (npcReady && userInNpcRange) {
       npcCounterHit = rollHit(rng, npc.attack_lvl, userLvls.defence, npc.max_hit, 1, defMultOf(userEq, stanceKey));
       if (userFx.protectMelee) npcCounterHit = { hit: false, damage: 0 };   // Sesión 50 — Protección
+      if (userFx.shield) npcCounterHit.damage = Math.floor(npcCounterHit.damage * (1 - userFx.shield));
       dmgToUser = Math.min(npcCounterHit.damage, stats.hp_current);
       const userHpAfter = stats.hp_current - dmgToUser;
       if (userHpAfter <= 0) {
@@ -1374,6 +1417,8 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
           name: spell.name,
           color: spell.color,
           root_ms: spell.root_ms || 0,
+          area: spell.area ? (areaHits || []) : null,
+          drained,
           mana_current: persistMana,
           mana_max: magic.computeMaxMana(magicLevel, staffManaBonus),
           mana_cost: spell.mana_cost,
@@ -1598,6 +1643,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   if (isMagicPvp && opts.spellId) {
     spellPvp = magic.getSpell(opts.spellId);
     if (!spellPvp) return { error: 'unknown_spell' };
+    if (spellPvp.kind === 'self') return { error: 'self_spell' };   // Sesión 50
     magicLevelPvp = levelsOf(attackerStats).magic || 1;
     // Sesión 47 — gate de nivel de magia en PvP (faltaba; el de NPC lo tenía).
     if (magicLevelPvp < spellPvp.magic_level_req) {
@@ -1675,6 +1721,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   if (targetFx.protectMelee && !isRanged && !(isMagicPvp && spellPvp)) dmgRaw = Math.floor(dmgRaw * 0.6);
   if (targetFx.protectRanged && isRanged) dmgRaw = Math.floor(dmgRaw * 0.6);             // Sesión 50
   if (targetFx.protectMagic && isMagicPvp && spellPvp) dmgRaw = Math.floor(dmgRaw * 0.6); // Sesión 50
+  if (targetFx.shield) dmgRaw = Math.floor(dmgRaw * (1 - targetFx.shield));                 // Sesión 50 — Escudo de lava
   const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
   if (specHitsPvp) {
     specHitsPvp[0] = Math.min(specHitsPvp[0], dmgToTarget);
@@ -1699,6 +1746,10 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const xpBefore = levelsOf(attackerStats);
   // Sesión 50 — la XP va a la skill correcta (arco → Distancia, hechizo → Magia).
   const xpGained = awardXp(attackerStats, dmgToTarget, attackerStyle, weaponType, isMagicPvp && !!spellPvp);
+  // Sesión 50 — Aliento de Guayota también drena en PvP
+  if (spellPvp?.drain && dmgToTarget > 0 && attackerStats.hp_current > 0) {
+    attackerStats.hp_current = Math.min(levelFromXp(attackerStats.hp_xp || 0), attackerStats.hp_current + Math.max(1, Math.floor(dmgToTarget * spellPvp.drain)));
+  }
   const xpAfter = levelsOf(attackerStats);
   const levelUps = detectLevelUps(xpBefore, xpAfter);
 
@@ -2553,7 +2604,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
           const blocked = (npcStyle === 'melee' && viewerFx.protectMelee)
             || (npcStyle === 'ranged' && viewerFx.protectRanged)
             || (npcStyle === 'magic' && viewerFx.protectMagic);
-          dmg = blocked ? 0 : Math.min(roll.damage, viewerHp);
+          dmg = blocked ? 0 : Math.min(Math.floor(roll.damage * (1 - (viewerFx.shield || 0))), viewerHp);
           attacked = true;
         }
       }
@@ -2743,9 +2794,10 @@ export function monsterRoll(rng, atkLvl, defLvl, maxHit, defMult) {
  * Devuelve { hp, died }.
  */
 export async function damagePlayerFromMonster(env, userId, dmg, now, npcId, pos, rng = Math.random) {
-  const stats = await env.DB.prepare('SELECT hp_current, skulled_until FROM combat_stats WHERE user_id = ?').bind(userId).first();
+  const stats = await env.DB.prepare('SELECT hp_current, skulled_until, boosts FROM combat_stats WHERE user_id = ?').bind(userId).first();
   if (!stats || stats.hp_current <= 0) return { hp: 0, died: false };
-  const d = Math.max(0, Math.min(dmg | 0, stats.hp_current));
+  const sh = shieldOf(stats.boosts, now);   // Sesión 50 — Escudo de lava
+  const d = Math.max(0, Math.min(Math.floor((dmg | 0) * (1 - sh)), stats.hp_current));
   const hp = stats.hp_current - d;
   await env.DB.prepare(
     `UPDATE combat_stats SET hp_current = MAX(0, hp_current - ?), last_hit_from_user_id = NULL,
