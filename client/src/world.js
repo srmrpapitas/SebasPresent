@@ -37,6 +37,7 @@ import * as mounts from './mounts.js';                     // Sesión 50 — mon
 import * as trade from './trade.js';                       // Sesión 50 — comercio entre jugadores
 import * as follow from './follow.js';                     // Sesión 50 — seguir a un jugador
 import * as social from './social.js';                     // Sesión 50 — pestaña Amigos / Monturas
+import * as menceyes from './menceyes.js';                 // Sesión 50 — estatuas de los menceyes (Candelaria)
 import { insideFosa } from './shared/fosa.js';
 import { BOSSES } from './shared/bosses.js';
 import * as buildings from './buildings.js';
@@ -268,6 +269,7 @@ export async function startWorld(loggedInUser, token) {
     try { fosa.registerKeepouts(terrain); } catch {}
     try { guancheVillage.registerKeepouts(terrain); } catch {}
     try { houses.registerKeepouts(terrain); } catch {}
+    try { menceyes.registerKeepouts(terrain); } catch {}
     // Sesión 50 — guaridas de jefes sin árboles
     try { for (const b of Object.values(BOSSES)) { terrain.addKeepout?.(b.x, b.z, b.lairR + 2); terrain.clearTreesNear?.(b.x, b.z, b.lairR + 2); } } catch {}
     // Sesión 11a — buildings (GLB del edificio + 3 instancias decorativas)
@@ -885,6 +887,7 @@ export async function startWorld(loggedInUser, token) {
     } catch (e) { console.warn('[world] tablets start:', e); }
     try { guancheVillage.start({ scene }); } catch (e) { console.warn('[world] poblado:', e); }
     try { roadsRender.start({ scene, biomeAt: terrain.biomeAt }); } catch (e) { console.warn('[world] caminos:', e); }
+    try { menceyes.start({ scene, feedLog: (type, msg) => combat.feedLog?.(type, msg) }); } catch (e) { console.warn('[world] menceyes:', e); }
     // Sesión 50 — castillos y casas de jugador
     const openBankHere = () => {
       try { bank.onOpen?.(); } catch (e) { console.warn('[world] bank.onOpen:', e); }
@@ -1068,6 +1071,7 @@ export function stopWorld() {
   try { fosa.stop(); } catch {}
   try { guancheVillage.stop(); } catch {}
   try { roadsRender.stop(); } catch {}
+  try { menceyes.stop(); } catch {}
   try { houses.stop(); } catch {}
   try { mounts.stop(); } catch {}
   try { trade.stop(); social.stop(); follow.stop(true); } catch {}
@@ -2981,7 +2985,8 @@ function doCanvasTap(clientX, clientY) {
   // 2a--) Tap habitante → caminar + hablar (Sesión 50).
   if (townNpcs.tryHandleTap(raycaster)) return;
 
-  // Sesión 50 — puerta de tu casa.
+  // Sesión 50 — estatuas de los menceyes / puerta de tu casa.
+  try { if (menceyes.tryHandleTap(raycaster)) return; } catch {}
   try { if (houses.tryHandleTap(raycaster)) return; } catch (e) { console.warn('[houses] tap', e); }
 
   // 2a-) Tap cofre de banco → caminar + abrir banco (Sesión 50).
@@ -3223,7 +3228,8 @@ function collideStep(x0, z0, x1, z1) {
   const a3 = bossFx.applyCollision(x0, z0, a2.x, a2.z);          // rocas de jefes
   const a4 = guancheVillage.applyCollision(x0, z0, a3.x, a3.z);  // casas guanches
   const a6 = houses.applyCollision(x0, z0, a4.x, a4.z);          // urbanizaciones, casonas, Arico
-  return interiors.applyCollision(x0, z0, a6.x, a6.z);
+  const a7 = menceyes.applyCollision(x0, z0, a6.x, a6.z);        // estatuas de Candelaria
+  return interiors.applyCollision(x0, z0, a7.x, a7.z);
 }
 // ¿Se puede estar de pie aquí? (para aterrizar al bajar de la pardela)
 function groundFreeAt(x, z) {

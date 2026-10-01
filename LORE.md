@@ -147,3 +147,14 @@ Tabla `aso_members` (migración 009). El servidor rechaza cualquier compra o ven
 - **Pestaña 👥**, con dos subpestañas:
   - Amigos: añadir por nombre, ver quién está conectado y dónde, y los jugadores que tienes cerca.
   - Monturas: tu colección; tocas una para llamarla, como en WoW.
+
+
+## Crónicas de Achinech (la historia de Tenerife)
+Misión de Aldric, en La Laguna: escuchar en orden a seis cronistas. Cada uno cuenta su capítulo completo al hablar con él; después se puede volver a escuchar con "📖".
+1. **Doña Elena** (La Laguna): el nacimiento volcánico de la isla (Anaga, Teno, Adeje y el Teide) y los primeros pobladores amazigh del norte de África.
+2. **Abuelo Guayre** (fuera de Chinamada): Tinerfe el Grande, los nueve menceyatos, el tagoror y el añepa, la vida pastoril (gofio, tamarco, cuevas, trashumancia), los dioses, las momias y el Beñesmén.
+3. **Hermano Marcial** (Candelaria): los cabreros de Güímar y la Virgen en la playa de Chimisay (hacia 1400), Chaxiraxi, y el temporal de 1826 que se llevó la imagen original.
+4. **Abuela Lola** (Acentejo): el desembarco en Añaza (1494), los bandos de paz y de guerra, Bencomo y Tinguaro, y la Matanza de Acentejo.
+5. **Don Rafael** (La Orotava): la modorra, Aguere (1495, muere Tinguaro), La Victoria de Acentejo, la leyenda de Bentor en Tigaiga, la paz de Los Realejos (1496) y la fundación de La Laguna. En el juego, los de Chinamada descienden de los "alzados".
+6. **Doña Carmen** (drago de Icod): Garachico en 1706, el Chinyero en 1909, el drago y lo que queda de lo guanche: palabras (gofio, baifo, guirre, tabaiba, tajinaste, gánigo) y nombres.
+- **Estatuas de los nueve menceyes** junto a la Basílica de Candelaria, como en la plaza real: Bencomo, Añaterve, Beneharo, Acaymo, Tegueste, Pelinor, Romen, Pelicar y Adjoña. Al tocar una, sale quién era.

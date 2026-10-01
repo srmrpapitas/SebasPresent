@@ -320,6 +320,11 @@ async function talkTo(o) {
         await d.npc(err?.code === 'missing_items' ? 'Te falta algo… revisa tu mochila.' : 'Acércate un poco más.');
       }
     } else {
+      // Sesión 50 — pasos de "escucha a…": primero te cuenta su capítulo entero
+      if (t.step?.lore && LORE[n.id]) {
+        for (const page of LORE[n.id].pages) { await d.npc(page); if (d.closed) break; }
+        if (d.closed) break;
+      }
       try {
         const r = await api.npcTalk(n.id);
         quests.applyServerRows(r?.quests);

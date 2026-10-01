@@ -433,6 +433,23 @@ Object.assign(QUESTS, {
     ],
     reward: { coins: 2500, items: [['gofio', 10], ['hierba_tajinaste', 3]], xp: { attack: 4000, defence: 4000 }, text: '2.500 monedas · 10 gofios · 3 tajinastes · 4.000 XP Ataque y Defensa' },
   },
+  cronicas_achinech: {
+    id: 'cronicas_achinech', name: 'Crónicas de Achinech', giver: 'guia_aldric',
+    summary: 'Recorre la isla escuchando a sus cronistas: la historia de Tenerife desde el volcán hasta hoy.',
+    offer: ['¿Quieres conocer de verdad esta isla? No la del Cabildo: la de verdad.', 'Hay gente repartida por Achinech que guarda su memoria. Escúchalos a todos, en orden, y vuelve a contarme.'],
+    accept: 'Quiero conocer la historia de Achinech.', doing: 'Escucha a los cronistas en orden. Empieza por Doña Elena, aquí en La Laguna.',
+    thanks: 'Ahora entiendes por qué esta isla es como es. Guárdalo bien: la memoria también se defiende.',
+    steps: [
+      { id: 'c1', event: 'talk', match: 'cronista_elena', count: 1, lore: true, hint: { talk: 'cronista_elena' }, text: 'Escucha a Doña Elena, la cronista de La Laguna.', tip: 'Está al sur de la plaza.' },
+      { id: 'c2', event: 'talk', match: 'abuelo_guayre', count: 1, lore: true, hint: { talk: 'abuelo_guayre' }, text: 'Escucha al Abuelo Guayre, junto a Chinamada.', tip: 'Vive fuera del poblado, al este. ¡No entres en el poblado sin armas!' },
+      { id: 'c3', event: 'talk', match: 'ermitano_candelaria', count: 1, lore: true, hint: { talk: 'ermitano_candelaria' }, text: 'Escucha al Hermano Marcial en la Basílica de Candelaria.', tip: 'Mira también las estatuas de los nueve menceyes.' },
+      { id: 'c4', event: 'talk', match: 'abuela_lola', count: 1, lore: true, hint: { talk: 'abuela_lola' }, text: 'Escucha a la Abuela Lola en Acentejo.', tip: 'Junto al camino de La Laguna a La Orotava.' },
+      { id: 'c5', event: 'talk', match: 'maestro_rafael', count: 1, lore: true, hint: { talk: 'maestro_rafael' }, text: 'Escucha a Don Rafael en La Orotava.', tip: 'Cerca del centro del pueblo.' },
+      { id: 'c6', event: 'talk', match: 'dona_carmen', count: 1, lore: true, hint: { talk: 'dona_carmen' }, text: 'Escucha a Doña Carmen junto al drago de Icod.', tip: 'Icod de los Vinos, al oeste.' },
+      talkBack('guia_aldric', 'Vuelve con Aldric en La Laguna.'),
+    ],
+    reward: { coins: 3000, items: [['gofio', 5]], xp: { prayer: 2000, magic: 1000 }, text: '3.000 monedas · 5 gofios · 2.000 XP Plegaria · 1.000 XP Magia' },
+  },
   sombra_cabildo: {
     id: 'sombra_cabildo', name: 'La sombra del Cabildo', giver: 'alma_sacerdotisa',
     summary: 'El Cabildo esconde una orden de magos que quiere liberar a Guayota. Recomendado: combate 60.',
@@ -455,7 +472,7 @@ export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'pri
   'mago_huesos', 'encargo_herrera', 'escorpiones', 'golems_mina', 'bestia_blanca',
   // Sesión 50
   'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones',
-  'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror'];
+  'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror', 'cronicas_achinech'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {
