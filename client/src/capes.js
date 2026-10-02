@@ -172,18 +172,26 @@ function mageTex(id) {
 // ------------------------------------------------------------
 // Material con tela que ondea (uTime en el vertex shader)
 // ------------------------------------------------------------
-function swayMaterial(opts, amp) {
+function swayMaterial(opts, amp, len = 1) {
   const m = new THREE.MeshStandardMaterial(opts);
   m.userData.uTime = { value: 0 };
+  m.userData.uBlow = { value: 0 };   // Sesión 51 — curva de la tela al moverse
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = m.userData.uTime;
+    sh.uniforms.uBlow = m.userData.uBlow;
     sh.uniforms.uAmp = { value: amp };
+    sh.uniforms.uLen = { value: len };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uAmp;\nattribute float hang;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uAmp;\nuniform float uBlow;\nuniform float uLen;\nattribute float hang;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         float sw = sin(uTime * 2.1 + hang * 5.0 + position.x * 0.04) * 0.6 + sin(uTime * 3.3 + hang * 9.0) * 0.4;
         transformed += objectNormal * sw * uAmp * hang * hang;
-        transformed.y += hang * hang * uAmp * 0.25 * sin(uTime * 1.7);`);
+        transformed.y += hang * hang * uAmp * 0.25 * sin(uTime * 1.7);
+        // Al moverse: la parte de ARRIBA sigue pegada a la espalda y solo el
+        // vuelo de abajo se curva hacia atrás (como tela, no como una tabla)
+        float hb = hang * hang;
+        transformed.z -= uBlow * uLen * hb * 0.5;
+        transformed.y += uBlow * uBlow * uLen * hb * hang * 0.17;`);
   };
   m.customProgramCacheKey = () => 'sway' + amp.toFixed(4);
   return m;
@@ -220,7 +228,9 @@ function makeDrips(cape, hemPts) {
     while (spawnAcc > 1) {
       spawnAcc -= 1;
       const d = drops[idx], p = hemPts[(Math.random() * hemPts.length) | 0];
-      tmp.copy(p).applyMatrix4(cape.matrixWorld);
+      const bl = cape.material?.userData?.uBlow?.value || 0, L = cape.userData.len || 0;
+      tmp.copy(p); tmp.z -= bl * L * 0.5; tmp.y += bl * bl * L * 0.17;   // sigue la curva al moverse
+      tmp.applyMatrix4(cape.matrixWorld);
       pos[idx * 3] = tmp.x; pos[idx * 3 + 1] = tmp.y; pos[idx * 3 + 2] = tmp.z;
       d.life = 0.9 + Math.random() * 0.4; d.v = 0; d.y0 = tmp.y;
       idx = (idx + 1) % N;
@@ -305,7 +315,7 @@ export function buildCape(itemId, H, root) {
     axisZ = Math.min(axisZ, backZ + R);
     top = Math.max(top, Math.min(arm.maxYBack(cz), top + h * 0.45));
   }
-  const len = h * (itemId === 'cape_magma' ? 5.0 : 4.6) * tn.s;   // S51: un pelín más cortas
+  const len = h * (itemId === 'cape_magma' ? 4.4 : 4.0) * tn.s;   // S51: más cortas (×2)
   const rx = R / 1.08;   // (para las piezas de abajo: broches, gotas)
   const SEGX = 28, SEGY = 22;
   const geo = new THREE.CylinderGeometry(R, R * 1.39, len, SEGX, SEGY, true, Math.PI * 0.6, Math.PI * 0.8);
@@ -314,6 +324,9 @@ export function buildCape(itemId, H, root) {
   const hang = new Float32Array(p.count);
   for (let i = 0; i < p.count; i++) hang[i] = (len / 2 - p.getY(i)) / len;
   geo.setAttribute('hang', new THREE.BufferAttribute(hang, 1));
+  // Sesión 51 — arriba un 16 % más ancha para que los hombros no la atraviesen
+  const SHW = 0.16;
+  for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) * (1 + SHW * Math.pow(1 - hang[i], 1.5)));
   // bajo en picos (magma) o recto con ondas (resto)
   for (let i = 0; i < p.count; i++) {
     if (hang[i] > 0.97) {
@@ -327,14 +340,15 @@ export function buildCape(itemId, H, root) {
   let mat;
   if (itemId === 'cape_fuego') {
     const map = fireTex(), em = fireGlow();
-    mat = swayMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 0.9, side: THREE.DoubleSide, roughness: 0.75 }, amp);
+    mat = swayMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 0.9, side: THREE.DoubleSide, roughness: 0.75 }, amp, len);
   } else if (itemId === 'cape_magma') {
     const map = magmaTex(), em = magmaGlow();
-    mat = swayMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 1.7, side: THREE.DoubleSide, roughness: 0.35, metalness: 0.2 }, amp * 0.8);
+    mat = swayMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 1.7, side: THREE.DoubleSide, roughness: 0.35, metalness: 0.2 }, amp * 0.8, len);
   } else {
-    mat = swayMaterial({ map: mageTex(itemId), side: THREE.DoubleSide, roughness: 0.85 }, amp * 1.1);
+    mat = swayMaterial({ map: mageTex(itemId), side: THREE.DoubleSide, roughness: 0.85 }, amp * 1.1, len);
   }
   const cape = new THREE.Mesh(geo, mat);
+  cape.userData.len = len;
   // Pivote en la línea de hombros: la capa CUELGA (gravedad) aunque el torso se incline
   const pivot = new THREE.Group();
   pivot.position.set(cx, top, axisZ + (tn.z || 0) * h);
@@ -392,8 +406,10 @@ export function buildCape(itemId, H, root) {
         pivot.parent.getWorldQuaternion(_q);
         const spUp = _d.set(0, 1, 0).applyQuaternion(_q);
         const lean = Math.asin(Math.max(-1, Math.min(1, spUp.dot(_f))));
-        const tilt = Math.max(0.1 + Math.min(0.55, speedS * 0.09), lean + 0.14);
-        _tilt.setFromAxisAngle(_ax, Math.min(1.2, tilt));
+        // S51 — solo un poco rígida (sigue la espalda); el resto es curva (uBlow)
+        const tilt = Math.max(0.06 + Math.min(0.1, speedS * 0.015), lean + 0.1);
+        _tilt.setFromAxisAngle(_ax, Math.min(0.85, tilt));
+        mat.userData.uBlow.value = Math.min(0.42, speedS * 0.06);
         _qt.multiply(_tilt);
         // Pasar al espacio del padre del pivote
         pivot.parent.getWorldQuaternion(_q);
@@ -422,7 +438,7 @@ export function buildCape(itemId, H, root) {
   // Broches donde la tela se sujeta (las puntas de arriba de la capa)
   for (const sx of [-1, 1]) {
     const gem = new THREE.Mesh(new THREE.OctahedronGeometry(rx * 0.14, 1), gemMat);
-    gem.position.set(sx * R * 0.951, -len * 0.01, -R * 0.309 + rx * 0.06);
+    gem.position.set(sx * R * 0.951 * (1 + SHW), -len * 0.01, -R * 0.309 + rx * 0.06);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(rx * 0.17, rx * 0.04, 8, 20), ringMat);
     ring.position.copy(gem.position);
     pivot.add(gem, ring);
