@@ -290,6 +290,59 @@ function topOf(o) {
   return t.parent ? t : null;
 }
 
+/**
+ * Geometría de capa: rejilla u (izq→der) × v (arriba→abajo).
+ * Sección = arco de elipse que envuelve la espalda; arriba abraza los
+ * hombros (±100°) y abajo cae por detrás (±74°) y se abre.
+ */
+function clothGeometry(R, len, itemId) {
+  const NU = 34, NV = 26;
+  const magma = itemId === 'cape_magma';
+  const pos = [], uv = [], hang = [], idx = [];
+  const hemPts = [];
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const at = (u, v, out) => {
+    const sgn = u * 2 - 1;                                  // -1 … 1
+    const ve = Math.pow(v, 0.8);
+    const th = sgn * lerp(1.74, 1.29, Math.pow(v, 0.6));    // ±100° → ±74°
+    const a = R * lerp(0.98, 1.28, ve);                     // ancho
+    const b = R * lerp(0.95, 1.2, ve);                     // fondo
+    // pliegues: nada arriba, profundos abajo
+    const fold = 1 + 0.1 * Math.pow(v, 1.1) * Math.sin(th * 7.5 + 0.6) + 0.035 * Math.pow(v, 1.4) * Math.sin(th * 13 + 1.7);
+    const x = Math.sin(th) * a * fold;
+    const z = -Math.cos(th) * b * fold;
+    // arriba: cae sobre los hombros (esquinas redondeadas); abajo: esquinas redondeadas
+    const yTop = len / 2 - len * 0.11 * Math.pow(Math.abs(sgn), 2.2);
+    let yBot = -len / 2 + len * 0.2 * Math.pow(Math.abs(sgn), 4);
+    if (magma) yBot -= len * 0.05 * Math.abs(Math.sin(th * 9));
+    else yBot -= len * 0.012 * Math.sin(th * 14);
+    const y = lerp(yTop, yBot, v);
+    return (out || new THREE.Vector3()).set(x, y, z);
+  };
+  const tmp = new THREE.Vector3();
+  for (let j = 0; j <= NV; j++) {
+    const v = j / NV;
+    for (let i = 0; i <= NU; i++) {
+      const u = i / NU;
+      at(u, v, tmp);
+      pos.push(tmp.x, tmp.y, tmp.z);
+      uv.push(u, 1 - v);
+      hang.push(v);
+      if (j === NV && i % 3 === 0) hemPts.push(tmp.clone());
+    }
+  }
+  for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+    const a = j * (NU + 1) + i, b = a + NU + 1;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute('hang', new THREE.Float32BufferAttribute(hang, 1));
+  geo.setIndex(idx);
+  return { geo, hem: hemPts, topAt: (sgn) => at((sgn + 1) / 2, 0) };
+}
+
 export function buildCape(itemId, H, root) {
   const sp2 = H.findBone(root, 'Spine2');
   if (!sp2) return null;
@@ -317,24 +370,13 @@ export function buildCape(itemId, H, root) {
   }
   const len = h * (itemId === 'cape_magma' ? 4.4 : 4.0) * tn.s;   // S51: más cortas (×2)
   const rx = R / 1.08;   // (para las piezas de abajo: broches, gotas)
-  const SEGX = 28, SEGY = 22;
-  const geo = new THREE.CylinderGeometry(R, R * 1.39, len, SEGX, SEGY, true, Math.PI * 0.6, Math.PI * 0.8);
-  // hang: 0 arriba → 1 abajo (para el ondeo)
+  // Sesión 51 — forma de TELA (ya no medio tubo, que parecía un escudo):
+  // nace estrecha en el cuello, cae sobre los hombros con las esquinas de
+  // arriba redondeadas, se abre hacia abajo con pliegues y el bajo tiene las
+  // esquinas redondeadas (magma: en picos).
+  const { geo, hem, topAt } = clothGeometry(R, len, itemId);
   const p = geo.attributes.position;
-  const hang = new Float32Array(p.count);
-  for (let i = 0; i < p.count; i++) hang[i] = (len / 2 - p.getY(i)) / len;
-  geo.setAttribute('hang', new THREE.BufferAttribute(hang, 1));
-  // Sesión 51 — arriba un 16 % más ancha para que los hombros no la atraviesen
-  const SHW = 0.16;
-  for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) * (1 + SHW * Math.pow(1 - hang[i], 1.5)));
-  // bajo en picos (magma) o recto con ondas (resto)
-  for (let i = 0; i < p.count; i++) {
-    if (hang[i] > 0.97) {
-      const a = Math.atan2(p.getX(i), p.getZ(i));
-      const k = itemId === 'cape_magma' ? 0.06 * Math.abs(Math.sin(a * 9)) : 0.015 * Math.sin(a * 14);
-      p.setY(i, p.getY(i) - len * k);
-    }
-  }
+  const hang = geo.attributes.hang.array;
   geo.computeVertexNormals();
   const amp = len * 0.035;
   let mat;
@@ -364,13 +406,7 @@ export function buildCape(itemId, H, root) {
   let frontRoot = null, lastRootPos = null, speedS = 0;
   cape.frustumCulled = false; cape.castShadow = true;
   // Animación: tiempo del ondeo + scroll de la lava (map lento, brillo rápido)
-  const hemPts = [];
-  if (itemId === 'cape_magma') {
-    for (let i = 0; i <= 12; i++) {
-      const a = Math.PI * 0.6 + Math.PI * 0.8 * (i / 12);
-      hemPts.push(new THREE.Vector3(Math.sin(a) * rx * 1.5, -len / 2 - len * 0.04, Math.cos(a) * rx * 1.5));
-    }
-  }
+  const hemPts = itemId === 'cape_magma' ? hem : [];
   cape.onBeforeRender = (renderer, scene) => {
     const t = now();
     const dtC = Math.min(0.1, t - (cape.userData.lastFrame || t));
@@ -438,7 +474,7 @@ export function buildCape(itemId, H, root) {
   // Broches donde la tela se sujeta (las puntas de arriba de la capa)
   for (const sx of [-1, 1]) {
     const gem = new THREE.Mesh(new THREE.OctahedronGeometry(rx * 0.14, 1), gemMat);
-    gem.position.set(sx * R * 0.951 * (1 + SHW), -len * 0.01, -R * 0.309 + rx * 0.06);
+    gem.position.copy(topAt(sx * 0.9)); gem.position.y -= len / 2; gem.position.z += rx * 0.05;
     const ring = new THREE.Mesh(new THREE.TorusGeometry(rx * 0.17, rx * 0.04, 8, 20), ringMat);
     ring.position.copy(gem.position);
     pivot.add(gem, ring);
