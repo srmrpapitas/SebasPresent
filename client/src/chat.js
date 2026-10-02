@@ -32,6 +32,7 @@
  *   window.__chatDebug.bubble(uid, 'hola') → overhead manual
  */
 
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as multiplayer from './multiplayer.js';
@@ -125,7 +126,7 @@ export async function start({
   fetchInitial();
 
   // Polling cada 2.5s.
-  pollTimer = setInterval(() => { poll(); }, POLL_INTERVAL_MS);
+  pollTimer = setInterval(() => { if (!afk.isPaused()) poll(); }, POLL_INTERVAL_MS);   // Sesión 51
 
   started = true;
 }

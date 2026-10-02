@@ -55,6 +55,23 @@ export function stop() {
 
 export function isConnected() { return connected; }
 
+// Sesión 51 — pausa por inactividad (core/afk.js): cerrar el socket y no
+// reconectar hasta reanudar. Así el Realm no guarda posiciones de nadie dormido.
+let suspended = false;
+export function suspend() {
+  suspended = true;
+  clearTimeout(retryTimer);
+  try { ws?.close(1000, 'afk'); } catch {}
+  ws = null;
+  connected = false;
+}
+export function resume() {
+  if (!suspended) return;
+  suspended = false;
+  retryMs = RECONNECT_MIN_MS;
+  if (started && (!ws || ws.readyState > 1)) connect();
+}
+
 // Sesión 51 — efecto de ataque especial (lo ven los demás). Cosmético.
 let lastFxAt = 0;
 export function sendFx(fx) {
@@ -70,7 +87,7 @@ export function onMessage(fn) { handlers.add(fn); return () => handlers.delete(f
 
 function onVisibility() {
   // Volver a la app en el móvil: si el socket murió, reconectar ya
-  if (document.visibilityState === 'visible' && started && (!ws || ws.readyState > 1)) {
+  if (document.visibilityState === 'visible' && started && !suspended && (!ws || ws.readyState > 1)) {
     clearTimeout(retryTimer);
     retryMs = RECONNECT_MIN_MS;
     connect();
@@ -78,7 +95,7 @@ function onVisibility() {
 }
 
 function connect() {
-  if (!started) return;
+  if (!started || suspended) return;
   const token = getToken?.();
   if (!token || !apiBase) { schedule(); return; }
   const url = apiBase.replace(/^http/, 'ws') + '/api/rt?token=' + encodeURIComponent(token);
@@ -108,7 +125,7 @@ function connect() {
 let lastMount = '';
 
 function schedule() {
-  if (!started) return;
+  if (!started || suspended) return;
   clearTimeout(retryTimer);
   retryTimer = setTimeout(connect, retryMs);
   retryMs = Math.min(RECONNECT_MAX_MS, retryMs * 2);

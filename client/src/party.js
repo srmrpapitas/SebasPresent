@@ -21,6 +21,7 @@
  *     (acción "Invitar a grupo" en long-press + botón HUD).
  */
 
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as api from './api.js';
 
 let started = false;
@@ -141,7 +142,7 @@ export function toggleDropdown() { openModal(); }
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => refreshState().catch(() => {}), POLL_INTERVAL_MS);
+  pollTimer = setInterval(() => { if (!afk.isPaused()) refreshState().catch(() => {}); }, POLL_INTERVAL_MS);   // Sesión 51
 }
 
 async function refreshState() {

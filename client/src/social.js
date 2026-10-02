@@ -5,6 +5,7 @@
  *   🐎 Monturas — tu colección, como en WoW: tocas una y la llamas; tocas
  *                 la que llevas y te bajas.
  */
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as api from './api.js';
 import * as mounts from './mounts.js';
 import { MOUNTS, MOUNT_LIST } from './shared/mounts.js';
@@ -129,7 +130,7 @@ export function start(opts) {
   loadFriends().then(render);
   render();
   timer = setInterval(async () => {
-    if (!visible()) return;
+    if (!visible() || afk.isPaused()) return;   // Sesión 51
     if (document.activeElement?.closest?.('.soc-add')) return;   // no romper lo que escribes
     if (sub === 'friends') await loadFriends();
     render();

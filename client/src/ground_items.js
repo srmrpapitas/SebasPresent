@@ -38,6 +38,7 @@
  *   groundItems.stop();
  */
 
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as THREE from 'three';
 
 // ============================================================
@@ -332,7 +333,7 @@ function escapeLoot(s) {
 function updateImpl(dt, player) {
   // 1) Poll periódico al server
   pollTimer += dt * 1000;
-  if (pollTimer >= POLL_INTERVAL && !inFlight) {
+  if (pollTimer >= POLL_INTERVAL && !inFlight && !afk.isPaused()) {
     pollTimer = 0;
     pollItems(player);
   }

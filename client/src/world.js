@@ -64,6 +64,7 @@ import * as mining from './skills/mining.js';   // Sesión 50 — minería
 import * as fishing from './skills/fishing.js'; // Sesión 50 — pesca
 import * as crafting from './skills/crafting.js'; // Sesión 50 — flechería/artesanía
 import * as realtime from './realtime.js';        // Sesión 50 — WebSocket (PvP en vivo, menos peticiones)
+import * as afk from './core/afk.js';            // Sesión 51 — desconexión por inactividad
 import * as bankChests from './bank_chests.js';  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
@@ -821,6 +822,23 @@ export async function startWorld(loggedInUser, token) {
         try { terrain.primeChunks(m.x, m.z); } catch {}
       });
     } catch (e) { console.warn('[world] realtime start:', e); }
+
+    // Sesión 51 — modo dormido: 5 min sin tocar nada (o la pestaña oculta) →
+    // se cierra el WebSocket y ningún módulo hace peticiones hasta volver.
+    try {
+      afk.start({
+        isInCombat: () => !!(worldSnapshot.isInCombat?.() || combat.getStateSnapshot?.()?.currentTarget != null),
+      });
+      afk.onChange((paused) => {
+        if (paused) {
+          try { realtime.suspend(); } catch {}
+        } else {
+          try { realtime.resume(); } catch {}
+          try { worldSnapshot.requestFull(); } catch {}
+          combat.refresh?.().catch?.(() => {});
+        }
+      });
+    } catch (e) { console.warn('[world] afk start:', e); }
 
     // Sesión 30 — Woodcutting + Firemaking
     // Verificar en Eruda: window.__wcDebug(), window.__fmDebug()
@@ -3191,6 +3209,7 @@ function animate() {
 function updatePositionSave(dt) {
   if (!authToken) return;
   if (interiors.isActive()) return; // no guardar coords del interior (10000,10000) al server
+  if (afk.isPaused()) return;       // Sesión 51 — dormido: sin peticiones
   positionSaveTimer += dt * 1000;
 
   // Sesión 20 — Si estoy en combate, guardar cada 500ms (no 10s) para
@@ -3199,6 +3218,9 @@ function updatePositionSave(dt) {
   // me había alejado → "pegar desde lejos" bug.
   let inCombat = false;
   try { inCombat = !!combat.getStateSnapshot?.()?.currentTarget; } catch {}
+  // Sesión 51 — con el WebSocket conectado, el Realm ya guarda tu posición en
+  // combate cada 0,5 s (online_users); esto solo es la posición para el login.
+  if (realtime.isConnected()) inCombat = false;
   const saveInterval = inCombat ? 500 : POSITION_SAVE_INTERVAL;
   // Delta mínima también más permisiva en combate (0.5m vs 5m default)
   const minDelta = inCombat ? 0.5 : POSITION_SAVE_MIN_DELTA;

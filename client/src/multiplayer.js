@@ -42,6 +42,7 @@
 
 import { updatePeerMount, removePeerMount } from './mounts.js';   // Sesión 50 — monturas
 import { overheadHtml, ensureOverheadCss } from './overhead.js';   // Sesión 50
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as worldSnapshot from './world_snapshot.js';
@@ -168,6 +169,7 @@ export function update(dt) {
   // Sesión 50 — con el WebSocket conectado la posición va por ahí (el Realm
   // la guarda en D1); el heartbeat HTTP solo es el plan B.
   if (realtime.isConnected()) mpHeartbeatTimer = 0;
+  if (afk.isPaused()) mpHeartbeatTimer = 0;   // Sesión 51
   if (mpHeartbeatTimer >= MP_HEARTBEAT_INTERVAL && !mpInFlightHeartbeat) {
     mpHeartbeatTimer = 0;
     sendHeartbeat();

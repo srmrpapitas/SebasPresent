@@ -33,6 +33,7 @@
  *     entradas al feed.
  */
 
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as api from './api.js';
 import * as inventory from './inventory.js';
 import * as bank from './bank.js';
@@ -132,7 +133,7 @@ export function refresh() {
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
-    if (view === 'slots' && isOpen) {
+    if (view === 'slots' && isOpen && !afk.isPaused()) {   // Sesión 51
       doRefresh({ silent: true }).catch(err => console.warn('[ge] poll err', err));
     }
   }, POLL_INTERVAL_MS);

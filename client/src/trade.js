@@ -10,6 +10,7 @@
  *     Si alguien cambia algo, se vuelve a la primera pantalla y avisa.
  * Funciona montado (no te baja de la montura).
  */
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as api from './api.js';
 import { onMessage } from './realtime.js';
 import { getItemIconHtml } from './item_icons.js';
@@ -79,7 +80,7 @@ export async function refresh(open = false) {
   } catch (e) { console.warn('[trade]', e); }
 }
 
-function startPoll() { if (!pollTimer) pollTimer = setInterval(() => refresh(), 2500); }
+function startPoll() { if (!pollTimer) pollTimer = setInterval(() => { if (!afk.isPaused()) refresh(); }, 2500); }   // Sesión 51
 function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
 function closeWindow() {
