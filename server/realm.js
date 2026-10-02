@@ -37,9 +37,14 @@ function xpToLevel(xp) {
   }
   return 99;
 }
-const WRITE_MOVING_MS = 1500;
-const WRITE_COMBAT_MS = 500;
-const WRITE_IDLE_MS = 5000;
+// Sesión 51 — escrituras D1 de la posición (límite gratis: 100.000 filas/día;
+// cada escritura cuenta 2: la fila y el índice last_seen). Solo se guarda si
+// te has movido de verdad; quieto, un latido cada 6 s para seguir "en línea"
+// (el snapshot considera desconectado a quien lleva >10 s sin latido).
+const WRITE_MOVING_MS = 2000;
+const WRITE_COMBAT_MS = 600;      // en combate el servidor valida el alcance con esto
+const WRITE_HEARTBEAT_MS = 6000;   // el cliente manda cada 3 s quieto → latido real cada 6 s
+const WRITE_MIN_MOVE_M = 0.5;
 
 // Sesión 51 — efectos de especiales que se reenvían a los demás
 const FX_KINDS = new Set(['slam', 'claws', 'double', 'cleave', 'feint', 'volatile', 'arcane', 'dragon', 'snapshot', 'heal', 'gs', 'smash', 'spec', 'bloodcube']);
@@ -109,7 +114,6 @@ export class Realm {
       // Sesión 50 — ¿movimiento posible? Si no, no se acepta y se le corrige.
       const nowV = Date.now();
       if (!(await this.validMove(ws, a, x, z, mt, nowV))) return;
-      const prevS = a.s;
       a.x = Math.round(x * 100) / 100;
       a.z = Math.round(z * 100) / 100;
       a.y = Math.round(y * 1000) / 1000;
@@ -120,9 +124,10 @@ export class Realm {
       // Guardar en D1 con límite de frecuencia
       const now = Date.now();
       const since = now - (a.w || 0);
-      const limit = m.c ? WRITE_COMBAT_MS : (s === 'run' ? WRITE_MOVING_MS : WRITE_IDLE_MS);
-      if (since >= limit || s !== prevS) {
-        a.w = now;
+      const limit = m.c ? WRITE_COMBAT_MS : WRITE_MOVING_MS;
+      const movedW = a.wx == null ? Infinity : Math.hypot(a.x - a.wx, a.z - a.wz);
+      if ((movedW >= WRITE_MIN_MOVE_M && since >= limit) || since >= WRITE_HEARTBEAT_MS) {
+        a.w = now; a.wx = a.x; a.wz = a.z;
         ws.serializeAttachment(a);
         try {
           await this.env.DB.prepare(

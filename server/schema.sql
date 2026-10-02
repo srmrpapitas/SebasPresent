@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS online_users (
   last_seen INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_online_last_seen ON online_users(last_seen);
-CREATE INDEX IF NOT EXISTS idx_online_pos ON online_users(x, z);
+-- (idx_online_pos eliminado en la migración 019)
 
 CREATE TABLE IF NOT EXISTS parties (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -418,3 +418,11 @@ CREATE TABLE IF NOT EXISTS auth_limits (
   win INTEGER NOT NULL,          -- inicio de la ventana (ms)
   n   INTEGER NOT NULL DEFAULT 0
 );
+
+-- Sesión 51 — migraciones 018 y 019 (rendimiento D1)
+CREATE INDEX IF NOT EXISTS idx_npc_expires ON npc_instances(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_npc_def ON npc_instances(def_id);
+ALTER TABLE npc_instances ADD COLUMN cell INTEGER
+  GENERATED ALWAYS AS (CAST(x / 32.0 + 1024 AS INTEGER) * 4096 + CAST(z / 32.0 + 1024 AS INTEGER)) VIRTUAL;
+CREATE INDEX IF NOT EXISTS idx_npc_cell ON npc_instances(status, cell);
+CREATE INDEX IF NOT EXISTS idx_ge_open_player ON ge_orders(item_id) WHERE status = 0 AND user_id != 0;

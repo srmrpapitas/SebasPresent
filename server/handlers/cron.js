@@ -29,14 +29,22 @@ const CHAT_RETENTION_MS = 24 * 60 * 60 * 1000;   // 24h
 
 export async function scheduledHandler(event, env, ctx) {
   const db = makeDbAdapter(env);
+  // Sesión 51 — el cron corre cada minuto las 24 h, haya gente o no. Las
+  // tareas que no corren prisa van cada N minutos (según el minuto del reloj,
+  // que no depende de qué worker lo ejecute).
+  const minute = new Date(event?.scheduledTime || Date.now()).getUTCMinutes();
+  const every = (n, off = 0) => minute % n === off;
 
-  // 1) GE: matcher + ghost reseed
-  try {
-    const matched = await runMatcher(db);
-    const reseed = await reseedGhostOrders(db);
-    console.log(`[ge-cron] matches=${matched.matches} items=${matched.items.join(',')} reseed=${reseed.inserted}`);
-  } catch (err) {
-    console.error('[ge-cron] error:', err);
+  // 1) GE: matcher (red de seguridad: las órdenes ya se cruzan al ponerlas)
+  //    cada 5 min; liquidez fantasma cada 15 min.
+  if (every(5)) {
+    try {
+      const matched = await runMatcher(db);
+      const reseed = every(15) ? await reseedGhostOrders(db) : { inserted: 0 };
+      console.log(`[ge-cron] matches=${matched.matches} items=${matched.items.join(',')} reseed=${reseed.inserted}`);
+    } catch (err) {
+      console.error('[ge-cron] error:', err);
+    }
   }
 
   // 2) Combat: revive NPCs muertos cuyo respawn time pasó
@@ -75,10 +83,12 @@ export async function scheduledHandler(event, env, ctx) {
   }
 
   // 5) Chat cleanup: mensajes > 24h (Sesión 29).
+  //    Sesión 51 — una vez por hora (el índice empieza por canal, así que
+  //    este DELETE recorre la tabla entera).
   //    Si la tabla chat_messages no existe (D1 reseteada antes de re-crear),
   //    el catch evita ruido en logs. Es best-effort: si falla un minuto no
   //    pasa nada — el siguiente lo reintenta.
-  try {
+  if (every(60, 7)) try {
     const cutoff = Date.now() - CHAT_RETENTION_MS;
     const res = await env.DB.prepare(
       'DELETE FROM chat_messages WHERE sent_at < ?'
@@ -129,7 +139,8 @@ export async function scheduledHandler(event, env, ctx) {
   }
 
   // 9) auth_limits: ventanas de intentos de login ya caducadas (Sesión 50).
-  try {
+  //    Sesión 51 — una vez por hora.
+  if (every(60, 37)) try {
     await env.DB.prepare('DELETE FROM auth_limits WHERE win < ?').bind(Date.now() - 2 * 3600_000).run();
   } catch {}
 }

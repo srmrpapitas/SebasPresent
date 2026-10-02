@@ -329,9 +329,13 @@ export async function cancelOrder(db, userId, orderId) {
 // ============================================================
 
 export async function runMatcher(db) {
+  // Sesión 51 — solo artículos con alguna orden abierta de un JUGADOR: dos
+  // órdenes del sistema nunca se cruzan entre sí (self-trade), así que mirar
+  // el resto era leer por leer. Las órdenes nuevas ya se cruzan al ponerlas
+  // (placeOrder → matchItem); esto es solo la red de seguridad del cron.
   const items = await db.all(
-    `SELECT DISTINCT item_id FROM ge_orders WHERE status = ?`,
-    [STATUS_OPEN]
+    // Literales (no ?) para que SQLite use el índice parcial idx_ge_open_player (migración 019).
+    `SELECT DISTINCT item_id FROM ge_orders WHERE status = ${Number(STATUS_OPEN)} AND user_id != ${Number(SYSTEM_USER_ID)}`
   );
   let total = 0;
   const touched = [];
@@ -638,24 +642,30 @@ export async function claimAll(db, userId, target) {
 // ============================================================
 
 export async function reseedGhostOrders(db) {
-  const configs = await db.all('SELECT * FROM ge_seed_config');
+  // Sesión 51 — antes: por cada config, 1 lectura de items + 1 SUM que
+  // recorría TODAS las órdenes abiertas del sistema (configs × órdenes
+  // lecturas cada minuto). Ahora 2 consultas en total.
+  const configs = await db.all(
+    `SELECT c.item_id, c.side, c.target_volume, c.price_offset_bps, i.base_price
+       FROM ge_seed_config c JOIN items i ON i.id = c.item_id`
+  );
+  const openRows = await db.all(
+    `SELECT item_id, side, COALESCE(SUM(qty_total - qty_filled), 0) AS open_qty
+       FROM ge_orders WHERE user_id = ? AND status = ?
+      GROUP BY item_id, side`,
+    [SYSTEM_USER_ID, STATUS_OPEN]
+  );
+  const openMap = new Map(openRows.map(r => [r.item_id + '|' + r.side, r.open_qty]));
   let inserted = 0;
   const GHOST_TIMESTAMP_FAR_FUTURE = 9_999_999_999_999;
 
   for (const c of configs) {
-    const guideRow = await db.first('SELECT base_price FROM items WHERE id = ?', [c.item_id]);
-    if (!guideRow) continue;
-    const guide = guideRow.base_price;
+    const guide = c.base_price;
+    if (guide == null) continue;
     const offset = Math.round((guide * c.price_offset_bps) / BPS_DIVISOR);
     const price = Math.max(1, guide + offset);
 
-    const sumRow = await db.first(
-      `SELECT COALESCE(SUM(qty_total - qty_filled), 0) AS open_qty
-       FROM ge_orders
-       WHERE user_id = ? AND item_id = ? AND side = ? AND status = ?`,
-      [SYSTEM_USER_ID, c.item_id, c.side, STATUS_OPEN]
-    );
-    const openQty = sumRow.open_qty;
+    const openQty = openMap.get(c.item_id + '|' + c.side) || 0;
     const deficit = c.target_volume - openQty;
     if (deficit <= 0) continue;
 
