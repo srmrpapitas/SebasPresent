@@ -920,6 +920,142 @@ const SKILL_ICONS = {
   for (const [id, fn] of Object.entries(D)) ICONS[id] = fn();
 })();
 
+// ============================================================
+// Sesión 51 — Armas legendarias (diseños propios) y escudo de dragón cuadrado
+// ============================================================
+(function addLegendIcons() {
+  const OL = 'stroke="#120c08" stroke-width=".75" stroke-linejoin="round"';
+  const W45 = (defs, body, shadow = true) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision"><defs>${defs}</defs>${shadow ? '<ellipse cx="16" cy="29.6" rx="10" ry="1.4" fill="#000" opacity=".28"/>' : ''}<g transform="rotate(45 16 16)">${body}</g></svg>`;
+  const W0 = (defs, body) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision"><defs>${defs}</defs><ellipse cx="16" cy="29.6" rx="10" ry="1.4" fill="#000" opacity=".28"/>${body}</svg>`;
+  const lin = (id, stops, x2 = 1, y2 = 0) => `<linearGradient id="${id}" x1="0" y1="0" x2="${x2}" y2="${y2}">${stops.map(([o, c]) => `<stop offset="${o}" stop-color="${c}"/>`).join('')}</linearGradient>`;
+  const rad = (id, c, edge = '#1a0a06') => `<radialGradient id="${id}" cx=".35" cy=".35" r=".75"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="${c}"/><stop offset="1" stop-color="${edge}"/></radialGradient>`;
+  const gem = (cx, cy, r, gid) => `<circle cx="${cx}" cy="${cy}" r="${r * 2}" fill="url(#${gid})" opacity=".22"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${gid})" stroke="#120c08" stroke-width=".45"/>`;
+  const grip = (y0, y1, w, col, wrapC) => {
+    let l = '';
+    for (let y = y0 + 1; y < y1 - 0.4; y += 1.4) l += `<path d="M${16 - w / 2} ${(y + 0.9).toFixed(2)} L${16 + w / 2} ${y.toFixed(2)}" stroke="${wrapC}" stroke-width=".7"/>`;
+    return `<rect x="${16 - w / 2}" y="${y0}" width="${w}" height="${y1 - y0}" rx=".6" fill="${col}" ${OL}/>${l}`;
+  };
+  const I = {};
+
+  // ---- Espadón de Achamán: hoja de cielo con estrellas, corona de rayos de sol tras la guarda ----
+  I.gs_achaman = () => {
+    let rays = '';
+    for (let i = -3; i <= 3; i++) {
+      const a = (i * 22) * Math.PI / 180, L = 8.6 - Math.abs(i) * 0.7;
+      const x = 16 + Math.sin(a) * L, y = 20.2 - Math.cos(a) * L;
+      const xl = 16 + Math.sin(a - 0.12) * 2.2, yl = 20.2 - Math.cos(a - 0.12) * 2.2, xr = 16 + Math.sin(a + 0.12) * 2.2, yr = 20.2 - Math.cos(a + 0.12) * 2.2;
+      rays += `<polygon points="${xl.toFixed(2)},${yl.toFixed(2)} ${x.toFixed(2)},${y.toFixed(2)} ${xr.toFixed(2)},${yr.toFixed(2)}" fill="url(#acR)" ${OL}/>`;
+    }
+    return W45(lin('acB', [[0, '#ffffff'], [.5, '#d8eeff'], [1, '#6aa8e0']]) + lin('acR', [[0, '#fff6c0'], [1, '#d89a20']], 0, 1) + lin('acG', [[0, '#fff3b0'], [.5, '#e0b040'], [1, '#7a5a10']]) + rad('acC', '#5ab0ff', '#0a2a5a'), `
+      ${rays}
+      <polygon points="12.2,18.6 12.2,-1.2 16,-6 19.8,-1.2 19.8,18.6" fill="url(#acB)" ${OL}/>
+      <polygon points="16,-6 19.8,-1.2 19.8,18.6 16,18.6" fill="#6aa8e0" opacity=".45"/>
+      <path d="M16 -3 V17" stroke="#3a7ac0" stroke-width=".9"/>
+      <path d="M13.2 -0.6 V17.6" stroke="#fff" stroke-width=".7" opacity=".9"/>
+      ${[[16, 2.5, 1.1], [16, 8.5, 0.9], [16, 13.6, 0.75]].map(([x, y, r]) => `<path d="M${x} ${y - r * 1.6} L${x + r * 0.45} ${y - r * 0.45} L${x + r * 1.6} ${y} L${x + r * 0.45} ${y + r * 0.45} L${x} ${y + r * 1.6} L${x - r * 0.45} ${y + r * 0.45} L${x - r * 1.6} ${y} L${x - r * 0.45} ${y - r * 0.45} Z" fill="#fff"/>`).join('')}
+      <path d="M8.6 19 Q16 16.8 23.4 19 L22.4 22.4 Q16 21 9.6 22.4 Z" fill="url(#acG)" ${OL}/>
+      ${gem(16, 20.4, 1.6, 'acC')}
+      ${grip(22.2, 30.8, 3, '#e8f0ff', '#d8a83a')}
+      <path d="M16 30.6 L17.4 32.6 L19.4 33 L17.6 34 L16 36 L14.4 34 L12.6 33 L14.6 32.6 Z" fill="url(#acG)" ${OL}/>`);
+  };
+
+  // ---- Espadón de Tibicena: hierro negro con dientes de fiera y guarda de cráneo de perro ----
+  I.gs_tibicena = () => W45(lin('tbB', [[0, '#8a8478'], [.5, '#4a463e'], [1, '#1e1c18']]) + lin('tbS', [[0, '#f0e6cc'], [1, '#a8987a']], 0, 1) + rad('tbE', '#ff3020', '#300000'), `
+      <path d="M12.4 18.6 L12.4 -1.4 L16 -5.6 L19.6 -1.6 L19.6 1 L21.4 2.2 L19.6 3.6 L21.4 5 L19.6 6.4 L21.6 7.8 L19.6 9.2 L21.6 10.6 L19.6 12 L21.4 13.4 L19.6 14.8 L19.6 18.6 Z" fill="url(#tbB)" ${OL}/>
+      <path d="M19.6 1 L21.4 2.2 L19.6 3.6 L21.4 5 L19.6 6.4 L21.6 7.8 L19.6 9.2 L21.6 10.6 L19.6 12 L21.4 13.4 L19.6 14.8" fill="none" stroke="#f0e6cc" stroke-width=".6"/>
+      <path d="M13.4 -0.6 V17.6" stroke="#b8b0a0" stroke-width=".6" opacity=".7"/>
+      <path d="M16 -3 L15.2 3 L16.6 8 L15.4 13" fill="none" stroke="#c8902c" stroke-width=".6" opacity=".9"/>
+      <path d="M8 21 Q8 16.6 11.4 16.2 L13 13.8 L14 16.6 L18 16.6 L19 13.8 L20.6 16.2 Q24 16.6 24 21 Q24 24.2 20.4 24.4 L17.6 25.6 L14.4 25.6 L11.6 24.4 Q8 24.2 8 21 Z" fill="url(#tbS)" ${OL}/>
+      <ellipse cx="12.9" cy="20" rx="1.4" ry="1.1" fill="#1a0c08"/><ellipse cx="19.1" cy="20" rx="1.4" ry="1.1" fill="#1a0c08"/>
+      ${gem(12.9, 20, .7, 'tbE')}${gem(19.1, 20, .7, 'tbE')}
+      <path d="M14 23.6 L14.6 25.2 L15.2 23.6 L15.8 25.2 L16.4 23.6 L17 25.2 L17.6 23.6" fill="none" stroke="#120c08" stroke-width=".5"/>
+      ${grip(25.6, 32, 3, '#5a3a20', '#2a180c')}
+      <path d="M14.4 32 L17.6 32 L16 35.6 Z" fill="url(#tbS)" ${OL}/>`);
+
+  // ---- Espadón de Magec: hoja flamígera dorada y disco solar en la guarda ----
+  I.gs_magec = () => {
+    let wave = 'M12.6 18.6';
+    for (let y = 18.6, k = 0; y > 0; y -= 2.4, k++) wave += ` Q${k % 2 ? 11.4 : 13.6} ${(y - 1.2).toFixed(1)} 12.6 ${(y - 2.4).toFixed(1)}`;
+    wave += ' L16 -5.8 L19.4 -0.2';
+    for (let y = -0.2, k = 0; y < 18.6; y += 2.4, k++) wave += ` Q${k % 2 ? 20.6 : 18.4} ${(y + 1.2).toFixed(1)} 19.4 ${(y + 2.4).toFixed(1)}`;
+    wave += ' Z';
+    let rays = '';
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; const r0 = 3.6, r1 = i % 2 ? 5.2 : 6.4; rays += `<path d="M${(16 + Math.cos(a) * r0).toFixed(2)} ${(20.6 + Math.sin(a) * r0).toFixed(2)} L${(16 + Math.cos(a) * r1).toFixed(2)} ${(20.6 + Math.sin(a) * r1).toFixed(2)}" stroke="url(#mgR)" stroke-width="${i % 2 ? 0.9 : 1.3}" stroke-linecap="round"/>`; }
+    return W45(lin('mgB', [[0, '#fffbe0'], [.45, '#ffd860'], [1, '#c87a10']]) + lin('mgR', [[0, '#fff2a0'], [1, '#ff8a10']], 0, 1) + rad('mgS', '#ffb020', '#7a2a00'), `
+      <path d="${wave}" fill="url(#mgB)" ${OL}/>
+      <path d="M16 -3.4 V17" stroke="#d8781a" stroke-width=".8"/>
+      <path d="M14.2 -1 Q13.6 8 14.2 17" fill="none" stroke="#fff" stroke-width=".7" opacity=".85"/>
+      ${rays}
+      <circle cx="16" cy="20.6" r="3.7" fill="url(#mgS)" ${OL}/>
+      <circle cx="16" cy="20.6" r="2.2" fill="none" stroke="#fff4c0" stroke-width=".5"/>
+      ${grip(24.3, 31.4, 3, '#8a1810', '#ffd060')}
+      <circle cx="16" cy="33" r="1.9" fill="url(#mgS)" ${OL}/>`);
+  };
+
+  // ---- Espadón de Guayota: obsidiana con núcleo de lava y guarda de cuernos de demonio ----
+  I.gs_guayota = () => W45(lin('guB', [[0, '#4a3a4a'], [.5, '#16101a'], [1, '#050306']]) + lin('guH', [[0, '#c03020'], [.6, '#5a0a08'], [1, '#1a0202']], 0, 1) + rad('guF', '#ff5010', '#400800'), `
+      <path d="M12 18.6 L12.6 10 L11.6 6 L12.8 1 L12 -1.6 L16 -6.2 L20.2 -1 L19.2 2.6 L20.4 7.2 L19.4 11.4 L20 18.6 Z" fill="url(#guB)" ${OL}/>
+      <path d="M16 -3.6 L15.2 1.4 L16.8 5.4 L15.4 9.6 L16.6 13.6 L15.8 17.6" fill="none" stroke="#ff6a1a" stroke-width="1.3" stroke-linejoin="round"/>
+      <path d="M16 -3.6 L15.2 1.4 L16.8 5.4 L15.4 9.6 L16.6 13.6 L15.8 17.6" fill="none" stroke="#ffe080" stroke-width=".45" stroke-linejoin="round"/>
+      <path d="M13.2 -0.6 L13.6 9" stroke="#a080c0" stroke-width=".5" opacity=".7"/>
+      <path d="M11 18.6 Q6.2 18 5.2 13.2 Q4.8 11 5.8 9.6 Q6.4 13.6 9.4 15.2 Q11.4 16.2 13 16.6 L13 20.8 Q11.6 21 11 18.6 Z" fill="url(#guH)" ${OL}/>
+      <path d="M21 18.6 Q25.8 18 26.8 13.2 Q27.2 11 26.2 9.6 Q25.6 13.6 22.6 15.2 Q20.6 16.2 19 16.6 L19 20.8 Q20.4 21 21 18.6 Z" fill="url(#guH)" ${OL}/>
+      <path d="M10.4 18.4 L21.6 18.4 L20.4 22.4 L11.6 22.4 Z" fill="#2a0a08" ${OL}/>
+      ${gem(16, 20.4, 1.5, 'guF')}
+      ${grip(22.4, 30.8, 3, '#1a0a08', '#a01a10')}
+      <path d="M14.2 30.8 L17.8 30.8 L16.8 33 L16 36 L15.2 33 Z" fill="url(#guH)" ${OL}/>`);
+
+  // ---- Espada larga de Tindaya: hoja antigua de bronce verdoso con petroglifos de pies ----
+  I.sword_tindaya = () => {
+    const foot = (x, y, s) => `<path d="M${x} ${y} q${-0.9 * s} ${-1.6 * s} ${-0.2 * s} ${-3 * s} q${0.8 * s} ${-0.6 * s} ${1 * s} ${0.4 * s} q${0.3 * s} ${1.4 * s} ${-0.2 * s} ${2.6 * s} z" fill="none" stroke="#2e4a3a" stroke-width=".45"/>`;
+    return W45(lin('tiB', [[0, '#c8d8b0'], [.45, '#8aa070'], [1, '#3e5238']]) + lin('tiS', [[0, '#b0a898'], [1, '#5a5448']], 0, 1) + rad('tiC', '#80e0a0', '#103020'), `
+      <polygon points="14.3,20.4 14.3,-3.6 16,-6.4 17.7,-3.6 17.7,20.4" fill="url(#tiB)" ${OL}/>
+      <polygon points="16,-6.4 17.7,-3.6 17.7,20.4 16,20.4" fill="#3e5238" opacity=".35"/>
+      ${foot(15.6, 2, 0.75)}${foot(16.6, 7.5, 0.75)}${foot(15.6, 13, 0.75)}
+      <path d="M14.9 -3 V19.6" stroke="#f0f6e0" stroke-width=".5" opacity=".8"/>
+      <circle cx="16" cy="21.4" r="3.2" fill="url(#tiS)" ${OL}/>
+      <path d="M16 21.4 m0 -0.4 a0.4 0.4 0 1 1 -0.4 0.4 a0.9 0.9 0 1 1 0.9 0.9 a1.5 1.5 0 1 1 -1.5 -1.5 a2.1 2.1 0 1 1 2.1 2.1" fill="none" stroke="#3a3428" stroke-width=".45"/>
+      ${grip(24.6, 30.6, 2.4, '#5a3a20', '#2a180c')}
+      <ellipse cx="16" cy="31.8" rx="2.2" ry="1.4" fill="url(#tiS)" ${OL}/>${gem(16, 31.8, .6, 'tiC')}`);
+  };
+
+  // ---- Garras de dragón: empuñadura y cuatro cuchillas curvas ----
+  I.claws_dragon = () => W0(lin('clB', [[0, '#ff6a50'], [.5, '#b01410'], [1, '#3a0404']]) + lin('clH', [[0, '#5a4a40'], [1, '#1a1210']], 0, 1) + rad('clG', '#ffa030'), `
+      ${[0, 1, 2, 3].map(i => {
+        const bx = 8.6 + i * 2.7, by = 20.6 - i * 0.6;
+        const tx = 15.6 + i * 3.9, ty = 4.2 + i * 1.4;
+        return `<path d="M${bx} ${by} Q${bx + 1.2} ${by - 9} ${tx} ${ty} Q${bx + 4.6} ${by - 7.2} ${bx + 2.4} ${by + 0.4} Z" fill="url(#clB)" ${OL}/><path d="M${bx + 0.6} ${by - 1} Q${bx + 1.6} ${by - 8} ${tx - 0.6} ${ty + 0.8}" fill="none" stroke="#ffd0c0" stroke-width=".5" opacity=".8"/>`;
+      }).join('')}
+      <path d="M6.6 21.4 Q6.6 18.4 9.6 18.6 L19.4 17 Q21.6 17 21.8 19.4 Q22 21.6 19.6 22 L9.8 24 Q6.6 24.4 6.6 21.4 Z" fill="url(#clH)" ${OL}/>
+      ${[0, 1, 2, 3].map(i => `<circle cx="${(9.8 + i * 3).toFixed(1)}" cy="${(21.2 - i * 0.55).toFixed(2)}" r=".75" fill="#d8a83a" stroke="#120c08" stroke-width=".35"/>`).join('')}
+      <path d="M8.4 24 L7 28.4 Q8.6 29.6 10.4 28.8 L11.6 23.6 Z" fill="#3a2418" ${OL}/>
+      <path d="M7.6 26 L10.8 25.4 M7.2 27.4 L10.4 26.8" stroke="#1a0c06" stroke-width=".6"/>
+      ${gem(15.2, 20.2, .9, 'clG')}`);
+
+  // ---- Daga de dragón: hoja roja corta, guarda en alas doradas, anilla en el pomo ----
+  I.dagger_dragon = () => W45(lin('ddB', [[0, '#ff7a60'], [.5, '#c81a14'], [1, '#4a0606']]) + lin('ddG', [[0, '#fff1a8'], [.5, '#d8a83a'], [1, '#7a5a10']]), `
+      <polygon points="14.2,20.6 14.2,6 16,1.6 17.8,6 17.8,20.6" fill="url(#ddB)" ${OL}/>
+      <path d="M16 3.6 V19.8" stroke="#6a0a08" stroke-width=".8"/>
+      <path d="M14.9 6.4 V19.6" stroke="#ffe0d0" stroke-width=".5" opacity=".8"/>
+      ${[8, 11, 14, 17].map(y => `<path d="M14.6 ${y} q1.4 -1 2.8 0" fill="none" stroke="#6a0a08" stroke-width=".4" opacity=".8"/>`).join('')}
+      <path d="M16 21 Q12 21.4 9.6 18.4 Q10.4 22.2 13 23.2 L19 23.2 Q21.6 22.2 22.4 18.4 Q20 21.4 16 21 Z" fill="url(#ddG)" ${OL}/>
+      ${grip(23.2, 28.6, 2.4, '#3a1010', '#d8a83a')}
+      <circle cx="16" cy="30.2" r="1.8" fill="none" stroke="url(#ddG)" stroke-width="1.1"/>
+      <circle cx="16" cy="30.2" r="1.8" fill="none" stroke="#120c08" stroke-width=".3"/>`);
+
+  // ---- Escudo de dragón cuadrado y grande ----
+  I.shield_dragon = () => W0(lin('dsB', [[0, '#e8443a'], [.5, '#a3161a'], [1, '#4a0808']], 1, 1) + lin('dsG', [[0, '#fff1a8'], [.5, '#d8a83a'], [1, '#7a5a10']], 1, 1) + rad('dsE', '#ffa030'), `
+      <path d="M5 4.6 Q5 3 6.6 3 L25.4 3 Q27 3 27 4.6 L27 23.4 Q27 26.4 24.4 27.2 L16 29.4 L7.6 27.2 Q5 26.4 5 23.4 Z" fill="url(#dsG)" ${OL}/>
+      <path d="M7 5.6 Q7 5 7.6 5 L24.4 5 Q25 5 25 5.6 L25 22.8 Q25 24.8 23.2 25.4 L16 27.2 L8.8 25.4 Q7 24.8 7 22.8 Z" fill="url(#dsB)" ${OL}/>
+      ${[0, 1, 2, 3, 4].map(r => [0, 1, 2, 3].map(c => { const x = 9.4 + c * 4.4 + (r % 2) * 2.2, y = 8 + r * 3.6; return x < 24 ? `<path d="M${x} ${y} q1.8 -.1 2 1.6 q-.9 1.4 -2 1.9 q-1.1 -.5 -2 -1.9 q.2 -1.7 2 -1.6 z" fill="#8a1012" opacity=".55"/>` : ''; }).join('')).join('')}
+      <path d="M16 9 L18.6 12.2 L22.6 11.6 L20 15 L21.2 19.6 L16 16.8 L10.8 19.6 L12 15 L9.4 11.6 L13.4 12.2 Z" fill="url(#dsG)" ${OL}/>
+      ${gem(16, 14.6, 1.6, 'dsE')}
+      ${[[6, 4], [26, 4], [6, 24], [26, 24]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r=".8" fill="#2a0c08"/>`).join('')}
+      <path d="M8.2 6.6 Q12 6 15 6.6" stroke="#fff" stroke-width=".7" opacity=".45" fill="none"/>`);
+
+  for (const [id, fn] of Object.entries(I)) ICONS[id] = fn();
+})();
+
 // Sesión 50 — Arco de garras de dragón y Bastón de Dragomante
 ICONS.bow_dragon = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <path d="M10 3 Q25 16 10 29" fill="none" stroke="#2a0c0a" stroke-width="3.6" stroke-linecap="round"/>
