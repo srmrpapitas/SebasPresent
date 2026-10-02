@@ -6,6 +6,12 @@ compatibility_date = "2025-01-01"
 # In dev, allow localhost. Add your real Pages URL after first deploy.
 [vars]
 ALLOWED_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080,https://sebaspresent.pages.dev"
+# Sesión 51 — tope diario propio (server/lib/budget.js). Con el plan de pago
+# (25.000 M lecturas y 50 M escrituras al MES incluidos) el tope diario es
+# ~1/31 de eso, así nunca se pasa de lo incluido = nunca se cobra extra.
+# Al volver al plan gratis, Cloudflare corta él solo a 5 M / 100 k al día.
+CAP_READS = "500000000"
+CAP_WRITES = "1500000"
 
 [[d1_databases]]
 binding = "DB"
