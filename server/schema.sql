@@ -426,3 +426,5 @@ ALTER TABLE npc_instances ADD COLUMN cell INTEGER
   GENERATED ALWAYS AS (CAST(x / 32.0 + 1024 AS INTEGER) * 4096 + CAST(z / 32.0 + 1024 AS INTEGER)) VIRTUAL;
 CREATE INDEX IF NOT EXISTS idx_npc_cell ON npc_instances(status, cell);
 CREATE INDEX IF NOT EXISTS idx_ge_open_player ON ge_orders(item_id) WHERE status = 0 AND user_id != 0;
+
+CREATE TABLE IF NOT EXISTS usage_daily (day TEXT PRIMARY KEY, reads INTEGER NOT NULL DEFAULT 0, writes INTEGER NOT NULL DEFAULT 0);

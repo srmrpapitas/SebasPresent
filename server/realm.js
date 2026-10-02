@@ -21,6 +21,7 @@
  * límite: cada 1.5 s si te mueves, cada 0.5 s en combate, cada 5 s quieto.
  */
 
+import { withBudget } from './lib/budget.js';   // Sesión 51 — tope diario
 import { maxSpeed, SPEED_TOLERANCE, BURST_MAX_M, WARP_WINDOW_MS, WARP_NEAR_M, LOGIN_NEAR_M } from '../client/src/shared/movement.js';
 import { combatLevelFrom } from '../client/src/shared/mounts.js';
 import { inCaveZone } from '../client/src/shared/caves.js';   // Sesión 50
@@ -52,7 +53,9 @@ const FX_KINDS = new Set(['slam', 'claws', 'double', 'cleave', 'feint', 'volatil
 export class Realm {
   constructor(ctx, env) {
     this.ctx = ctx;
-    this.env = env;
+    // Sesión 51 — tope diario: también cuenta lo que escribe el Realm
+    this._budget = withBudget(env);
+    this.env = this._budget.env;
   }
 
   async fetch(request) {
@@ -126,7 +129,7 @@ export class Realm {
       const since = now - (a.w || 0);
       const limit = m.c ? WRITE_COMBAT_MS : WRITE_MOVING_MS;
       const movedW = a.wx == null ? Infinity : Math.hypot(a.x - a.wx, a.z - a.wz);
-      if ((movedW >= WRITE_MIN_MOVE_M && since >= limit) || since >= WRITE_HEARTBEAT_MS) {
+      if (((movedW >= WRITE_MIN_MOVE_M && since >= limit) || since >= WRITE_HEARTBEAT_MS) && await this._budget.gate()) {
         a.w = now; a.wx = a.x; a.wz = a.z;
         ws.serializeAttachment(a);
         try {
@@ -140,6 +143,7 @@ export class Realm {
         } catch (err) {
           console.error('[realm] online_users write:', err?.message);
         }
+        this._budget.done(this.ctx);
       } else {
         ws.serializeAttachment(a);
       }

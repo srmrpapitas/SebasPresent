@@ -78,6 +78,7 @@ import * as quests from './handlers/quests.js';                  // Sesión 50 �
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
 import { handleBestiary } from './handlers/bestiary.js';         // Sesión 51 — Bestiario
 import { scheduledHandler } from './handlers/cron.js';
+import { withBudget, budgetStatus, secondsToReset } from './lib/budget.js';   // Sesión 51 — tope diario
 
 export { Realm } from './realm.js';   // Sesión 50 — Durable Object del tiempo real
 
@@ -100,8 +101,39 @@ async function handleRealtimeUpgrade(request, env, url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, rawEnv, ctx) {
+    // Sesión 51 — tope diario: cuenta lo que gasta cada consulta y, pasado el
+    // tope, el servidor "descansa" hasta las 00:00 UTC (nunca se cobra de más).
+    const budget = withBudget(rawEnv);
+    const env = budget.env;
+    try {
+      return await handleFetch(request, env, budget);
+    } finally {
+      budget.done(ctx);
+    }
+  },
+
+  scheduled: async (event, rawEnv, ctx) => {
+    const budget = withBudget(rawEnv);
+    try {
+      if (!(await budget.gate())) { console.log('[cron] tope diario alcanzado: no se ejecuta'); return; }
+      await scheduledHandler(event, budget.env, ctx);
+    } finally {
+      await budget.done();
+    }
+  },
+};
+
+async function handleFetch(request, env, budget) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/budget') return withCors(json(budgetStatus(env)), request, env);
+    if (request.method !== 'OPTIONS' && !(await budget.gate())) {
+      const s = secondsToReset();
+      return withCors(json({
+        error: 'daily_cap', reset_in_s: s,
+        message: 'El servidor descansa: hoy ya se ha usado todo el cupo diario. Vuelve a estar disponible en ' + Math.ceil(s / 3600) + ' h.',
+      }, 503), request, env);
+    }
     if (url.pathname === '/api/rt') return handleRealtimeUpgrade(request, env, url);   // Sesión 50
 
     if (request.method === 'OPTIONS') {
@@ -382,7 +414,4 @@ export default {
         request, env
       );
     }
-  },
-
-  scheduled: scheduledHandler,
-};
+}

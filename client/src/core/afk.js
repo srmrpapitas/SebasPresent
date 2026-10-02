@@ -79,14 +79,20 @@ function notify() {
   for (const fn of subs) { try { fn(paused, reason); } catch (e) { console.warn('[afk]', e); } }
 }
 
-function pause(why) {
+function pause(why, text) {
   if (paused) return;
   paused = true;
   reason = why;
   console.log('[afk] pausa:', why);
-  if (why === 'idle') showOverlay();
+  if (why === 'idle' || why === 'cap') showOverlay(why, text);
   notify();
 }
+
+/**
+ * Sesión 51 — el servidor ha llegado a su tope diario: todo en pausa con un
+ * aviso. "Reintentar" vuelve a probar (si sigue cortado, vuelve a salir).
+ */
+export function serverRest(text) { pause('cap', text); }
 
 export function resume() {
   if (!paused) return;
@@ -98,8 +104,19 @@ export function resume() {
   notify();
 }
 
-function showOverlay() {
-  if (overlay) { overlay.style.display = 'flex'; return; }
+const TEXTS = {
+  idle: ['💤', 'Te has quedado dormido', 'Llevas un rato sin tocar nada, así que el juego se ha desconectado para no gastar servidor.', 'Seguir jugando'],
+  cap: ['🌙', 'El servidor descansa', 'Hoy ya se ha usado todo el cupo diario del servidor. Vuelve a abrir a las 02:00 (hora de Bruselas).', 'Reintentar'],
+};
+function setOverlayText(why, text) {
+  const t = TEXTS[why] || TEXTS.idle;
+  overlay.querySelector('.afk-z').textContent = t[0];
+  overlay.querySelector('.afk-title').textContent = t[1];
+  overlay.querySelector('.afk-text').textContent = text || t[2];
+  overlay.querySelector('.afk-btn').textContent = t[3];
+}
+function showOverlay(why = 'idle', text) {
+  if (overlay) { setOverlayText(why, text); overlay.style.display = 'flex'; return; }
   overlay = document.createElement('div');
   overlay.id = 'afkOverlay';
   overlay.innerHTML = `
@@ -126,6 +143,7 @@ function showOverlay() {
   overlay.addEventListener('pointerdown', (e) => { e.stopPropagation(); }, true);
   overlay.querySelector('.afk-btn').addEventListener('click', (e) => { e.preventDefault(); resume(); });
   document.body.appendChild(overlay);
+  setOverlayText(why, text);
 }
 
 function hideOverlay() { if (overlay) overlay.style.display = 'none'; }

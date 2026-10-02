@@ -340,6 +340,10 @@ async function fetchSnapshot() {
     const receivedAt = Date.now();
     if (!res.ok) {
       lastError = { status: res.status, ts: receivedAt };
+      // Sesión 51 — tope diario del servidor alcanzado
+      if (res.status === 503) {
+        try { const e = await res.json(); if (e?.error === 'daily_cap') afk.serverRest(e.message); } catch {}
+      }
       return;
     }
     const data = await res.json();
