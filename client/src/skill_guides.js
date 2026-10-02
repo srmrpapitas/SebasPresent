@@ -12,20 +12,19 @@
  * actualizar aquí también.
  */
 
-import { openBookModal } from './ui/book_modal.js';
+import * as audio from './audio.js';
 import * as skills from './skills.js';
 import * as api from './api.js';
 import { getItemIconHtml, getSkillIconHtml } from './item_icons.js';
 import { ORE_TIERS } from './shared/ore_veins.js';
 import { SMELT, MATERIALS, MATERIAL_NAMES } from './shared/smithing.js';
 import { FISH, SPOT_TYPES } from './shared/fishing.js';   // Sesión 50
-import { EQUIP_LEVEL, equipRequirement, hasSpecialAttack } from './shared/equip_reqs.js';     // Sesión 50
+import { EQUIP_LEVEL, equipRequirement, hasSpecialAttack, WEAPON_SPECS } from './shared/equip_reqs.js';     // Sesión 50
 import { RECIPES } from './shared/crafting.js';           // Sesión 50
 import { TABLETS } from './shared/teleports.js';          // Sesión 50
 import { QUESTS } from './shared/quests.js';              // Sesión 50
 import { PRAYERS } from './shared/prayer.js';
 
-const ROWS_PER_PAGE = 7;
 
 // ------------------------------------------------------------
 // Datos (espejo de los handlers del server)
@@ -60,7 +59,7 @@ const SPELLS = [
 
 const DESCRIPTIONS = {
   attack:      'Aumenta tu probabilidad de acertar golpes cuerpo a cuerpo. Se entrena luchando con el estilo <strong>Preciso</strong> (o <strong>Controlado</strong>, que reparte la XP).',
-  strength:    'Aumenta el <strong>daño máximo</strong> de tus golpes cuerpo a cuerpo. Se entrena con el estilo <strong>Agresivo</strong>.',
+  strength:    'Aumenta el <strong>daño máximo</strong> de tus golpes cuerpo a cuerpo. Se entrena con el estilo <strong>Agresivo</strong>. El equipo con <strong>💪 Fuerza</strong> también lo sube: botas de dragón +4, capa de fuego +4, de lava +3 y de magma +6.',
   defence:     'Reduce la probabilidad de que te acierten. Se entrena con el estilo <strong>Defensivo</strong> (y con arco en <em>largo alcance</em>).',
   hitpoints:   'Tu vida máxima es igual a tu nivel de Vitalidad. Sube un poco con cualquier golpe que aciertes. Fuera de combate recuperas <strong>1 HP cada 20 s</strong>; la comida cura al instante.',
   ranged:      'Combate a distancia con arco y flechas (hasta ~10 m). Cada disparo gasta una flecha; con carcaj equipado el <strong>75 %</strong> se conservan.',
@@ -109,45 +108,32 @@ function ensureCss() {
   document.head.appendChild(st);
 }
 
-/** rows: [{ level, name, detail, icon? (html) }] */
-function unlockPages(title, rows, myLevel) {
-  const sorted = rows.slice().sort((a, b) => a.level - b.level);
-  const pages = [];
-  for (let i = 0; i < sorted.length; i += ROWS_PER_PAGE) {
-    const chunk = sorted.slice(i, i + ROWS_PER_PAGE);
-    const part = sorted.length > ROWS_PER_PAGE ? ` (${Math.floor(i / ROWS_PER_PAGE) + 1}/${Math.ceil(sorted.length / ROWS_PER_PAGE)})` : '';
-    let html = `<h2>${esc(title)}${part}</h2>`;
-    for (const r of chunk) {
-      const ok = myLevel >= r.level;
-      html += `<div class="sg-row ${ok ? 'ok' : 'lock'}">
-        <span class="sg-badge">${ok ? '✓' : '🔒'} ${r.level}</span>
-        <span class="sg-i">${r.icon || ''}</span>
-        <span class="sg-t"><b>${esc(r.name)}</b><small>${esc(r.detail || '')}</small></span>
-      </div>`;
-    }
-    pages.push({ content: html });
-  }
-  return pages;
+/** rows: [{ level, name, detail, icon? (html) }] → una sección (pestaña) */
+function unlockPages(title, rows) {
+  return [{ title, rows: rows.slice().sort((a, b) => a.level - b.level) }];
 }
 
-function overviewPage(skillId) {
+function headerHtml(skillId, sections) {
   const def = skills.SKILL_DEFS_BY_ID[skillId];
   const level = skills.getLevel(skillId);
   const xp = skills.getXp(skillId);
   const next = level < 99 ? skills.levelToXp(level + 1) : null;
   const cur = skills.levelToXp(level);
   const pct = next ? Math.min(100, Math.floor(((xp - cur) / (next - cur)) * 100)) : 100;
-  return {
-    content: `
-      <div class="sg-head"><span class="sg-ico">${getSkillIconHtml(def.id, def.icon)}</span>
-        <div><div class="sg-lvl">Nivel ${level}<span class="sg-muted"> / 99</span></div>
-        <div class="sg-muted">${xp.toLocaleString('es-ES')} XP</div></div></div>
-      <div class="sg-bar"><i style="width:${pct}%"></i></div>
-      <div class="sg-muted">${next ? `Faltan <strong>${(next - xp).toLocaleString('es-ES')} XP</strong> para el nivel ${level + 1} (${pct}%)` : '⭐ Nivel máximo ⭐'}</div>
-      <h3 style="margin-top:14px">¿Qué es?</h3>
-      <p>${DESCRIPTIONS[skillId] || ''}</p>
-      <p class="sg-muted">▶ Pasa la página para ver qué desbloqueas y a qué nivel.</p>`,
-  };
+  // siguiente desbloqueo (el más cercano por encima de tu nivel)
+  let nextU = null;
+  for (const sec of sections) for (const r of sec.rows || []) if (r.level > level && (!nextU || r.level < nextU.level)) nextU = r;
+  return `
+    <div class="sgx-head">
+      <span class="sgx-ico">${getSkillIconHtml(def.id, def.icon)}</span>
+      <div class="sgx-hmain">
+        <div class="sgx-title">${esc(def.name)} <span class="sgx-lvl">${level}<small>/99</small></span></div>
+        <div class="sgx-bar"><i style="width:${pct}%"></i></div>
+        <div class="sgx-sub">${xp.toLocaleString('es-ES')} XP · ${next ? `faltan ${(next - xp).toLocaleString('es-ES')} para el ${level + 1}` : '⭐ nivel máximo'}</div>
+        ${nextU ? `<div class="sgx-next">Próximo: <b>${esc(nextU.name)}</b> a nivel ${nextU.level}</div>` : ''}
+      </div>
+      <button type="button" class="sgx-x" aria-label="Cerrar">✕</button>
+    </div>`;
 }
 
 function icon(itemId, emoji) { return getItemIconHtml(itemId, emoji || '•'); }
@@ -219,7 +205,7 @@ async function buildUnlocks(skillId, lvl) {
     }
     case 'prayer':
       return unlockPages('Plegarias', PRAYERS.map(p => ({ level: p.level, name: p.name, detail: `${p.desc} · ${p.drain} pts/min`, icon: p.icon })), lvl)
-        .concat([{ content: `<h2>Huesos</h2><p><strong>Huesos</strong>: 5 XP cada uno. Los sueltan casi todos los monstruos.</p><p class="sg-muted">Solo puedes tener activa una plegaria de cada tipo (una de Defensa, una de Fuerza...).</p>` }]);
+        .concat([{ content: `<h2>Huesos</h2><p><strong>Huesos</strong>: 5 XP · <strong>Huesos grandes</strong> (animales grandes): 20 XP · <strong>Súper huesos</strong> (jefes): 2000 XP.</p><p class="sg-muted">Solo puedes tener activa una plegaria de cada tipo (una de Defensa, una de Fuerza...).</p>` }]);
     case 'magic':
       return unlockPages('Hechizos', SPELLS.map(([n, l, d]) => ({ level: l, name: n, detail: d, icon: '✨' })), lvl)
         .concat([{ content: `<h2>Maná</h2><p>Tu maná máximo crece con tu nivel de Magia; con bastón equipado tienes <strong>+100</strong> y se regenera más rápido.</p>` }])
@@ -256,7 +242,16 @@ async function buildUnlocks(skillId, lvl) {
           rows.push({ level: EQUIP_LEVEL[m], name: `Espada de ${n}`, detail: `+${A1[i]} ataque · una mano${hasSpecialAttack(`sword_${m}`) ? ' · ⚡ especial' : ''} · Herrería ${SMELT[m].level}`, icon: icon(`sword_${m}`, '⚔️') });
           rows.push({ level: EQUIP_LEVEL[m], name: `Espadón de ${n}`, detail: `+${A2[i]} ataque · dos manos · ×1,5 daño, 25 % crítico${hasSpecialAttack(`sword_${m}_2h`) ? ' · ⚡ especial' : ''} · Herrería ${SMELT[m].level + 4}`, icon: icon(`sword_${m}_2h`, '⚔') });
         });
-        return unlockPages('Armas', rows, lvl);
+        // Sesión 51 — armas legendarias (raros de jefe)
+        const LEG = [['gs_achaman', 'Espadón de Achamán', 'Rey Yeti Grom', '2h_sword'], ['gs_tibicena', 'Espadón de Tibicena', 'Varkhul', '2h_sword'],
+          ['gs_magec', 'Espadón de Magec', 'Reina Sekhet', '2h_sword'], ['gs_guayota', 'Espadón de Guayota', 'Coloso de Obsidiana', '2h_sword'],
+          ['sword_tindaya', 'Espada larga de Tindaya', 'Chona', '1h_sword'], ['claws_dragon', 'Garras de dragón', 'Nidhogg', '1h_sword'],
+          ['dagger_dragon', 'Daga de dragón', 'Nidhogg, Vermithrax, Leviatán', '1h_sword']];
+        const legend = LEG.map(([id, n, boss, wt]) => ({
+          level: equipRequirement({ id, equip_slot: 'weapon', weapon_type: wt })?.level || 70, name: n,
+          detail: `⚡ ${WEAPON_SPECS[id]?.name || 'especial'} · raro de ${boss}`, icon: icon(id, '⚔'),
+        }));
+        return [...unlockPages('Armas', rows, lvl), ...unlockPages('Legendarias', legend, lvl)];
       }
     case 'fletching':
     case 'crafting': {
@@ -288,15 +283,127 @@ async function buildUnlocks(skillId, lvl) {
   }
 }
 
-/** Abre el libro de una skill. */
+// ------------------------------------------------------------
+// Ventana estilo guía de OSRS / libro de hechizos de WoW: pestañas por
+// categoría y una lista con icono + nivel; lo que aún no tienes sale gris.
+// ------------------------------------------------------------
+let _root = null;
+function ensureDom() {
+  if (_root) return _root;
+  _root = document.createElement('div');
+  _root.id = 'skillGuideOverlay';
+  const css = document.createElement('style');
+  css.textContent = `
+    #skillGuideOverlay { position: fixed; inset: 0; z-index: 9000; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); }
+    #skillGuideOverlay.visible { display: flex; }
+    #skillGuideOverlay .sgx-book { width: min(520px, calc(100vw - 16px)); height: min(720px, calc(100vh - 24px)); display: flex; flex-direction: column;
+      background: linear-gradient(#4a3f30, #3a3124); border: 3px solid #c8a043; border-radius: 10px; color: #f3e6c4; box-shadow: 0 10px 40px rgba(0,0,0,0.7); overflow: hidden; }
+    #skillGuideOverlay .sgx-head { display: flex; gap: 10px; align-items: flex-start; padding: 12px 12px 8px; border-bottom: 1px solid #6a5530; }
+    #skillGuideOverlay .sgx-ico { width: 46px; height: 46px; flex: 0 0 46px; display: flex; align-items: center; justify-content: center; font-size: 32px;
+      background: #241e15; border: 2px solid #6a5530; border-radius: 8px; }
+    #skillGuideOverlay .sgx-ico svg, #skillGuideOverlay .sgx-ico img { width: 36px; height: 36px; }
+    #skillGuideOverlay .sgx-hmain { flex: 1; min-width: 0; }
+    #skillGuideOverlay .sgx-title { font-size: 19px; font-weight: 800; color: #ffd76a; text-shadow: 0 2px 0 #000; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    #skillGuideOverlay .sgx-lvl { font-size: 22px; color: #fff3cf; } #skillGuideOverlay .sgx-lvl small { font-size: 12px; color: #b8a880; }
+    #skillGuideOverlay .sgx-bar { height: 8px; background: rgba(0,0,0,0.45); border: 1px solid #7a6030; border-radius: 5px; overflow: hidden; margin: 5px 0 3px; }
+    #skillGuideOverlay .sgx-bar > i { display: block; height: 100%; background: linear-gradient(90deg, #6aa84f, #c8e070); }
+    #skillGuideOverlay .sgx-sub { font-size: 12px; color: #c8b890; }
+    #skillGuideOverlay .sgx-next { font-size: 12px; color: #e8d8a8; margin-top: 2px; } #skillGuideOverlay .sgx-next b { color: #ffd76a; }
+    #skillGuideOverlay .sgx-x { font: inherit; font-size: 18px; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 8px; border: 2px solid #8a6a2a; background: #5a3e1a; color: #fff3cf; cursor: pointer; }
+    #skillGuideOverlay .sgx-tabs { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; scrollbar-width: none; flex: 0 0 auto; }
+    #skillGuideOverlay .sgx-tab { font: inherit; font-size: 13px; font-weight: 700; padding: 6px 11px; border-radius: 16px; white-space: nowrap;
+      border: 2px solid #6a5530; background: #2e271c; color: #d8c8a0; cursor: pointer; }
+    #skillGuideOverlay .sgx-tab.on { background: #c8a043; color: #2a1a00; border-color: #ffd76a; }
+    #skillGuideOverlay .sgx-tab .n { font-size: 11px; opacity: 0.75; margin-left: 4px; }
+    #skillGuideOverlay .sgx-list { flex: 1; overflow-y: auto; padding: 4px 10px 14px; -webkit-overflow-scrolling: touch; }
+    #skillGuideOverlay .sgx-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin-bottom: 4px; border-radius: 8px;
+      background: #2e271c; border: 1px solid #5a4a2a; }
+    #skillGuideOverlay .sgx-lv { flex: 0 0 34px; text-align: center; font-weight: 900; font-size: 17px; color: #ffd76a; text-shadow: 0 1px 0 #000; }
+    #skillGuideOverlay .sgx-slot { position: relative; flex: 0 0 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 26px;
+      background: radial-gradient(#3a3226, #1e1912); border: 2px solid #6a5530; border-radius: 6px; }
+    #skillGuideOverlay .sgx-slot svg, #skillGuideOverlay .sgx-slot img { width: 34px; height: 34px; }
+    #skillGuideOverlay .sgx-badge { position: absolute; right: -5px; bottom: -5px; font-size: 11px; width: 18px; height: 18px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; border: 1px solid #000; }
+    #skillGuideOverlay .sgx-row.ok .sgx-badge { background: #3f8a2a; color: #fff; }
+    #skillGuideOverlay .sgx-row.lock .sgx-badge { background: #2a2418; }
+    #skillGuideOverlay .sgx-t { flex: 1; min-width: 0; line-height: 1.25; }
+    #skillGuideOverlay .sgx-t b { display: block; font-size: 14px; color: #fff0c8; }
+    #skillGuideOverlay .sgx-t small { font-size: 11.5px; color: #c0b088; }
+    #skillGuideOverlay .sgx-row.lock { background: #221d16; border-color: #3e3424; }
+    #skillGuideOverlay .sgx-row.lock .sgx-slot > :not(.sgx-badge) { filter: grayscale(1) brightness(0.55); opacity: 0.6; }
+    #skillGuideOverlay .sgx-row.lock .sgx-t b, #skillGuideOverlay .sgx-row.lock .sgx-t small { color: #807560; }
+    #skillGuideOverlay .sgx-row.lock .sgx-lv { color: #8a7a5a; }
+    #skillGuideOverlay .sgx-mark { display: flex; align-items: center; gap: 8px; margin: 8px 2px; font-size: 12px; font-weight: 800; color: #9fe08a; }
+    #skillGuideOverlay .sgx-mark::before, #skillGuideOverlay .sgx-mark::after { content: ''; flex: 1; height: 2px; background: linear-gradient(90deg, transparent, #6aa84f, transparent); }
+    #skillGuideOverlay .sgx-info { padding: 6px 6px; font-size: 14px; line-height: 1.45; color: #ecdfbe; }
+    #skillGuideOverlay .sgx-info h3 { font-size: 15px; color: #ffd76a; margin: 12px 0 4px; }
+    #skillGuideOverlay .sgx-info ul { padding-left: 18px; margin: 4px 0; } #skillGuideOverlay .sgx-info li { margin: 3px 0; }
+    #skillGuideOverlay .sgx-info .sg-muted { font-size: 12px; color: #b8a880; }`;
+  _root.appendChild(css);
+  const book = document.createElement('div');
+  book.className = 'sgx-book'; book.setAttribute('role', 'dialog');
+  _root.appendChild(book);
+  document.body.appendChild(_root);
+  _root.addEventListener('pointerdown', (e) => { if (e.target === _root) closeGuide(); });
+  _root.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') closeGuide(); });
+  return _root;
+}
+function closeGuide() {
+  if (!_root || !_root.classList.contains('visible')) return;
+  _root.classList.remove('visible');
+  try { audio.sfx('book_close'); } catch {}
+}
+
+function rowsHtml(rows, lvl) {
+  let h = '', marked = false;
+  const anyLocked = rows.some(r => r.level > lvl), anyOk = rows.some(r => r.level <= lvl);
+  for (const r of rows) {
+    const ok = lvl >= r.level;
+    if (!ok && !marked && anyOk && anyLocked) { marked = true; h += `<div class="sgx-mark" id="sgxMark">Tu nivel: ${lvl}</div>`; }
+    h += `<div class="sgx-row ${ok ? 'ok' : 'lock'}">
+      <span class="sgx-lv">${r.level}</span>
+      <span class="sgx-slot">${r.icon || '•'}<span class="sgx-badge">${ok ? '✓' : '🔒'}</span></span>
+      <span class="sgx-t"><b>${esc(r.name)}</b>${r.detail ? `<small>${esc(r.detail)}</small>` : ''}</span>
+    </div>`;
+  }
+  return h;
+}
+
+/** Abre la guía de una skill. */
 export async function openSkillGuide(skillId) {
   const def = skills.SKILL_DEFS_BY_ID[skillId];
   if (!def) return;
-  ensureCss();
   const lvl = skills.getLevel(skillId);
   let extra = [];
   try { extra = await buildUnlocks(skillId, lvl); } catch (e) { console.warn('[skill_guides]', e); }
-  openBookModal({ title: def.name, pages: [overviewPage(skillId), ...extra] });
+  // secciones con lista + una pestaña "Guía" con la descripción y las notas
+  const lists = [], infos = [`<h3>¿Qué es?</h3><p>${DESCRIPTIONS[skillId] || ''}</p>`];
+  for (const sec of extra) {
+    if (sec.rows) { if (sec.rows.length) lists.push(sec); continue; }
+    if (sec.content) infos.push(sec.content.replace(/<h2>/g, '<h3>').replace(/<\/h2>/g, '</h3>'));
+  }
+  const tabs = [...lists.map(l => ({ title: l.title, rows: l.rows })), { title: 'ℹ️ Guía', html: infos.join('') }];
+  // pestaña inicial: la que tiene tu próximo desbloqueo (si no, la más grande)
+  let cur = 0, best = -1;
+  lists.forEach((l, i) => { const nx = l.rows.find(r => r.level > lvl); if (nx && (best < 0 || nx.level < best)) { best = nx.level; cur = i; } });
+  if (best < 0 && lists.length) cur = lists.reduce((bi, l, i) => (l.rows.length > lists[bi].rows.length ? i : bi), 0);
+  const root = ensureDom();
+  const book = root.querySelector('.sgx-book');
+  const render = () => {
+    const t = tabs[cur];
+    book.innerHTML = headerHtml(skillId, lists)
+      + `<div class="sgx-tabs">${tabs.map((tb, i) => `<button type="button" class="sgx-tab${i === cur ? ' on' : ''}" data-i="${i}">${esc(tb.title)}${tb.rows ? `<span class="n">${tb.rows.filter(r => r.level <= lvl).length}/${tb.rows.length}</span>` : ''}</button>`).join('')}</div>`
+      + `<div class="sgx-list">${t.rows ? rowsHtml(t.rows, lvl) : `<div class="sgx-info">${t.html}</div>`}</div>`;
+    book.querySelector('.sgx-x').onclick = closeGuide;
+    book.querySelectorAll('.sgx-tab').forEach(b => { b.onclick = () => { cur = +b.dataset.i; render(); try { audio.sfx('book_flip'); } catch {} }; });
+    const mark = book.querySelector('#sgxMark');
+    if (mark) { const list = book.querySelector('.sgx-list'); list.scrollTop = Math.max(0, mark.offsetTop - list.clientHeight * 0.45); }
+    book.querySelector('.sgx-tabs .on')?.scrollIntoView?.({ inline: 'center', block: 'nearest' });
+  };
+  render();
+  root.classList.add('visible');
+  root.tabIndex = -1; try { root.focus({ preventScroll: true }); } catch {}
+  try { audio.sfx('book_open'); } catch {}
 }
 
 if (typeof window !== 'undefined') window.__skillGuide = openSkillGuide;
