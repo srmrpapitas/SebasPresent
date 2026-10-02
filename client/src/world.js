@@ -801,14 +801,20 @@ export async function startWorld(loggedInUser, token) {
         const tgt = Number.isFinite(m.tx) && Number.isFinite(m.tz) ? { x: m.tx, y: 0, z: m.tz } : null;
         const yaw = tgt ? Math.atan2(tgt.x - pos.x, tgt.z - pos.z) : 0;
         try {
-          if (m.k === 'slam') {
+          if (m.k === 'slam' && m.c === 'gs_tibicena' && tgt) {
+            if (peer?.group) specFx.peerSlam(peer.group, pal, null, 1046, true);
+            specFx.descend(() => tgt, pal, 1046);
+          } else if (m.k === 'slam' && m.c === 'gs_achaman') {
+            if (peer?.group) specFx.peerSlam(peer.group, pal, null, 1046, true);
+            setTimeout(() => specFx.ascend(tgt || specFx.impactPoint(pos, tgt), pal), 1046);
+          } else if (m.k === 'slam') {
             if (peer?.group) specFx.peerSlam(peer.group, pal, tgt);
             else setTimeout(() => specFx.slam(specFx.impactPoint(pos, tgt), pal), 1046);
           } else if (tgt) {
-            if (m.k === 'claws') specFx.slashes(tgt, 4, specFx.PALETTES.basaltita, yaw);
+            if (m.k === 'claws') specFx.clawFrenzy(tgt, yaw, specFx.PALETTES.dragon);
+            else if (m.k === 'feint') specFx.beam(() => peer?.group?.position || pos, () => tgt, specFx.PALETTES.vesta, 900);
             else if (m.k === 'double') specFx.slashes(tgt, 2, specFx.PALETTES.oro, yaw);
             else if (m.k === 'cleave') specFx.slashes(tgt, 1, specFx.PALETTES.obsidiana, yaw);
-            else if (m.k === 'feint') specFx.slashes(tgt, 1, specFx.PALETTES.teiderio, yaw);
             else if (m.k === 'volatile' || m.k === 'dragon') specFx.burst(tgt, specFx.PALETTES.dragon, 400);
             else if (m.k === 'arcane') specFx.burst(tgt, specFx.PALETTES.arcane, 400);
             else if (m.k === 'bloodcube') { specFx.burst(tgt, specFx.PALETTES.dragomante, 400); specFx.drainOrbs(tgt, () => peer?.group?.position || pos, specFx.PALETTES.dragomante, 12, 450); }

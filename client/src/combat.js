@@ -1217,11 +1217,15 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
   const slam = wt === '2h_sword' && ['gs', 'heal', 'smash'].includes(sp.fx);
   try { realtime?.sendFx?.({ k: slam ? 'slam' : (sp.fx || 'spec'), c: weaponItem, tx: targetPos?.x, tz: targetPos?.z }); } catch {}
   if (slam && typeof window.__playerPlaySpecial === 'function') {
+    // Sesión 51 — cada espadón con su golpe: Achamán ASCIENDE (todo sube al
+    // cielo), Tibicena DESCIENDE (un espadón gigante cae sobre el enemigo).
+    const style = weaponItem === 'gs_achaman' ? 'ascend' : weaponItem === 'gs_tibicena' ? 'descend' : 'slam';
     const r = window.__playerPlaySpecial(sp.fx, wt, {
       stance: uiSelectedStance, cooldownMs: result.cooldown_ms, glowColor: pal.light, hop: sp.fx === 'smash' ? 0.42 : 0.65,
       onImpact: () => {
         const at = specFx.impactPoint(window.__getPlayerPosition?.() || me, targetPos);
-        if (at) specFx.slam(at, pal, sp.fx === 'smash' ? 0.75 : 1);
+        if (at && style === 'ascend') specFx.ascend(tgt() || at, pal);
+        else if (at && style === 'slam') specFx.slam(at, pal, sp.fx === 'smash' ? 0.75 : 1);
         if (sp.fx === 'heal' || sp.healed > 0) specFx.heal(() => window.__getPlayerPosition?.(), specFx.PALETTES.heal);
         // Sesión 51 — Prisión de Guayota (congela) y Mordisco de Tibicena (baja defensa)
         if (sp.frz > 0 && targetPos) specFx.iceCube(tgt, sp.frz, specFx.PALETTES.guayotaCube);
@@ -1231,6 +1235,7 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
       },
     });
     if (r === 'special_slam') {
+      if (style === 'descend' && targetPos) specFx.descend(tgt, pal, SLAM_IMPACT_MS);
       specFx.trail(() => window.__playerWeaponSegment?.(), SLAM_IMPACT_MS + 120, pal);
       try { audio.synth?.('altar', { volume: 0.55, pitch: 0.95 }); } catch {}
       return SLAM_IMPACT_MS;
@@ -1241,10 +1246,10 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
   try { window.__playerPlayAttack?.(uiSelectedStance, wt, result.cooldown_ms, result.spell_cast?.spell_id || null); } catch {}
   const yaw = me && targetPos ? Math.atan2(targetPos.x - me.x, targetPos.z - me.z) : 0;
   if (targetPos) {
-    if (sp.fx === 'claws') specFx.slashes(targetPos, 4, specFx.PALETTES.basaltita, yaw);
+    if (sp.fx === 'claws') specFx.clawFrenzy(targetPos, yaw, specFx.PALETTES.dragon);
     else if (sp.fx === 'double') specFx.slashes(targetPos, 2, specFx.PALETTES.oro, yaw);
     else if (sp.fx === 'cleave') specFx.slashes(targetPos, 1, specFx.PALETTES.obsidiana, yaw);
-    else if (sp.fx === 'feint') { specFx.slashes(targetPos, 1, specFx.PALETTES.teiderio, yaw); specFx.burst(targetPos, specFx.PALETTES.teiderio, 120); }
+    else if (sp.fx === 'feint') specFx.beam(() => window.__getPlayerPosition?.(), tgt, specFx.PALETTES.vesta, 900);   // Sesión 51 — súper rayo de Tindaya
     else if (sp.fx === 'volatile') specFx.burst(targetPos, specFx.PALETTES.dragon, 380);
     else if (sp.fx === 'arcane') specFx.burst(targetPos, specFx.PALETTES.arcane, 380);
     else if (sp.fx === 'dragon') specFx.burst(targetPos, specFx.PALETTES.dragon, 560);

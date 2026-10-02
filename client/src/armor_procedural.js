@@ -969,6 +969,18 @@ export function buildProceduralWeapon(itemId, weaponType, root, handBone = null)
     const tn = tune(itemId);
     out = buildLegendWeapon(itemId, gripFrame(r, 'Right', handBone || findBone(r, 'RightHand')), tn);
     if (out) out.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    // Sesión 51 — garras: una en CADA mano. La izquierda se pone/quita sola
+    // cuando la derecha se añade/quita de su hueso (no hay que tocar a quien equipa).
+    if (out && itemId === 'claws_dragon') {
+      const lb = findBone(r, 'LeftHand');
+      const left = lb ? buildLegendWeapon(itemId, gripFrame(r, 'Left', lb), tn) : null;
+      if (left) {
+        left.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+        out.mesh.addEventListener('added', () => { if (left.mesh.parent !== lb) lb.add(left.mesh); });
+        out.mesh.addEventListener('removed', () => { left.mesh.parent?.remove(left.mesh); });
+        out.mesh.userData.offHand = left.mesh;
+      }
+    }
     return out;
   }
   const matId = materialOf(itemId);

@@ -64,7 +64,7 @@ export function impactPoint(p, target) {
  * Especial de espadón de OTRO jugador: giro + salto procedural sobre su
  * modelo y golpe al suelo al llegar a impactMs.
  */
-export function peerSlam(group, palette, target, impactMs = 1046) {
+export function peerSlam(group, palette, target, impactMs = 1046, noSlam = false) {
   if (!group) return;
   let model = null;
   for (const c of group.children) { let sk = false; c.traverse(o => { if (o.isSkinnedMesh) sk = true; }); if (sk) { model = c; break; } }
@@ -81,7 +81,7 @@ export function peerSlam(group, palette, target, impactMs = 1046) {
     },
     dispose() {
       if (model) { model.position.y = by; model.rotation.y = br; }
-      slam(impactPoint(group.position, target), palette);
+      if (!noSlam) slam(impactPoint(group.position, target), palette);
     },
   });
 }
@@ -581,5 +581,287 @@ export function drainOrbs(from, getTo, palette = PALETTES.dragomante, n = 10, de
       pts.material.opacity = t > D + 1.0 ? Math.max(0, 1 - (t - D - 1.0) / 0.4) : 1;
     },
     dispose() { disposeObj(pts); },
+  });
+}
+
+// ============================================================
+// Sesión 51 — Especiales propios de cada arma legendaria
+// ============================================================
+PALETTES.vesta = { core: 0xfff0ff, main: 0xb050ff, glow: 0x5a10b0, spark: 0xe0a0ff, light: 0xa040ff, crack: 0x9a40ff };
+
+/** Rayo quebrado (lista de puntos) entre a y b, con desvío `j`. */
+function zigzag(a, b, segs, j) {
+  const pts = [];
+  for (let i = 0; i <= segs; i++) {
+    const k = i / segs;
+    const p = new THREE.Vector3().lerpVectors(a, b, k);
+    if (i > 0 && i < segs) p.add(new THREE.Vector3((Math.random() - 0.5) * j, (Math.random() - 0.5) * j, (Math.random() - 0.5) * j));
+    pts.push(p);
+  }
+  return pts;
+}
+/** Tubo fino a lo largo de puntos (para rayos). */
+function boltMesh(pts, radius, color, opacity = 1) {
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.05);
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 3, radius, 6, false), addMat(color, opacity));
+}
+function points(n, color, size, blending = THREE.AdditiveBlending, opacity = 1) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ color, size, map: dotTexture(), transparent: true, depthWrite: false, blending, opacity }));
+  m.frustumCulled = false;
+  return m;
+}
+
+// ------------------------------------------------------------
+// ASCENSO (Espadón de Achamán): todo SUBE — tornado de viento y plumas de
+// luz que se elevan girando, rayos que salen del suelo hacia el cielo y una
+// columna que crece hacia arriba.
+// ------------------------------------------------------------
+export function ascend(pos, P = PALETTES.achaman) {
+  if (!_scene) return;
+  const root = new THREE.Group();
+  root.position.set(pos.x, (pos.y || 0) + 0.04, pos.z);
+  _scene.add(root);
+  const light = new THREE.PointLight(P.light, 0, 18, 1.5); light.position.y = 2; root.add(light);
+  // Columna que crece de abajo arriba
+  const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.1, 22, 32, 1, true).translate(0, 11, 0), pillarMaterial(P.main));
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.3, 22, 16, 1, true).translate(0, 11, 0), pillarMaterial(P.core));
+  root.add(pil, core);
+  // Tornado: 3 hélices de cinta que giran y suben
+  const helices = [];
+  for (let h = 0; h < 3; h++) {
+    const pts = [];
+    for (let i = 0; i <= 60; i++) { const k = i / 60, a = h * 2.094 + k * 9; const r = 0.4 + k * 1.6; pts.push(new THREE.Vector3(Math.cos(a) * r, k * 9, Math.sin(a) * r)); }
+    const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 120, 0.05, 5, false), addMat(h === 1 ? P.core : P.main, 0.9));
+    m.scale.y = 0.01; root.add(m); helices.push(m);
+  }
+  // Plumas de luz que suben en espiral
+  const N = 70, feathers = [];
+  const fGeo = new THREE.PlaneGeometry(0.12, 0.42);
+  for (let i = 0; i < N; i++) {
+    const m = new THREE.Mesh(fGeo, addMat(i % 3 ? P.main : P.core, 0));
+    const s = { a: Math.random() * 6.28, r: 0.3 + Math.random() * 1.8, v: 3 + Math.random() * 6, d: Math.random() * 0.5, spin: (Math.random() - 0.5) * 8 };
+    m.userData.s = s; root.add(m); feathers.push(m);
+  }
+  // Rayos del suelo al cielo
+  const bolts = new THREE.Group(); root.add(bolts);
+  let nextBolt = 0;
+  // Anillo en el suelo
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 80), addMat(P.core, 1));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; root.add(ring);
+  const rune = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), addMat(P.main, 0, { map: runeTexture() }));
+  rune.rotation.x = -Math.PI / 2; rune.position.y = 0.05; root.add(rune);
+  shake(0.22, 0.4);
+  add({
+    t: 0, dur: 2.4,
+    update(t, dt) {
+      light.intensity = t < 0.1 ? t * 260 : 26 * Math.exp(-(t - 0.1) * 2.2);
+      const grow = Math.min(1, t / 0.45);                 // crece hacia arriba
+      pil.scale.set(1, grow, 1); core.scale.set(1, grow, 1);
+      const pa = t < 1.2 ? 1 : Math.max(0, 1 - (t - 1.2) / 1.0);
+      pil.material.uniforms.uT.value = -t; core.material.uniforms.uT.value = -t;   // bandas que suben
+      pil.material.uniforms.uA.value = pa * 0.55; core.material.uniforms.uA.value = pa * 0.9;
+      helices.forEach((m, i) => { m.scale.y = Math.min(1, t / 0.6); m.rotation.y = t * (4 + i); m.position.y = Math.max(0, t - 0.6) * 4; m.material.opacity = 0.9 * pa; });
+      for (const m of feathers) {
+        const s = m.userData.s, k = Math.max(0, t - s.d);
+        const a = s.a + k * 3.2, r = s.r * (1 + k * 0.4);
+        m.position.set(Math.cos(a) * r, k * s.v, Math.sin(a) * r);
+        m.rotation.set(0, -a + s.spin * k, 0.4);
+        m.material.opacity = k <= 0 ? 0 : Math.min(1, k * 6) * Math.max(0, 1 - k / 1.8);
+      }
+      if (t < 1.1 && t >= nextBolt) {
+        nextBolt = t + 0.08;
+        const a = Math.random() * 6.28, r = Math.random() * 1.2;
+        const from = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+        const to = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 12 + Math.random() * 6, (Math.random() - 0.5) * 2));
+        const b = boltMesh(zigzag(from, to, 10, 1.2), 0.04, P.core, 1);
+        b.userData.born = t; bolts.add(b);
+      }
+      for (const b of [...bolts.children]) { const age = t - b.userData.born; b.material.opacity = Math.max(0, 1 - age / 0.25); if (age > 0.25) { b.geometry.dispose(); b.material.dispose(); bolts.remove(b); } }
+      ring.scale.setScalar(0.3 + Math.min(1, t / 0.5) * 4.5); ring.material.opacity = Math.max(0, 1 - t / 0.7);
+      rune.rotation.z -= dt * 2; rune.material.opacity = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 0.15) / 1.4);
+    },
+    dispose() { disposeObj(root); fGeo.dispose(); },
+  });
+}
+
+// ------------------------------------------------------------
+// DESCENSO (Espadón de Tibicena): un espadón gigante de sombra y bronce
+// cae del cielo sobre el objetivo y lo aplasta (llega en `ms`).
+// ------------------------------------------------------------
+export function descend(getPos, P = PALETTES.tibicena, ms = 1046) {
+  if (!_scene) return;
+  const T = ms / 1000;
+  const root = new THREE.Group();
+  _scene.add(root);
+  // Hoja gigante (rombo alargado) apuntando hacia abajo
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0); shape.lineTo(0.55, 1.4); shape.lineTo(0.42, 6.5); shape.lineTo(0, 7.2); shape.lineTo(-0.42, 6.5); shape.lineTo(-0.55, 1.4); shape.closePath();
+  const bladeGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 1 }).translate(0, 0, -0.09);
+  const blade = new THREE.Mesh(bladeGeo, new THREE.MeshStandardMaterial({ color: 0x3a2a18, emissive: P.glow, emissiveIntensity: 1.2, metalness: 0.5, roughness: 0.4, transparent: true, opacity: 0 }));
+  const edge = new THREE.Mesh(bladeGeo, addMat(P.main, 0)); edge.scale.setScalar(1.08);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.35, 0.4), new THREE.MeshStandardMaterial({ color: 0x8a6a30, metalness: 0.7, roughness: 0.3, emissive: P.glow, emissiveIntensity: 0.6, transparent: true, opacity: 0 }));
+  guard.position.y = 7.35;
+  const sword = new THREE.Group(); sword.add(blade, edge, guard);
+  root.add(sword);
+  // Sombra que se agranda en el suelo
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.6, 40), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; root.add(shadow);
+  // Estela de humo oscuro detrás de la hoja
+  const smoke = points(40, 0x1a0e06, 0.9, THREE.NormalBlending, 0.6); root.add(smoke);
+  const sp = smoke.geometry.attributes.position;
+  let landed = false;
+  add({
+    t: 0, dur: T + 0.9,
+    update(t) {
+      const c = getPos?.() || _tmp.set(0, 0, 0);
+      root.position.set(c.x, (c.y || 0), c.z);
+      const k = Math.min(1, t / T);
+      const fall = k * k * k;                       // acelera al caer
+      const y = 16 * (1 - fall);
+      sword.position.set(0, y - 1.2 * fall, 0);
+      sword.rotation.y = (1 - k) * 2.5;
+      const op = Math.min(1, t / 0.25);
+      blade.material.opacity = op; guard.material.opacity = op; edge.material.opacity = 0.5 * op;
+      shadow.material.opacity = 0.15 + 0.45 * k; shadow.scale.setScalar(0.4 + k * 0.9);
+      for (let i = 0; i < 40; i++) sp.setXYZ(i, (Math.random() - 0.5) * 0.8, sword.position.y + 7 + Math.random() * 4 * (1 - k), (Math.random() - 0.5) * 0.8);
+      sp.needsUpdate = true; smoke.material.opacity = 0.6 * (1 - k);
+      if (!landed && k >= 1) {
+        landed = true;
+        slam({ x: c.x, y: 0, z: c.z }, P, 1.35);
+        shake(0.6, 0.6);
+      }
+      if (landed) {
+        const f = Math.max(0, 1 - (t - T) / 0.9);
+        blade.material.opacity = f; guard.material.opacity = f; edge.material.opacity = 0.5 * f; shadow.material.opacity = 0.6 * f;
+      }
+    },
+    dispose() { disposeObj(root); },
+  });
+}
+
+// ------------------------------------------------------------
+// SÚPER RAYO (Espada de Tindaya): rayo morado que sale del arma al objetivo,
+// crepita y se rehace cada instante, con llamas NEGRAS a lo largo y en el impacto.
+// ------------------------------------------------------------
+export function beam(getFrom, getTo, P = PALETTES.vesta, ms = 900) {
+  if (!_scene) return;
+  const root = new THREE.Group(); _scene.add(root);
+  const light = new THREE.PointLight(P.light, 30, 12, 1.4); root.add(light);
+  const bolts = new THREE.Group(); root.add(bolts);
+  // Llamas negras (humo denso) + ascuas moradas
+  const NB = 160, black = points(NB, 0x08000c, 0.8, THREE.NormalBlending, 0.9);
+  const NE = 60, embers = points(NE, P.spark, 0.16);
+  root.add(black, embers);
+  const bs = [], es = [];
+  for (let i = 0; i < NB; i++) bs.push({ k: Math.random(), life: Math.random(), v: 0.6 + Math.random() * 1.4, off: new THREE.Vector3() });
+  for (let i = 0; i < NE; i++) es.push({ k: Math.random(), life: Math.random(), v: 1 + Math.random() * 2 });
+  const A = new THREE.Vector3(), B = new THREE.Vector3();
+  let nextZap = 0, burstDone = false;
+  shake(0.15, 0.5);
+  const T = ms / 1000;
+  add({
+    t: 0, dur: T + 0.6,
+    update(t, dt) {
+      const f = getFrom?.(), to = getTo?.();
+      if (f) A.set(f.x, (f.y || 0) + 1.3, f.z);
+      if (to) B.set(to.x, (to.y || 0) + 1.0, to.z);
+      const on = t < T;
+      light.position.lerpVectors(A, B, 0.5); light.intensity = on ? 22 + Math.random() * 18 : Math.max(0, 22 * (1 - (t - T) / 0.4));
+      if (on && t >= nextZap) {
+        nextZap = t + 0.05;
+        for (const b of [...bolts.children]) { b.geometry.dispose(); b.material.dispose(); bolts.remove(b); }
+        const segs = Math.max(8, Math.round(A.distanceTo(B) * 2.2));
+        bolts.add(boltMesh(zigzag(A, B, segs, 0.6), 0.32, P.glow, 0.55));
+        bolts.add(boltMesh(zigzag(A, B, segs, 0.5), 0.17, P.main, 0.85));
+        bolts.add(boltMesh(zigzag(A, B, segs, 0.3), 0.07, P.core, 1));
+        for (let i = 0; i < 2; i++) {           // ramas
+          const k = 0.2 + Math.random() * 0.6, s = new THREE.Vector3().lerpVectors(A, B, k);
+          const e = s.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2.4, (Math.random() - 0.3) * 1.8, (Math.random() - 0.5) * 2.4));
+          bolts.add(boltMesh(zigzag(s, e, 5, 0.5), 0.03, P.spark, 0.9));
+        }
+      }
+      if (!on && bolts.children.length) for (const b of [...bolts.children]) { b.material.opacity *= 0.7; if (b.material.opacity < 0.05) { b.geometry.dispose(); b.material.dispose(); bolts.remove(b); } }
+      if (!burstDone && t > T * 0.35 && to) { burstDone = true; burst(to, P, 0); }
+      // llamas negras: nacen a lo largo del rayo y suben ondulando
+      const bp = black.geometry.attributes.position;
+      for (let i = 0; i < NB; i++) {
+        const s = bs[i]; s.life += dt * s.v;
+        if (s.life >= 1) { s.life = 0; s.k = Math.random() < 0.35 ? 0.85 + Math.random() * 0.15 : Math.random(); s.off.set((Math.random() - 0.5) * 0.5, 0, (Math.random() - 0.5) * 0.5); }
+        const p = _tmp.lerpVectors(A, B, s.k).add(s.off);
+        bp.setXYZ(i, p.x + Math.sin(t * 9 + i) * 0.15, p.y - 0.2 + s.life * 1.6, p.z + Math.cos(t * 7 + i) * 0.15);
+      }
+      bp.needsUpdate = true;
+      black.material.opacity = on ? 0.85 : Math.max(0, 0.85 * (1 - (t - T) / 0.6));
+      black.material.size = 0.6 + 0.3 * Math.sin(t * 20);
+      const ep = embers.geometry.attributes.position;
+      for (let i = 0; i < NE; i++) {
+        const s = es[i]; s.life += dt * s.v; if (s.life >= 1) { s.life = 0; s.k = Math.random(); }
+        const p = _tmp.lerpVectors(A, B, s.k);
+        ep.setXYZ(i, p.x + (Math.random() - 0.5) * 0.2, p.y + s.life * 1.6, p.z + (Math.random() - 0.5) * 0.2);
+      }
+      ep.needsUpdate = true;
+      embers.material.opacity = on ? 1 : Math.max(0, 1 - (t - T) / 0.6);
+    },
+    dispose() { disposeObj(root); },
+  });
+}
+
+// ------------------------------------------------------------
+// FRENESÍ DE GARRAS: cuatro zarpazos alternando mano izquierda y derecha
+// (en X), cada uno más rápido, y un desgarro final en cruz con salpicadura.
+// ------------------------------------------------------------
+export function clawFrenzy(pos, yaw = 0, P = PALETTES.dragon) {
+  if (!_scene) return;
+  const root = new THREE.Group();
+  root.position.set(pos.x, (pos.y || 0) + 1.1, pos.z);
+  root.rotation.y = yaw;
+  _scene.add(root);
+  const marks = [];
+  const times = [0, 0.13, 0.24, 0.33];
+  times.forEach((d, i) => {
+    const g = new THREE.Group();
+    const side = i % 2 ? 1 : -1;
+    for (let k = 0; k < 4; k++) {               // 4 uñas por zarpazo
+      const m = new THREE.Mesh(slashGeo(), addMat(k === 1 || k === 2 ? P.core : P.main, 0));
+      m.scale.set(0.9, 0.9, 1); m.position.set((k - 1.5) * 0.11, 0, 0.25);
+      g.add(m);
+    }
+    g.rotation.z = side * 0.75 + Math.PI / 2;
+    g.userData.base = 1.5;
+    root.add(g);
+    marks.push({ g, d, side });
+  });
+  // Cruz final + salpicadura de chispas rojas
+  const cross = new THREE.Group();
+  for (const s of [-1, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.22), addMat(P.core, 0)); m.rotation.z = s * Math.PI / 4; cross.add(m); const h = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.6), addMat(P.main, 0)); h.rotation.z = s * Math.PI / 4; cross.add(h); }
+  cross.position.z = 0.3; root.add(cross);
+  const N = 60, sp = points(N, 0xff2a10, 0.2); root.add(sp);
+  const sv = []; for (let i = 0; i < N; i++) { const a = Math.random() * 6.28; sv.push(new THREE.Vector3(Math.cos(a) * (1 + Math.random() * 3), Math.random() * 3, 1 + Math.random() * 3)); }
+  const light = new THREE.PointLight(P.light, 0, 8, 1.5); root.add(light);
+  add({
+    t: 0, dur: 1.3,
+    update(t, dt) {
+      for (const it of marks) {
+        const k = (t - it.d) / 0.22;
+        if (k < 0) continue;
+        if (!it.hit) { it.hit = true; shake(0.12, 0.15); }
+        it.g.children.forEach(m => { m.material.opacity = k < 0.25 ? k / 0.25 : Math.max(0, 1 - (k - 0.25) / 1.2); });
+        it.g.scale.setScalar((0.6 + Math.min(1, k) * 0.8) * 1.5);
+        it.g.rotation.z += it.side * 0.05;
+      }
+      const ck = (t - 0.45) / 0.3;
+      if (ck > 0) {
+        cross.children.forEach(m => { m.material.opacity = ck < 0.2 ? ck / 0.2 : Math.max(0, 1 - (ck - 0.2) / 1.6); });
+        cross.scale.setScalar(0.5 + Math.min(1, ck) * 0.8);
+        light.intensity = Math.max(0, 18 * (1 - (ck - 0.1)));
+        const p = sp.geometry.attributes.position;
+        for (let i = 0; i < N; i++) { const v = sv[i]; v.y -= 9 * dt; p.setXYZ(i, p.getX(i) + v.x * dt, p.getY(i) + v.y * dt, p.getZ(i) + v.z * dt); }
+        p.needsUpdate = true; sp.material.opacity = Math.max(0, 1 - ck / 2.5);
+        if (!cross.userData.shook) { cross.userData.shook = true; shake(0.3, 0.3); }
+      } else sp.material.opacity = 0;
+    },
+    dispose() { disposeObj(root); },
   });
 }
