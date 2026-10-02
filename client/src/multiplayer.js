@@ -1108,7 +1108,7 @@ function cleanupInheritedWeapons(clonedMesh) {
 // ============================================================
 // Sesión 50 — Armadura de los peers
 // ============================================================
-const PEER_ARMOR_SLOTS = ['helm', 'body', 'legs', 'boots', 'gloves', 'shield'];
+const PEER_ARMOR_SLOTS = ['helm', 'body', 'legs', 'boots', 'gloves', 'shield', 'cape'];   // S51: + capa (después del torso)
 
 /** Quita todo lo que cuelga de los huesos del clone que no sea hueso/malla del personaje. */
 function removeInheritedAttachments(root) {
@@ -1131,7 +1131,9 @@ function syncPeerArmor(peer, equipStr) {
   for (const slot of PEER_ARMOR_SLOTS) {
     const cur = peer._armorParts[slot];
     const itemId = want[slot] || null;
-    if (cur && cur.itemId === itemId) continue;
+    // Sesión 51 — si cambia la armadura del torso, la capa se rehace (cuelga por fuera)
+    const bodyChanged = slot === 'cape' && peer._armorBodyGen !== peer._armorCapeGen;
+    if (cur && cur.itemId === itemId && !bodyChanged) continue;
     if (cur) {
       for (const pt of cur.parts) pt.bone.remove(pt.mesh);
       delete peer._armorParts[slot];
@@ -1142,6 +1144,8 @@ function syncPeerArmor(peer, equipStr) {
       if (!parts) continue;
       for (const pt of parts) pt.bone.add(pt.mesh);
       peer._armorParts[slot] = { itemId, parts };
+      if (slot === 'body') peer._armorBodyGen = (peer._armorBodyGen || 0) + 1;
+      if (slot === 'cape') peer._armorCapeGen = peer._armorBodyGen;
     } catch (err) {
       console.warn(`[multiplayer] armadura peer ${peer.userId} ${slot}:`, err.message);
     }

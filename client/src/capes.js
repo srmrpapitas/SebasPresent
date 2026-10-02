@@ -240,6 +240,39 @@ function makeDrips(cape, hemPts) {
 // ------------------------------------------------------------
 // Constructor
 // ------------------------------------------------------------
+/**
+ * Sesión 51 — Caja de la armadura del torso (piezas con userData.armorSlot
+ * 'body') en el marco de la capa (hueso Spine2 + basis), solo la franja de
+ * alturas [y0, y1]. null si no lleva armadura.
+ */
+function armorBounds(root, sp2, basis, y0, y1) {
+  const objs = [];
+  // solo lo que va pegado al tronco y hombros (los brazos se mueven y la ensancharían)
+  root.traverse(o => { if (o.userData?.armorSlot === 'body' && /(Spine|Neck|Shoulder|Hips)\d*$/.test(o.parent?.name || '')) objs.push(o); });
+  if (!objs.length) return null;
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().multiplyMatrices(sp2.matrixWorld, basis).invert();
+  const pts = [];
+  const v = new THREE.Vector3(), bb = new THREE.Box3(), m = new THREE.Matrix4();
+  for (const o of objs) o.traverse(c => {
+    if (!c.isMesh || !c.geometry) return;
+    if (c.isInstancedMesh) { c.computeBoundingBox(); bb.copy(c.boundingBox); }
+    else { if (!c.geometry.boundingBox) c.geometry.computeBoundingBox(); bb.copy(c.geometry.boundingBox); }
+    if (bb.isEmpty()) return;
+    m.multiplyMatrices(inv, c.matrixWorld);
+    for (let i = 0; i < 8; i++) {
+      v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(m);
+      if (v.y >= y0 && v.y <= y1) pts.push(v.clone());
+    }
+  });
+  if (!pts.length) return null;
+  return {
+    minZ: Math.min(...pts.map(p => p.z)),
+    halfW: (cx) => Math.max(...pts.map(p => Math.abs(p.x - cx))),
+    maxYBack: (cz) => { const b = pts.filter(p => p.z < cz); return b.length ? Math.max(...b.map(p => p.y)) : -Infinity; },
+  };
+}
+
 /** Ancestro directo de la escena (el objeto que el juego mueve y gira). */
 function topOf(o) {
   let t = o;
@@ -255,12 +288,27 @@ export function buildCape(itemId, H, root) {
   if (!box) return null;
   const tn = H.tune('cape');
   const h = box.max.y - box.min.y;
-  const rx = (box.max.x - box.min.x) / 2 * 1.22 * tn.s, rz = (box.max.z - box.min.z) / 2;
+  const rz = (box.max.z - box.min.z) / 2;
   const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
   const isMage = itemId === 'cape_achaman' || itemId === 'cape_magec' || itemId === 'cape_chaxiraxi';
-  const top = box.max.y + h * 0.05, len = h * (itemId === 'cape_magma' ? 5.0 : 4.6) * tn.s;   // S51: un pelín más cortas
+  // Medidas SIN armadura (como antes)
+  let R = (box.max.x - box.min.x) / 2 * 1.22 * tn.s * 1.08;      // radio arriba
+  let axisZ = cz + rz * 0.15;
+  let top = box.max.y + h * 0.05;
+  // Sesión 51 — CON armadura: la capa cuelga por fuera de ella (hombreras,
+  // escamas de la espalda…). Se mide la armadura del torso en este marco.
+  const arm = armorBounds(root, sp2, basis, top - h * 1.3, top + h * 0.6);
+  if (arm) {
+    const halfW = Math.min(R * 0.95 * 1.7, Math.max(R * 0.95, arm.halfW(cx) * 1.06));
+    const backZ = Math.max(axisZ - R - h * 0.9, Math.min(axisZ - R, arm.minZ - h * 0.05));
+    R = halfW / 0.95;
+    axisZ = Math.min(axisZ, backZ + R);
+    top = Math.max(top, Math.min(arm.maxYBack(cz), top + h * 0.45));
+  }
+  const len = h * (itemId === 'cape_magma' ? 5.0 : 4.6) * tn.s;   // S51: un pelín más cortas
+  const rx = R / 1.08;   // (para las piezas de abajo: broches, gotas)
   const SEGX = 28, SEGY = 22;
-  const geo = new THREE.CylinderGeometry(rx * 1.08, rx * 1.5, len, SEGX, SEGY, true, Math.PI * 0.6, Math.PI * 0.8);
+  const geo = new THREE.CylinderGeometry(R, R * 1.39, len, SEGX, SEGY, true, Math.PI * 0.6, Math.PI * 0.8);
   // hang: 0 arriba → 1 abajo (para el ondeo)
   const p = geo.attributes.position;
   const hang = new Float32Array(p.count);
@@ -289,7 +337,7 @@ export function buildCape(itemId, H, root) {
   const cape = new THREE.Mesh(geo, mat);
   // Pivote en la línea de hombros: la capa CUELGA (gravedad) aunque el torso se incline
   const pivot = new THREE.Group();
-  pivot.position.set(cx, top, cz + rz * 0.15 + (tn.z || 0) * h);
+  pivot.position.set(cx, top, axisZ + (tn.z || 0) * h);
   cape.position.set(0, -len / 2, 0);
   pivot.add(cape);
   const _q = new THREE.Quaternion(), _qt = new THREE.Quaternion(), _d = new THREE.Vector3(), DOWN = new THREE.Vector3(0, -1, 0);
@@ -339,7 +387,13 @@ export function buildCape(itemId, H, root) {
           speedS += (Math.min(v, 8) - speedS) * Math.min(1, dtC * 4);
         }
         lastRootPos = (lastRootPos || new THREE.Vector3()).copy(_rp);
-        _tilt.setFromAxisAngle(_ax, 0.1 + Math.min(0.55, speedS * 0.09));
+        // Si el torso se inclina hacia delante (posturas de combate, correr),
+        // la capa sigue la línea de la espalda en vez de meterse en el cuerpo.
+        pivot.parent.getWorldQuaternion(_q);
+        const spUp = _d.set(0, 1, 0).applyQuaternion(_q);
+        const lean = Math.asin(Math.max(-1, Math.min(1, spUp.dot(_f))));
+        const tilt = Math.max(0.1 + Math.min(0.55, speedS * 0.09), lean + 0.14);
+        _tilt.setFromAxisAngle(_ax, Math.min(1.2, tilt));
         _qt.multiply(_tilt);
         // Pasar al espacio del padre del pivote
         pivot.parent.getWorldQuaternion(_q);
@@ -365,12 +419,13 @@ export function buildCape(itemId, H, root) {
   const gemCol = { cape_fuego: 0xffa030, cape_magma: 0xff4a10, cape_achaman: 0x7ab8ff, cape_magec: 0xffd040, cape_chaxiraxi: 0x80e080 }[itemId];
   const gemMat = new THREE.MeshStandardMaterial({ color: gemCol, emissive: gemCol, emissiveIntensity: 1.4, roughness: 0.2 });
   const ringMat = new THREE.MeshStandardMaterial({ color: isMage ? 0xd8a83a : 0x2a0c08, metalness: 0.6, roughness: 0.35 });
+  // Broches donde la tela se sujeta (las puntas de arriba de la capa)
   for (const sx of [-1, 1]) {
     const gem = new THREE.Mesh(new THREE.OctahedronGeometry(rx * 0.14, 1), gemMat);
-    gem.position.set(cx + sx * rx * 0.7, top, cz + rz * 0.6);
+    gem.position.set(sx * R * 0.951, -len * 0.01, -R * 0.309 + rx * 0.06);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(rx * 0.17, rx * 0.04, 8, 20), ringMat);
     ring.position.copy(gem.position);
-    g.add(gem, ring);
+    pivot.add(gem, ring);
   }
   return [{ bone: sp2, mesh: g }];
 }

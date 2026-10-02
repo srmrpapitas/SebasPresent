@@ -995,6 +995,13 @@ export function buildProceduralWeapon(itemId, weaponType, root, handBone = null)
  * `root` = el FBX del personaje (character.mesh).
  */
 export function buildProceduralArmor(itemId, slot, root) {
+  // Sesión 51 — cada pieza lleva su hueco (la capa mide la armadura para colgar por fuera)
+  const parts = _buildProceduralArmor(itemId, slot, root);
+  if (parts) for (const p of parts) if (p?.mesh) p.mesh.userData.armorSlot = slot;
+  return parts;
+}
+
+function _buildProceduralArmor(itemId, slot, root) {
   if (slot === 'cape' && CAPE_IDS.has(itemId) && root) {
     const parts = buildCape(itemId, DRAGON_HELPERS, root);
     if (parts) for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });

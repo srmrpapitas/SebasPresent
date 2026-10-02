@@ -1048,6 +1048,7 @@ export class Character {
       this._equippedArmor[slotId] = { parts, itemId };
       window.__character = this;
       this._layoutBack();   // Sesión 51 — carcaj por fuera de la capa
+      if (slotId === 'body') this._rebuildCape();   // Sesión 51 — la capa se ajusta a la armadura nueva
       return;
     }
 
@@ -1083,6 +1084,15 @@ export class Character {
    * que se quitaba). El carcaj se separa de la espalda lo justo para quedar
    * por fuera de la tela.
    */
+  /** Sesión 51 — reconstruir la capa (mide la armadura del torso al construirse). */
+  _rebuildCape() {
+    const c = this._equippedArmor.cape;
+    if (!c?.itemId) return;
+    const id = c.itemId;
+    this.detachArmor('cape');
+    this.attachArmor(id, 'cape').catch(() => {});
+  }
+
   _layoutBack() {
     const q = this._equippedArmor.quiver;
     if (!q?.mesh || !q.bone) return;
@@ -1109,6 +1119,7 @@ export class Character {
     if (cur.parts) for (const p of cur.parts) p.bone.remove(p.mesh);   // Sesión 50
     delete this._equippedArmor[slotId];
     if (slotId === 'cape') this._layoutBack();
+    if (slotId === 'body') this._rebuildCape();
   }
 
   /**

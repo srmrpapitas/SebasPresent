@@ -53,6 +53,9 @@ const VALID_EQUIP_SLOTS = ['weapon', 'shield', 'helm', 'body', 'legs', 'boots', 
 // (bug visto en S35 smoke test del path ranged).
 // Cuando agreguemos 'staff' (Bloque 2 días 8-11), va acá también.
 const TWO_HANDED_WEAPON_TYPES = new Set(['2h_sword', 'bow']);
+// Sesión 51 — armas a dos manos por item (no por tipo): las garras van una en
+// cada mano, así que no dejan llevar escudo.
+const TWO_HANDED_ITEM_IDS = new Set(['claws_dragon']);
 
 // ============================================================
 // GET /api/equipment
@@ -165,7 +168,7 @@ export async function handleEquip(request, env) {
   //   conflictItem = el arma 2H, va al inventario.
   // Sesión 35 — Set TWO_HANDED_WEAPON_TYPES en vez de igualdad a '2h_sword'
   // para que `bow` (y futuros tipos) entren en el chequeo.
-  const isEquipping2H = (targetSlot === 'weapon' && TWO_HANDED_WEAPON_TYPES.has(invItem.weapon_type));
+  const isEquipping2H = (targetSlot === 'weapon' && (TWO_HANDED_WEAPON_TYPES.has(invItem.weapon_type) || TWO_HANDED_ITEM_IDS.has(invItem.item_id)));
   const isEquippingShield = (targetSlot === 'shield');
 
   let conflictItem = null;   // { slot_id, item_id } del item a desequipar por conflicto
@@ -184,8 +187,9 @@ export async function handleEquip(request, env) {
       `SELECT eq.item_id
        FROM user_equipment eq
        JOIN items i ON i.id = eq.item_id
-       WHERE eq.user_id = ? AND eq.slot_id = 'weapon' AND i.weapon_type IN (${placeholders})`
-    ).bind(session.user_id, ...twoHandedList).first();
+       WHERE eq.user_id = ? AND eq.slot_id = 'weapon'
+         AND (i.weapon_type IN (${placeholders}) OR eq.item_id IN (${[...TWO_HANDED_ITEM_IDS].map(() => '?').join(',')}))`
+    ).bind(session.user_id, ...twoHandedList, ...TWO_HANDED_ITEM_IDS).first();
     if (w) conflictItem = { slot_id: 'weapon', item_id: w.item_id };
   }
 
