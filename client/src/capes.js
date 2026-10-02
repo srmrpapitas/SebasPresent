@@ -240,6 +240,13 @@ function makeDrips(cape, hemPts) {
 // ------------------------------------------------------------
 // Constructor
 // ------------------------------------------------------------
+/** Ancestro directo de la escena (el objeto que el juego mueve y gira). */
+function topOf(o) {
+  let t = o;
+  while (t.parent && !t.parent.isScene) t = t.parent;
+  return t.parent ? t : null;
+}
+
 export function buildCape(itemId, H, root) {
   const sp2 = H.findBone(root, 'Spine2');
   if (!sp2) return null;
@@ -309,8 +316,15 @@ export function buildCape(itemId, H, root) {
     if (pivot.parent && root) {
       // "Delante" del cuerpo en coordenadas del root (se calcula una vez)
       // El modelo mira hacia +Z de su root (igual que asume la armadura)
-      if (!frontRoot) frontRoot = new THREE.Vector3(0, 0, 1);
-      root.getWorldQuaternion(_rq);
+      // "Delante" = el +Z del objeto del personaje que el juego gira al andar
+      // (player.rotation.y = atan2(dx, dz)), así los giros del torso o de las
+      // caderas en las posturas de combate no tuercen la capa.
+      if (!frontRoot) {
+        const top = topOf(root);
+        if (top) { frontRoot = new THREE.Vector3(0, 0, 1); frontRoot.userData = top; }
+      }
+      if (!frontRoot) return;
+      frontRoot.userData.getWorldQuaternion(_rq);
       _f.copy(frontRoot).applyQuaternion(_rq);
       _f.y = 0;
       if (_f.lengthSq() > 1e-6) {
