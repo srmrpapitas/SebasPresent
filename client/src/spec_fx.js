@@ -865,3 +865,66 @@ export function clawFrenzy(pos, yaw = 0, P = PALETTES.dragon) {
     dispose() { disposeObj(root); },
   });
 }
+
+// ------------------------------------------------------------
+// RAYO DEL CIELO (Tindaya): un relámpago morado gigante cae sobre el
+// objetivo — tres latigazos, destello que lo ilumina todo, anillo en el
+// suelo, quemadura y chispas negras y moradas.
+// ------------------------------------------------------------
+export function skyBolt(getPos, P = PALETTES.vesta) {
+  if (!_scene) return;
+  const root = new THREE.Group(); _scene.add(root);
+  const light = new THREE.PointLight(P.light, 0, 40, 1.2); root.add(light);
+  const bolts = new THREE.Group(); root.add(bolts);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 96), addMat(P.core, 0));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; root.add(ring);
+  const scorch = new THREE.Mesh(new THREE.CircleGeometry(1.8, 40), new THREE.MeshBasicMaterial({ color: 0x0a0010, transparent: true, opacity: 0, depthWrite: false }));
+  scorch.rotation.x = -Math.PI / 2; scorch.position.y = 0.025; root.add(scorch);
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(3.2, 48), addMat(P.main, 0));
+  glow.rotation.x = -Math.PI / 2; glow.position.y = 0.03; root.add(glow);
+  const N = 80, sp = points(N, P.spark, 0.24), bk = points(50, 0x0a0010, 0.6, THREE.NormalBlending, 0.9);
+  root.add(sp, bk);
+  const sv = [], bv = [];
+  for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, s = 2 + Math.random() * 7; sv.push(new THREE.Vector3(Math.cos(a) * s, 3 + Math.random() * 8, Math.sin(a) * s)); }
+  for (let i = 0; i < 50; i++) { const a = Math.random() * 6.28; bv.push({ a, r: Math.random() * 1.2, v: 1 + Math.random() * 2.5 }); }
+  const strikes = [0, 0.16, 0.34];
+  let si = 0;
+  const base = new THREE.Vector3();
+  const zap = () => {
+    for (const b of [...bolts.children]) { b.geometry.dispose(); b.material.dispose(); bolts.remove(b); }
+    const top = new THREE.Vector3((Math.random() - 0.5) * 4, 34, (Math.random() - 0.5) * 4);
+    const bot = new THREE.Vector3(0, 0, 0);
+    bolts.add(boltMesh(zigzag(top, bot, 26, 2.6), 0.55, P.glow, 0.5));
+    bolts.add(boltMesh(zigzag(top, bot, 26, 2.0), 0.28, P.main, 0.9));
+    bolts.add(boltMesh(zigzag(top, bot, 26, 1.4), 0.11, P.core, 1));
+    for (let k = 0; k < 5; k++) {                       // ramas
+      const t0 = 0.15 + Math.random() * 0.6, s = new THREE.Vector3().lerpVectors(top, bot, t0);
+      const e = s.clone().add(new THREE.Vector3((Math.random() - 0.5) * 9, -2 - Math.random() * 6, (Math.random() - 0.5) * 9));
+      bolts.add(boltMesh(zigzag(s, e, 8, 1.2), 0.06, P.spark, 0.9));
+    }
+    shake(0.55, 0.35);
+  };
+  add({
+    t: 0, dur: 1.8,
+    update(t, dt) {
+      const c = getPos?.(); if (c) { base.set(c.x, c.y || 0, c.z); root.position.copy(base); }
+      if (si < strikes.length && t >= strikes[si]) { zap(); si++; }
+      const since = t - strikes[Math.max(0, si - 1)];
+      const on = si > 0 && since < 0.12;
+      bolts.children.forEach(b => { b.material.opacity = on ? (b.material.userData.o ??= b.material.opacity) * (0.7 + Math.random() * 0.3) : Math.max(0, b.material.opacity - dt * 6); });
+      light.intensity = on ? 120 + Math.random() * 80 : Math.max(0, light.intensity - dt * 400);
+      light.position.y = 3;
+      const k = Math.min(1, t / 0.5);
+      ring.scale.setScalar(0.3 + k * 7); ring.material.opacity = Math.max(0, 1 - t / 0.7);
+      glow.material.opacity = Math.max(0, 0.7 - t * 0.9);
+      scorch.material.opacity = Math.min(0.75, t * 4) * Math.max(0, 1 - Math.max(0, t - 1.1) / 0.7);
+      const p = sp.geometry.attributes.position;
+      for (let i = 0; i < N; i++) { const v = sv[i]; v.y -= 15 * dt; p.setXYZ(i, p.getX(i) + v.x * dt, Math.max(0.03, p.getY(i) + v.y * dt), p.getZ(i) + v.z * dt); }
+      p.needsUpdate = true; sp.material.opacity = Math.max(0, 1 - t / 1.4);
+      const q = bk.geometry.attributes.position;
+      for (let i = 0; i < 50; i++) { const b = bv[i], h = t * b.v; q.setXYZ(i, Math.cos(b.a + h) * (b.r + h * 0.3), h * 1.4, Math.sin(b.a + h) * (b.r + h * 0.3)); }
+      q.needsUpdate = true; bk.material.opacity = 0.9 * Math.max(0, 1 - t / 1.6);
+    },
+    dispose() { disposeObj(root); },
+  });
+}

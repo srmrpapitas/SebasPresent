@@ -109,8 +109,8 @@ export const WEAPON_SPECS = {
                         desc: '+10 % de daño, precisión doble y te curas la mitad del daño.' },
   gs_guayota:         { name: 'Prisión de Guayota', cost: 50, hits: 1, dmg: 1.1, acc: 2, freezeMs: 10000, fx: 'gs',
                         desc: '+10 % de daño, precisión doble y congela al enemigo 10 s en un bloque de obsidiana.' },
-  sword_tindaya:      { name: 'Finta de Tindaya', cost: 25, hits: 1, dmg: 1.2, acc: 1.5, minFrac: 0.2, fx: 'feint',
-                        desc: '+20 % de daño, +50 % de precisión y nunca pega menos del 20 % del golpe máximo.' },
+  sword_tindaya:      { name: 'Rayo de Tindaya', cost: 25, hits: 1, dmg: 1.2, acc: 1.5, minFrac: 0.2, fx: 'feint', magicDmg: true,
+                        desc: 'Un rayo: acierta con tu ataque cuerpo a cuerpo (+50 % de precisión) pero el daño es MÁGICO (+20 %, mínimo el 20 % del golpe máximo): pega más fuerte contra armaduras de metal y menos contra cuero y capas de mago.' },
   claws_dragon:       { name: 'Tajo de cuatro garras', cost: 50, claws: true, acc: 1.25, fx: 'claws',
                         desc: 'Cuatro zarpazos en cascada: el golpe, la mitad, un cuarto y un cuarto +1.' },
   dagger_dragon:      { name: 'Puñalada doble', cost: 25, hits: 2, dmg: 1.15, acc: 1.25, fx: 'double',
@@ -162,6 +162,24 @@ export function resolveSpecial(spec, roll, mult, baseMax = 0) {
 export function clipSpecHits(hits, total) {
   let left = total;
   return hits.map(h => { const v = Math.max(0, Math.min(h, left)); left -= v; return v; });
+}
+
+// Sesión 51 — DEFENSA MÁGICA de cada pieza. No hay columna en items: sale
+// del material × su defensa. El metal conduce la magia (resta), el cuero de
+// arquero y las capas de mago la frenan (suman).
+const MAGIC_DEF_BY_MATERIAL = {
+  cuero: 2.4, mago: 6,
+  cotton: 1, cotton_linen: 1, linen: 1, linen_silk: 1.2, silk: 1.4, polyester: 1, polyester_cotton: 1,
+  earth: 1, ice: 1.2, lava: 1, fire: 0.6, magma: 0.7,
+  bronze: -0.3, hierro: -0.3, acero: -0.3, oro: -0.25, obsidiana: -0.25, basaltita: -0.25, teiderio: -0.25, dragon: -0.15,
+};
+export function magicDefOf(material, defenceBonus) {
+  const f = MAGIC_DEF_BY_MATERIAL[material];
+  return f == null ? 0 : Math.round((defenceBonus || 0) * f);
+}
+/** Multiplicador del daño MÁGICO según la defensa mágica total del objetivo (0,55–1,4). */
+export function magicDamageMult(magicDef) {
+  return Math.max(0.55, Math.min(1.4, 1 - (magicDef || 0) / 120));
 }
 
 // Sesión 51 — capas de mago: +golpe máximo de los hechizos

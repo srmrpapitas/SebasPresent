@@ -34,7 +34,7 @@ import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jef
 import { activeBoosts } from '../client/src/shared/herblore.js';   // Sesión 50 — pociones
 import { wanderPos, isWanderer } from '../client/src/shared/wander.js';   // Sesión 51
 import { cellsAround } from '../client/src/shared/grid.js';            // Sesión 51 — celdas
-import { specialOf, resolveSpecial, clipSpecHits, CAPE_MAGIC_BONUS, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
+import { specialOf, resolveSpecial, clipSpecHits, CAPE_MAGIC_BONUS, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA, magicDefOf, magicDamageMult } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
 // tengan stats de maná/magia propios (llega con smithing/crafting). Base 20 +
@@ -463,15 +463,18 @@ function detectLevelUps(before, after) {
 // El estilo "Defensivo" (block) suma además su defense_bonus (+5 %).
 async function getEquipBonuses(db, userId) {
   try {
-    const row = await db.first(
-      `SELECT COALESCE(SUM(i.attack_bonus), 0) AS atk, COALESCE(SUM(i.defence_bonus), 0) AS def
+    // Sesión 51 — pieza a pieza (mismas lecturas) para sacar también la defensa mágica
+    const rows = await db.all(
+      `SELECT i.attack_bonus AS atk, i.defence_bonus AS def, i.material AS mat
          FROM user_equipment ue JOIN items i ON i.id = ue.item_id
         WHERE ue.user_id = ?`,
       [userId]
     );
-    return { atk: Math.max(0, row?.atk | 0), def: Math.max(0, row?.def | 0) };
+    let atk = 0, def = 0, mdef = 0;
+    for (const r of rows || []) { atk += r.atk | 0; def += r.def | 0; mdef += magicDefOf(r.mat, r.def | 0); }
+    return { atk: Math.max(0, atk), def: Math.max(0, def), mdef };
   } catch {
-    return { atk: 0, def: 0 };
+    return { atk: 0, def: 0, mdef: 0 };
   }
 }
 // Sesión 50 — Plegarias activas (con el gasto de puntos aplicado) → efectos.
@@ -1796,15 +1799,19 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     const baseMaxPvp = (isMagicPvp && spellPvp) || isRanged ? 0 : calcMaxHit(attackerLvls.strength) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
     const sp = resolveSpecial(specDefPvp, doRollPvp, applyMultsPvp, baseMaxPvp);
     specHitsPvp = sp.hits;
+    // Sesión 51 — daño MÁGICO (Rayo de Tindaya): acierta como melé, pero el
+    // daño depende de la defensa mágica del objetivo (metal = más, cuero = menos)
+    if (specDefPvp.magicDmg) specHitsPvp = specHitsPvp.map(h => (h > 0 ? Math.max(1, Math.floor(h * magicDamageMult(targetEq.mdef))) : 0));
     dmgRaw = specHitsPvp.reduce((a, b) => a + b, 0);
     isCrit = sp.crit;
     userHit.hit = specHitsPvp.some(h => h > 0);
   }
 
   // Sesión 50 — Protección cuerpo a cuerpo en PvP: −40 % contra golpes de melé.
-  if (targetFx.protectMelee && !isRanged && !(isMagicPvp && spellPvp)) dmgRaw = Math.floor(dmgRaw * 0.6);
+  const magicDmgSpec = !!(specHitsPvp && specDefPvp?.magicDmg);   // Sesión 51 — el rayo es magia
+  if (targetFx.protectMelee && !isRanged && !(isMagicPvp && spellPvp) && !magicDmgSpec) dmgRaw = Math.floor(dmgRaw * 0.6);
   if (targetFx.protectRanged && isRanged) dmgRaw = Math.floor(dmgRaw * 0.6);             // Sesión 50
-  if (targetFx.protectMagic && isMagicPvp && spellPvp) dmgRaw = Math.floor(dmgRaw * 0.6); // Sesión 50
+  if (targetFx.protectMagic && ((isMagicPvp && spellPvp) || magicDmgSpec)) dmgRaw = Math.floor(dmgRaw * 0.6); // Sesión 50/51
   if (targetFx.shield) dmgRaw = Math.floor(dmgRaw * (1 - targetFx.shield));                 // Sesión 50 — Escudo de lava
   const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
   if (specHitsPvp) {

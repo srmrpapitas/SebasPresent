@@ -1249,7 +1249,11 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
     if (sp.fx === 'claws') specFx.clawFrenzy(targetPos, yaw, specFx.PALETTES.dragon);
     else if (sp.fx === 'double') specFx.slashes(targetPos, 2, specFx.PALETTES.oro, yaw);
     else if (sp.fx === 'cleave') specFx.slashes(targetPos, 1, specFx.PALETTES.obsidiana, yaw);
-    else if (sp.fx === 'feint') specFx.beam(() => window.__getPlayerPosition?.(), tgt, specFx.PALETTES.vesta, 900);   // Sesión 51 — súper rayo de Tindaya
+    else if (sp.fx === 'feint') {   // Sesión 51 — súper rayo de Tindaya + relámpago del cielo
+      specFx.beam(() => window.__getPlayerPosition?.(), tgt, specFx.PALETTES.vesta, 900);
+      setTimeout(() => specFx.skyBolt(tgt, specFx.PALETTES.vesta), 220);
+      try { audio.synth?.('altar', { volume: 1, pitch: 0.3 }); } catch {}
+    }
     else if (sp.fx === 'volatile') specFx.burst(targetPos, specFx.PALETTES.dragon, 380);
     else if (sp.fx === 'arcane') specFx.burst(targetPos, specFx.PALETTES.arcane, 380);
     else if (sp.fx === 'dragon') specFx.burst(targetPos, specFx.PALETTES.dragon, 560);
