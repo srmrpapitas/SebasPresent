@@ -102,14 +102,29 @@ const DRAGON_URL = 'assets/npcs/dragon_montura.glb';
 const DRAGON_SCALE = 21;              // pelvis a ~1,2 m: ~6 m de largo, ~17 m de alas
 const DRAGON_SEAT_Z = -0.03 * DRAGON_SCALE;   // la silla (vértebra 4) queda ~0,6 m por delante de la pelvis
 let _dragon = null, _dragonP = null;
+// Sesión 51 — cargar con reintentos (en el móvil con mala cobertura fallaba y
+// se quedaba la pardela / el caballo de cajas para toda la partida)
+async function loadGlbRetry(url, tries = 4) {
+  let last = null;
+  for (let i = 0; i < tries; i++) {
+    try { return await new GLTFLoader().loadAsync(url + (i ? `?r=${i}` : '')); }
+    catch (e) { last = e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
+  }
+  throw last;
+}
+function loadFail(what, e) {
+  const msg = e?.message || String(e || '');
+  console.warn(`[mounts] ${what} no cargó:`, msg);
+  try { feedLog('warning', `⚠ No se pudo cargar el modelo del ${what} (${msg.slice(0, 80)}). Se usa uno simple; vuelve a montar en un rato.`); } catch {}
+}
 function loadDragon() {
   if (_dragonP) return _dragonP;
-  _dragonP = new GLTFLoader().loadAsync(DRAGON_URL).then(g => {
+  _dragonP = loadGlbRetry(DRAGON_URL).then(g => {
     g.scene.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
     _dragon = { scene: g.scene, clips: Object.fromEntries(g.animations.map(a => [a.name, a])) };
     SEAT.pardela = DRAGON_SEAT;
     return _dragon;
-  }).catch(e => { console.warn('[mounts] dragón no cargó, se queda la pardela:', e?.message); return null; });
+  }).catch(e => { loadFail('dragón', e); _dragonP = null; return null; });
   return _dragonP;
 }
 function attachDragon(g) {
@@ -137,12 +152,12 @@ const HORSE_SEAT = 1.78;              // cadera del jinete: lomo a 1,62 m + sill
 let _horse = null, _horseP = null;
 function loadHorse() {
   if (_horseP) return _horseP;
-  _horseP = new GLTFLoader().loadAsync(HORSE_URL).then(g => {
+  _horseP = loadGlbRetry(HORSE_URL).then(g => {
     g.scene.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
     _horse = { scene: g.scene, clips: Object.fromEntries(g.animations.map(a => [a.name, a])) };
     SEAT.caballo = HORSE_SEAT;
     return _horse;
-  }).catch(e => { console.warn('[mounts] caballo no cargó, se queda el de cajas:', e?.message); return null; });
+  }).catch(e => { loadFail('caballo', e); _horseP = null; return null; });
   return _horseP;
 }
 function attachHorse(g) {
