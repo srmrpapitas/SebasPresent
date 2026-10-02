@@ -1313,3 +1313,94 @@ export function skyBolt(getPos, P = PALETTES.vesta) {
     dispose() { disposeObj(root); },
   });
 }
+
+// ------------------------------------------------------------
+// GARRAS DE MAGMA: cuatro zarpazos de lava (cada uno más grande, en X)
+// que dejan surcos incandescentes y gotean magma; al final las marcas
+// estallan y el enemigo ARDE unos segundos (la quemadura del 20 %).
+// ------------------------------------------------------------
+export function magmaClaws(getPos, yaw = 0) {
+  if (!_scene) return;
+  const P = PALETTES.basaltita;
+  const root = new THREE.Group(); _scene.add(root);
+  const front = new THREE.Group(); front.rotation.y = yaw; front.position.y = 1.1; root.add(front);
+  const place = () => { const c = typeof getPos === 'function' ? getPos() : getPos; if (c) root.position.set(c.x, c.y || 0, c.z); };
+  place();
+  const light = new THREE.PointLight(0xff6a10, 0, 9, 1.4); light.position.y = 1.2; root.add(light);
+  const times = [0, 0.14, 0.27, 0.38];
+  const marks = times.map((d, i) => {
+    const g = new THREE.Group();
+    const side = i % 2 ? 1 : -1;
+    for (let k = 0; k < 3; k++) {
+      const crust = new THREE.Mesh(slashGeo(), new THREE.MeshBasicMaterial({ color: 0x1a0602, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      crust.scale.set(1.05, 1.35, 1); crust.position.set((k - 1) * 0.17, 0, 0.27);
+      const lava = new THREE.Mesh(slashGeo(), addMat(0xff4a08, 0)); lava.position.copy(crust.position); lava.position.z += 0.01;
+      const core = new THREE.Mesh(slashGeo(), addMat(0xffe070, 0)); core.scale.set(0.95, 0.45, 1); core.position.copy(lava.position); core.position.z += 0.01;
+      g.add(crust, lava, core);
+    }
+    g.rotation.z = side * 0.8 + Math.PI / 2;
+    front.add(g);
+    return { g, d, side, size: 1.25 + i * 0.25 };
+  });
+  // gotas de magma que caen de los surcos + ascuas
+  const ND = 70, drips = points(ND, 0xff7a20, 0.16); root.add(drips);
+  const dv = []; for (let i = 0; i < ND; i++) dv.push({ v: new THREE.Vector3(), born: -1 });
+  let di = 0;
+  // llamas sobre el enemigo (quemadura)
+  const NF = 90, fl = points(NF, 0xff6a18, 0.42); root.add(fl);
+  const ff = []; for (let i = 0; i < NF; i++) ff.push({ a: Math.random() * 6.28, r: 0.15 + Math.random() * 0.45, life: Math.random(), v: 1.2 + Math.random() * 1.6 });
+  const NS = 30, sm = points(NS, 0x1a0c08, 0.9, THREE.NormalBlending, 0); root.add(sm);
+  // estallido final (cruz de lava)
+  const cross = new THREE.Group(); cross.position.set(0, 0, 0.32); front.add(cross);
+  for (const sgn of [-1, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.5), addMat(0xff5a10, 0)); m.rotation.z = sgn * Math.PI / 4; cross.add(m); const c2 = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.16), addMat(0xfff0a0, 0)); c2.rotation.z = sgn * Math.PI / 4; cross.add(c2); }
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(1.8, 40), addMat(0xc02a00, 0)); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.03; root.add(disc);
+  const BURN = 2.6;
+  const tmp = new THREE.Vector3();
+  add({
+    t: 0, dur: 0.6 + BURN,
+    update(t, dt) {
+      place();
+      for (const it of marks) {
+        const k = (t - it.d) / 0.2;
+        if (k < 0) continue;
+        if (!it.hit) {
+          it.hit = true; shake(0.14, 0.15);
+          // soltar gotas desde el surco
+          for (let n = 0; n < 14; n++) {
+            const o = dv[di]; o.born = t;
+            tmp.set((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2, 0.3).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+            drips.geometry.attributes.position.setXYZ(di, tmp.x, 1.1 + tmp.y, tmp.z);
+            o.v.set(tmp.x * 1.5, 1 + Math.random() * 2, tmp.z * 1.5);
+            di = (di + 1) % ND;
+          }
+        }
+        const op = k < 0.2 ? k / 0.2 : Math.max(0, 1 - (k - 0.2) / 2.2);
+        it.g.children.forEach((m, j) => { m.material.opacity = (j % 3 === 0 ? 0.85 : 1) * op * (j % 3 === 2 ? 0.8 + 0.2 * Math.sin(t * 30) : 1); });
+        it.g.scale.setScalar((0.55 + Math.min(1, k) * 0.45) * it.size);
+      }
+      // gotas
+      const p = drips.geometry.attributes.position;
+      for (let i = 0; i < ND; i++) { const o = dv[i]; if (o.born < 0) { p.setY(i, -99); continue; } o.v.y -= 10 * dt; p.setXYZ(i, p.getX(i) + o.v.x * dt, Math.max(0.04, p.getY(i) + o.v.y * dt), p.getZ(i) + o.v.z * dt); }
+      p.needsUpdate = true; drips.material.opacity = Math.max(0, 1 - Math.max(0, t - 1.6) / 0.8);
+      // estallido
+      const ck = (t - 0.5) / 0.25;
+      if (ck > 0) {
+        if (!cross.userData.done) { cross.userData.done = true; shake(0.35, 0.3); try { screenFlash('rgba(255,90,20,1)', 0.2, 220); } catch {} }
+        cross.children.forEach(m => { m.material.opacity = ck < 0.2 ? ck / 0.2 : Math.max(0, 1 - (ck - 0.2) / 1.4); });
+        cross.scale.setScalar(0.6 + Math.min(1, ck) * 0.7);
+        disc.material.opacity = Math.min(0.4, ck) * Math.max(0, 1 - Math.max(0, t - 0.5 - BURN + 0.6) / 0.6);
+      }
+      // quemadura: llamas y humo sobre el enemigo
+      const bt = t - 0.5;
+      const bo = bt <= 0 ? 0 : Math.min(1, bt * 4) * Math.max(0, 1 - Math.max(0, bt - BURN + 0.6) / 0.6);
+      const fp = fl.geometry.attributes.position;
+      for (let i = 0; i < NF; i++) { const f = ff[i]; f.life += dt * f.v; if (f.life >= 1) f.life = 0; const a = f.a + t * 2; fp.setXYZ(i, Math.cos(a) * f.r * (1 - f.life * 0.5), 0.2 + f.life * 2.2, Math.sin(a) * f.r * (1 - f.life * 0.5)); }
+      fp.needsUpdate = true; fl.material.opacity = bo; fl.material.size = 0.36 + 0.1 * Math.sin(t * 24);
+      const sp2 = sm.geometry.attributes.position;
+      for (let i = 0; i < NS; i++) { const f = ff[i]; sp2.setXYZ(i, Math.cos(f.a) * 0.4, 1.8 + f.life * 1.8, Math.sin(f.a) * 0.4); }
+      sp2.needsUpdate = true; sm.material.opacity = bo * 0.55;
+      light.intensity = (t < 0.5 ? Math.min(1, t * 5) * 14 : 10 * bo + (ck > 0 && ck < 0.4 ? 30 : 0)) * (0.8 + Math.random() * 0.3);
+    },
+    dispose() { disposeObj(root); },
+  });
+}

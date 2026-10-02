@@ -48,7 +48,7 @@ const WRITE_HEARTBEAT_MS = 6000;   // el cliente manda cada 3 s quieto → latid
 const WRITE_MIN_MOVE_M = 0.5;
 
 // Sesión 51 — efectos de especiales que se reenvían a los demás
-const FX_KINDS = new Set(['slam', 'claws', 'double', 'cleave', 'feint', 'volatile', 'arcane', 'dragon', 'snapshot', 'heal', 'gs', 'smash', 'spec', 'bloodcube']);
+const FX_KINDS = new Set(['slam', 'claws', 'double', 'cleave', 'feint', 'volatile', 'arcane', 'dragon', 'snapshot', 'heal', 'gs', 'smash', 'spec', 'bloodcube', 'magmaclaws']);
 
 export class Realm {
   constructor(ctx, env) {

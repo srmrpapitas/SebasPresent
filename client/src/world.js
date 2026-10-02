@@ -819,6 +819,7 @@ export async function startWorld(loggedInUser, token) {
             else setTimeout(() => specFx.slam(specFx.impactPoint(pos, tgt), pal), 1046);
           } else if (tgt) {
             if (m.k === 'claws') specFx.clawFrenzy(tgt, yaw, specFx.PALETTES.dragon);
+            else if (m.k === 'magmaclaws') specFx.magmaClaws(() => tgt, yaw);
             else if (m.k === 'feint') { specFx.beam(() => peer?.group?.position || pos, () => tgt, specFx.PALETTES.vesta, 900); setTimeout(() => specFx.skyBolt(() => tgt, specFx.PALETTES.vesta), 220); }
             else if (m.k === 'double') specFx.slashes(tgt, 2, specFx.PALETTES.oro, yaw);
             else if (m.k === 'cleave') specFx.slashes(tgt, 1, specFx.PALETTES.obsidiana, yaw);

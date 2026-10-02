@@ -597,6 +597,8 @@ async function doAttackTickNpc(gen = attackGen) {
       result.special.hits.forEach((h, i) => setTimeout(() => {
         try { window.__worldSpawnHitsplat(npcId, h || 0); } catch {}
       }, specDelay + i * 220));
+      // Sesión 51 — quemadura (Garras de magma): 3 ticks de fuego
+      burnTicks(result.special.burn, specDelay + result.special.hits.length * 220, (d) => window.__worldSpawnHitsplat(npcId, d));
     } else {
       try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
     }
@@ -616,6 +618,7 @@ async function doAttackTickNpc(gen = attackGen) {
     }, specDelay);
     if (result.special.healed > 0) feedLog('hit', `💚 El especial te cura ${result.special.healed} HP.`);
     if (result.special.drain > 0) feedLog('hit', `🩸 Le quitas ${result.special.drain} de Defensa durante 1 minuto.`);
+    if (result.special.burn > 0) feedLog('hit', `🔥 ${npcName} arde: ${result.special.burn} de daño por quemadura.`);
     specArmed = false;
   }
   if (typeof result.spec_energy === 'number' && state && state.stats) {
@@ -905,6 +908,7 @@ async function doAttackTickPlayer(gen = attackGen) {
     }
     feedLog('hit', specFeedText(result.special, targetName));
     if (result.special.healed > 0) feedLog('hit', `💚 El especial te cura ${result.special.healed} HP.`);
+    if (result.special.burn > 0) feedLog('hit', `🔥 ${targetName} arde: ${result.special.burn} de daño por quemadura.`);
     if (result.special.drain > 0) feedLog('hit', `🩸 ${targetName} pierde ${result.special.drain} de Defensa durante 1 minuto.`);
     specArmed = false;
   }
@@ -931,6 +935,7 @@ async function doAttackTickPlayer(gen = attackGen) {
       result.special.hits.forEach((h, i) => setTimeout(() => {
         try { window.__worldSpawnPlayerHitsplat(targetId, h || 0); } catch {}
       }, specDelayPvp + i * 220));
+      burnTicks(result.special.burn, specDelayPvp + result.special.hits.length * 220, (d) => window.__worldSpawnPlayerHitsplat(targetId, d));
     } else {
       try { window.__worldSpawnPlayerHitsplat(targetId, result.your_damage || 0); } catch {}
     }
@@ -1208,6 +1213,18 @@ let specArmed = false;
 // Sesión 51 — coreografía + efectos de un especial propio. Devuelve los ms
 // hasta el impacto (para retrasar hitsplats/destellos al golpe real).
 const SLAM_IMPACT_MS = Math.round(1.36 / 1.3 * 1000);   // = character.js SPEC_SLAM_IMPACT_MS
+/** Sesión 51 — reparte la quemadura en 3 hitsplats (uno cada 0,6 s). */
+function burnTicks(total, startMs, spawn) {
+  total = total | 0;
+  if (total <= 0) return;
+  const n = Math.min(3, total);
+  const base = Math.floor(total / n);
+  for (let i = 0; i < n; i++) {
+    const d = base + (i < total - base * n ? 1 : 0);
+    setTimeout(() => { try { spawn(d); } catch {} }, startMs + 350 + i * 600);
+  }
+}
+
 function runSpecialVisuals(result, targetPos, getTarget = null) {
   const tgt = () => (getTarget && getTarget()) || targetPos;
   const sp = result.special;
@@ -1260,6 +1277,7 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
   const yaw = me && targetPos ? Math.atan2(targetPos.x - me.x, targetPos.z - me.z) : 0;
   if (targetPos) {
     if (sp.fx === 'claws') specFx.clawFrenzy(targetPos, yaw, specFx.PALETTES.dragon);
+    else if (sp.fx === 'magmaclaws') specFx.magmaClaws(tgt, yaw);
     else if (sp.fx === 'double') specFx.slashes(targetPos, 2, specFx.PALETTES.oro, yaw);
     else if (sp.fx === 'cleave') specFx.slashes(targetPos, 1, specFx.PALETTES.obsidiana, yaw);
     else if (sp.fx === 'feint') {   // Sesión 51 — súper rayo de Tindaya + relámpago del cielo
@@ -1291,7 +1309,7 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
 }
 
 // Sesión 51 — texto del feed para cualquier especial
-const SPEC_FX_EMOJI = { dragon: '🐉', claws: '🩸', heal: '💚', gs: '⚔', smash: '💥', volatile: '🔥', arcane: '✨', snapshot: '🏹' };
+const SPEC_FX_EMOJI = { dragon: '🐉', claws: '🩸', magmaclaws: '🌋', heal: '💚', gs: '⚔', smash: '💥', volatile: '🔥', arcane: '✨', snapshot: '🏹' };
 function specFeedText(sp, who) {
   const hits = (sp.hits || []).filter(h => h !== undefined);
   const total = hits.reduce((a, b) => a + (b || 0), 0);

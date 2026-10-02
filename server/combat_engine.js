@@ -1210,12 +1210,15 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     const resist = (bossDef?.meleeResist && !isRangedLike) ? (1 - bossDef.meleeResist) : 1;
     specHits = sp.hits.map(h => Math.floor(h * resist));
     dmgRaw = specHits.reduce((a, b) => a + b, 0);
+    // Sesión 51 — Garras de magma: quemadura = 20 % del daño hecho (extra)
+    if (specDef.burn && dmgRaw > 0) dmgRaw += Math.max(1, Math.floor(dmgRaw * specDef.burn));
     isCrit = sp.crit;
     userHit.hit = specHits.some(h => h > 0);
   }
 
   const dmgToNpc = Math.min(dmgRaw, npc.hp_current);
   if (specHits) specHits = clipSpecHits(specHits, dmgToNpc);
+  const specBurn = specHits && specDef?.burn ? Math.max(0, dmgToNpc - specHits.reduce((a, b) => a + b, 0)) : 0;
   userHit.damage = dmgToNpc;
   const npcHpAfter = npc.hp_current - dmgToNpc;
   const npcKilled = npcHpAfter <= 0;
@@ -1478,7 +1481,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     // presente (derivado) para que el cliente actualice la barra.
     special: specActive
       ? { hits: specHits, cost: specCost, energy_after: specAfter, name: specDef.name, fx: specDef.fx,
-          dragon: specDef.fx === 'dragon', healed: specHealed, frz: frozeMs, drain: defDrained }
+          dragon: specDef.fx === 'dragon', healed: specHealed, frz: frozeMs, drain: defDrained, burn: specBurn }
       : null,
     npc_frozen_ms: frozeMs,           // Sesión 51 — congelado (especial o Enredadera)
     npc_def_drain: defDrained,
@@ -1797,6 +1800,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   let dmgRaw = m1pvp.dmg;
   let isCrit = m1pvp.crit;
   let specHitsPvp = null;
+  let specBurnPvp = 0;   // Sesión 51 — quemadura de las Garras de magma
   if (specActivePvp) {
     const baseMaxPvp = (isMagicPvp && spellPvp) || isRanged ? 0 : calcMaxHit(attackerLvls.strength, attackerEq.str) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
     const sp = resolveSpecial(specDefPvp, doRollPvp, applyMultsPvp, baseMaxPvp);
@@ -1805,6 +1809,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     // daño depende de la defensa mágica del objetivo (metal = más, cuero = menos)
     if (specDefPvp.magicDmg) specHitsPvp = specHitsPvp.map(h => (h > 0 ? Math.max(1, Math.floor(h * magicDamageMult(targetEq.mdef))) : 0));
     dmgRaw = specHitsPvp.reduce((a, b) => a + b, 0);
+    if (specDefPvp.burn && dmgRaw > 0) dmgRaw += Math.max(1, Math.floor(dmgRaw * specDefPvp.burn));   // Sesión 51 — quemadura
     isCrit = sp.crit;
     userHit.hit = specHitsPvp.some(h => h > 0);
   }
@@ -1818,11 +1823,14 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const dmgToTarget = Math.min(dmgRaw, targetStats.hp_current);
   if (specHitsPvp) {
     // protecciones/escudo ya recortaron dmgRaw → repartir proporcional y recortar
-    const sum = specHitsPvp.reduce((a, b) => a + b, 0) || 1;
+    const sum0 = specHitsPvp.reduce((a, b) => a + b, 0) || 1;
+    const burnFrac = specDefPvp.burn ? specDefPvp.burn : 0;
+    const sum = sum0 * (1 + burnFrac);
     const scale = Math.min(1, dmgRaw / sum);
     specHitsPvp = clipSpecHits(specHitsPvp.map(h => Math.floor(h * scale)), dmgToTarget);
     const rest = dmgToTarget - specHitsPvp.reduce((a, b) => a + b, 0);
-    if (rest > 0) specHitsPvp[0] += rest;
+    if (burnFrac) specBurnPvp = Math.max(0, rest);
+    else if (rest > 0) specHitsPvp[0] += rest;
   }
   let specHealedPvp = 0;
   if (specActivePvp && specDefPvp.heal && dmgToTarget > 0 && attackerStats.hp_current > 0) {
@@ -2113,7 +2121,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     // cliente reutilice el mismo handler de hitsplats y barra de spec).
     special: specActivePvp
       ? { hits: specHitsPvp, cost: specCostPvp, energy_after: specAfterPvp, name: specDefPvp.name, fx: specDefPvp.fx,
-          dragon: specDefPvp.fx === 'dragon', healed: specHealedPvp, drain: drainPvp,
+          dragon: specDefPvp.fx === 'dragon', healed: specHealedPvp, drain: drainPvp, burn: specBurnPvp,
           frz: (specDefPvp.freezeMs && dmgToTarget > 0 && !targetKilled) ? specDefPvp.freezeMs : 0 }
       : null,
     spec_energy: specActivePvp ? specAfterPvp : computeSpecEnergy(attackerStats, now),
