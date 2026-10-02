@@ -89,6 +89,16 @@ function onRealtime(m, myId) {
       });
       if (typeof m.hp === 'number') { try { window.__setHpInstant?.(m.hp, m.hpMax); } catch {} }
       if (m.killed) handleIncomingDeath({ you_died_recently: true, last_died_at: m.at });
+      // Sesión 51 — te han congelado (Prisión de Guayota, Cubo de sangre, Enredadera)
+      if (m.frz > 0 && !m.killed) {
+        try {
+          window.__frozenUntil = performance.now() + m.frz;
+          const P = window.__specFx?.PALETTES || {};
+          const pal = m.sp === 'bloodcube' ? P.dragomante : m.sp === 'gs' ? P.guayotaCube : P.entangle;
+          window.__specFx?.iceCube(() => window.__getPlayerPosition?.(), m.frz, pal, 1);
+          window.__feedLog?.('warning', `🧊 ¡Te han congelado ${Math.round(m.frz / 1000)} s!`);
+        } catch {}
+      }
     }
   } else if (m.t === 'hp' && m.id === myId) {
     try { window.__setHpInstant?.(m.hp, m.hpMax); } catch {}

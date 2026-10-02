@@ -445,7 +445,7 @@ async function doAttackTickNpc(gen = attackGen) {
   // Sesión 51 — especial: coreografía + efectos; specDelay = ms hasta el impacto
   let specDelay = 0;
   if (result.special) {
-    try { specDelay = runSpecialVisuals(result, npc ? { x: npc.x, y: 0, z: npc.z } : null); } catch (e) { console.warn('[combat] spec fx', e); }
+    try { specDelay = runSpecialVisuals(result, npc ? { x: npc.x, y: 0, z: npc.z } : null, () => window.__getNpcPosition?.(npcId)); } catch (e) { console.warn('[combat] spec fx', e); }
   } else if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
       const animResult = window.__playerPlayAttack(
@@ -456,6 +456,11 @@ async function doAttackTickNpc(gen = attackGen) {
       );
       clog('playAttack(npc) →', animResult, '| weapon:', result.weapon_type, 'spell:', spellCast?.spell_id);
     } catch {}
+  }
+
+  // Sesión 51 — Enredadera (u otro hechizo que congele): bloque verde sobre el NPC
+  if (!result.special && result.npc_frozen_ms > 0 && npc) {
+    setTimeout(() => { try { specFx.iceCube(() => window.__getNpcPosition?.(npcId) || { x: npc.x, z: npc.z }, Math.max(1000, result.npc_frozen_ms - 400), specFx.PALETTES.entangle, 0.9); } catch {} }, 400);
   }
 
   // Sesión 41 — MAGIA: sonido de cast + proyectil del color del hechizo.
@@ -815,7 +820,7 @@ async function doAttackTickPlayer(gen = attackGen) {
   if (result.special) {
     try {
       const pp = multiplayer.getPeerVisualPosition?.(targetId);
-      specDelayPvp = runSpecialVisuals(result, pp ? { x: pp.x, y: 0, z: pp.z } : null);
+      specDelayPvp = runSpecialVisuals(result, pp ? { x: pp.x, y: 0, z: pp.z } : null, () => multiplayer.getPeerVisualPosition?.(targetId));
     } catch (e) { console.warn('[combat] spec fx pvp', e); }
   } else if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
     try {
@@ -832,6 +837,10 @@ async function doAttackTickPlayer(gen = attackGen) {
   // igual que en el path NPC. El server ahora devuelve result.spell_cast (antes
   // no lo mandaba, por eso la magia PvP no tenía animación).
   const spellCastPvp = result.spell_cast || null;
+  // Sesión 51 — Enredadera en PvP: el rival queda atrapado (lo ve todo el mundo)
+  if (!result.special && spellCastPvp?.root_ms > 0 && result.your_hit) {
+    setTimeout(() => { try { specFx.iceCube(() => multiplayer.getPeerVisualPosition?.(targetId), spellCastPvp.root_ms - 400, specFx.PALETTES.entangle, 0.9); } catch {} }, 400);
+  }
   if (spellCastPvp) {
     const CAST_SFX = { fire_strike: 'spell_fire', ice_spear: 'spell_ice', thunderbolt: 'spell_zap', entangle: 'spell_entangle',
       chorro_mar: 'spell_ice', aliento_guayota: 'spell_fire', erupcion: 'spell_fire', lanza_obsidiana: 'spell_ice',
@@ -1187,7 +1196,8 @@ let specArmed = false;
 // Sesión 51 — coreografía + efectos de un especial propio. Devuelve los ms
 // hasta el impacto (para retrasar hitsplats/destellos al golpe real).
 const SLAM_IMPACT_MS = Math.round(1.36 / 1.3 * 1000);   // = character.js SPEC_SLAM_IMPACT_MS
-function runSpecialVisuals(result, targetPos) {
+function runSpecialVisuals(result, targetPos, getTarget = null) {
+  const tgt = () => (getTarget && getTarget()) || targetPos;
   const sp = result.special;
   if (!sp) return 0;
   const weaponItem = equipment.getEquipped?.('weapon')?.item_id || '';
@@ -1203,6 +1213,9 @@ function runSpecialVisuals(result, targetPos) {
         const at = specFx.impactPoint(window.__getPlayerPosition?.() || me, targetPos);
         if (at) specFx.slam(at, pal, sp.fx === 'smash' ? 0.75 : 1);
         if (sp.fx === 'heal' || sp.healed > 0) specFx.heal(() => window.__getPlayerPosition?.(), specFx.PALETTES.heal);
+        // Sesión 51 — Prisión de Guayota (congela) y Mordisco de Tibicena (baja defensa)
+        if (sp.frz > 0 && targetPos) specFx.iceCube(tgt, sp.frz, specFx.PALETTES.guayotaCube);
+        if (sp.drain > 0 && targetPos) specFx.burst(tgt() || targetPos, specFx.PALETTES.tibicena);
         try { audio.sfx('hit_blade', { pitch: 0.42, volume: 1 }); } catch {}
         try { audio.synth?.('altar', { volume: 1, pitch: 0.38 }); } catch {}
       },
@@ -1225,6 +1238,18 @@ function runSpecialVisuals(result, targetPos) {
     else if (sp.fx === 'volatile') specFx.burst(targetPos, specFx.PALETTES.dragon, 380);
     else if (sp.fx === 'arcane') specFx.burst(targetPos, specFx.PALETTES.arcane, 380);
     else if (sp.fx === 'dragon') specFx.burst(targetPos, specFx.PALETTES.dragon, 560);
+    else if (sp.fx === 'bloodcube') {
+      // Sesión 51 — Cubo de sangre: estallido rojo, bloque de hielo de sangre y la vida vuelve a ti
+      const pal2 = specFx.PALETTES.dragomante;
+      specFx.burst(targetPos, pal2, 380);
+      if (sp.frz > 0) setTimeout(() => specFx.iceCube(tgt, sp.frz, pal2), 420);
+      if (sp.healed > 0) {
+        specFx.drainOrbs(targetPos, () => window.__getPlayerPosition?.(), pal2, 14, 450);
+        setTimeout(() => specFx.heal(() => window.__getPlayerPosition?.(), pal2), 1100);
+      }
+      try { audio.synth?.('altar', { volume: 0.8, pitch: 0.5 }); } catch {}
+      return 0;
+    }
   }
   if (sp.healed > 0) specFx.heal(() => window.__getPlayerPosition?.(), specFx.PALETTES.heal);
   return 0;

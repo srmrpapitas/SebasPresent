@@ -809,6 +809,7 @@ export async function startWorld(loggedInUser, token) {
             else if (m.k === 'feint') specFx.slashes(tgt, 1, specFx.PALETTES.teiderio, yaw);
             else if (m.k === 'volatile' || m.k === 'dragon') specFx.burst(tgt, specFx.PALETTES.dragon, 400);
             else if (m.k === 'arcane') specFx.burst(tgt, specFx.PALETTES.arcane, 400);
+            else if (m.k === 'bloodcube') { specFx.burst(tgt, specFx.PALETTES.dragomante, 400); specFx.drainOrbs(tgt, () => peer?.group?.position || pos, specFx.PALETTES.dragomante, 12, 450); }
           }
         } catch (e) { console.warn('[world] fx peer', e); }
       });
@@ -3282,7 +3283,11 @@ function updatePlayer(dt) {
     return;
   }
 
-  if (joyState.active && (Math.abs(joyState.x) > 0.15 || Math.abs(joyState.y) > 0.15)) {
+  // Sesión 51 — congelado: no te puedes mover (pero sí atacar)
+  const frozen = typeof window !== 'undefined' && window.__frozenUntil && performance.now() < window.__frozenUntil;
+  if (frozen && playerTarget) { playerTarget = null; if (marker) marker.visible = false; }
+
+  if (!frozen && joyState.active && (Math.abs(joyState.x) > 0.15 || Math.abs(joyState.y) > 0.15)) {
     try { follow.stop(); } catch {}   // Sesión 50 — el joystick corta el "seguir"
     // User mueve con joystick → cancela cualquier auto-engage pendiente
     npcRenderer.cancelAutoEngage();

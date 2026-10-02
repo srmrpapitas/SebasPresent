@@ -32,6 +32,15 @@ export const PALETTES = {
   dragon:    { core: 0xfff0c0, main: 0xff5a10, glow: 0xa01008, spark: 0xffb040, light: 0xff6020, crack: 0xff3000 },
   heal:      { core: 0xffffff, main: 0x70ff90, glow: 0x20c050, spark: 0xd0ffd0, light: 0x80ff90, crack: 0x40ff60 },
   arcane:    { core: 0xffffff, main: 0x7ab0ff, glow: 0x3050ff, spark: 0xc0d8ff, light: 0x8ab0ff, crack: 0x5080ff },
+  // Sesión 51 — armas legendarias y bastón de Dragomante
+  achaman:   { core: 0xffffff, main: 0x9ad8ff, glow: 0x3a8aff, spark: 0xfff4c0, light: 0xbfe6ff, crack: 0xffe080 },
+  tibicena:  { core: 0xfff0d0, main: 0xd09040, glow: 0x6a3a10, spark: 0xffd090, light: 0xffb060, crack: 0xc06010 },
+  magec:     { core: 0xffffff, main: 0xffc030, glow: 0xff7a00, spark: 0xfff0a0, light: 0xffd060, crack: 0xffa020 },
+  guayota:   { core: 0xffe0c0, main: 0xff3a10, glow: 0x600400, spark: 0xff8040, light: 0xff4a1a, crack: 0xff2a00 },
+  tindaya:   { core: 0xffffff, main: 0x90f0b0, glow: 0x208050, spark: 0xd0ffe0, light: 0xa0ffc0, crack: 0x50d080 },
+  dragomante:{ core: 0xffd0d0, main: 0xd01020, glow: 0x500008, spark: 0xff6060, light: 0xff2030, crack: 0xa00010 },
+  guayotaCube: { core: 0xff9050, main: 0x2a0c14, glow: 0xc02000, spark: 0xff6020, light: 0xff4a1a, crack: 0xff3000 },   // bloque de obsidiana
+  entangle:  { core: 0xe0ffd0, main: 0x50c040, glow: 0x205a10, spark: 0xb0ff90, light: 0x80ff60, crack: 0x40a030 },
 };
 
 export function start({ scene }) { _scene = scene; }
@@ -474,4 +483,103 @@ export function burst(pos, palette = PALETTES.arcane, delayMs = 0) {
     shake(0.12, 0.25);
   };
   if (delayMs > 0) setTimeout(go, delayMs); else go();
+}
+
+
+// ------------------------------------------------------------
+// Sesión 51 — BLOQUE DE HIELO / SANGRE / OBSIDIANA (congelación)
+//   getPos() → posición actual del objetivo (o un objeto {x,z} fijo)
+// ------------------------------------------------------------
+export function iceCube(getPos, ms = 8000, palette = PALETTES.dragomante, size = 1) {
+  if (!_scene) return;
+  const pos0 = typeof getPos === 'function' ? getPos() : getPos;
+  if (!pos0) return;
+  const root = new THREE.Group();
+  _scene.add(root);
+  const W = 1.25 * size, H = 2.1 * size;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, W, 2, 3, 2).translate(0, H / 2, 0), new THREE.MeshStandardMaterial({
+    color: palette.main, emissive: palette.glow, emissiveIntensity: 0.6, roughness: 0.08, metalness: 0.1,
+    transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(W, H, W).translate(0, H / 2, 0)), new THREE.LineBasicMaterial({ color: palette.core, transparent: true, opacity: 0.9 }));
+  root.add(body, edges);
+  // Cristales que salen de las caras y del suelo
+  const crystMat = new THREE.MeshStandardMaterial({ color: palette.main, emissive: palette.glow, emissiveIntensity: 0.8, roughness: 0.1, transparent: true, opacity: 0.75 });
+  const crystals = [];
+  for (let i = 0; i < 14; i++) {
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.09 + Math.random() * 0.1, 0.4 + Math.random() * 0.6, 5), crystMat);
+    const a = Math.random() * Math.PI * 2, r = W * (0.5 + Math.random() * 0.25);
+    c.position.set(Math.cos(a) * r, Math.random() * 0.4, Math.sin(a) * r);
+    c.rotation.set((Math.random() - 0.5) * 0.9, 0, Math.cos(a) * 0.6 * (Math.random() > 0.5 ? 1 : -1));
+    c.scale.setScalar(0.01);
+    root.add(c); crystals.push(c);
+  }
+  const light = new THREE.PointLight(palette.light, 0, 5, 1.6);
+  light.position.y = H * 0.5;
+  root.add(light);
+  const T = ms / 1000;
+  const shards = [];
+  let shattered = false;
+  add({
+    t: 0, dur: T + 0.9,
+    update(t, dt) {
+      const p = (typeof getPos === 'function' ? getPos() : getPos) || pos0;
+      root.position.set(p.x, (p.y || 0), p.z);
+      const grow = Math.min(1, t / 0.25);
+      body.scale.set(1, grow, 1); edges.scale.set(1, grow, 1);
+      crystals.forEach((c, i) => c.scale.setScalar(Math.min(1, Math.max(0.01, (t - i * 0.015) / 0.2))));
+      light.intensity = t < T ? 3 + Math.sin(t * 6) * 0.8 : 0;
+      body.material.emissiveIntensity = 0.5 + Math.sin(t * 4) * 0.15;
+      if (t >= T && !shattered) {
+        shattered = true;
+        body.visible = false; edges.visible = false; crystals.forEach(c => (c.visible = false));
+        const g = new THREE.TetrahedronGeometry(0.16, 0);
+        for (let i = 0; i < 22; i++) {
+          const m = new THREE.Mesh(g, crystMat);
+          m.position.set((Math.random() - 0.5) * W, Math.random() * H, (Math.random() - 0.5) * W);
+          root.add(m);
+          shards.push({ m, v: new THREE.Vector3((Math.random() - 0.5) * 5, 2 + Math.random() * 3, (Math.random() - 0.5) * 5) });
+        }
+        shake(0.06, 0.15);
+      }
+      for (const sh of shards) {
+        sh.v.y -= 12 * dt; sh.m.position.addScaledVector(sh.v, dt);
+        sh.m.rotation.x += dt * 8; sh.m.scale.multiplyScalar(0.96);
+      }
+    },
+    dispose() { disposeObj(root); crystMat.dispose(); },
+  });
+}
+
+// ------------------------------------------------------------
+// Sesión 51 — ORBES DE DRENAJE: del objetivo al jugador (curación por daño)
+// ------------------------------------------------------------
+export function drainOrbs(from, getTo, palette = PALETTES.dragomante, n = 10, delayMs = 0) {
+  if (!_scene || !from) return;
+  const N = n;
+  const p = new Float32Array(N * 3);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: palette.main, size: 0.32, map: dotTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  pts.frustumCulled = false;
+  const seeds = Array.from({ length: N }, () => ({ d: Math.random() * 0.35, h: 0.6 + Math.random() * 1.2, w: (Math.random() - 0.5) * 1.6 }));
+  const D = delayMs / 1000;
+  _scene.add(pts);
+  add({
+    t: 0, dur: D + 1.4,
+    update(t) {
+      const to = (typeof getTo === 'function' ? getTo() : getTo) || from;
+      for (let i = 0; i < N; i++) {
+        const s = seeds[i];
+        const k = Math.min(1, Math.max(0, (t - D - s.d) / 0.8));
+        const e = k * k * (3 - 2 * k);
+        const x = from.x + (to.x - from.x) * e + Math.sin(e * Math.PI) * s.w;
+        const z = from.z + (to.z - from.z) * e + Math.cos(e * Math.PI) * s.w * 0.5;
+        const y = 1.0 + Math.sin(e * Math.PI) * s.h;
+        p.set([x, k <= 0 ? -100 : y, z], i * 3);
+      }
+      g.attributes.position.needsUpdate = true;
+      pts.material.opacity = t > D + 1.0 ? Math.max(0, 1 - (t - D - 1.0) / 0.4) : 1;
+    },
+    dispose() { disposeObj(pts); },
+  });
 }

@@ -934,6 +934,14 @@ function onRealtime(m, myId) {
         }
       } catch {}
     }
+    // Sesión 51 — rival congelado (lo ve todo el mundo menos quien lo lanzó, que ya lo pinta)
+    if (target && m.frz > 0 && m.a !== myId) {
+      try {
+        const P = window.__specFx?.PALETTES || {};
+        const pal = m.sp === 'bloodcube' ? P.dragomante : m.sp === 'gs' ? P.guayotaCube : P.entangle;
+        setTimeout(() => window.__specFx?.iceCube(() => mpLastPeerMap.get(m.d)?.group?.position, Math.max(1000, m.frz - 400), pal, 1), 400);
+      } catch {}
+    }
     if (target) {
       target._lastHitAtSeen = Math.max(target._lastHitAtSeen || 0, m.at || 0);
       if (typeof m.hp === 'number') { target.hp = m.hp; target.hpMax = m.hpMax || target.hpMax; target._hpAt = Date.now(); }
@@ -982,6 +990,14 @@ function onRealtime(m, myId) {
       }
     } catch {}
     try { window.__worldSpawnHitsplat?.(m.n, m.dmg || 0); } catch {}
+    // Sesión 51 — NPC congelado por otro jugador
+    if (m.frz > 0) {
+      try {
+        const P = window.__specFx?.PALETTES || {};
+        const pal = m.sp === 'bloodcube' ? P.dragomante : m.sp === 'gs' ? P.guayotaCube : P.entangle;
+        setTimeout(() => window.__specFx?.iceCube(() => window.__getNpcPosition?.(m.n), Math.max(1000, m.frz - 400), pal, m.sp ? 1 : 0.9), 400);
+      } catch {}
+    }
   }
 }
 

@@ -42,7 +42,7 @@ const WRITE_COMBAT_MS = 500;
 const WRITE_IDLE_MS = 5000;
 
 // Sesión 51 — efectos de especiales que se reenvían a los demás
-const FX_KINDS = new Set(['slam', 'claws', 'double', 'cleave', 'feint', 'volatile', 'arcane', 'dragon', 'snapshot', 'heal', 'gs', 'smash', 'spec']);
+const FX_KINDS = new Set(['slam', 'claws', 'double', 'cleave', 'feint', 'volatile', 'arcane', 'dragon', 'snapshot', 'heal', 'gs', 'smash', 'spec', 'bloodcube']);
 
 export class Realm {
   constructor(ctx, env) {
