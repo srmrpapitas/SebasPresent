@@ -22,6 +22,7 @@
 
 import * as THREE from 'three';
 import { buildDragonArmor } from './armor_dragon.js';   // Sesión 51 — set de dragón propio
+import { LEGEND_IDS, buildLegendWeapon } from './weapons_legend.js';   // Sesión 51 — armas legendarias
 
 export const ARMOR_COLORS = {
   bronze:    { base: 0xb87333, trim: 0xe6a064, gem: null,     metal: 0.75, rough: 0.38 },
@@ -700,7 +701,7 @@ function gripFrame(root, side, handBone) {
   const basis = new THREE.Matrix4().makeBasis(x, y, z);
   const base = (idx && pk) ? idx.position.clone().add(pk.position).multiplyScalar(0.5) : fdir.clone().multiplyScalar(L);
   const center = base.multiplyScalar(0.8).add(fdir.clone().multiplyScalar(L * 0.12)).add(palm.clone().multiplyScalar(L * 0.32));
-  return { bone: hand, basis, center, L };
+  return { bone: hand, basis, center, L, fdir };
 }
 
 function buildSword(root, matId, twoHanded, handBone) {
@@ -773,7 +774,7 @@ const PROC_WEAPON_TYPES = new Set(['1h_sword', '2h_sword']);
 const PROC_WEAPON_IDS = new Set(['bow_dragon', 'staff_dragomante']);
 
 export function isProceduralWeapon(itemId, weaponType) {
-  if (PROC_WEAPON_IDS.has(itemId)) return true;
+  if (PROC_WEAPON_IDS.has(itemId) || LEGEND_IDS.has(itemId)) return true;
   return PROC_WEAPON_TYPES.has(weaponType) && !!materialOf(itemId);
 }
 
@@ -959,6 +960,13 @@ export function buildProceduralWeapon(itemId, weaponType, root, handBone = null)
   if (itemId === 'bow_dragon' || itemId === 'staff_dragomante') {
     const hb = handBone || findBone(r, 'LeftHand');
     out = itemId === 'bow_dragon' ? buildDragonBow(r, hb) : buildDragomanteStaff(r, hb);
+    if (out) out.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    return out;
+  }
+  // Sesión 51 — armas legendarias (antes del material: claws_dragon/dagger_dragon acaban en "dragon")
+  if (LEGEND_IDS.has(itemId)) {
+    const tn = tune(itemId);
+    out = buildLegendWeapon(itemId, gripFrame(r, 'Right', handBone || findBone(r, 'RightHand')), tn);
     if (out) out.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
     return out;
   }

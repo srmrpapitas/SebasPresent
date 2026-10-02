@@ -1035,14 +1035,21 @@ function buildGloves(root, H) {
 // ------------------------------------------------------------
 // ESCUDO COMETA con emblema de dragón
 // ------------------------------------------------------------
+/** Sesión 51 — escudo de dragón CUADRADO y grande (rectángulo con esquinas
+ *  redondeadas arriba y una punta corta abajo). Mantiene el nombre de la función. */
 function kitePath(s, W, Hh, k = 1) {
   W *= k; Hh *= k;
-  s.moveTo(-W, Hh * 0.55);
-  s.quadraticCurveTo(0, Hh * 0.78, W, Hh * 0.55);
-  s.quadraticCurveTo(W * 1.06, Hh * 0.2, W * 0.88, -Hh * 0.08);
-  s.quadraticCurveTo(W * 0.62, -Hh * 0.62, 0, -Hh);
-  s.quadraticCurveTo(-W * 0.62, -Hh * 0.62, -W * 0.88, -Hh * 0.08);
-  s.quadraticCurveTo(-W * 1.06, Hh * 0.2, -W, Hh * 0.55);
+  const r = W * 0.14;
+  s.moveTo(-W + r, Hh);
+  s.lineTo(W - r, Hh);
+  s.quadraticCurveTo(W, Hh, W, Hh - r);
+  s.lineTo(W, -Hh * 0.6);
+  s.quadraticCurveTo(W * 0.98, -Hh * 0.84, W * 0.5, -Hh * 0.9);
+  s.lineTo(0, -Hh);
+  s.lineTo(-W * 0.5, -Hh * 0.9);
+  s.quadraticCurveTo(-W * 0.98, -Hh * 0.84, -W, -Hh * 0.6);
+  s.lineTo(-W, Hh - r);
+  s.quadraticCurveTo(-W, Hh, -W + r, Hh);
 }
 function bendZ(geo, W, amount) {
   const p = geo.attributes.position;
@@ -1063,8 +1070,8 @@ function buildShield(root, H) {
   const basis = H.orient(n, axis);
   const box = H.fitBox(H.boneVerts(root, [fore], fore), H.orient(axis, n));
   const armR = box ? Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2 : len * 0.2;
-  const R = len * 1.05 * tn.s;
-  const W = R * 0.78, Hh = R * 1.22, th = R * 0.06, bend = R * 0.14;
+  const R = len * 1.15 * tn.s;
+  const W = R * 0.86, Hh = R * 1.16, th = R * 0.06, bend = R * 0.12;
   const K = new Kit();
   // Cuerpo
   {
