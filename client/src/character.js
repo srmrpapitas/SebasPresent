@@ -1047,6 +1047,7 @@ export class Character {
       for (const p of parts) p.bone.add(p.mesh);
       this._equippedArmor[slotId] = { parts, itemId };
       window.__character = this;
+      this._layoutBack();   // Sesión 51 — carcaj por fuera de la capa
       return;
     }
 
@@ -1069,10 +1070,33 @@ export class Character {
       mesh.rotation.set(tf.rotation[0], tf.rotation[1], tf.rotation[2]);
       bone.add(mesh);
       this._equippedArmor[slotId] = { mesh, bone, itemId };
+      if (slotId === 'quiver') mesh.userData.basePos = mesh.position.clone();
       window.__character = this;
+      this._layoutBack();   // Sesión 51 — carcaj por fuera de la capa
     } catch (err) {
       console.warn(`[character] attachArmor failed for ${slotId}:`, err.message);
     }
+  }
+
+  /**
+   * Sesión 51 — con capa Y carcaj a la vez, la capa tapaba el carcaj (parecía
+   * que se quitaba). El carcaj se separa de la espalda lo justo para quedar
+   * por fuera de la tela.
+   */
+  _layoutBack() {
+    const q = this._equippedArmor.quiver;
+    if (!q?.mesh || !q.bone) return;
+    const base = q.mesh.userData.basePos || (q.mesh.userData.basePos = q.mesh.position.clone());
+    q.mesh.position.copy(base);
+    if (!this._equippedArmor.cape) return;
+    // "Atrás" del personaje (el objeto que gira el juego mira a +Z) en el espacio del hueso
+    let top = this.mesh; while (top.parent && !top.parent.isScene) top = top.parent;
+    const qTop = new THREE.Quaternion(); top.getWorldQuaternion(qTop);
+    const back = new THREE.Vector3(0, 0, -1).applyQuaternion(qTop);
+    const qBone = new THREE.Quaternion(); q.bone.getWorldQuaternion(qBone);
+    const sBone = new THREE.Vector3(); q.bone.getWorldScale(sBone);
+    back.applyQuaternion(qBone.invert()).divideScalar(sBone.x || 1);
+    q.mesh.position.addScaledVector(back, 0.17);   // ~17 cm hacia atrás
   }
 
   /**
@@ -1084,6 +1108,7 @@ export class Character {
     if (cur.bone && cur.mesh) cur.bone.remove(cur.mesh);
     if (cur.parts) for (const p of cur.parts) p.bone.remove(p.mesh);   // Sesión 50
     delete this._equippedArmor[slotId];
+    if (slotId === 'cape') this._layoutBack();
   }
 
   /**
