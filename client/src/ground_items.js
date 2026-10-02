@@ -629,6 +629,8 @@ async function pickupItem(itemDropId) {
 function colorForItemId(itemId) {
   switch (itemId) {
     case 'bones':         return 0xeeeecc;
+    case 'big_bones':     return 0xe0d4ac;
+    case 'super_bones':   return 0xffd84a;
     case 'raw_beef':      return 0xc0392b;
     case 'cowhide':       return 0x8b4513;
     case 'raw_chicken':   return 0xffd7a0;

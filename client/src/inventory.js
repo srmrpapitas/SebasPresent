@@ -41,7 +41,7 @@ const LONG_PRESS_MS = 450;
 // Sesión 50 — comida: tablas compartidas con el server (shared/food.js,
 // incluye pescado). El server valida todo igualmente.
 const EDIBLE_ITEM_IDS = EDIBLE_IDS;
-const BURYABLE_ITEM_IDS = new Set(['bones']);   // Sesión 50 — Plegaria
+const BURYABLE_ITEM_IDS = new Set(['bones', 'big_bones', 'super_bones']);   // Sesión 50/51 — Plegaria
 const COOKABLE_ITEM_IDS = COOKABLE_IDS;
 
 // ---------- State ----------

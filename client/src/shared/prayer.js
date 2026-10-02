@@ -18,6 +18,8 @@
 
 export const BONES = {
   bones: { xp: 5, name: 'Huesos' },
+  big_bones: { xp: 20, name: 'Huesos grandes' },     // Sesión 51 — animales grandes
+  super_bones: { xp: 2000, name: 'Súper huesos' },   // Sesión 51 — jefes
 };
 
 export const PRAYERS = [

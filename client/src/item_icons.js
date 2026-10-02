@@ -1164,6 +1164,26 @@ for (const [id, t] of Object.entries(_TABLETS)) {
   </svg>`;
 }
 
+// Sesión 51 — Huesos: normales, grandes (animales grandes) y súper huesos (jefes)
+{
+  const bone = (len, w, fill, edge, extra = '', glow = '') => {
+    const r = w * 0.95, h = len / 2;
+    return `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">${glow}
+      <g transform="rotate(-40 16 16)" stroke="${edge}" stroke-width="1.1" stroke-linejoin="round">
+        <circle cx="${16 - h}" cy="${16 - r * 0.62}" r="${r}" fill="${fill}"/><circle cx="${16 - h}" cy="${16 + r * 0.62}" r="${r}" fill="${fill}"/>
+        <circle cx="${16 + h}" cy="${16 - r * 0.62}" r="${r}" fill="${fill}"/><circle cx="${16 + h}" cy="${16 + r * 0.62}" r="${r}" fill="${fill}"/>
+        <rect x="${16 - h}" y="${16 - w / 2}" width="${len}" height="${w}" fill="${fill}" stroke="none"/>
+        <path d="M${16 - h} ${16 - w / 2} H${16 + h} M${16 - h} ${16 + w / 2} H${16 + h}" fill="none"/>
+        <path d="M${16 - h + 1} ${16 - w / 2 + 1.1} H${16 + h - 1}" stroke="#fff" stroke-width="1" opacity=".55"/>
+      </g>${extra}</svg>`;
+  };
+  ICONS.bones = bone(15, 3.6, '#ece6cc', '#3a3020');
+  ICONS.big_bones = bone(19, 5.6, '#e0d4ac', '#2a2014');
+  ICONS.super_bones = bone(19, 5.6, '#ffe27a', '#6a4800',
+    '<path d="M6 7 l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z M26 21 l.8 1.8 1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8z M24 5 l.6 1.3 1.3.6-1.3.6-.6 1.3-.6-1.3-1.3-.6 1.3-.6z" fill="#fff6c0" stroke="#c89000" stroke-width=".5"/>',
+    '<defs><radialGradient id="icoSB"><stop offset="0" stop-color="#fff2a0" stop-opacity=".9"/><stop offset="1" stop-color="#ffb000" stop-opacity="0"/></radialGradient></defs><circle cx="16" cy="16" r="15" fill="url(#icoSB)"/>');
+}
+
 /** Devuelve true si tenemos un SVG custom para este item_id. */
 export function hasCustomIcon(itemId) {
   return Object.prototype.hasOwnProperty.call(ICONS, itemId);
