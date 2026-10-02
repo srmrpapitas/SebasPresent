@@ -167,7 +167,7 @@ Object.assign(QUESTS, {
     accept: 'Yo me encargo de las ratas.', doing: 'Todavía oigo ratas en el granero… ¡Mata 5!',
     thanks: '¡Qué alivio! Toma, y llévate la gratitud de mis vacas.',
     steps: [
-      { id: 'kill', event: 'kill', match: 'rat', count: 5, hint: { npc: 'rat' }, text: 'Mata 5 ratas gigantes.', tip: 'Las ratas rondan por los campos alrededor de La Laguna.' },
+      { id: 'kill', event: 'kill', match: 'rat', count: 5, hint: { npc: 'rat' }, text: 'Mata 5 ratas gigantes.', tip: 'En los Campos de las ratas, justo al este de La Laguna.' },
       talkBack('rosa_granjera', 'Vuelve a hablar con Rosa.'),
     ],
     reward: { coins: 80, xp: { attack: 200, strength: 200 }, text: '80 monedas · 200 XP Ataque · 200 XP Fuerza' },
@@ -179,7 +179,7 @@ Object.assign(QUESTS, {
     accept: 'Arañas… vale, allá voy.', doing: 'Las arañas están al sur de La Orotava. ¡Cuidado con los lobos!',
     thanks: '¡Por fin! Mira, se tala mejor así, con la muñeca suelta…',
     steps: [
-      { id: 'kill', event: 'kill', match: 'spider', count: 5, hint: { npc: 'spider' }, text: 'Mata 5 arañas del bosque.', tip: 'Están al sur de La Orotava.' },
+      { id: 'kill', event: 'kill', match: 'spider', count: 5, hint: { npc: 'spider' }, text: 'Mata 5 arañas del bosque.', tip: 'En el Pinar de las arañas, al sur de La Orotava.' },
       talkBack('joaquin_lenador', 'Vuelve a hablar con Joaquín en La Orotava.'),
     ],
     reward: { coins: 150, xp: { woodcutting: 500 }, text: '150 monedas · 500 XP Tala' },
@@ -191,7 +191,7 @@ Object.assign(QUESTS, {
     accept: 'Cazaré esos lobos.', doing: 'Los lobos rondan el bosque al norte de La Orotava.',
     thanks: 'Buen trabajo. El arco es tuyo: necesitarás nivel 10 de Distancia para usarlo.',
     steps: [
-      { id: 'kill', event: 'kill', match: 'wolf', count: 3, hint: { npc: 'wolf' }, text: 'Mata 3 lobos.', tip: 'En el bosque del norte.' },
+      { id: 'kill', event: 'kill', match: 'wolf', count: 3, hint: { npc: 'wolf' }, text: 'Mata 3 lobos.', tip: 'En la Guarida de los lobos: el bosque del norte, al noroeste de La Orotava.' },
       talkBack('bruno_cazador', 'Vuelve con Bruno a Icod de los Vinos.'),
     ],
     reward: { coins: 100, items: [['bow_oak', 1], ['leather', 5]], xp: { ranged: 400 }, text: 'Arco de roble · 5 de cuero · 100 monedas · 400 XP Distancia' },
@@ -263,7 +263,7 @@ Object.assign(QUESTS, {
     accept: 'Acabaré con ellos.', doing: 'Los escorpiones están por todo el desierto. Su veneno duele.',
     thanks: 'Las caravanas vuelven a pasar. Toma, guantes de acero de la mejor calidad.',
     steps: [
-      { id: 'kill', event: 'kill', match: 'scorpion', count: 4, hint: { npc: 'scorpion' }, text: 'Mata 4 escorpiones del desierto.', tip: 'Están por todo el desierto de Güímar.' },
+      { id: 'kill', event: 'kill', match: 'scorpion', count: 4, hint: { npc: 'scorpion' }, text: 'Mata 4 escorpiones del desierto.', tip: 'En las Dunas de los escorpiones, al noroeste de Güímar.' },
       talkBack('samir_mercader', 'Vuelve con Samir a Güímar.'),
     ],
     reward: { coins: 150, items: [['gloves_acero', 1]], xp: { defence: 500 }, text: 'Guantes de acero · 150 monedas · 500 XP Defensa' },
@@ -275,7 +275,7 @@ Object.assign(QUESTS, {
     accept: 'Cazaré a la bestia.', doing: 'Los yetis viven en la montaña, al norte de Las Cañadas.',
     thanks: '¡Lo has conseguido! El pueblo entero te invita a cerveza. Y a esto.',
     steps: [
-      { id: 'kill', event: 'kill', match: 'yeti', count: 1, hint: { npc: 'yeti' }, text: 'Caza un yeti.', tip: 'En las montañas nevadas del norte.' },
+      { id: 'kill', event: 'kill', match: 'yeti', count: 1, hint: { npc: 'yeti' }, text: 'Caza un yeti.', tip: 'En las Cumbres de los yetis, en la nieve al oeste de Las Cañadas.' },
       talkBack('sven_guardia', 'Vuelve con Sven a La Esperanza.'),
     ],
     reward: { coins: 800, xp: { defence: 1500, hitpoints: 500 }, text: '800 monedas · 1.500 XP Defensa · 500 XP Vitalidad' },
@@ -321,7 +321,7 @@ Object.assign(QUESTS, {
     accept: 'Me encargo de esos esqueletos.', doing: 'Mata 8 esqueletos en las Ruinas de Teno, al oeste.',
     thanks: '¡Gracias! Mi mochila sigue entera. Toma lo que encontré dentro.',
     steps: [
-      { id: 'kill', event: 'kill', match: 'skeleton', count: 8, hint: { x: -1500, z: -500 }, text: 'Mata 8 esqueletos en las Ruinas de Teno.', tip: 'Al oeste de Santiago del Teide. Lleva comida y guarda lo valioso en el banco.' },
+      { id: 'kill', event: 'kill', match: 'skeleton', count: 8, hint: { npc: 'skeleton' }, text: 'Mata 8 esqueletos en las Ruinas de Teno.', tip: 'Al oeste de Santiago del Teide. Lleva comida y guarda lo valioso en el banco.' },
       talkBack('explorador_herido', 'Vuelve con el explorador herido en Santiago del Teide.'),
     ],
     reward: { coins: 2500, items: [['shark', 5], ['tele_ruinas', 2]], xp: { prayer: 2000, attack: 2500 }, text: '2.500 monedas · 5 tiburones · 2 tabletas · XP de Plegaria y Ataque' },

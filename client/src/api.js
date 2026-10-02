@@ -538,6 +538,11 @@ export async function prayerRecharge(altarId) {
   return apiFetch('/api/prayer/recharge', { method: 'POST', auth: true, body: { altar_id: altarId } });
 }
 
+/** Sesión 51 — Bestiario (fichas + botín de todos los monstruos). */
+export async function bestiary() {
+  return apiFetch('/api/bestiary', { auth: true });
+}
+
 /** Sesión 50 — Misiones. */
 export async function questsGet() {
   return apiFetch('/api/quests', { auth: true });

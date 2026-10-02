@@ -12,6 +12,7 @@
  *      quests.getHintPos() → {x,z}|null (minimapa)
  */
 
+import { nearestZoneOf } from './shared/hunting_zones.js';   // Sesión 51 — pista hacia la zona
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as audio from './audio.js';
@@ -185,7 +186,7 @@ function renderTab() {
   const lv = myLevels();
   const done = new Set(QUEST_ORDER.filter(id => state[id]?.status === 1));
   const nDone = done.size;
-  let html = `<div class="quest-tab"><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
+  let html = `<div class="quest-tab"><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
     <div class="qtab-legend"><span class="c-new">■</span> sin empezar <span class="c-cur">■</span> en curso <span class="c-done">■</span> hecha</div>`;
   for (const id of QUEST_ORDER) {
     const q = QUESTS[id]; if (!q) continue;
@@ -239,6 +240,8 @@ function renderTab() {
   if (!pane.dataset.qbound) {
     pane.dataset.qbound = '1';
     pane.addEventListener('pointerup', async (ev) => {
+      const bk = ev.target.closest('[data-beast]');   // Sesión 51 — Bestiario
+      if (bk) { ev.stopPropagation(); import('./bestiary.js').then(m => m.open()).catch(e => console.warn('[bestiary]', e)); return; }
       const tg = ev.target.closest('[data-toggle]');
       if (tg) { const id = tg.dataset.toggle; if (openIds.has(id)) openIds.delete(id); else openIds.add(id); renderTab(); return; }
       const tr = ev.target.closest('[data-track]');
@@ -288,7 +291,10 @@ function computeHint() {
       const d = p ? Math.hypot(n.x - p.position.x, n.z - p.position.z) : 0;
       if (d < bd) { bd = d; best = n; }
     }
-    return best ? { x: best.x, z: best.z } : null;
+    if (best) return { x: best.x, z: best.z };
+    // Sesión 51 — ninguno a la vista: a la zona de caza más cercana donde viven
+    const zn = nearestZoneOf(h.npc, p?.position.x || 0, p?.position.z || 0);
+    return zn ? { x: zn.x, z: zn.z } : null;
   }
   if (h.talk) {   // Sesión 50 — el NPC con el que hay que hablar
     const n = TOWN_NPCS_BY_ID[h.talk];
@@ -363,6 +369,7 @@ function ensureCss() {
     .qtab-card.qtab-new { border-style: dashed; }
     .qtab-giver { font-size: 11px; color: #ffe27a; margin-top: 4px; }
     .qtab-count { font-size: 11px; color: #d8c89a; margin: 0 0 6px; text-align: center; }
+    .qtab-beast { display: block; width: 100%; margin: 0 0 8px; padding: 7px 8px; font: inherit; font-size: 12px; font-weight: 700; color: #fff3cf; background: linear-gradient(#6a4a1c, #4a3214); border: 1px solid #c8a043; border-radius: 6px; cursor: pointer; }
     .qtab-name { font-family: 'Cinzel', serif; font-weight: 700; color: #e8c560; font-size: 14px; }
     .qtab-sum { font-size: 12px; color: #bba878; margin: 4px 0 6px; }
     .qtab-steps { list-style: none; padding: 0; margin: 0; font-size: 12.5px; }

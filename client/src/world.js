@@ -65,6 +65,7 @@ import * as fishing from './skills/fishing.js'; // Sesión 50 — pesca
 import * as crafting from './skills/crafting.js'; // Sesión 50 — flechería/artesanía
 import * as realtime from './realtime.js';        // Sesión 50 — WebSocket (PvP en vivo, menos peticiones)
 import * as afk from './core/afk.js';            // Sesión 51 — desconexión por inactividad
+import { HUNTING_ZONES } from './shared/hunting_zones.js';   // Sesión 51 — zonas de caza
 import * as bankChests from './bank_chests.js';  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
@@ -1423,6 +1424,11 @@ function drawMinimap() {
       const [sx, sy] = S(a.x, a.z);
       mapRender.drawIcon(ctx, 'altar', sx, sy, IR);
     }
+    for (const zn of HUNTING_ZONES) {   // Sesión 51 — zonas de caza
+      if (!inView(zn.x, zn.z)) continue;
+      const [sx, sy] = S(zn.x, zn.z);
+      mapRender.drawIcon(ctx, 'hunt', sx, sy, IR * 1.1, { wild: !!zn.wild });
+    }
   } catch {}
 
   // NPCs (amarillo en la wilderness, blanco fuera) — como OSRS
@@ -1728,6 +1734,24 @@ function openFullMap() {
   fm.timer = setInterval(() => { if (fullMapVisible) requestFullMapDraw(); }, 500);
 }
 
+/** Sesión 51 — abrir el mapa grande centrado en (x,z) con un anillo (Bestiario). */
+function openFullMapAt(x, z, label, r) {
+  openFullMap();
+  if (!fullMapVisible || !fullMapCanvas) return;
+  fm.cx = x; fm.cz = z;
+  const rect = fullMapCanvas.getBoundingClientRect();
+  fm.ppm = Math.max(FM_MIN_PPM, Math.min(FM_MAX_PPM, rect.width / 700));
+  clampFullMap();
+  fm.focus = { x, z, r: r || 30, label: label || '', until: performance.now() + 8000 };
+  clearInterval(fm.focusTimer);
+  fm.focusTimer = setInterval(() => {
+    if (!fullMapVisible || !fm.focus || performance.now() > fm.focus.until) { clearInterval(fm.focusTimer); fm.focusTimer = null; requestFullMapDraw(); return; }
+    requestFullMapDraw();
+  }, 50);
+  requestFullMapDraw();
+}
+if (typeof window !== 'undefined') window.__openMapAt = (x, z, label, r) => { try { openFullMapAt(x, z, label, r); } catch (e) { console.warn('[map] openAt', e); } };
+
 function closeFullMap() {
   if (!fullMapOverlay) return;
   fullMapOverlay.classList.remove('visible');
@@ -1800,6 +1824,29 @@ function drawFullMap() {
     const r = big ? IR + 2 : IR;
     mapRender.drawIcon(ctx, mapRender.placeIconKind(p), sx, sy, r, { color: '#' + (p.color >>> 0).toString(16).padStart(6, '0') });
     if (big || ppm >= 0.14) mapRender.label(ctx, p.name, sx, sy + r + 9, big ? 13 : 11, big ? '#fff3c0' : '#e8d8a8', big);
+  }
+
+  // Sesión 51 — zonas de caza (espadas cruzadas + nombre)
+  for (const zn of HUNTING_ZONES) {
+    if (!vis(zn.x, zn.z, 60)) continue;
+    const [sx, sy] = S(zn.x, zn.z);
+    if (ppm >= 0.5) {   // de cerca: el área de la zona
+      ctx.beginPath(); ctx.arc(sx, sy, zn.r * ppm, 0, Math.PI * 2);
+      ctx.fillStyle = zn.wild ? 'rgba(160,30,20,0.13)' : 'rgba(120,80,20,0.12)'; ctx.fill();
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2; ctx.strokeStyle = zn.wild ? 'rgba(220,70,50,0.7)' : 'rgba(230,190,90,0.7)'; ctx.stroke(); ctx.setLineDash([]);
+    }
+    mapRender.drawIcon(ctx, 'hunt', sx, sy, IR + 1, { wild: !!zn.wild });
+    if (ppm >= 0.16) mapRender.label(ctx, zn.name, sx, sy + IR + 10, 10.5, zn.wild ? '#ffb0a0' : '#ffe6b0', true);
+  }
+  // Sesión 51 — "Ver en el mapa" desde el Bestiario: anillo que late
+  if (fm.focus && performance.now() < fm.focus.until) {
+    const f = fm.focus;
+    const [sx, sy] = S(f.x, f.z);
+    const t = (performance.now() / 600) % 1;
+    const rr = Math.max(14, (f.r || 30) * ppm) * (1 + t * 0.35);
+    ctx.beginPath(); ctx.arc(sx, sy, rr, 0, Math.PI * 2);
+    ctx.lineWidth = 3; ctx.strokeStyle = `rgba(255,215,90,${1 - t})`; ctx.stroke();
+    if (f.label) mapRender.label(ctx, f.label, sx, sy - Math.max(14, (f.r || 30) * ppm) - 12, 14, '#ffd76a', true);
   }
 
   // Fosa de Guayota

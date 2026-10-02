@@ -284,6 +284,23 @@ export function drawIcon(ctx, kind, x, y, r = 6, extra = {}) {
       ctx.arc(x, y + r * 0.45, r * 0.32, Math.PI, 0); ctx.closePath(); ctx.fill();
       break;
     }
+    case 'hunt': {     // Sesión 51 — zona de caza: dos espadas cruzadas (Malpaís: disco rojo)
+      disc(ctx, x, y, r, extra.wild ? '#7a1a12' : '#5a3a14', '#140800');
+      const blade = (dir) => {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(dir * Math.PI / 4);
+        ctx.fillStyle = '#e8e8f0';
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 0.78); ctx.lineTo(r * 0.11, -r * 0.6); ctx.lineTo(r * 0.11, r * 0.28);
+        ctx.lineTo(-r * 0.11, r * 0.28); ctx.lineTo(-r * 0.11, -r * 0.6); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#e0b040';
+        ctx.fillRect(-r * 0.32, r * 0.28, r * 0.64, r * 0.13);
+        ctx.fillStyle = '#7a4a1a';
+        ctx.fillRect(-r * 0.08, r * 0.41, r * 0.16, r * 0.3);
+        ctx.restore();
+      };
+      blade(1); blade(-1);
+      break;
+    }
     case 'landmark': default: {
       disc(ctx, x, y, r, extra.color || '#9090c0');
       break;

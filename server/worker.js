@@ -76,6 +76,7 @@ import * as fosa from './handlers/minigame.js';                   // Sesión 50 
 import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 — horno + yunque
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
+import { handleBestiary } from './handlers/bestiary.js';         // Sesión 51 — Bestiario
 import { scheduledHandler } from './handlers/cron.js';
 
 export { Realm } from './realm.js';   // Sesión 50 — Durable Object del tiempo real
@@ -353,6 +354,8 @@ export default {
         response = await prayer.handlePrayerToggle(request, env);
       } else if (path === '/api/prayer/recharge' && method === 'POST') {
         response = await prayer.handlePrayerRecharge(request, env);
+      } else if (path === '/api/bestiary' && method === 'GET') {   // Sesión 51
+        response = await handleBestiary(request, env);
       } else if (path === '/api/quests' && method === 'GET') {
         response = await quests.handleQuestsGet(request, env);
       } else if (path === '/api/quests/start' && method === 'POST') {   // Sesión 50
