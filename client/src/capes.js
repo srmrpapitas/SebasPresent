@@ -251,7 +251,7 @@ export function buildCape(itemId, H, root) {
   const rx = (box.max.x - box.min.x) / 2 * 1.22 * tn.s, rz = (box.max.z - box.min.z) / 2;
   const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
   const isMage = itemId === 'cape_achaman' || itemId === 'cape_magec' || itemId === 'cape_chaxiraxi';
-  const top = box.max.y + h * 0.05, len = h * (itemId === 'cape_magma' ? 5.8 : 5.4) * tn.s;
+  const top = box.max.y + h * 0.05, len = h * (itemId === 'cape_magma' ? 5.0 : 4.6) * tn.s;   // S51: un pelín más cortas
   const SEGX = 28, SEGY = 22;
   const geo = new THREE.CylinderGeometry(rx * 1.08, rx * 1.5, len, SEGX, SEGY, true, Math.PI * 0.6, Math.PI * 0.8);
   // hang: 0 arriba → 1 abajo (para el ondeo)
@@ -286,6 +286,13 @@ export function buildCape(itemId, H, root) {
   cape.position.set(0, -len / 2, 0);
   pivot.add(cape);
   const _q = new THREE.Quaternion(), _qt = new THREE.Quaternion(), _d = new THREE.Vector3(), DOWN = new THREE.Vector3(0, -1, 0);
+  // Sesión 51 — la capa ya no sigue los giros del torso (en combate el pecho
+  // gira y la capa quedaba de lado): cuelga siempre recta hacia ABAJO y por
+  // DETRÁS del personaje según hacia dónde mira el cuerpo entero (root), y
+  // se va hacia atrás al correr.
+  const _rq = new THREE.Quaternion(), _m = new THREE.Matrix4(), _f = new THREE.Vector3(), _x = new THREE.Vector3();
+  const _up = new THREE.Vector3(0, 1, 0), _rp = new THREE.Vector3(), _tilt = new THREE.Quaternion(), _ax = new THREE.Vector3(1, 0, 0);
+  let frontRoot = null, lastRootPos = null, speedS = 0;
   cape.frustumCulled = false; cape.castShadow = true;
   // Animación: tiempo del ondeo + scroll de la lava (map lento, brillo rápido)
   const hemPts = [];
@@ -299,16 +306,32 @@ export function buildCape(itemId, H, root) {
     const t = now();
     const dtC = Math.min(0.1, t - (cape.userData.lastFrame || t));
     cape.userData.lastFrame = t;
-    // Gravedad: "abajo del mundo" visto desde el padre del pivote
-    if (pivot.parent) {
-      pivot.parent.getWorldQuaternion(_q);
-      _d.copy(DOWN).applyQuaternion(_q.invert());
-      _d.lerp(DOWN, 0.15);
-      if (_d.z > 0.05) _d.z = 0.05;             // nunca hacia dentro del cuerpo (z+ = delante)
-      _d.x = Math.max(-0.35, Math.min(0.35, _d.x));
-      _d.normalize();
-      _qt.setFromUnitVectors(DOWN, _d);
-      pivot.quaternion.slerp(_qt, Math.min(1, dtC * 6));   // con un poco de retraso, como la tela
+    if (pivot.parent && root) {
+      // "Delante" del cuerpo en coordenadas del root (se calcula una vez)
+      // El modelo mira hacia +Z de su root (igual que asume la armadura)
+      if (!frontRoot) frontRoot = new THREE.Vector3(0, 0, 1);
+      root.getWorldQuaternion(_rq);
+      _f.copy(frontRoot).applyQuaternion(_rq);
+      _f.y = 0;
+      if (_f.lengthSq() > 1e-6) {
+        _f.normalize();
+        _x.crossVectors(_up, _f).normalize();
+        _m.makeBasis(_x, _up, _f);
+        _qt.setFromRotationMatrix(_m);                 // marco "recto" mirando al frente
+        // Al correr la capa se va hacia atrás
+        root.getWorldPosition(_rp);
+        if (lastRootPos && dtC > 0) {
+          const v = Math.hypot(_rp.x - lastRootPos.x, _rp.z - lastRootPos.z) / dtC;
+          speedS += (Math.min(v, 8) - speedS) * Math.min(1, dtC * 4);
+        }
+        lastRootPos = (lastRootPos || new THREE.Vector3()).copy(_rp);
+        _tilt.setFromAxisAngle(_ax, 0.1 + Math.min(0.55, speedS * 0.09));
+        _qt.multiply(_tilt);
+        // Pasar al espacio del padre del pivote
+        pivot.parent.getWorldQuaternion(_q);
+        _qt.premultiply(_q.invert());
+        pivot.quaternion.slerp(_qt, Math.min(1, dtC * 8));   // con un poco de retraso, como la tela
+      }
     }
     mat.userData.uTime.value = t;
     if (mat.map && mat.map.wrapT === THREE.RepeatWrapping) {

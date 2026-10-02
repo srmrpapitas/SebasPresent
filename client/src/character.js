@@ -2133,6 +2133,14 @@ export class Character {
         const a = this.actions[name];
         a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true;
         const clip = this.clips[name];
+        // Sesión 51 — el pack de magia viene de OTRO esqueleto (otras unidades):
+        // su altura de caderas no vale para el nuestro y el personaje se hundía
+        // en el suelo al lanzar hechizos. Caderas a la altura de nuestro rig.
+        const hipT = clip.tracks.find(tr => /Hips\.position$/.test(tr.name));
+        if (hipT && Number.isFinite(this._hipsInitialY)) {
+          const v = hipT.values;
+          for (let i = 0; i < v.length / 3; i++) { v[i * 3] = 0; v[i * 3 + 1] = this._hipsInitialY; v[i * 3 + 2] = 0; }
+        }
         const legT = clip.tracks.filter(t => LEG_RE.test(t.name.split('.')[0])).map(t => t.clone());
         const torT = clip.tracks.filter(t => !LEG_RE.test(t.name.split('.')[0])).map(t => t.clone());
         if (legT.length) { const lc = new THREE.AnimationClip(name + '__legs', clip.duration, legT); this.clips[name + '__legs'] = lc; this.actions[name + '__legs'] = this.mixer.clipAction(lc); }
