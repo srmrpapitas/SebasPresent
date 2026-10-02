@@ -74,6 +74,8 @@ export async function handleCombatAttack(request, env) {
         // Sesión 50 — para que los demás vean el proyectil
         fx: result.special?.dragon ? 'dragon' : (result.spell_cast ? result.spell_cast.spell_id : (result.arrow_consumed ? 'arrow' : null)),
         fxc: result.spell_cast?.color ?? null,
+        frz: result.npc_frozen_ms || 0,                 // Sesión 51 — congelado
+        sp: result.special ? result.special.fx : null,  // Sesión 51 — tipo de especial
       });
     }
     if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
@@ -176,6 +178,9 @@ export async function handleCombatAttackPlayer(request, env) {
         dragon: !!result.special?.dragon,
         arrow: !!result.arrow_consumed,
         skulled: !!result.skulled,
+        // Sesión 51 — congelación (especial o Enredadera) y curación del especial
+        frz: result.special?.frz || ((result.spell_cast?.root_ms && result.your_hit) ? result.spell_cast.root_ms : 0),
+        sp: result.special ? result.special.fx : null,
       });
     }
     if (result.error) {

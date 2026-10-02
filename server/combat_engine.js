@@ -1111,15 +1111,18 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     if (specEnergyNow >= specCost) specActive = true;
   }
 
+  // Sesión 51 — defensa del NPC rebajada por el Mordisco de Tibicena (temporal)
+  const curDrain = (npc.def_drain_until || 0) > now ? (npc.def_drain || 0) : 0;
+  const npcDef = Math.max(1, (npc.defence_lvl || 1) - curDrain);
   // acc > 1 = más precisión (divide la defensa del rival)
   const doRoll = (acc = 1) => (
     isMagic
-      ? magic.rollHitMagic(rng, Math.floor(magicLevel * (1 + userFx.mag)) + (userFx.flat?.magic || 0), Math.max(1, Math.floor(npc.defence_lvl / acc)),
+      ? magic.rollHitMagic(rng, Math.floor(magicLevel * (1 + userFx.mag)) + (userFx.flat?.magic || 0), Math.max(1, Math.floor(npcDef / acc)),
           magic.calcMaxHitMagic(magicLevel, spell.base_max_hit, staffMagicBonus))
       : isRanged
-      ? rollHitRanged(rng, userLvls.ranged, npc.defence_lvl,
+      ? rollHitRanged(rng, userLvls.ranged, npcDef,
           totalRangedBonus, calcMaxHitRanged(userLvls.ranged, totalRangedBonus), 1 / acc)
-      : rollHit(rng, userLvls.attack, npc.defence_lvl, calcMaxHit(userLvls.strength), atkMultOf(userEq), 1 / acc)
+      : rollHit(rng, userLvls.attack, npcDef, calcMaxHit(userLvls.strength), atkMultOf(userEq), 1 / acc)
   );
   const userHit = doRoll();
 
@@ -1216,6 +1219,20 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const xpAfter = levelsOf(stats);
   const levelUps = detectLevelUps(xpBefore, xpAfter);
 
+  // Sesión 51 — congelar (especial o Enredadera) y bajar defensa (Tibicena).
+  // Los jefes son inmunes a la congelación (como en OSRS).
+  let frozeMs = 0, defDrained = 0;
+  if (!npcKilled && npc.behavior !== 'boss') {
+    if (specActive && specDef.freezeMs && dmgToNpc > 0) frozeMs = specDef.freezeMs;   // solo si acierta
+    else if (isMagic && spell.root_ms && userHit.hit) frozeMs = spell.root_ms;
+  }
+  if (!npcKilled && specActive && specDef.defDrain && dmgToNpc > 0) {
+    defDrained = Math.min(Math.max(0, (npc.defence_lvl || 1) - 1), curDrain + dmgToNpc) - curDrain;
+  }
+  const newFrozen = npcKilled ? 0 : (frozeMs > 0 ? Math.max(npc.frozen_until || 0, now + frozeMs) : (npc.frozen_until || 0));
+  const newDrain = npcKilled ? 0 : (defDrained > 0 ? curDrain + defDrained : (npc.def_drain || 0));
+  const newDrainUntil = npcKilled ? 0 : (defDrained > 0 ? now + 60_000 : (npc.def_drain_until || 0));
+
   // ---- Persist NPC damage / death ----
   await db.run(
     `UPDATE npc_instances
@@ -1229,6 +1246,12 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
       npc.id,
     ]
   );
+  if (frozeMs > 0 || defDrained > 0 || (npcKilled && ((npc.frozen_until || 0) > 0 || (npc.def_drain || 0) > 0))) {
+    try {
+      await db.run('UPDATE npc_instances SET frozen_until = ?, def_drain = ?, def_drain_until = ? WHERE id = ?',
+        [newFrozen, newDrain, newDrainUntil, npc.id]);
+    } catch (err) { console.warn('[combat] freeze/drain (¿falta la migración 017?):', err?.message); }
+  }
 
   if (npcKilled) {
     try {
@@ -1396,8 +1419,10 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     // presente (derivado) para que el cliente actualice la barra.
     special: specActive
       ? { hits: specHits, cost: specCost, energy_after: specAfter, name: specDef.name, fx: specDef.fx,
-          dragon: specDef.fx === 'dragon', healed: specHealed }
+          dragon: specDef.fx === 'dragon', healed: specHealed, frz: frozeMs, drain: defDrained }
       : null,
+    npc_frozen_ms: frozeMs,           // Sesión 51 — congelado (especial o Enredadera)
+    npc_def_drain: defDrained,
     spec_energy: specActive ? specAfter : computeSpecEnergy(stats, now),
     spec_max: SPEC_MAX,
     npc_killed: npcKilled,
@@ -2007,7 +2032,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     // cliente reutilice el mismo handler de hitsplats y barra de spec).
     special: specActivePvp
       ? { hits: specHitsPvp, cost: specCostPvp, energy_after: specAfterPvp, name: specDefPvp.name, fx: specDefPvp.fx,
-          dragon: specDefPvp.fx === 'dragon', healed: specHealedPvp }
+          dragon: specDefPvp.fx === 'dragon', healed: specHealedPvp,
+          frz: (specDefPvp.freezeMs && dmgToTarget > 0 && !targetKilled) ? specDefPvp.freezeMs : 0 }
       : null,
     spec_energy: specActivePvp ? specAfterPvp : computeSpecEnergy(attackerStats, now),
     spec_max: SPEC_MAX,
@@ -2518,7 +2544,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
   try {
     npcs = await env.DB.prepare(
       `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
-              i.in_combat_with, i.last_attack_at, i.last_moved_at, i.spawn_x, i.spawn_z,
+              i.in_combat_with, i.last_attack_at, i.last_moved_at, i.spawn_x, i.spawn_z, i.frozen_until,
               d.behavior, d.aggro_radius, d.attack_range, d.attack_speed_ticks,
               d.attack_lvl, d.strength_lvl, d.max_hit, d.style
        FROM npc_instances i
@@ -2600,7 +2626,10 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
         : Math.max(3, npc.attack_range);
 
       // ---- PERSECUCIÓN: si fuera de rango, paso hacia el viewer.
-      if (dToViewer > attackRange) {
+      // Sesión 51 — congelado: no se mueve (pero si estás a tiro, pega).
+      if (dToViewer > attackRange && (npc.frozen_until || 0) > now) {
+        // quieto
+      } else if (dToViewer > attackRange) {
         // dt real desde el último movimiento (gate de concurrencia: si dos
         // polls llegan juntos, el segundo ve last_moved_at recién y mueve ~0).
         const lastMoved = npc.last_moved_at || (now - 250);
@@ -2625,7 +2654,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
           attacked = true;
         }
       }
-    } else if (!target && dFromHome > NPC_HOME_SNAP_M) {
+    } else if (!target && dFromHome > NPC_HOME_SNAP_M && !((npc.frozen_until || 0) > now)) {
       // ---- VOLVER A CASA (Sesión 40 FIX — antes NO existía) ----
       // Sin target y lejos del spawn → caminar de vuelta. Esto es lo que evita
       // que el goblin quede VARADO lejos de casa y no pueda re-aggrar nunca.
@@ -2731,7 +2760,7 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
   let npcs;
   try {
     npcs = await env.DB.prepare(
-      `SELECT i.id, i.x, i.z, i.spawn_x, i.spawn_z, i.last_moved_at, i.in_combat_with,
+      `SELECT i.id, i.x, i.z, i.spawn_x, i.spawn_z, i.last_moved_at, i.in_combat_with, i.frozen_until,
               d.behavior
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
@@ -2748,8 +2777,9 @@ export async function tickNpcWander(env, viewer, now, opts = {}) {
   const wanderStmts = [];
 
   for (const npc of rows) {
-    // No mover si por alguna razón está en combate (defensivo).
+    // No mover si por alguna razón está en combate (defensivo) o congelado.
     if (npc.in_combat_with) continue;
+    if ((npc.frozen_until || 0) > now) continue;   // Sesión 51
 
     const homeX = npc.spawn_x != null ? npc.spawn_x : npc.x;
     const homeZ = npc.spawn_z != null ? npc.spawn_z : npc.z;

@@ -28,6 +28,14 @@ const BY_ITEM = {
   bow_magic:  { skill: 'ranged', level: 50 },
   bow_dragon: { skill: 'ranged', level: 60 },        // Sesión 50 — arco de garras de dragón
   staff_dragomante: { skill: 'magic', level: 60 },  // Sesión 50 — bastón de Dragomante
+  // Sesión 51 — armas legendarias
+  gs_achaman:    { skill: 'attack', level: 75 },
+  gs_tibicena:   { skill: 'attack', level: 75 },
+  gs_magec:      { skill: 'attack', level: 75 },
+  gs_guayota:    { skill: 'attack', level: 75 },
+  sword_tindaya: { skill: 'attack', level: 78 },
+  claws_dragon:  { skill: 'attack', level: 60 },
+  dagger_dragon: { skill: 'attack', level: 60 },
 };
 
 export function materialFromId(itemId) {
@@ -90,8 +98,23 @@ export const WEAPON_SPECS = {
                         desc: 'Dos cabezas de dragón en llamas, cada una ×1,5 y mínimo 4 de daño.' },
   staff_normal:       { name: 'Descarga arcana',  osrs: 'Bastón volátil',       cost: 50, hits: 1, dmg: 1.25, acc: 1.25, magic: true, fx: 'arcane',
                         desc: 'El próximo hechizo pega +25 % y acierta +25 %.' },
-  staff_dragomante:   { name: 'Llama de Guayota', osrs: 'Bastón de pesadilla',  cost: 55, hits: 1, dmg: 1.5, acc: 1.5, magic: true, heal: 0.2, fx: 'volatile',
-                        desc: 'El próximo hechizo pega +50 %, acierta +50 % y te cura el 20 % del daño.' },
+  staff_dragomante:   { name: 'Cubo de sangre',   osrs: 'Barrera de sangre + hielo', cost: 55, hits: 1, dmg: 1.3, acc: 1.5, magic: true, heal: 1.0, freezeMs: 8000, fx: 'bloodcube',
+                        desc: 'El próximo hechizo encierra al enemigo en un cubo de hielo de sangre: lo congela 8 s y te cura todo el daño que hace.' },
+  // Sesión 51 — armas legendarias (mitología guanche)
+  gs_achaman:         { name: 'Juicio de Achamán', cost: 50, hits: 1, dmg: 1.375, acc: 2, fx: 'gs',
+                        desc: '+37,5 % de daño y precisión doble. Giro, salto y golpe al suelo.' },
+  gs_tibicena:        { name: 'Mordisco de Tibicena', cost: 50, hits: 1, dmg: 1.21, acc: 2, defDrain: true, fx: 'gs',
+                        desc: '+21 % de daño, precisión doble y le baja la defensa al enemigo tanto como el daño hecho (1 min).' },
+  gs_magec:           { name: 'Luz de Magec', cost: 50, hits: 1, dmg: 1.1, acc: 2, heal: 0.5, fx: 'heal',
+                        desc: '+10 % de daño, precisión doble y te curas la mitad del daño.' },
+  gs_guayota:         { name: 'Prisión de Guayota', cost: 50, hits: 1, dmg: 1.1, acc: 2, freezeMs: 10000, fx: 'gs',
+                        desc: '+10 % de daño, precisión doble y congela al enemigo 10 s en un bloque de obsidiana.' },
+  sword_tindaya:      { name: 'Finta de Tindaya', cost: 25, hits: 1, dmg: 1.2, acc: 1.5, minFrac: 0.2, fx: 'feint',
+                        desc: '+20 % de daño, +50 % de precisión y nunca pega menos del 20 % del golpe máximo.' },
+  claws_dragon:       { name: 'Tajo de cuatro garras', cost: 50, claws: true, acc: 1.25, fx: 'claws',
+                        desc: 'Cuatro zarpazos en cascada: el golpe, la mitad, un cuarto y un cuarto +1.' },
+  dagger_dragon:      { name: 'Puñalada doble', cost: 25, hits: 2, dmg: 1.15, acc: 1.25, fx: 'double',
+                        desc: 'Dos puñaladas seguidas con +15 % de daño y +25 % de precisión.' },
 };
 // Compat (Sesión 50)
 export const DRAGON_SPEC_MULT = 1.5;

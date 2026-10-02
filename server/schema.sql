@@ -135,6 +135,9 @@ CREATE TABLE IF NOT EXISTS npc_instances (
   status INTEGER NOT NULL DEFAULT 0 CHECK (status IN (0, 1)),
   died_at INTEGER, in_combat_with INTEGER, last_attack_at INTEGER,
   spawn_x REAL, spawn_z REAL, last_moved_at INTEGER,
+  frozen_until INTEGER NOT NULL DEFAULT 0,       -- S51 (migración 017)
+  def_drain INTEGER NOT NULL DEFAULT 0,          -- S51
+  def_drain_until INTEGER NOT NULL DEFAULT 0,    -- S51
   FOREIGN KEY (def_id) REFERENCES npc_defs(id)
 );
 CREATE INDEX IF NOT EXISTS idx_npc_instances_status ON npc_instances(status, died_at);
