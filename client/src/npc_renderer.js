@@ -86,6 +86,7 @@ import * as npcAnimated from './npc_animated.js';
 // Sesión 50 — mobs nuevos low-poly (rata, araña, jabalí, lobo, escorpión, gólem, yeti, esqueleto).
 import { buildProceduralNpc, PROC_NPC_HEIGHTS } from './npc_procedural.js';
 import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — enemigos con personajes Mixamo
+import { wanderPos } from './shared/wander.js';   // Sesión 51 — pasivos sin escrituras en el server
 
 // Sesión 50 — enemigos que usan personajes Mixamo (client/assets/npcs). Mientras el
 // modelo carga se ve el de siempre y en cuanto está listo se cambia solo.
@@ -208,6 +209,7 @@ const INTERP_TELEPORT_THRESHOLD_M = 6.0;
 // ============================================================
 let scene = null;
 let camera = null;
+let _serverOffsetMs = 0;   // Sesión 51
 let canvas = null;
 let raycaster = null;
 
@@ -428,6 +430,8 @@ function pollSnapshotForNpcs() {
   if (snap.now === lastProcessedSnapshotNow) return; // nada nuevo
   lastProcessedSnapshotNow = snap.now;
   npcDataList = snap.npcs || [];
+  // Sesión 51 — reloj del servidor (para calcular el paseo de los pasivos)
+  if (Number.isFinite(snap.now)) _serverOffsetMs = snap.now - Date.now();
   syncMeshes();
 }
 
@@ -848,12 +852,22 @@ function updateInterpolation(dt = 0) {
   if (!scene) return;
   const nowMs = performance.now();
   const nowS = nowMs / 1000;
+  const srvNow = Date.now() + _serverOffsetMs;
 
   for (const group of npcMeshes.values()) {
     const ud = group.userData;
     if (!ud || !ud.interp) continue;
 
     const I = ud.interp;
+    // Sesión 51 — pasivo deambulando: posición calculada cada frame (misma
+    // fórmula que el servidor). Dirección = hacia dónde estará en 250 ms.
+    const W = ud.npc?.wander;
+    if (W && !ud.npc.in_combat_with) {
+      const p = wanderPos(ud.npc.id, W.hx, W.hz, srvNow);
+      const q = wanderPos(ud.npc.id, W.hx, W.hz, srvNow + 250);
+      I.prevX = p.x; I.prevZ = p.z; I.targetX = q.x; I.targetZ = q.z;
+      I.startMs = nowMs; I.durationMs = 1e12;
+    }
 
     // ---- Lerp posicional ----
     const elapsed = nowMs - I.startMs;

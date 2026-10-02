@@ -60,8 +60,8 @@ const POLL_SLOW_MS = 500;          // idle / caminando
 // Sesión 50 — con el WebSocket conectado, los peers, golpes PvP, curas y
 // equipo llegan al instante por ahí → el snapshot solo lleva NPCs, suelo,
 // árboles/vetas… y puede ir mucho más lento (ahorra peticiones y lecturas D1).
-const POLL_FAST_RT_MS = 600;
-const POLL_SLOW_RT_MS = 1500;
+const POLL_FAST_RT_MS = 800;    // S51: 600 → 800 (ahorro de lecturas D1)
+const POLL_SLOW_RT_MS = 2500;   // S51: 1500 → 2500 (pasivos se calculan en el cliente)
 const COMBAT_GRACE_MS = 8_000;     // seguir rápido N ms tras la última pelea
 let _fastUntil = 0;                 // timestamp hasta el que polleamos rápido
 

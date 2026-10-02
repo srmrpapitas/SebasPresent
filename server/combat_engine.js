@@ -32,6 +32,7 @@ import * as magic from './magic.js';   // Sesión 41 — sistema de mago
 import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.js';   // Sesión 50
 import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jefes
 import { activeBoosts } from '../client/src/shared/herblore.js';   // Sesión 50 — pociones
+import { wanderPos, isWanderer } from '../client/src/shared/wander.js';   // Sesión 51
 import { specialOf, resolveSpecial, clipSpecHits, CAPE_MAGIC_BONUS, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
@@ -760,12 +761,20 @@ async function dbGetNpcInstance(db, npcInstanceId) {
   const row = await db.first(
     `SELECT i.*, d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
             d.attack_speed_ticks, d.max_hit, d.xp_per_kill, d.respawn_ms,
-            d.spawn_x, d.spawn_z, d.attack_range, d.model, d.style, d.behavior
+            d.spawn_x AS def_spawn_x, d.spawn_z AS def_spawn_z, d.attack_range, d.model, d.style, d.behavior
      FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
      WHERE i.id = ?`,
     [npcInstanceId]
   );
-  return row || null;
+  if (!row) return null;
+  // Sesión 51 — los pasivos deambulan por fórmula (sin escrituras): su
+  // posición real es la calculada, no la guardada.
+  if (row.status === 0 && isWanderer(row.behavior, row.in_combat_with)) {
+    const hx = row.spawn_x != null ? row.spawn_x : row.x, hz = row.spawn_z != null ? row.spawn_z : row.z;
+    const p = wanderPos(row.id, hx, hz, Date.now());
+    row.x = p.x; row.z = p.z; row._wandered = true;
+  }
+  return row;
 }
 
 // ============================================================
@@ -927,14 +936,20 @@ async function getCombatState(db, userId, opts = {}) {
     console.error('[combat/state] mirror failed:', err);
   }
 
-  const npcs = await db.all(
+  // Sesión 51 — antes devolvía TODOS los NPC vivos (4.000+ filas leídas cada
+  // 5 s por jugador). Ahora solo los cercanos (el render usa el snapshot).
+  let me = null;
+  try { me = await db.first('SELECT x, z FROM online_users WHERE user_id = ?', [userId]); } catch {}
+  const R = 60;
+  const npcs = me && Number.isFinite(me.x) ? await db.all(
     `SELECT i.id, i.def_id, i.hp_current, i.x, i.z, i.status,
             d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
             d.attack_speed_ticks, d.max_hit, d.attack_range, d.model
      FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
-     WHERE i.status = 0 AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)`,
-    [userId]
-  );
+     WHERE i.status = 0 AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
+       AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`,
+    [userId, me.x - R, me.x + R, me.z - R, me.z + R]
+  ) : [];
   const lvls = levelsOf(stats);
   return {
     stats: {
@@ -1241,15 +1256,17 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const newDrainUntil = npcKilled ? 0 : (defDrained > 0 ? now + 60_000 : (npc.def_drain_until || 0));
 
   // ---- Persist NPC damage / death ----
+  // Sesión 51 — un pasivo que deambulaba se queda donde le pegaste (x,z).
   await db.run(
-    `UPDATE npc_instances
-     SET hp_current = ?, status = ?, died_at = ?, in_combat_with = ?
-     WHERE id = ?`,
+    npc._wandered
+      ? `UPDATE npc_instances SET hp_current = ?, status = ?, died_at = ?, in_combat_with = ?, x = ?, z = ? WHERE id = ?`
+      : `UPDATE npc_instances SET hp_current = ?, status = ?, died_at = ?, in_combat_with = ? WHERE id = ?`,
     [
       npcKilled ? 0 : npcHpAfter,
       npcKilled ? 1 : 0,
       npcKilled ? now : null,
       npcKilled ? null : userId,
+      ...(npc._wandered ? [npc.x, npc.z] : []),
       npc.id,
     ]
   );

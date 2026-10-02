@@ -35,6 +35,7 @@ import { requireSession } from '../lib/auth.js';
 // Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
 import { tickNpcAggro, tickNpcWander } from '../combat_engine.js';
 import { tickBossesNear } from '../bosses.js';   // Sesión 50 — jefes
+import { wanderPos, isWanderer } from '../../client/src/shared/wander.js';   // Sesión 51 — sin escrituras
 import { tickFosa } from '../minigame.js';        // Sesión 50 — Fosa de Guayota
 import { currentPrayerState, overheadPrayer } from '../../client/src/shared/prayer.js';   // Sesión 50
 
@@ -62,6 +63,9 @@ function levelFromXp(xp) {
   }
   return 99;
 }
+
+// Sesión 51 — última limpieza de criaturas caducadas (por isolate)
+let _lastExpiredSweep = 0;
 
 export async function handleWorldSnapshot(request, env) {
   const session = await requireSession(request, env);
@@ -240,18 +244,19 @@ export async function handleWorldSnapshot(request, env) {
     // El SELECT de abajo ya lee las posiciones nuevas. Envuelto en try/catch:
     // si falla (migración no corrida, etc.), el snapshot sigue normal.
     try {
-      // Sesión 50 — criaturas temporales caducadas (guardias del Robo)
-      try { await env.DB.prepare('DELETE FROM npc_instances WHERE expires_at IS NOT NULL AND expires_at < ?').bind(now).run(); } catch {}
+      // Sesión 50 — criaturas temporales caducadas (guardias del Robo).
+      // Sesión 51 — antes se hacía en CADA snapshot y leía toda la tabla
+      // (4.000+ filas por petición). Ahora con índice y como mucho cada 30 s.
+      if (now - _lastExpiredSweep > 30_000) {
+        _lastExpiredSweep = now;
+        try { await env.DB.prepare('DELETE FROM npc_instances WHERE expires_at IS NOT NULL AND expires_at < ?').bind(now).run(); } catch {}
+      }
       await tickNpcAggro(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
     } catch (err) {
       console.error('[snapshot/npc-ai]', err);
     }
-    // Sesión 39 — wander de pasivos (pollos/vacas deambulan). Separado del agro.
-    try {
-      await tickNpcWander(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
-    } catch (err) {
-      console.error('[snapshot/npc-wander]', err);
-    }
+    // Sesión 51 — el deambular de los pasivos ya no escribe en D1: su
+    // posición se calcula del tiempo (shared/wander.js). Ver el map de abajo.
     // Sesión 50 — jefes (ataques, mecánicas y avisos en el suelo)
     let bosses = [];
     try {
@@ -272,9 +277,9 @@ export async function handleWorldSnapshot(request, env) {
     // in_combat_with es directamente el user_id o NULL.
     const npcRows = await env.DB.prepare(
       `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
-              i.in_combat_with, i.last_attack_at,
+              i.in_combat_with, i.last_attack_at, i.spawn_x, i.spawn_z,
               d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
-              d.attack_speed_ticks, d.max_hit, d.attack_range, d.model, d.style
+              d.attack_speed_ticks, d.max_hit, d.attack_range, d.model, d.style, d.behavior
        FROM npc_instances i
        JOIN npc_defs d ON d.id = i.def_id
        WHERE i.status = 0
@@ -287,6 +292,15 @@ export async function handleWorldSnapshot(request, env) {
       centerZ - NPC_SNAPSHOT_RADIUS_M, centerZ + NPC_SNAPSHOT_RADIUS_M,
     ).all();
 
+    // Sesión 51 — pasivos: posición calculada (sin escrituras) + casa para el cliente
+    for (const r of (npcRows.results || [])) {
+      if (isWanderer(r.behavior, r.in_combat_with)) {
+        r.hx = r.spawn_x != null ? r.spawn_x : r.x;
+        r.hz = r.spawn_z != null ? r.spawn_z : r.z;
+        const p = wanderPos(r.id, r.hx, r.hz, now);
+        r.x = p.x; r.z = p.z;
+      }
+    }
     const npcs = (npcRows.results || [])
       .filter(r => {
         const dx = r.x - centerX, dz = r.z - centerZ;
@@ -309,6 +323,7 @@ export async function handleWorldSnapshot(request, env) {
         model:          r.model,
         in_combat_with: r.in_combat_with,
         style: r.style || 'melee',               // Sesión 50 — para dibujar hechizos/flechas de monstruos
+        wander: r.hx != null ? { hx: r.hx, hz: r.hz } : null,   // Sesión 51 — el cliente lo calcula cada frame
         last_attack_at: r.last_attack_at || 0,
         in_combat: r.last_attack_at != null &&
           (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS,
