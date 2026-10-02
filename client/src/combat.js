@@ -615,6 +615,7 @@ async function doAttackTickNpc(gen = attackGen) {
       }
     }, specDelay);
     if (result.special.healed > 0) feedLog('hit', `💚 El especial te cura ${result.special.healed} HP.`);
+    if (result.special.drain > 0) feedLog('hit', `🩸 Le quitas ${result.special.drain} de Defensa durante 1 minuto.`);
     specArmed = false;
   }
   if (typeof result.spec_energy === 'number' && state && state.stats) {
@@ -904,6 +905,7 @@ async function doAttackTickPlayer(gen = attackGen) {
     }
     feedLog('hit', specFeedText(result.special, targetName));
     if (result.special.healed > 0) feedLog('hit', `💚 El especial te cura ${result.special.healed} HP.`);
+    if (result.special.drain > 0) feedLog('hit', `🩸 ${targetName} pierde ${result.special.drain} de Defensa durante 1 minuto.`);
     specArmed = false;
   }
 

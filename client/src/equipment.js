@@ -610,12 +610,15 @@ function renderPanel() {
   let attackBonus = 0;
   let defenceBonus = 0;
   let rangedBonus = 0;
+  let strengthBonus = 0, magicDef = 0;   // Sesión 51
   for (const slot of EQUIP_SLOTS) {
     const item = equipped[slot.id];
     if (item) {
       attackBonus += item.attack_bonus | 0;
       defenceBonus += item.defence_bonus | 0;
       rangedBonus += item.ranged_bonus | 0;
+      strengthBonus += item.strength_bonus | 0;
+      magicDef += item.magic_defence | 0;
     }
   }
 
@@ -646,6 +649,8 @@ function renderPanel() {
       <span title="Ataque">⚔ <b>+${attackBonus}</b></span>
       <span title="Defensa">🛡 <b>+${defenceBonus}</b></span>
       <span title="Distancia">🏹 <b>+${rangedBonus}</b></span>
+      <span title="Fuerza (golpe máximo)">💪 <b>+${strengthBonus}</b></span>
+      <span title="Defensa mágica">🔮 <b>${magicDef >= 0 ? '+' : ''}${magicDef}</b></span>
     </div>
   `;
   html += '</div>';
@@ -687,7 +692,9 @@ function showSlotTooltip(slotId, clientX, clientY) {
         ? `<div class="equip-tooltip-stat"><span>Bonus Distancia:</span><b>+${item.ranged_bonus | 0}</b></div>
            <div class="equip-tooltip-stat" id="quiverContents"><span>Contiene:</span><b>…</b></div>`
         : `<div class="equip-tooltip-stat"><span>Bonus Ataque:</span><b>+${item.attack_bonus | 0}</b></div>
-           <div class="equip-tooltip-stat"><span>Bonus Defensa:</span><b>+${item.defence_bonus | 0}</b></div>`}
+           <div class="equip-tooltip-stat"><span>Bonus Defensa:</span><b>+${item.defence_bonus | 0}</b></div>
+           ${(item.strength_bonus | 0) ? `<div class="equip-tooltip-stat"><span>Bonus Fuerza:</span><b>+${item.strength_bonus | 0}</b></div>` : ''}
+           ${(item.magic_defence | 0) ? `<div class="equip-tooltip-stat"><span>Defensa mágica:</span><b>${item.magic_defence > 0 ? '+' : ''}${item.magic_defence | 0}</b></div>` : ''}`}
       <div class="equip-tooltip-actions">
         ${isQuiver ? `<button class="equip-tooltip-btn" data-action="withdraw">Sacar flechas</button>` : ''}
         <button class="equip-tooltip-btn" data-action="unequip">Quitar</button>

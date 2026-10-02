@@ -294,8 +294,10 @@ function calcHitChance(attackerAtkLvl, defenderDefLvl, atkMult = 1, defMult = 1)
   return attackRoll / (2 * (defenceRoll + 1));
 }
 
-function calcMaxHit(strengthLvl) {
-  return Math.floor((effectiveLevel(strengthLvl) + 5) / 10);
+// Sesión 51 — con bonus de FUERZA del equipo (fórmula de OSRS). Con bonus 0
+// da exactamente lo mismo que la antigua floor((nivel + 13) / 10).
+function calcMaxHit(strengthLvl, strBonus = 0) {
+  return Math.floor(0.5 + effectiveLevel(strengthLvl) * (Math.max(0, strBonus) + 64) / 640);
 }
 
 // ============================================================
@@ -465,16 +467,16 @@ async function getEquipBonuses(db, userId) {
   try {
     // Sesión 51 — pieza a pieza (mismas lecturas) para sacar también la defensa mágica
     const rows = await db.all(
-      `SELECT i.attack_bonus AS atk, i.defence_bonus AS def, i.material AS mat
+      `SELECT i.attack_bonus AS atk, i.defence_bonus AS def, i.material AS mat, i.strength_bonus AS str
          FROM user_equipment ue JOIN items i ON i.id = ue.item_id
         WHERE ue.user_id = ?`,
       [userId]
     );
-    let atk = 0, def = 0, mdef = 0;
-    for (const r of rows || []) { atk += r.atk | 0; def += r.def | 0; mdef += magicDefOf(r.mat, r.def | 0); }
-    return { atk: Math.max(0, atk), def: Math.max(0, def), mdef };
+    let atk = 0, def = 0, mdef = 0, str = 0;
+    for (const r of rows || []) { atk += r.atk | 0; def += r.def | 0; str += r.str | 0; mdef += magicDefOf(r.mat, r.def | 0); }
+    return { atk: Math.max(0, atk), def: Math.max(0, def), mdef, str: Math.max(0, str) };
   } catch {
-    return { atk: 0, def: 0, mdef: 0 };
+    return { atk: 0, def: 0, mdef: 0, str: 0 };
   }
 }
 // Sesión 50 — Plegarias activas (con el gasto de puntos aplicado) → efectos.
@@ -501,7 +503,7 @@ function boostLvls(l, fx) {
     ...l,
     attack:   Math.floor(l.attack   * (1 + fx.atk)) + (fx.flat?.attack || 0),
     strength: Math.floor(l.strength * (1 + fx.str)) + (fx.flat?.strength || 0),
-    defence:  Math.floor(l.defence  * (1 + fx.def)) + (fx.flat?.defence || 0),
+    defence:  Math.max(1, Math.floor(l.defence  * (1 + fx.def)) + (fx.flat?.defence || 0)),   // ≥1 aunque te roben Defensa
     ranged:   Math.floor(l.ranged   * (1 + fx.rng)) + (fx.flat?.ranged || 0),
     magic:    Math.floor(l.magic    * (1 + fx.mag)) + (fx.flat?.magic || 0),
   };
@@ -1170,19 +1172,19 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
       : isRanged
       ? rollHitRanged(rng, userLvls.ranged, npcDef,
           totalRangedBonus, calcMaxHitRanged(userLvls.ranged, totalRangedBonus), 1 / acc)
-      : rollHit(rng, userLvls.attack, npcDef, calcMaxHit(userLvls.strength), atkMultOf(userEq), 1 / acc)
+      : rollHit(rng, userLvls.attack, npcDef, calcMaxHit(userLvls.strength, userEq.str), atkMultOf(userEq), 1 / acc)
   );
   const userHit = doRoll();
 
   // Sesión 26 — Aplicar damage multipliers (extraido a fn para el spec).
-  const applyDamageMults = (hitRes) => {
+  const applyDamageMults = (hitRes, critOverride = null) => {
     let dmg = hitRes.damage;
     let crit = false;
     if (hitRes.hit && dmg > 0) {
       if (!isMagic) {
         const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
         dmg = dmg * weaponMult * stanceMods.damage_mult;
-        const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+        const critChance = critOverride != null ? critOverride : (WEAPON_CRIT_CHANCE[weaponType] || 0);   // Sesión 51
         if (critChance > 0 && rng() < critChance) { crit = true; dmg = dmg * CRIT_DAMAGE_MULT; }
       }
       dmg = dmg * magic.triangleMult(weaponType, npc.style || 'melee');
@@ -1203,7 +1205,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   let specHits = null;
   if (specActive) {
     // Sesión 51 — el especial sustituye al golpe normal (rolls propios)
-    const baseMax = isMagic || isRanged ? 0 : calcMaxHit(userLvls.strength) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
+    const baseMax = isMagic || isRanged ? 0 : calcMaxHit(userLvls.strength, userEq.str) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
     const sp = resolveSpecial(specDef, doRoll, applyDamageMults, baseMax);
     const resist = (bossDef?.meleeResist && !isRangedLike) ? (1 - bossDef.meleeResist) : 1;
     specHits = sp.hits.map(h => Math.floor(h * resist));
@@ -1770,19 +1772,19 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       : isRanged
       ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
           totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp), targetDefMult / acc)
-      : rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength),
+      : rollHit(rng, attackerLvls.attack, targetLvls.defence, calcMaxHit(attackerLvls.strength, attackerEq.str),
           atkMultOf(attackerEq), targetDefMult / acc)
   );
   const userHit = doRollPvp();
 
-  const applyMultsPvp = (hitRes) => {
+  const applyMultsPvp = (hitRes, critOverride = null) => {
     let dmg = hitRes.damage;
     let crit = false;
     if (hitRes.hit && dmg > 0) {
       if (!isMagicPvp) {
         const weaponMult = WEAPON_DAMAGE_MULT[weaponType] || 1.0;
         dmg = dmg * weaponMult * stanceMods.damage_mult;
-        const critChance = WEAPON_CRIT_CHANCE[weaponType] || 0;
+        const critChance = critOverride != null ? critOverride : (WEAPON_CRIT_CHANCE[weaponType] || 0);   // Sesión 51
         if (critChance > 0 && rng() < critChance) { crit = true; dmg = dmg * CRIT_DAMAGE_MULT; }
       }
       dmg = dmg * magic.triangleMult(weaponType, 'melee'); // players siempre melee-style defense
@@ -1796,7 +1798,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   let isCrit = m1pvp.crit;
   let specHitsPvp = null;
   if (specActivePvp) {
-    const baseMaxPvp = (isMagicPvp && spellPvp) || isRanged ? 0 : calcMaxHit(attackerLvls.strength) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
+    const baseMaxPvp = (isMagicPvp && spellPvp) || isRanged ? 0 : calcMaxHit(attackerLvls.strength, attackerEq.str) * (WEAPON_DAMAGE_MULT[weaponType] || 1);
     const sp = resolveSpecial(specDefPvp, doRollPvp, applyMultsPvp, baseMaxPvp);
     specHitsPvp = sp.hits;
     // Sesión 51 — daño MÁGICO (Rayo de Tindaya): acierta como melé, pero el
@@ -1855,6 +1857,23 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const xpAfter = levelsOf(attackerStats);
   const levelUps = detectLevelUps(xpBefore, xpAfter);
 
+  // -------- Sesión 51 — Mordisco de Tibicena en PvP: baja la Defensa del
+  // rival tanto como el daño hecho (1 min). Se guarda en boosts.defdrain.
+  let drainPvp = 0;
+  if (specActivePvp && specDefPvp.defDrain && dmgToTarget > 0 && !targetKilled) {
+    let b = {};
+    try { b = targetStats.boosts ? JSON.parse(targetStats.boosts) : {}; } catch {}
+    const cur = b.defdrain && b.defdrain.until > now ? (b.defdrain.v | 0) : 0;
+    const baseDef = levelsOf(targetStats).defence || 1;
+    const next = Math.min(Math.max(0, baseDef - 1), cur + dmgToTarget);
+    drainPvp = next - cur;
+    if (drainPvp > 0) {
+      b.defdrain = { v: next, until: now + 60_000 };
+      targetStats.boosts = JSON.stringify(b);
+      try { await db.run('UPDATE combat_stats SET boosts = ? WHERE user_id = ?', [targetStats.boosts, targetId]); } catch {}
+    }
+  }
+
   // -------- Persist target damage --------
   targetStats.hp_current = targetKilled ? 0 : targetHpAfter;
   if (targetKilled) targetStats.last_died_at = now;
@@ -1876,7 +1895,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     if (targetReady) {
       // El target da un golpe defensivo (style: defensive simulado).
       // Usamos su strength real pero stance "neutra".
-      const targetMaxHit = calcMaxHit(targetLvls.strength);
+      const targetMaxHit = calcMaxHit(targetLvls.strength, targetEq.str);
       targetCounterHit = rollHit(rng, targetLvls.attack, attackerLvls.defence, targetMaxHit,
         atkMultOf(targetEq), attackerDefMult);
       if (attackerFx.protectMelee) targetCounterHit.damage = Math.floor(targetCounterHit.damage * 0.6);   // S50
@@ -2094,7 +2113,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     // cliente reutilice el mismo handler de hitsplats y barra de spec).
     special: specActivePvp
       ? { hits: specHitsPvp, cost: specCostPvp, energy_after: specAfterPvp, name: specDefPvp.name, fx: specDefPvp.fx,
-          dragon: specDefPvp.fx === 'dragon', healed: specHealedPvp,
+          dragon: specDefPvp.fx === 'dragon', healed: specHealedPvp, drain: drainPvp,
           frz: (specDefPvp.freezeMs && dmgToTarget > 0 && !targetKilled) ? specDefPvp.freezeMs : 0 }
       : null,
     spec_energy: specActivePvp ? specAfterPvp : computeSpecEnergy(attackerStats, now),
@@ -2916,7 +2935,7 @@ export async function playerDefProfile(env, userId, now) {
   const stats = await env.DB.prepare('SELECT * FROM combat_stats WHERE user_id = ?').bind(userId).first();
   if (!stats) return null;
   const fx = prayerFx(stats, now);
-  const defLvl = Math.floor(levelFromXp(stats.defence_xp || 0) * (1 + fx.def)) + (fx.flat?.defence || 0);
+  const defLvl = Math.max(1, Math.floor(levelFromXp(stats.defence_xp || 0) * (1 + fx.def)) + (fx.flat?.defence || 0));
   let defMult = 1;
   try {
     const eq = await getEquipBonuses(makeEnvDb(env), userId);

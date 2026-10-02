@@ -38,7 +38,7 @@ import { requireSession } from '../lib/auth.js';
 import { questEvent } from '../lib/quests.js';   // Sesión 50
 import { pushRealtime } from '../lib/realtime.js';   // Sesión 50
 import { xpToLevel } from '../lib/skills_engine.js';
-import { equipRequirement, requirementText } from '../../client/src/shared/equip_reqs.js';   // Sesión 50
+import { equipRequirement, requirementText, magicDefOf } from '../../client/src/shared/equip_reqs.js';   // Sesión 50/51
 
 const INVENTORY_SLOTS = 20;
 // Sesión 34 — Agregado slot 'quiver' (Bloque 2). Container especial para
@@ -80,7 +80,8 @@ export async function handleGetEquipment(request, env) {
   const result = await env.DB.prepare(
     `SELECT eq.slot_id, eq.item_id, eq.equipped_at,
             i.name, i.icon, i.equip_slot, i.weapon_type,
-            i.attack_bonus, i.defence_bonus, i.ranged_bonus, i.description
+            i.attack_bonus, i.defence_bonus, i.ranged_bonus, i.description,
+            i.strength_bonus, i.material
      FROM user_equipment eq
      JOIN items i ON i.id = eq.item_id
      WHERE eq.user_id = ?`
@@ -97,6 +98,8 @@ export async function handleGetEquipment(request, env) {
       attack_bonus: r.attack_bonus | 0,
       defence_bonus: r.defence_bonus | 0,
       ranged_bonus: r.ranged_bonus | 0,
+      strength_bonus: r.strength_bonus | 0,                       // Sesión 51
+      magic_defence: magicDefOf(r.material, r.defence_bonus | 0), // Sesión 51
       description: r.description,
       equipped_at: r.equipped_at,
     };

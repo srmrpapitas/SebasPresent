@@ -101,12 +101,12 @@ export const WEAPON_SPECS = {
   staff_dragomante:   { name: 'Cubo de sangre',   osrs: 'Barrera de sangre + hielo', cost: 55, hits: 1, dmg: 1.3, acc: 1.5, magic: true, heal: 1.0, freezeMs: 8000, fx: 'bloodcube',
                         desc: 'El próximo hechizo encierra al enemigo en un cubo de hielo de sangre: lo congela 8 s y te cura todo el daño que hace.' },
   // Sesión 51 — armas legendarias (mitología guanche)
-  gs_achaman:         { name: 'Juicio de Achamán', cost: 50, hits: 1, dmg: 1.375, acc: 2, fx: 'gs',
-                        desc: '+37,5 % de daño y precisión doble. Giro, salto y golpe al suelo.' },
-  gs_tibicena:        { name: 'Mordisco de Tibicena', cost: 50, hits: 1, dmg: 1.21, acc: 2, defDrain: true, fx: 'gs',
-                        desc: '+21 % de daño, precisión doble y le baja la defensa al enemigo tanto como el daño hecho (1 min).' },
-  gs_magec:           { name: 'Luz de Magec', cost: 50, hits: 1, dmg: 1.1, acc: 2, heal: 0.5, fx: 'heal',
-                        desc: '+10 % de daño, precisión doble y te curas la mitad del daño.' },
+  gs_achaman:         { name: 'Juicio de Achamán', cost: 50, hits: 1, dmg: 1.2, acc: 1.55, crit: 0.75, fx: 'gs',
+                        desc: '+55 % de precisión, +20 % de daño y 75 % de golpe CRÍTICO (×1,5): los golpes más grandes del juego, según tu Fuerza y el equipo de fuerza.' },
+  gs_tibicena:        { name: 'Mordisco de Tibicena', cost: 50, hits: 1, dmg: 1.1, acc: 1.5, defDrain: true, fx: 'gs',
+                        desc: '+50 % de precisión y +10 % de daño. Le baja al enemigo tanta Defensa como daño le hagas (1 min).' },
+  gs_magec:           { name: 'Luz de Magec', cost: 50, hits: 1, dmg: 1.1, acc: 2, heal: 1.0, fx: 'heal',
+                        desc: '+10 % de daño, precisión doble y te curas TODO el daño que haces.' },
   gs_guayota:         { name: 'Prisión de Guayota', cost: 50, hits: 1, dmg: 1.1, acc: 2, freezeMs: 10000, fx: 'gs',
                         desc: '+10 % de daño, precisión doble y congela al enemigo 10 s en un bloque de obsidiana.' },
   sword_tindaya:      { name: 'Rayo de Tindaya', cost: 25, hits: 1, dmg: 1.2, acc: 1.5, minFrac: 0.2, fx: 'feint', magicDmg: true,
@@ -138,7 +138,7 @@ export function resolveSpecial(spec, roll, mult, baseMax = 0) {
   let crit = false;
   const one = () => {
     const h = roll(acc);
-    const m = mult(h);
+    const m = mult(h, spec.crit);   // Sesión 51 — spec.crit: probabilidad de crítico propia
     crit = crit || !!m.crit;
     let d = h.hit ? Math.floor(m.dmg * (spec.dmg || 1)) : 0;
     if (spec.minHit) d = Math.max(spec.minHit, d);

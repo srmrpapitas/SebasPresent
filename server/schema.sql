@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS items (
   equip_slot TEXT, weapon_type TEXT,
   attack_bonus INTEGER DEFAULT 0, defence_bonus INTEGER DEFAULT 0,
   ranged_bonus INTEGER NOT NULL DEFAULT 0,
+  strength_bonus INTEGER NOT NULL DEFAULT 0,   -- Sesión 51 (migración 021)
   tint_hex TEXT, base_model TEXT, material TEXT, tier INTEGER,
   smith_level INTEGER, bars_required INTEGER
 );

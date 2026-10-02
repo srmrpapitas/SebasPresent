@@ -70,5 +70,7 @@ export function activeBoosts(boostsStr, now) {
     const b = o?.[k];
     if (b && b.until > now) out[k] = b.v | 0;
   }
+  // Sesión 51 — Defensa robada por el Mordisco de Tibicena (PvP)
+  if (o?.defdrain && o.defdrain.until > now) out.defence -= o.defdrain.v | 0;
   return out;
 }
