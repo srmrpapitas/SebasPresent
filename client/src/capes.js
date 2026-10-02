@@ -176,13 +176,19 @@ function swayMaterial(opts, amp, len = 1) {
   const m = new THREE.MeshStandardMaterial(opts);
   m.userData.uTime = { value: 0 };
   m.userData.uBlow = { value: 0 };   // Sesión 51 — curva de la tela al moverse
+  // Sesión 51 — choque con brazos y muslos (cápsulas en el espacio de la capa):
+  // la tela se aparta alrededor del brazo en vez de dejar que lo atraviese.
+  m.userData.uSegA = { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, -999, 0)) };
+  m.userData.uSegB = { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, -999, 0)) };
+  m.userData.uSegR = { value: new Array(6).fill(0) };
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = m.userData.uTime;
     sh.uniforms.uBlow = m.userData.uBlow;
+    sh.uniforms.uSegA = m.userData.uSegA; sh.uniforms.uSegB = m.userData.uSegB; sh.uniforms.uSegR = m.userData.uSegR;
     sh.uniforms.uAmp = { value: amp };
     sh.uniforms.uLen = { value: len };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uAmp;\nuniform float uBlow;\nuniform float uLen;\nattribute float hang;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uAmp;\nuniform float uBlow;\nuniform float uLen;\nuniform vec3 uSegA[6];\nuniform vec3 uSegB[6];\nuniform float uSegR[6];\nattribute float hang;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         float sw = sin(uTime * 2.1 + hang * 5.0 + position.x * 0.04) * 0.6 + sin(uTime * 3.3 + hang * 9.0) * 0.4;
         transformed += objectNormal * sw * uAmp * hang * hang;
@@ -191,7 +197,22 @@ function swayMaterial(opts, amp, len = 1) {
         // vuelo de abajo se curva hacia atrás (como tela, no como una tabla)
         float hb = hang * hang;
         transformed.z -= uBlow * uLen * hb * 0.5;
-        transformed.y += uBlow * uBlow * uLen * hb * hang * 0.17;`);
+        transformed.y += uBlow * uBlow * uLen * hb * hang * 0.17;
+        // Brazos / muslos dentro de la tela → se aparta (hacia fuera y atrás)
+        for (int i = 0; i < 6; i++) {
+          float r = uSegR[i];
+          if (r <= 0.0) continue;
+          vec3 sa = uSegA[i], ab = uSegB[i] - sa;
+          float st = clamp(dot(transformed - sa, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+          vec3 cpt = sa + ab * st;
+          vec3 dv = transformed - cpt;
+          float dl = length(dv);
+          if (dl < r) {
+            vec3 dir = dl > 1e-4 ? dv / dl : vec3(0.0, 0.0, -1.0);
+            if (dir.z > 0.2) dir = normalize(dir + vec3(0.0, 0.0, -1.4));
+            transformed = cpt + dir * mix(r, dl, smoothstep(0.0, r, dl) * 0.15);
+          }
+        }`);
   };
   m.customProgramCacheKey = () => 'sway' + amp.toFixed(4);
   return m;
@@ -402,6 +423,25 @@ export function buildCape(itemId, H, root) {
   // DETRÁS del personaje según hacia dónde mira el cuerpo entero (root), y
   // se va hacia atrás al correr.
   const _rq = new THREE.Quaternion(), _m = new THREE.Matrix4(), _f = new THREE.Vector3(), _x = new THREE.Vector3();
+  // Sesión 51 — cápsulas de brazos y muslos (radio en metros de mundo, medido ya)
+  const segs = [];
+  {
+    const bw = (n) => H.findBone(root, n);
+    const wp = (b) => b.getWorldPosition(new THREE.Vector3());
+    root.updateMatrixWorld(true);
+    const armored = !!arm;
+    for (const side of ['Left', 'Right']) {
+      const A = bw(side + 'Arm'), F = bw(side + 'ForeArm'), Hd = bw(side + 'Hand');
+      const U = bw(side + 'UpLeg'), L = bw(side + 'Leg');
+      if (A && F) {
+        const la = wp(A).distanceTo(wp(F));
+        segs.push({ a: A, b: F, r: la * (armored ? 0.42 : 0.32) });
+        if (Hd) segs.push({ a: F, b: Hd, r: la * (armored ? 0.36 : 0.26) });
+      }
+      if (U && L) segs.push({ a: U, b: L, r: wp(U).distanceTo(wp(L)) * (armored ? 0.3 : 0.24) });
+    }
+  }
+  const _inv = new THREE.Matrix4(), _sv = new THREE.Vector3();
   const _up = new THREE.Vector3(0, 1, 0), _rp = new THREE.Vector3(), _tilt = new THREE.Quaternion(), _ax = new THREE.Vector3(1, 0, 0);
   let frontRoot = null, lastRootPos = null, speedS = 0;
   cape.frustumCulled = false; cape.castShadow = true;
@@ -454,6 +494,18 @@ export function buildCape(itemId, H, root) {
       }
     }
     mat.userData.uTime.value = t;
+    if (segs.length) {
+      _inv.copy(cape.matrixWorld).invert();
+      const sc = cape.matrixWorld.getMaxScaleOnAxis() || 1;
+      const A = mat.userData.uSegA.value, B = mat.userData.uSegB.value, Rr = mat.userData.uSegR.value;
+      for (let i = 0; i < 6; i++) {
+        const sg = segs[i];
+        if (!sg) { Rr[i] = 0; continue; }
+        A[i].copy(sg.a.getWorldPosition(_sv)).applyMatrix4(_inv);
+        B[i].copy(sg.b.getWorldPosition(_sv)).applyMatrix4(_inv);
+        Rr[i] = sg.r / sc;
+      }
+    }
     if (mat.map && mat.map.wrapT === THREE.RepeatWrapping) {
       const speed = itemId === 'cape_magma' ? 0.05 : 0.08;
       mat.map.offset.y = (t * speed) % 1;
