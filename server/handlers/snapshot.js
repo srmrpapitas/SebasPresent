@@ -33,10 +33,12 @@
 import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 // Sesión 39 Pieza 2+3 — tick de IA de NPC (agro + persecución + contraataque).
-import { tickNpcAggro, tickNpcWander } from '../combat_engine.js';
+import { tickNpcAggro } from '../combat_engine.js';
+import { readNpcsNear } from '../lib/npc_reads.js';   // Sesión 51 — celdas + fichas en memoria
 import { tickBossesNear } from '../bosses.js';   // Sesión 50 — jefes
 import { wanderPos, isWanderer } from '../../client/src/shared/wander.js';   // Sesión 51 — sin escrituras
 import { tickFosa } from '../minigame.js';        // Sesión 50 — Fosa de Guayota
+import { insideFosa } from '../../client/src/shared/fosa.js';   // Sesión 51
 import { currentPrayerState, overheadPrayer } from '../../client/src/shared/prayer.js';   // Sesión 50
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
@@ -44,7 +46,11 @@ import { currentPrayerState, overheadPrayer } from '../../client/src/shared/pray
 const SNAPSHOT_RADIUS_M       = 500;
 // Sesión 50 — monstruos: solo los cercanos (el cliente los dibuja a ≤100 m). Con miles
 // de monstruos en el mapa, mandar 500 m saturaba la base de datos y la red.
-const NPC_SNAPSHOT_RADIUS_M   = 95;
+const NPC_SNAPSHOT_RADIUS_M   = 85;
+// Sesión 51 — snapshot "ligero" (3 de cada 4): solo los monstruos a 40 m (los
+// que pueden atacarte o a los que atacas). El cliente conserva los de más
+// lejos del último snapshot completo. Ver f= en handleWorldSnapshot.
+const NPC_LITE_RADIUS_M       = 40;
 // Timeout para considerar a un player "online" según online_users.last_seen.
 const SNAPSHOT_PEER_TIMEOUT_MS = 10_000;
 // Si last_attack_at fue hace menos de esto, el actor está in_combat.
@@ -75,6 +81,15 @@ export async function handleWorldSnapshot(request, env) {
   const qx = Number(url.searchParams.get('x'));
   const qz = Number(url.searchParams.get('z'));
   const hasPos = Number.isFinite(qx) && Number.isFinite(qz);
+  // Sesión 51 — ahorro de lecturas D1:
+  //   f=0 → snapshot LIGERO: jugadores, monstruos a 40 m, tu vida/golpes y la
+  //         Fosa. Sin misiones, grupo, duelos, fuegos, árboles ni vetas (el
+  //         cliente conserva los del último completo).
+  //   f=1 (o sin f, clientes viejos) → completo.
+  //   d=1 → estás en un duelo o tienes invitaciones: los datos del duelo van
+  //         siempre.
+  const full = url.searchParams.get('f') !== '0';
+  const wantDuel = full || url.searchParams.get('d') === '1';
 
   const now = Date.now();
   const peerCutoff = now - SNAPSHOT_PEER_TIMEOUT_MS;
@@ -243,6 +258,22 @@ export async function handleWorldSnapshot(request, env) {
     // contraatacan al jugador que pollea. Escribe x/z/in_combat_with/HP en D1.
     // El SELECT de abajo ya lee las posiciones nuevas. Envuelto en try/catch:
     // si falla (migración no corrida, etc.), el snapshot sigue normal.
+    // Sesión 51 — UNA lectura de combat_stats por snapshot (antes eran 4: la
+    // IA, golpes, muerte y plegaria). La IA la actualiza en memoria si te pegan.
+    let myStats = null;
+    try {
+      myStats = await env.DB.prepare('SELECT * FROM combat_stats WHERE user_id = ?').bind(session.user_id).first();
+    } catch { myStats = null; }
+
+    // Sesión 51 — UNA lectura de monstruos (antes: una para la IA y otra para
+    // dibujarlos, las dos con JOIN a npc_defs y recorriendo franjas del mapa).
+    const npcR = full ? NPC_SNAPSHOT_RADIUS_M : NPC_LITE_RADIUS_M;
+    let npcRowsAll = [];
+    try {
+      npcRowsAll = await readNpcsNear(env, session.user_id, centerX, centerZ, npcR);
+    } catch (err) {
+      console.error('[snapshot/npcs]', err);
+    }
     try {
       // Sesión 50 — criaturas temporales caducadas (guardias del Robo).
       // Sesión 51 — antes se hacía en CADA snapshot y leía toda la tabla
@@ -251,7 +282,12 @@ export async function handleWorldSnapshot(request, env) {
         _lastExpiredSweep = now;
         try { await env.DB.prepare('DELETE FROM npc_instances WHERE expires_at IS NOT NULL AND expires_at < ?').bind(now).run(); } catch {}
       }
-      await tickNpcAggro(env, { user_id: session.user_id, x: centerX, z: centerZ }, now);
+      const aggro = await tickNpcAggro(env, { user_id: session.user_id, x: centerX, z: centerZ }, now,
+        { rows: npcRowsAll, viewerStats: myStats || undefined });
+      for (const r of npcRowsAll) {
+        const c = aggro.get(r.id);
+        if (c) { r.x = c.x; r.z = c.z; r.in_combat_with = c.in_combat_with; if (c.attacked) r.last_attack_at = now; }
+      }
     } catch (err) {
       console.error('[snapshot/npc-ai]', err);
     }
@@ -265,8 +301,10 @@ export async function handleWorldSnapshot(request, env) {
       console.error('[snapshot/bosses]', err);
     }
     // Sesión 50 — La Fosa de Guayota (oleadas)
+    // Sesión 51 — solo si estás en la Fosa o en snapshots completos (1 lectura menos).
     let fosa = null;
-    try {
+    const fosaTicked = full || insideFosa(centerX, centerZ, 30);
+    if (fosaTicked) try {
       fosa = await tickFosa(env, session.user_id, { x: centerX, z: centerZ }, now);
     } catch (err) {
       console.error('[snapshot/fosa]', err);
@@ -275,59 +313,46 @@ export async function handleWorldSnapshot(request, env) {
     // Bloque 2: formato idéntico al de combat_engine.getCombatState para que
     // npc_renderer.js sea drop-in replacement. Solo vivos (status=0).
     // in_combat_with es directamente el user_id o NULL.
-    const npcRows = await env.DB.prepare(
-      `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
-              i.in_combat_with, i.last_attack_at, i.spawn_x, i.spawn_z,
-              d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
-              d.attack_speed_ticks, d.max_hit, d.attack_range, d.model, d.style, d.behavior
-       FROM npc_instances i
-       JOIN npc_defs d ON d.id = i.def_id
-       WHERE i.status = 0
-         AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
-         AND i.x BETWEEN ? AND ?
-         AND i.z BETWEEN ? AND ?`
-    ).bind(
-      session.user_id,
-      centerX - NPC_SNAPSHOT_RADIUS_M, centerX + NPC_SNAPSHOT_RADIUS_M,
-      centerZ - NPC_SNAPSHOT_RADIUS_M, centerZ + NPC_SNAPSHOT_RADIUS_M,
-    ).all();
-
-    // Sesión 51 — pasivos: posición calculada (sin escrituras) + casa para el cliente
-    for (const r of (npcRows.results || [])) {
-      if (isWanderer(r.behavior, r.in_combat_with)) {
+    // Sesión 51 — de la lectura única de arriba; la ficha sale de la caché.
+    // Pasivos: posición calculada (sin escrituras) + casa para el cliente.
+    for (const r of npcRowsAll) {
+      if (isWanderer(r.def.behavior, r.in_combat_with)) {
         r.hx = r.spawn_x != null ? r.spawn_x : r.x;
         r.hz = r.spawn_z != null ? r.spawn_z : r.z;
         const p = wanderPos(r.id, r.hx, r.hz, now);
         r.x = p.x; r.z = p.z;
       }
     }
-    const npcs = (npcRows.results || [])
+    const npcs = npcRowsAll
       .filter(r => {
         const dx = r.x - centerX, dz = r.z - centerZ;
-        return (dx * dx + dz * dz) <= NPC_SNAPSHOT_RADIUS_M * NPC_SNAPSHOT_RADIUS_M;
+        return (dx * dx + dz * dz) <= npcR * npcR;
       })
-      .map(r => ({
-        id:             r.id,
-        def_id:         r.def_id,
-        name:           r.name,
-        x:              r.x,
-        z:              r.z,
-        hp_current:     r.hp_current,
-        max_hp:         r.max_hp,
-        status:         r.status,
-        attack_lvl:     r.attack_lvl,
-        strength_lvl:   r.strength_lvl,
-        defence_lvl:    r.defence_lvl,
-        max_hit:        r.max_hit,
-        attack_range:   r.attack_range,
-        model:          r.model,
-        in_combat_with: r.in_combat_with,
-        style: r.style || 'melee',               // Sesión 50 — para dibujar hechizos/flechas de monstruos
-        wander: r.hx != null ? { hx: r.hx, hz: r.hz } : null,   // Sesión 51 — el cliente lo calcula cada frame
-        last_attack_at: r.last_attack_at || 0,
-        in_combat: r.last_attack_at != null &&
-          (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS,
-      }));
+      .map(r => {
+        const d = r.def;
+        return {
+          id:             r.id,
+          def_id:         r.def_id,
+          name:           d.name,
+          x:              r.x,
+          z:              r.z,
+          hp_current:     r.hp_current,
+          max_hp:         d.max_hp,
+          status:         r.status,
+          attack_lvl:     d.attack_lvl,
+          strength_lvl:   d.strength_lvl,
+          defence_lvl:    d.defence_lvl,
+          max_hit:        d.max_hit,
+          attack_range:   d.attack_range,
+          model:          d.model,
+          in_combat_with: r.in_combat_with,
+          style: d.style || 'melee',               // Sesión 50 — para dibujar hechizos/flechas de monstruos
+          wander: r.hx != null ? { hx: r.hx, hz: r.hz } : null,   // Sesión 51 — el cliente lo calcula cada frame
+          last_attack_at: r.last_attack_at || 0,
+          in_combat: r.last_attack_at != null &&
+            (now - r.last_attack_at) < IN_COMBAT_WINDOW_MS,
+        };
+      });
 
     // -------------------- Me (info del propio user) --------------------
     // Sesión 27 Bloque 3 — AUTO RETALIATE
@@ -345,10 +370,8 @@ export async function handleWorldSnapshot(request, env) {
       user_id: session.user_id,   // Sesión 50 — para saber a quién apunta un jefe
       fosa: null,                 // Sesión 50 — estado de la Fosa de Guayota
       last_attacker: null,
-      party_id: null,
-      duel: null,           // Sesión 28
-      duel_invites_in: [],  // Sesión 28
-      duel_invite_out: null,// Sesión 28
+      // party_id, quests → solo en snapshots completos (f=1)
+      // duel, duel_invites_in, duel_invite_out → completos o d=1
       // Sesión 32 — último hit recibido (de quién, cuánto, cuándo).
       // El cliente usa esto para spawn hitsplats + anim de reacción cuando
       // un peer le pega SIN que el target haya iniciado el combate.
@@ -383,46 +406,30 @@ export async function handleWorldSnapshot(request, env) {
       mana_updated_at: 0,
       magic_xp: 0,
     };
-    // Sesión 32 — fetch last_hit_* del combat_stats. Defensivo: si las
-    // columnas no existen, los campos quedan null (cliente maneja como
-    // "no hit").
-    try {
-      const hitRow = await env.DB.prepare(
-        `SELECT last_hit_from_user_id, last_hit_damage, last_hit_at, last_hit_is_crit,
-                mana_current, mana_updated_at, magic_xp
-         FROM combat_stats WHERE user_id = ?`
-      ).bind(session.user_id).first();
-      if (hitRow) {
-        me.last_hit_from_user_id = hitRow.last_hit_from_user_id;
-        me.last_hit_damage = hitRow.last_hit_damage;
-        me.last_hit_at = hitRow.last_hit_at;
-        me.last_hit_is_crit = hitRow.last_hit_is_crit;
-        me.mana_current = hitRow.mana_current || 0;
-        me.mana_updated_at = hitRow.mana_updated_at || 0;
-        me.magic_xp = hitRow.magic_xp || 0;
-      }
-    } catch {
-      // columnas no existen → me.last_hit_* quedan null. OK.
-    }
-    // Sesión 37 — fetch last_died_at + hp_current para death notify.
-    // Defensivo: si la columna no existe (combat_stats schema sin migrar),
-    // el flag queda false y caemos al safety net del cliente (polling +
-    // detección hp<=0 sin ack de server).
-    try {
-      const deathRow = await env.DB.prepare(
-        `SELECT last_died_at, hp_current FROM combat_stats WHERE user_id = ?`
-      ).bind(session.user_id).first();
-      if (deathRow) {
-        me.last_died_at = deathRow.last_died_at;
-        const DEATH_NOTIFY_WINDOW_MS = 30_000;
-        const recent = deathRow.last_died_at != null &&
-                       (now - deathRow.last_died_at) < DEATH_NOTIFY_WINDOW_MS;
-        const stillDead = typeof deathRow.hp_current === 'number' &&
-                          deathRow.hp_current <= 0;
-        me.you_died_recently = !!(recent && stillDead);
-      }
-    } catch {
-      // columna no existe → me.last_died_at queda null, flag queda false.
+    // Sesión 51 — todo lo de combat_stats sale de la fila leída arriba (myStats).
+    if (myStats) {
+      me.last_hit_from_user_id = myStats.last_hit_from_user_id ?? null;
+      me.last_hit_damage = myStats.last_hit_damage ?? null;
+      me.last_hit_at = myStats.last_hit_at ?? null;
+      me.last_hit_is_crit = myStats.last_hit_is_crit ?? null;
+      me.mana_current = myStats.mana_current || 0;
+      me.mana_updated_at = myStats.mana_updated_at || 0;
+      me.magic_xp = myStats.magic_xp || 0;
+      // Sesión 37 — death notify
+      me.last_died_at = myStats.last_died_at ?? null;
+      const DEATH_NOTIFY_WINDOW_MS = 30_000;
+      const recent = myStats.last_died_at != null &&
+                     (now - myStats.last_died_at) < DEATH_NOTIFY_WINDOW_MS;
+      const stillDead = typeof myStats.hp_current === 'number' && myStats.hp_current <= 0;
+      me.you_died_recently = !!(recent && stillDead);
+      // Sesión 51 — vida actual (el cliente la usa para la barra sin esperar al panel de combate)
+      me.hp_current = typeof myStats.hp_current === 'number' ? myStats.hp_current : null;
+      // Sesión 50 — plegaria, calavera y pociones
+      me.prayer_points = myStats.prayer_points;
+      me.prayer_updated_at = myStats.prayer_updated_at;
+      me.active_prayers = myStats.active_prayers || '';
+      me.skulled_until = myStats.skulled_until || 0;
+      me.boosts = myStats.boosts || null;
     }
     try {
       const lastAtk = await env.DB.prepare(
@@ -441,42 +448,34 @@ export async function handleWorldSnapshot(request, env) {
     } catch (err) {
       console.warn('[snapshot] last_attacker query failed:', err.message);
     }
-    // Sesión 27 Bloque 3 — mi party_id (defensivo: si tabla no existe, null)
-    try {
-      const myParty = await env.DB.prepare(
-        `SELECT party_id FROM party_members WHERE user_id = ?`
-      ).bind(session.user_id).first();
-      if (myParty?.party_id != null) me.party_id = myParty.party_id;
-    } catch {
-      // tabla no existe → me.party_id queda null
-    }
-
-    // Sesión 50 — plegaria (el cliente calcula el gasto en vivo con estos datos)
-    try {
-      const pr = await env.DB.prepare(
-        'SELECT prayer_points, prayer_updated_at, active_prayers, skulled_until, boosts FROM combat_stats WHERE user_id = ?'
-      ).bind(session.user_id).first();
-      if (pr) {
-        me.prayer_points = pr.prayer_points;
-        me.prayer_updated_at = pr.prayer_updated_at;
-        me.active_prayers = pr.active_prayers || '';
-        me.skulled_until = pr.skulled_until || 0;   // Sesión 50 — calavera
-        me.boosts = pr.boosts || null;              // Sesión 50 — subidas de pociones
+    if (full) {
+      // Sesión 27 Bloque 3 — mi party_id (defensivo: si tabla no existe, null)
+      me.party_id = null;
+      try {
+        const myParty = await env.DB.prepare(
+          `SELECT party_id FROM party_members WHERE user_id = ?`
+        ).bind(session.user_id).first();
+        if (myParty?.party_id != null) me.party_id = myParty.party_id;
+      } catch {
+        // tabla no existe → me.party_id queda null
       }
-    } catch { /* migración 003 pendiente */ }
-
-    // Sesión 50 — progreso de misiones (solo lectura; se crean en GET /api/quests)
-    try {
-      const qr = await env.DB.prepare(
-        'SELECT quest_id, step, progress, status FROM user_quests WHERE user_id = ?'
-      ).bind(session.user_id).all();
-      me.quests = qr.results || [];
-    } catch { /* tabla aún no creada */ }
+      // Sesión 50 — progreso de misiones (solo lectura; se crean en GET /api/quests)
+      try {
+        const qr = await env.DB.prepare(
+          'SELECT quest_id, step, progress, status FROM user_quests WHERE user_id = ?'
+        ).bind(session.user_id).all();
+        me.quests = qr.results || [];
+      } catch { /* tabla aún no creada */ }
+    }
 
     // Sesión 28 — duelo activo + invites
     // Defensivo: si tabla `duels` no existe (migración no corrida), todo
     // queda en null/[] y el cliente no muestra HUD de duelo.
-    try {
+    // Sesión 51 — solo en completos o si el cliente está en duelo (d=1).
+    if (wantDuel) try {
+      me.duel = null;
+      me.duel_invites_in = [];
+      me.duel_invite_out = null;
       // 1) Cleanup lazy: cerrar duelos cuyo cast de salida ya terminó.
       //    Esto es UN UPDATE como mucho. Lo hacemos aquí para que el HUD
       //    del cliente se actualice rápido (snapshot polling = 250ms).
@@ -597,7 +596,8 @@ export async function handleWorldSnapshot(request, env) {
     // Radio 100m (fuegos no se ven desde lejos visualmente).
     const FIRES_RADIUS_M = 100;
     let fires = [];
-    try {
+    // Sesión 51 — fuegos, árboles y vetas solo en snapshots completos.
+    if (full) try {
       const fireRows = await env.DB.prepare(
         `SELECT id, x, z, log_type, lit_at, expires_at, user_id
          FROM fires
@@ -632,7 +632,7 @@ export async function handleWorldSnapshot(request, env) {
 
     // Depleted trees: árboles depletados en radio 100m (mismo que fires).
     let depleted_trees = [];
-    try {
+    if (full) try {
       const treeRows = await env.DB.prepare(
         `SELECT x, z, tree_type, depleted_until
          FROM tree_state
@@ -664,7 +664,7 @@ export async function handleWorldSnapshot(request, env) {
     // Sesión 50 — Vetas de mineral agotadas (tabla pequeña: solo guarda las
     // agotadas y el cron borra las que ya reaparecieron).
     let depleted_veins = [];
-    try {
+    if (full) try {
       const vr = await env.DB.prepare(
         `SELECT vein_id, depleted_until FROM rock_state WHERE depleted_until > ? LIMIT 500`
       ).bind(now).all();
@@ -674,8 +674,10 @@ export async function handleWorldSnapshot(request, env) {
       if (!msg.includes('no such table')) console.warn('[snapshot/rock_state]', msg);
     }
 
-    me.fosa = fosa;
-    return json({ now, players, npcs, me, fires, depleted_trees, depleted_veins, bosses });
+    if (fosaTicked) me.fosa = fosa; else delete me.fosa;
+    const out = { now, full, npc_r: npcR, players, npcs, me, bosses };
+    if (full) { out.fires = fires; out.depleted_trees = depleted_trees; out.depleted_veins = depleted_veins; }
+    return json(out);
   } catch (err) {
     console.error('[world/snapshot]', err);
     return json({ error: 'internal_error', message: err.message }, 500);

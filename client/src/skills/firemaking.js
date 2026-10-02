@@ -244,6 +244,8 @@ export async function lightFireFromSlot(slotIdx) {
           addFire(res.fire);
         }
       }
+      // Sesión 51 — que los snapshots ligeros no lo quiten hasta el próximo completo
+      try { window.__snapshotPatch?.('fire', res.fire && res.fire.id != null ? res.fire : null); } catch {}
       // Forzar sync inmediato para que el fire aparezca rápido
       syncTimer = FIRE_SYNC_INTERVAL_S;
     }

@@ -356,6 +356,7 @@ async function attemptChop(treeType, tx, tz, gen = chopGen) {
     if (treeFalls) {
       const treeName = res.tree_type || treeType;
       feedLog('info', `El árbol cae.`);
+      try { window.__snapshotFull?.(); } catch {}   // Sesión 51 — tocón en el próximo snapshot
       stopChop('depleted');
     }
   } catch (err) {

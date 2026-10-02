@@ -46,6 +46,7 @@
 
 import * as realtime from './realtime.js';   // Sesión 50
 import * as duel from './duel.js';   // Sesión 28 — hook onSnapshotMe
+import * as afk from './core/afk.js';   // Sesión 51 — sin peticiones si estás dormido
 
 // Sesión 41 — Polling ADAPTATIVO para no reventar el límite de Cloudflare
 // (100k req/día). El poll también es el "heartbeat" (manda x=&z=), así que:
@@ -60,8 +61,32 @@ const POLL_SLOW_MS = 500;          // idle / caminando
 // Sesión 50 — con el WebSocket conectado, los peers, golpes PvP, curas y
 // equipo llegan al instante por ahí → el snapshot solo lleva NPCs, suelo,
 // árboles/vetas… y puede ir mucho más lento (ahorra peticiones y lecturas D1).
-const POLL_FAST_RT_MS = 800;    // S51: 600 → 800 (ahorro de lecturas D1)
-const POLL_SLOW_RT_MS = 2500;   // S51: 1500 → 2500 (pasivos se calculan en el cliente)
+const POLL_FAST_RT_MS = 1000;   // S51: 600 → 1000 (ahorro de lecturas D1)
+const POLL_SLOW_RT_MS = 3000;   // S51: 1500 → 3000 (pasivos se calculan en el cliente)
+// Sesión 51 — 1 de cada FULL_EVERY snapshots es COMPLETO (misiones, grupo,
+// duelos, fuegos, árboles, vetas y monstruos hasta 85 m). El resto son
+// LIGEROS: monstruos a 40 m y lo urgente (vida, golpes, muerte).
+const FULL_EVERY = 4;
+const LITE_FIELDS_ME = ['party_id', 'quests', 'duel', 'duel_invites_in', 'duel_invite_out', 'fosa'];
+let _pollN = 0;
+let _forceFull = true;
+let _lastFull = null;   // { center:{x,z}, npc_r, npcs, fires, depleted_trees, depleted_veins, me }
+
+/** Pedir que el próximo snapshot sea completo (tras talar, minar, encender un fuego…). */
+export function requestFull() { _forceFull = true; }
+/**
+ * Añadir YA algo que acabas de provocar (fuego encendido, veta agotada, árbol
+ * talado) a los datos completos guardados, para que los snapshots ligeros no
+ * lo "borren" hasta que llegue el siguiente completo. Pide un completo.
+ */
+export function patchFull(kind, item) {
+  const key = kind === 'fire' ? 'fires' : kind === 'vein' ? 'depleted_veins' : 'depleted_trees';
+  if (item) {
+    if (_lastFull && Array.isArray(_lastFull[key])) _lastFull[key] = [..._lastFull[key], item];
+    if (lastSnapshot && Array.isArray(lastSnapshot[key])) lastSnapshot[key] = [...lastSnapshot[key], item];
+  }
+  _forceFull = true;
+}
 const COMBAT_GRACE_MS = 8_000;     // seguir rápido N ms tras la última pelea
 let _fastUntil = 0;                 // timestamp hasta el que polleamos rápido
 
@@ -162,6 +187,7 @@ export function start(opts) {
   lastSnapshot  = null;
   lastError     = null;
   started       = true;
+  _pollN = 0; _forceFull = true; _lastFull = null;   // Sesión 51
   _lastProcessedHitAt = 0;  // Sesión 32 — reset al arrancar el mundo
   _lastProcessedDeathAt = 0;  // Sesión 37
 
@@ -173,6 +199,9 @@ export function start(opts) {
     dbg.me        = () => lastSnapshot?.me      || {};   // Sesión 28
     dbg.lag       = () => lastSnapshot?._serverLagMs ?? null;
     dbg.lastError = () => lastError;
+    dbg.full      = () => _lastFull;   // Sesión 51
+    window.__snapshotFull = requestFull;    // Sesión 51
+    window.__snapshotPatch = patchFull;     // Sesión 51
     window.__snapshotDebug = dbg;
   }
 
@@ -201,6 +230,7 @@ export function stop() {
  */
 export function update(dt) {
   if (!started) return;
+  if (afk.isPaused()) return;   // Sesión 51 — dormido: ni una petición
   pollTimer += dt * 1000;
   if (pollTimer >= currentPollInterval() && !inFlight) {
     pollTimer = 0;
@@ -291,8 +321,13 @@ async function fetchSnapshot() {
     const x = player.position.x.toFixed(2);
     const z = player.position.z.toFixed(2);
     const sentAt = Date.now();
+    // Sesión 51 — completo o ligero; d=1 si hay duelo o invitaciones en marcha
+    const wantFull = _forceFull || !_lastFull || (_pollN % FULL_EVERY === 0);
+    _pollN++;
+    let inDuel = false;
+    try { inDuel = !!(duel.inAnyDuel?.() || lastSnapshot?.me?.duel_invites_in?.length || lastSnapshot?.me?.duel_invite_out); } catch {}
     const res = await fetch(
-      `${apiBase}/api/world/snapshot?x=${x}&z=${z}`,
+      `${apiBase}/api/world/snapshot?x=${x}&z=${z}&f=${wantFull ? 1 : 0}${inDuel ? '&d=1' : ''}`,
       {
         headers: { 'Authorization': 'Bearer ' + token },
         // Sesión 32 — bypass cache HTTP del navegador. Sin esto, algunos
@@ -315,6 +350,7 @@ async function fetchSnapshot() {
     // Lag aproximado: cuánto pasó entre server.now y nuestro recv. Esto
     // incluye latencia de red ida+vuelta + cualquier offset de reloj.
     const serverLagMs = receivedAt - data.now;
+    mergeLite(data, +x, +z);
     lastSnapshot = {
       now: data.now,
       players: Array.isArray(data.players) ? data.players : [],
@@ -374,6 +410,47 @@ async function fetchSnapshot() {
 }
 
 // ============================================================
+// Sesión 51 — Snapshots ligeros: completar con el último completo
+// ============================================================
+// Un snapshot ligero solo trae monstruos a `npc_r` m y no trae misiones,
+// grupo, duelos (salvo d=1), fuegos, árboles ni vetas. Se rellenan con lo
+// del último completo para que el resto del juego no note la diferencia.
+function mergeLite(data, cx, cz) {
+  const npcs = Array.isArray(data.npcs) ? data.npcs : [];
+  if (data.full !== false) {
+    // Completo (o servidor viejo sin el campo): guardarlo como referencia
+    _forceFull = false;
+    _lastFull = {
+      npc_r: data.npc_r || 95,
+      npcs,
+      fires: data.fires || [],
+      depleted_trees: data.depleted_trees || [],
+      depleted_veins: data.depleted_veins || [],
+      me: data.me || {},
+    };
+    return;
+  }
+  if (!_lastFull) return;
+  // Monstruos: los cercanos del ligero + los lejanos del último completo
+  const r = (data.npc_r || 40) - 1;
+  const seen = new Set(npcs.map(n => n.id));
+  for (const n of _lastFull.npcs) {
+    if (seen.has(n.id)) continue;
+    if ((n.x - cx) ** 2 + (n.z - cz) ** 2 <= r * r) continue;   // debería estar en el ligero → murió o se fue
+    npcs.push(n);
+  }
+  data.npcs = npcs;
+  if (!data.fires) data.fires = _lastFull.fires;
+  if (!data.depleted_trees) data.depleted_trees = _lastFull.depleted_trees;
+  if (!data.depleted_veins) data.depleted_veins = _lastFull.depleted_veins;
+  const me = data.me || (data.me = {});
+  for (const k of LITE_FIELDS_ME) {
+    if (!(k in me) && (k in _lastFull.me)) me[k] = _lastFull.me[k];
+    else if (k in me) _lastFull.me[k] = me[k];   // el ligero trae dato más nuevo (d=1)
+  }
+}
+
+// ============================================================
 // Sesión 32 — Procesamiento de hits recibidos vía snapshot
 // ============================================================
 //
@@ -402,6 +479,11 @@ function handleIncomingHit(me) {
   markCombatActivity();
 
   const damage = me.last_hit_damage || 0;
+
+  // Sesión 51 — la barra de vida baja ya (antes esperaba al panel de combate)
+  if (typeof me.hp_current === 'number') {
+    try { window.__setHpInstant?.(me.hp_current); } catch {}
+  }
 
   // 1) Spawn del hitsplat sobre el player local
   try {

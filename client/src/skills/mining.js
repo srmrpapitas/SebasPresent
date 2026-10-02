@@ -541,6 +541,8 @@ async function attemptMine(obj, gen) {
       try { window.__spawnLevelUpBanner?.('mining', res.new_level); } catch {}
     }
     if (res.depleted) {
+      // Sesión 51 — que los snapshots ligeros no la "revivan" hasta el próximo completo
+      try { window.__snapshotPatch?.('vein', { id: obj.vein.id, until: res.depleted_until || res.until || Date.now() + 30_000 }); } catch {}
       depletedIds.add(obj.vein.id);
       setDepleted(obj, true);
       audio.synth('vein_deplete', { volume: 0.6 });

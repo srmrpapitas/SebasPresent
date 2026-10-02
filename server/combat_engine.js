@@ -33,6 +33,7 @@ import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.j
 import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jefes
 import { activeBoosts } from '../client/src/shared/herblore.js';   // Sesión 50 — pociones
 import { wanderPos, isWanderer } from '../client/src/shared/wander.js';   // Sesión 51
+import { cellsAround } from '../client/src/shared/grid.js';            // Sesión 51 — celdas
 import { specialOf, resolveSpecial, clipSpecHits, CAPE_MAGIC_BONUS, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
@@ -790,19 +791,37 @@ async function dbGetNpcInstance(db, npcInstanceId) {
  * Nota: usamos `INSERT ... ON CONFLICT(...) DO UPDATE` (sintaxis SQLite
  * estándar, soportada por D1) en lugar de transacciones manuales.
  */
-async function mirrorCombatXpToUserSkills(db, userId, stats, now) {
-  for (const [combatCol, skillId] of Object.entries(COMBAT_SKILL_MAP)) {
+// Sesión 51 — antes: 6 escrituras (updated_at) en CADA golpe y en cada
+// consulta de combate (cada 5 s), aunque la XP no cambiara. Ahora:
+//   - tras un golpe (gained = lo que devolvió awardXp): solo las habilidades
+//     que han ganado XP, y el UPDATE solo escribe si de verdad va por detrás;
+//   - opts.periodic (consulta de combate): como mucho cada 5 min por usuario.
+const _mirrorCheckedAt = new Map();
+const GAIN_TO_COL = { attack: 'attack_xp', strength: 'strength_xp', defence: 'defence_xp', hp: 'hp_xp', ranged: 'ranged_xp', magic: 'magic_xp' };
+async function mirrorCombatXpToUserSkills(db, userId, stats, now, gained = null, opts = {}) {
+  if (opts.periodic) {
+    if (now - (_mirrorCheckedAt.get(userId) || 0) < 5 * 60_000) return;
+    _mirrorCheckedAt.set(userId, now);
+    if (_mirrorCheckedAt.size > 500) _mirrorCheckedAt.clear();
+  }
+  let cols = Object.keys(COMBAT_SKILL_MAP);
+  if (gained) {
+    cols = Object.entries(gained).filter(([, v]) => v > 0).map(([k]) => GAIN_TO_COL[k]).filter(c => c && COMBAT_SKILL_MAP[c]);
+    if (!cols.length) return;
+  }
+  for (const combatCol of cols) {
+    const skillId = COMBAT_SKILL_MAP[combatCol];
     const xp = stats[combatCol];
     if (typeof xp !== 'number' || xp < 0) continue;
-    // Si user_skills ya tiene XP >= xp, no hacemos nada (preserva XP de
-    // otros sources como /api/skills/grant). Si tiene menos, lo subimos
-    // a este valor.
+    // Si user_skills ya tiene XP >= xp, no se escribe nada (preserva XP de
+    // otras fuentes como /api/skills/grant). Si tiene menos, se sube.
     await db.run(
       `INSERT INTO user_skills (user_id, skill_id, xp, updated_at)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(user_id, skill_id) DO UPDATE SET
-         xp = MAX(user_skills.xp, excluded.xp),
-         updated_at = excluded.updated_at`,
+         xp = excluded.xp,
+         updated_at = excluded.updated_at
+       WHERE excluded.xp > user_skills.xp`,
       [userId, skillId, xp, now]
     );
   }
@@ -931,25 +950,29 @@ async function getCombatState(db, userId, opts = {}) {
   // antes de que user_skills existiera: al primer getCombatState tras el
   // deploy, se hace backfill automático.
   try {
-    await mirrorCombatXpToUserSkills(db, userId, stats, now);
+    await mirrorCombatXpToUserSkills(db, userId, stats, now, null, { periodic: true });
   } catch (err) {
     console.error('[combat/state] mirror failed:', err);
   }
 
   // Sesión 51 — antes devolvía TODOS los NPC vivos (4.000+ filas leídas cada
-  // 5 s por jugador). Ahora solo los cercanos (el render usa el snapshot).
-  let me = null;
-  try { me = await db.first('SELECT x, z FROM online_users WHERE user_id = ?', [userId]); } catch {}
-  const R = 60;
-  const npcs = me && Number.isFinite(me.x) ? await db.all(
-    `SELECT i.id, i.def_id, i.hp_current, i.x, i.z, i.status,
-            d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
-            d.attack_speed_ticks, d.max_hit, d.attack_range, d.model
-     FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
-     WHERE i.status = 0 AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
-       AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`,
-    [userId, me.x - R, me.x + R, me.z - R, me.z + R]
-  ) : [];
+  // 5 s por jugador). Luego solo los cercanos. Ahora ninguno: el cliente los
+  // saca del snapshot (que ya los lee); esta lista solo se usaba para nombres.
+  let npcs = [];
+  if (opts.withNpcs) {
+    let me = null;
+    try { me = await db.first('SELECT x, z FROM online_users WHERE user_id = ?', [userId]); } catch {}
+    const R = 40;
+    npcs = me && Number.isFinite(me.x) ? await db.all(
+      `SELECT i.id, i.def_id, i.hp_current, i.x, i.z, i.status,
+              d.name, d.max_hp, d.attack_lvl, d.strength_lvl, d.defence_lvl,
+              d.attack_speed_ticks, d.max_hit, d.attack_range, d.model
+       FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
+       WHERE i.status = 0 AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
+         AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`,
+      [userId, me.x - R, me.x + R, me.z - R, me.z + R]
+    ) : [];
+  }
   const lvls = levelsOf(stats);
   return {
     stats: {
@@ -1204,7 +1227,16 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   if (isMagic && spell.area && npc.x != null) {
     areaHits = [];
     const A = spell.area;
-    const others = await db.all(
+    // Sesión 51 — por celdas (lee solo los de alrededor); si la migración 019
+    // aún no está, por caja como antes.
+    const cells = cellsAround(npc.x, npc.z, A.radius);
+    let others = await db.all(
+      `SELECT i.id, i.hp_current, i.x, i.z, d.defence_lvl FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
+        WHERE i.status = 0 AND i.cell IN (${cells.map(() => '?').join(',')}) AND i.id != ? AND i.hp_current > 1
+          AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)`,
+      [...cells, npc.id, userId]
+    ).catch(() => null);
+    if (!others) others = await db.all(
       `SELECT i.id, i.hp_current, i.x, i.z, d.defence_lvl FROM npc_instances i JOIN npc_defs d ON d.id = i.def_id
         WHERE i.status = 0 AND i.id != ? AND i.hp_current > 1
           AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?
@@ -1407,17 +1439,15 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // se replica; si no hubo (miss total), igual mirroreamos por seguridad
   // (es idempotente y barato).
   try {
-    await mirrorCombatXpToUserSkills(db, userId, stats, now);
+    await mirrorCombatXpToUserSkills(db, userId, stats, now, xpGained);
   } catch (err) {
     console.error('[combat/attack] mirror failed:', err);
   }
 
   // ---- Log ----
-  await db.run(
-    `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
-     VALUES (?, 0, ?, 1, ?, ?, ?, ?)`,
-    [now, userId, npc.id, dmgToNpc, userHit.hit ? 1 : 0, npcKilled ? 1 : 0]
-  );
+  // Sesión 51 — los golpes jugador→monstruo ya no se registran: nadie los
+  // lee y costaban 2 escrituras D1 por golpe (fila + índice). El registro
+  // monstruo→jugador sí (lo usa el auto-contraataque del snapshot).
   if (npcCounterHit) {
     await db.run(
       `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
@@ -2564,48 +2594,75 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
   if (!viewer || !Number.isFinite(viewer.x) || !Number.isFinite(viewer.z)) return changes;
 
   // 1) NPCs agresivos vivos cerca del viewer (bounding box ~aggro+leash).
+  // Sesión 51 — el snapshot ya ha leído los monstruos de alrededor (opts.rows,
+  // con la ficha en row.def): se reutilizan en vez de volver a leerlos.
   const R = 40; // Sesión 50 — 60→40 m: con el mundo lleno, menos trabajo por tick
-  let npcs;
-  try {
-    npcs = await env.DB.prepare(
-      `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
-              i.in_combat_with, i.last_attack_at, i.last_moved_at, i.spawn_x, i.spawn_z, i.frozen_until,
-              d.behavior, d.aggro_radius, d.attack_range, d.attack_speed_ticks,
-              d.attack_lvl, d.strength_lvl, d.max_hit, d.style
-       FROM npc_instances i
-       JOIN npc_defs d ON d.id = i.def_id
-       WHERE i.status = 0
-         AND d.behavior = 'aggressive'
-         AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
-         AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`
-    ).bind(viewer.user_id, viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
-  } catch (err) {
-    // Si la migración no corrió (no existe columna behavior), no-op silencioso.
-    return changes;
+  let rows;
+  if (Array.isArray(opts.rows)) {
+    rows = [];
+    for (const r of opts.rows) {
+      const d = r.def;
+      if (!d || d.behavior !== 'aggressive') continue;
+      if (Math.abs(r.x - viewer.x) > R || Math.abs(r.z - viewer.z) > R) continue;
+      rows.push(Object.assign(r, {
+        behavior: d.behavior, aggro_radius: d.aggro_radius, attack_range: d.attack_range,
+        attack_speed_ticks: d.attack_speed_ticks, attack_lvl: d.attack_lvl,
+        strength_lvl: d.strength_lvl, max_hit: d.max_hit, style: d.style,
+      }));
+    }
+  } else {
+    let npcs;
+    try {
+      npcs = await env.DB.prepare(
+        `SELECT i.id, i.def_id, i.x, i.z, i.hp_current, i.status,
+                i.in_combat_with, i.last_attack_at, i.last_moved_at, i.spawn_x, i.spawn_z, i.frozen_until,
+                d.behavior, d.aggro_radius, d.attack_range, d.attack_speed_ticks,
+                d.attack_lvl, d.strength_lvl, d.max_hit, d.style
+         FROM npc_instances i
+         JOIN npc_defs d ON d.id = i.def_id
+         WHERE i.status = 0
+           AND d.behavior = 'aggressive'
+           AND (i.owner_user_id IS NULL OR i.owner_user_id = ?)
+           AND i.x BETWEEN ? AND ? AND i.z BETWEEN ? AND ?`
+      ).bind(viewer.user_id, viewer.x - R, viewer.x + R, viewer.z - R, viewer.z + R).all();
+    } catch (err) {
+      // Si la migración no corrió (no existe columna behavior), no-op silencioso.
+      return changes;
+    }
+    rows = (npcs && npcs.results) || [];
   }
-
-  const rows = (npcs && npcs.results) || [];
   if (rows.length === 0) return changes;
   const aggroStmts = [];
 
   // Stats del viewer (HP + defensa) para el contraataque.
-  let viewerStats;
-  try {
-    viewerStats = await env.DB.prepare(
-      `SELECT * FROM combat_stats WHERE user_id = ?`
-    ).bind(viewer.user_id).first();
-  } catch { viewerStats = null; }
+  // Sesión 51 — el snapshot ya la ha leído (opts.viewerStats); si un monstruo
+  // pega, se actualiza ese mismo objeto para que el snapshot lo devuelva bien.
+  let viewerStats = opts.viewerStats || null;
+  if (!viewerStats) {
+    try {
+      viewerStats = await env.DB.prepare(
+        `SELECT * FROM combat_stats WHERE user_id = ?`
+      ).bind(viewer.user_id).first();
+    } catch { viewerStats = null; }
+  }
   if (!viewerStats || viewerStats.hp_current <= 0) return changes; // muerto: no agro
 
   const viewerFx = prayerFx(viewerStats, now);   // Sesión 50 — plegarias del jugador
   const viewerDefLvl = Math.floor((viewerStats.defence_xp != null ? levelFromXp(viewerStats.defence_xp) : 1) * (1 + viewerFx.def)) + (viewerFx.flat?.defence || 0);
   // Sesión 50 — la armadura y el estilo defensivo del jugador cuentan.
-  let viewerDefMult = 1;
-  try {
-    const eq = await getEquipBonuses(makeEnvDb(env), viewer.user_id);
-    const st = await env.DB.prepare('SELECT combat_style FROM users WHERE id = ?').bind(viewer.user_id).first();
-    viewerDefMult = defMultOf(eq, STYLE_TO_STANCE[st?.combat_style] || 'smash');
-  } catch {}
+  // Sesión 51 — solo se lee si algún monstruo va a pegar de verdad (antes:
+  // equipo + estilo en cada snapshot con un agresivo cerca).
+  let viewerDefMult = null;
+  const loadDefMult = async () => {
+    if (viewerDefMult !== null) return viewerDefMult;
+    viewerDefMult = 1;
+    try {
+      const eq = await getEquipBonuses(makeEnvDb(env), viewer.user_id);
+      const st = await env.DB.prepare('SELECT combat_style FROM users WHERE id = ?').bind(viewer.user_id).first();
+      viewerDefMult = defMultOf(eq, STYLE_TO_STANCE[st?.combat_style] || 'smash');
+    } catch {}
+    return viewerDefMult;
+  };
   let viewerHp = viewerStats.hp_current;
 
   for (const npc of rows) {
@@ -2671,7 +2728,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
         const cooldownMs = (npc.attack_speed_ticks || 4) * TICK_MS;
         const ready = !npc.last_attack_at || (now - npc.last_attack_at) >= cooldownMs;
         if (ready && viewerHp > 0) {
-          const roll = rollHit(rng, npc.attack_lvl, viewerDefLvl, npc.max_hit, 1, viewerDefMult);
+          const roll = rollHit(rng, npc.attack_lvl, viewerDefLvl, npc.max_hit, 1, await loadDefMult());
           const blocked = (npcStyle === 'melee' && viewerFx.protectMelee)
             || (npcStyle === 'ranged' && viewerFx.protectRanged)
             || (npcStyle === 'magic' && viewerFx.protectMagic);
@@ -2699,6 +2756,13 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
 
     if (attacked) {
       viewerHp = Math.max(0, viewerHp - dmg);
+      // Sesión 51 — reflejar el golpe en la fila que devuelve el snapshot
+      viewerStats.hp_current = viewerHp;
+      viewerStats.last_hit_from_user_id = null;
+      viewerStats.last_hit_damage = dmg;
+      viewerStats.last_hit_at = now;
+      viewerStats.last_hit_is_crit = 0;
+      if (viewerHp <= 0) viewerStats.last_died_at = now;
       // Daño al jugador + last_hit_* (la Pieza 1 lo muestra a todos).
       try {
         await env.DB.prepare(
@@ -2748,7 +2812,7 @@ export async function tickNpcAggro(env, viewer, now, opts = {}) {
           moved ? now : (npc.last_moved_at || null),
           npc.id
         ));
-      changes.set(npc.id, { x: newX, z: newZ, in_combat_with: target || null });
+      changes.set(npc.id, { x: newX, z: newZ, in_combat_with: target || null, attacked });
     }
   }
   if (aggroStmts.length) { try { await env.DB.batch(aggroStmts); } catch {} }

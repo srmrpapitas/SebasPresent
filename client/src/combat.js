@@ -32,6 +32,7 @@
  *   - feedLog(type, text)
  */
 
+import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si estás dormido
 import * as api from './api.js';
 import * as spellbook from './spellbook.js';   // Sesión 41 — hechizo seleccionado
 import * as equipment from './equipment.js';
@@ -47,7 +48,7 @@ import * as realtime from './realtime.js';                               // Sesi
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
-const POLL_INTERVAL_MS = 5000;   // S50: 3000 → 5000 (golpes PvP y curas llegan por WebSocket)
+const POLL_INTERVAL_MS = 10000;  // S50: 3000 → 5000 · S51: → 10000 (vida y golpes llegan por el snapshot y el WebSocket)
 const FEED_MAX_LINES = 50;
 
 // Sesión 17 — mapping skill_id interno → skill_id del catálogo nuevo.
@@ -194,6 +195,14 @@ export async function refresh() {
   }
 }
 
+// Sesión 51 — el servidor ya no manda los monstruos en /combat/state (los
+// trae el snapshot del mundo); para nombres y datos se mira en los dos.
+function findNpc(npcId) {
+  const a = state?.npcs?.find?.(n => n.id === npcId);
+  if (a) return a;
+  try { return worldSnapshot.getNpcs().find(n => n.id === npcId) || null; } catch { return null; }
+}
+
 export function getStateSnapshot() {
   return state ? {
     stats: state.stats,
@@ -241,6 +250,7 @@ function startPolling() {
     // por el server cada vez que pedimos state. Mientras hay un target
     // de combate activo (NPC o player PVP), el auto-attack ya está
     // refrescando por su lado.
+    if (afk.isPaused()) return;   // Sesión 51
     if (currentTargetNpcId === null && currentTargetPlayerId === null) {
       refresh().catch(() => {});
     }
@@ -272,7 +282,7 @@ export async function engageNpc(npcId) {
   currentTargetPlayerId = null;
   // Reset anti-loop de auto-retaliate (engage manual recalibra)
   lastAutoEngagedAttackerKey = null;
-  const npc = state?.npcs?.find(n => n.id === npcId);
+  const npc = findNpc(npcId);
   if (npc) feedLog('info', `Atacas: ${npc.name}.`);
   currentTargetNpcId = npcId;
   currentTarget = npcId; // legacy alias
@@ -436,7 +446,7 @@ async function doAttackTickNpc(gen = attackGen) {
     return;
   }
 
-  const npc = state?.npcs?.find(n => n.id === npcId);
+  const npc = findNpc(npcId);
   const npcName = npc ? npc.name : 'el objetivo';
 
   // Sesión 41 — info del hechizo (null si no fue magia).
@@ -668,7 +678,7 @@ async function doAttackTickNpc(gen = attackGen) {
     state.stats.strength.level = result.your_levels.strength;
     state.stats.defence.level = result.your_levels.defence;
     state.stats.hp.level = result.your_levels.hp;
-    const n = state.npcs.find(n => n.id === npcId);
+    const n = (state.npcs || []).find(n => n.id === npcId);
     if (n) {
       if (result.npc_killed) state.npcs = state.npcs.filter(x => x.id !== npcId);
       else n.hp_current = result.npc_hp;
