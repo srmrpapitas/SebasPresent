@@ -806,7 +806,14 @@ export async function startWorld(loggedInUser, token) {
             specFx.descend(() => tgt, pal, 1046);
           } else if (m.k === 'slam' && m.c === 'gs_achaman') {
             if (peer?.group) specFx.peerSlam(peer.group, pal, null, 1046, true);
+            specFx.wings(() => peer?.group?.position || pos, yaw, 1046, pal);
             setTimeout(() => specFx.ascend(tgt || specFx.impactPoint(pos, tgt), pal), 1046);
+          } else if (m.k === 'slam' && m.c === 'gs_guayota') {
+            if (peer?.group) specFx.peerSlam(peer.group, pal, null, 1046, true);
+            setTimeout(() => specFx.guayotaPrison(() => tgt || specFx.impactPoint(pos, tgt), specFx.PALETTES.guayota), 1046);
+          } else if (m.k === 'slam' && m.c === 'sword_teiderio_2h') {
+            if (peer?.group) specFx.peerSlam(peer.group, pal, null, 1046, true);
+            setTimeout(() => { const at = specFx.impactPoint(peer?.group?.position || pos, tgt); specFx.teideEruption(at, () => tgt || at, pal); }, 1046);
           } else if (m.k === 'slam') {
             if (peer?.group) specFx.peerSlam(peer.group, pal, tgt);
             else setTimeout(() => specFx.slam(specFx.impactPoint(pos, tgt), pal), 1046);

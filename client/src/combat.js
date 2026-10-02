@@ -1221,12 +1221,19 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
   if (slam && typeof window.__playerPlaySpecial === 'function') {
     // Sesión 51 — cada espadón con su golpe: Achamán ASCIENDE (todo sube al
     // cielo), Tibicena DESCIENDE (un espadón gigante cae sobre el enemigo).
-    const style = weaponItem === 'gs_achaman' ? 'ascend' : weaponItem === 'gs_tibicena' ? 'descend' : 'slam';
+    // Sesión 51 (b) — y cada uno con SU efecto: Guayota encierra al enemigo en
+    // una jaula de obsidiana sobre grietas de lava; el Teide levanta una hilera
+    // de cristales y un volcán que entra en erupción.
+    const style = weaponItem === 'gs_achaman' ? 'ascend' : weaponItem === 'gs_tibicena' ? 'descend'
+      : weaponItem === 'gs_guayota' ? 'prison' : weaponItem === 'sword_teiderio_2h' ? 'teide' : 'slam';
+    const hop = style === 'ascend' ? 1.15 : style === 'prison' ? 0.35 : sp.fx === 'smash' ? 0.42 : 0.65;
     const r = window.__playerPlaySpecial(sp.fx, wt, {
-      stance: uiSelectedStance, cooldownMs: result.cooldown_ms, glowColor: pal.light, hop: sp.fx === 'smash' ? 0.42 : 0.65,
+      stance: uiSelectedStance, cooldownMs: result.cooldown_ms, glowColor: pal.light, hop,
       onImpact: () => {
         const at = specFx.impactPoint(window.__getPlayerPosition?.() || me, targetPos);
         if (at && style === 'ascend') specFx.ascend(tgt() || at, pal);
+        else if (at && style === 'prison') specFx.guayotaPrison(() => tgt() || at, specFx.PALETTES.guayota);
+        else if (at && style === 'teide') specFx.teideEruption(at, () => tgt() || at, pal);
         else if (at && style === 'slam') specFx.slam(at, pal, sp.fx === 'smash' ? 0.75 : 1);
         if (sp.fx === 'heal' || sp.healed > 0) specFx.heal(() => window.__getPlayerPosition?.(), specFx.PALETTES.heal);
         // Sesión 51 — Prisión de Guayota (congela) y Mordisco de Tibicena (baja defensa)
@@ -1238,6 +1245,10 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
     });
     if (r === 'special_slam') {
       if (style === 'descend' && targetPos) specFx.descend(tgt, pal, SLAM_IMPACT_MS);
+      if (style === 'ascend') {
+        const yawW = me && targetPos ? Math.atan2(targetPos.x - me.x, targetPos.z - me.z) : 0;
+        specFx.wings(() => window.__getPlayerPosition?.(), yawW, SLAM_IMPACT_MS, pal);
+      }
       specFx.trail(() => window.__playerWeaponSegment?.(), SLAM_IMPACT_MS + 120, pal);
       try { audio.synth?.('altar', { volume: 0.55, pitch: 0.95 }); } catch {}
       return SLAM_IMPACT_MS;
@@ -1255,6 +1266,9 @@ function runSpecialVisuals(result, targetPos, getTarget = null) {
       specFx.beam(() => window.__getPlayerPosition?.(), tgt, specFx.PALETTES.vesta, 900);
       setTimeout(() => specFx.skyBolt(tgt, specFx.PALETTES.vesta), 220);
       try { audio.synth?.('altar', { volume: 1, pitch: 0.3 }); } catch {}
+      // el golpe se ve cuando cae el relámpago gigante
+      setTimeout(() => { try { audio.synth?.('altar', { volume: 1, pitch: 0.2 }); } catch {} }, 220 + specFx.SKYBOLT_STRIKE_MS);
+      return 220 + specFx.SKYBOLT_STRIKE_MS;
     }
     else if (sp.fx === 'volatile') specFx.burst(targetPos, specFx.PALETTES.dragon, 380);
     else if (sp.fx === 'arcane') specFx.burst(targetPos, specFx.PALETTES.arcane, 380);

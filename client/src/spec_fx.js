@@ -614,79 +614,6 @@ function points(n, color, size, blending = THREE.AdditiveBlending, opacity = 1) 
 }
 
 // ------------------------------------------------------------
-// ASCENSO (Espadón de Achamán): todo SUBE — tornado de viento y plumas de
-// luz que se elevan girando, rayos que salen del suelo hacia el cielo y una
-// columna que crece hacia arriba.
-// ------------------------------------------------------------
-export function ascend(pos, P = PALETTES.achaman) {
-  if (!_scene) return;
-  const root = new THREE.Group();
-  root.position.set(pos.x, (pos.y || 0) + 0.04, pos.z);
-  _scene.add(root);
-  const light = new THREE.PointLight(P.light, 0, 18, 1.5); light.position.y = 2; root.add(light);
-  // Columna que crece de abajo arriba
-  const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.1, 22, 32, 1, true).translate(0, 11, 0), pillarMaterial(P.main));
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.3, 22, 16, 1, true).translate(0, 11, 0), pillarMaterial(P.core));
-  root.add(pil, core);
-  // Tornado: 3 hélices de cinta que giran y suben
-  const helices = [];
-  for (let h = 0; h < 3; h++) {
-    const pts = [];
-    for (let i = 0; i <= 60; i++) { const k = i / 60, a = h * 2.094 + k * 9; const r = 0.4 + k * 1.6; pts.push(new THREE.Vector3(Math.cos(a) * r, k * 9, Math.sin(a) * r)); }
-    const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 120, 0.05, 5, false), addMat(h === 1 ? P.core : P.main, 0.9));
-    m.scale.y = 0.01; root.add(m); helices.push(m);
-  }
-  // Plumas de luz que suben en espiral
-  const N = 70, feathers = [];
-  const fGeo = new THREE.PlaneGeometry(0.12, 0.42);
-  for (let i = 0; i < N; i++) {
-    const m = new THREE.Mesh(fGeo, addMat(i % 3 ? P.main : P.core, 0));
-    const s = { a: Math.random() * 6.28, r: 0.3 + Math.random() * 1.8, v: 3 + Math.random() * 6, d: Math.random() * 0.5, spin: (Math.random() - 0.5) * 8 };
-    m.userData.s = s; root.add(m); feathers.push(m);
-  }
-  // Rayos del suelo al cielo
-  const bolts = new THREE.Group(); root.add(bolts);
-  let nextBolt = 0;
-  // Anillo en el suelo
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 80), addMat(P.core, 1));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; root.add(ring);
-  const rune = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), addMat(P.main, 0, { map: runeTexture() }));
-  rune.rotation.x = -Math.PI / 2; rune.position.y = 0.05; root.add(rune);
-  shake(0.22, 0.4);
-  add({
-    t: 0, dur: 2.4,
-    update(t, dt) {
-      light.intensity = t < 0.1 ? t * 260 : 26 * Math.exp(-(t - 0.1) * 2.2);
-      const grow = Math.min(1, t / 0.45);                 // crece hacia arriba
-      pil.scale.set(1, grow, 1); core.scale.set(1, grow, 1);
-      const pa = t < 1.2 ? 1 : Math.max(0, 1 - (t - 1.2) / 1.0);
-      pil.material.uniforms.uT.value = -t; core.material.uniforms.uT.value = -t;   // bandas que suben
-      pil.material.uniforms.uA.value = pa * 0.55; core.material.uniforms.uA.value = pa * 0.9;
-      helices.forEach((m, i) => { m.scale.y = Math.min(1, t / 0.6); m.rotation.y = t * (4 + i); m.position.y = Math.max(0, t - 0.6) * 4; m.material.opacity = 0.9 * pa; });
-      for (const m of feathers) {
-        const s = m.userData.s, k = Math.max(0, t - s.d);
-        const a = s.a + k * 3.2, r = s.r * (1 + k * 0.4);
-        m.position.set(Math.cos(a) * r, k * s.v, Math.sin(a) * r);
-        m.rotation.set(0, -a + s.spin * k, 0.4);
-        m.material.opacity = k <= 0 ? 0 : Math.min(1, k * 6) * Math.max(0, 1 - k / 1.8);
-      }
-      if (t < 1.1 && t >= nextBolt) {
-        nextBolt = t + 0.08;
-        const a = Math.random() * 6.28, r = Math.random() * 1.2;
-        const from = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
-        const to = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 12 + Math.random() * 6, (Math.random() - 0.5) * 2));
-        const b = boltMesh(zigzag(from, to, 10, 1.2), 0.04, P.core, 1);
-        b.userData.born = t; bolts.add(b);
-      }
-      for (const b of [...bolts.children]) { const age = t - b.userData.born; b.material.opacity = Math.max(0, 1 - age / 0.25); if (age > 0.25) { b.geometry.dispose(); b.material.dispose(); bolts.remove(b); } }
-      ring.scale.setScalar(0.3 + Math.min(1, t / 0.5) * 4.5); ring.material.opacity = Math.max(0, 1 - t / 0.7);
-      rune.rotation.z -= dt * 2; rune.material.opacity = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 0.15) / 1.4);
-    },
-    dispose() { disposeObj(root); fGeo.dispose(); },
-  });
-}
-
-// ------------------------------------------------------------
 // DESCENSO (Espadón de Tibicena): un espadón gigante de sombra y bronce
 // cae del cielo sobre el objetivo y lo aplasta (llega en `ms`).
 // ------------------------------------------------------------
@@ -866,64 +793,522 @@ export function clawFrenzy(pos, yaw = 0, P = PALETTES.dragon) {
   });
 }
 
+// ============================================================
+// Sesión 51 (b) — UN EFECTO PROPIO PARA CADA ESPECIAL
+// ============================================================
+
+/** Ruido determinista (mismas costuras en geometrías con vértices repetidos). */
+function hash3(x, y, z) { const h = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453; return h - Math.floor(h); }
+function jitterGeo(geo, amt) {
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const k = (hash3(Math.round(x * 100), Math.round(y * 100), Math.round(z * 100)) - 0.5) * 2 * amt;
+    const r = Math.hypot(x, z);
+    if (r > 1e-4) { p.setX(i, x * (1 + k / Math.max(r, 0.3))); p.setZ(i, z * (1 + k / Math.max(r, 0.3))); }
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+const easeOut = (k) => 1 - Math.pow(1 - Math.min(1, Math.max(0, k)), 3);
+const easeBack = (k) => { k = Math.min(1, Math.max(0, k)); const c = 2.2; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+
+/** Destello de pantalla (DOM) — color css, opacidad máxima, duración. */
+export function screenFlash(color = 'rgba(220,170,255,1)', peak = 0.6, ms = 260, rampMs = 30) {
+  if (typeof document === 'undefined') return;
+  const d = document.createElement('div');
+  d.style.cssText = `position:fixed;inset:0;pointer-events:none;z-index:40;background:${color};opacity:0;transition:opacity ${rampMs}ms linear`;
+  document.body.appendChild(d);
+  requestAnimationFrame(() => {
+    d.style.opacity = String(peak);
+    setTimeout(() => { d.style.transition = `opacity ${ms}ms ease-out`; d.style.opacity = '0'; }, rampMs + 10);
+    setTimeout(() => d.remove(), rampMs + ms + 80);
+  });
+}
+
 // ------------------------------------------------------------
-// RAYO DEL CIELO (Tindaya): un relámpago morado gigante cae sobre el
-// objetivo — tres latigazos, destello que lo ilumina todo, anillo en el
-// suelo, quemadura y chispas negras y moradas.
+// ALAS DE LUZ (Achamán): mientras saltas se abren dos alas enormes de
+// plumas de luz a tu espalda; al golpear baten y se deshacen en plumas.
 // ------------------------------------------------------------
+let _featherGeo = null;
+function featherGeo() {
+  if (_featherGeo) return _featherGeo;
+  const sh = new THREE.Shape();
+  sh.moveTo(0, 0); sh.quadraticCurveTo(0.12, 0.25, 0.08, 0.8); sh.quadraticCurveTo(0.05, 0.97, 0, 1);
+  sh.quadraticCurveTo(-0.05, 0.97, -0.08, 0.8); sh.quadraticCurveTo(-0.12, 0.25, 0, 0);
+  _featherGeo = new THREE.ShapeGeometry(sh, 6);
+  return _featherGeo;
+}
+export function wings(getPos, yaw = 0, ms = 1046, P = PALETTES.achaman) {
+  if (!_scene) return;
+  const root = new THREE.Group(); _scene.add(root);
+  const light = new THREE.PointLight(P.light, 0, 9, 1.4); light.position.set(0, 1.6, -0.4); root.add(light);
+  const sides = [];
+  for (const sx of [-1, 1]) {
+    const w = new THREE.Group(); w.position.set(sx * 0.22, 1.5, -0.3); w.rotation.y = -sx * 0.45; root.add(w);
+    const fs = [];
+    const N = 11;
+    for (let i = 0; i < N; i++) {
+      const k = i / (N - 1);
+      const L = 0.9 + 1.9 * Math.sin(Math.PI * (0.15 + k * 0.7)) + k * 0.4;
+      const m = new THREE.Mesh(featherGeo(), addMat(i % 3 === 0 ? P.core : (i % 3 === 1 ? P.main : P.light), 0));
+      m.scale.set(1.3 + k * 0.6, L, 1);
+      w.add(m);
+      fs.push({ m, k, target: sx * (-0.12 - k * 1.95) });   // de casi vertical a casi horizontal hacia abajo
+    }
+    sides.push({ w, fs, sx });
+  }
+  const loose = points(60, P.core, 0.2); root.add(loose);
+  const lv = []; for (let i = 0; i < 60; i++) lv.push(new THREE.Vector3());
+  const T = ms / 1000;
+  let flapped = false;
+  add({
+    t: 0, dur: T + 1.0,
+    update(t, dt) {
+      const c = getPos?.(); if (c) root.position.set(c.x, (c.y || 0), c.z);
+      root.rotation.y = yaw;
+      const open = easeBack(t / 0.38);
+      const after = Math.max(0, t - T);
+      for (const s of sides) {
+        for (const f of s.fs) {
+          let ang = f.target * open;
+          if (after > 0) ang += -s.sx * Math.min(1, after / 0.18) * 0.9 * (1 - f.k * 0.4);   // batida
+          f.m.rotation.z = ang;
+          const o = t < 0.3 ? t / 0.3 : (after > 0 ? Math.max(0, 1 - after / 0.45) : 0.75 + 0.2 * Math.sin(t * 9 + f.k * 4));
+          f.m.material.opacity = o * (0.55 + 0.45 * (1 - f.k * 0.5));
+        }
+        s.w.position.y = 1.5 + Math.sin(Math.min(1, t / T) * Math.PI) * 0.25;
+      }
+      light.intensity = t < T ? Math.min(1, t / 0.3) * 7 : Math.max(0, 7 * (1 - after / 0.5));
+      if (!flapped && t >= T) {
+        flapped = true;
+        const p = loose.geometry.attributes.position;
+        for (let i = 0; i < 60; i++) {
+          const sx = i % 2 ? 1 : -1, a = Math.random();
+          p.setXYZ(i, sx * (0.3 + a * 2.2), 1.2 + Math.random() * 2, -0.4 - Math.random() * 0.6);
+          lv[i].set(sx * (1 + Math.random() * 2), 2 + Math.random() * 3, -Math.random() * 2);
+        }
+      }
+      if (flapped) {
+        const p = loose.geometry.attributes.position;
+        for (let i = 0; i < 60; i++) { lv[i].multiplyScalar(0.97); p.setXYZ(i, p.getX(i) + lv[i].x * dt, p.getY(i) + lv[i].y * dt, p.getZ(i) + lv[i].z * dt); }
+        p.needsUpdate = true;
+        loose.material.opacity = Math.max(0, 1 - after / 1.0);
+      } else loose.material.opacity = 0;
+    },
+    dispose() { disposeObj(root); },
+  });
+}
+
+// ------------------------------------------------------------
+// JUICIO DE ACHAMÁN (ascendente): una lanza de luz sale disparada del suelo
+// hasta el cielo, un ciclón de anillos de viento sube girando, plumas en
+// espiral y relámpagos que suben; arriba, un halo solar.
+// ------------------------------------------------------------
+export function ascend(pos, P = PALETTES.achaman) {
+  if (!_scene) return;
+  const root = new THREE.Group();
+  root.position.set(pos.x, (pos.y || 0) + 0.04, pos.z);
+  _scene.add(root);
+  const light = new THREE.PointLight(P.light, 0, 26, 1.3); light.position.y = 4; root.add(light);
+  // Lanza de luz al cielo
+  const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 60, 20, 1, true).translate(0, 30, 0), pillarMaterial(P.core));
+  const spearHalo = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 60, 24, 1, true).translate(0, 30, 0), pillarMaterial(P.main));
+  root.add(spear, spearHalo);
+  // Ciclón: anillos de viento que suben, se abren y giran
+  const rings = [];
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(1, 0.03 + (i % 2) * 0.02, 6, 72, Math.PI * 1.6), addMat(i % 2 ? P.core : P.main, 0));
+    m.rotation.x = Math.PI / 2; root.add(m);
+    rings.push({ m, d: i * 0.07, v: 6 + i * 0.7, spin: (i % 2 ? 1 : -1) * (5 + i) });
+  }
+  // Plumas en espiral
+  const feathers = [];
+  for (let i = 0; i < 46; i++) {
+    const m = new THREE.Mesh(featherGeo(), addMat(i % 3 ? P.main : P.core, 0));
+    m.scale.set(1.6, 0.5, 1);
+    m.userData.s = { a: Math.random() * 6.28, r: 0.4 + Math.random() * 1.6, v: 3 + Math.random() * 6, d: Math.random() * 0.4, spin: (Math.random() - 0.5) * 8 };
+    root.add(m); feathers.push(m);
+  }
+  // Polvo que entra en espiral hacia el centro
+  const ND = 90, dust = points(ND, 0xe8e2d0, 0.22, THREE.NormalBlending, 0.7); root.add(dust);
+  const dd = []; for (let i = 0; i < ND; i++) dd.push({ a: Math.random() * 6.28, r: 2 + Math.random() * 3, h: Math.random() * 0.3 });
+  // Halo solar arriba
+  const halo = new THREE.Group(); halo.position.y = 5.5; root.add(halo);
+  const h1 = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.12, 64), addMat(P.core, 0)); h1.rotation.x = -Math.PI / 2; halo.add(h1);
+  const h2 = new THREE.Mesh(new THREE.RingGeometry(1.35, 1.42, 64), addMat(P.spark, 0)); h2.rotation.x = -Math.PI / 2; halo.add(h2);
+  for (let i = 0; i < 16; i++) {
+    const ray = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.7).translate(0, 1.85, 0), addMat(P.spark, 0));
+    ray.rotation.set(-Math.PI / 2, 0, (i / 16) * Math.PI * 2); h2.add(ray);
+  }
+  const bolts = new THREE.Group(); root.add(bolts);
+  let nextBolt = 0;
+  shake(0.35, 0.5);
+  add({
+    t: 0, dur: 2.6,
+    update(t, dt) {
+      light.intensity = t < 0.08 ? t * 600 : 48 * Math.exp(-(t - 0.08) * 2.4);
+      // lanza: sube en 0.15 s, se ensancha y se apaga
+      const g = Math.min(1, t / 0.15);
+      const wv = 1 + Math.max(0, t - 0.15) * 2.2;
+      const sa = t < 0.15 ? 1 : Math.max(0, 1 - (t - 0.15) / 0.9);
+      spear.scale.set(1 / wv * 1.4, g, 1 / wv * 1.4); spearHalo.scale.set(wv, g, wv);
+      spear.material.uniforms.uT.value = -t * 2; spearHalo.material.uniforms.uT.value = -t * 2;
+      spear.material.uniforms.uA.value = sa; spearHalo.material.uniforms.uA.value = sa * 0.45;
+      for (const r of rings) {
+        const k = t - r.d; if (k < 0) continue;
+        r.m.position.y = 0.2 + k * r.v * Math.max(0.3, 1 - k * 0.35);
+        const sc = 0.5 + k * 2.4; r.m.scale.set(sc, sc, 1);
+        r.m.rotation.z += r.spin * dt;
+        r.m.material.opacity = Math.min(1, k * 8) * Math.max(0, 1 - k / 1.3);
+      }
+      for (const m of feathers) {
+        const s = m.userData.s, k = Math.max(0, t - s.d);
+        const a = s.a + k * 3.4, r = s.r * (1 + k * 0.5);
+        m.position.set(Math.cos(a) * r, k * s.v, Math.sin(a) * r);
+        m.rotation.set(0.3, -a + s.spin * k, 0.5);
+        m.material.opacity = k <= 0 ? 0 : Math.min(1, k * 6) * Math.max(0, 1 - k / 1.9);
+      }
+      const dp = dust.geometry.attributes.position;
+      for (let i = 0; i < ND; i++) { const d = dd[i]; const r = Math.max(0.1, d.r - t * 2.6); const a = d.a + t * 4 / (0.4 + r * 0.3); dp.setXYZ(i, Math.cos(a) * r, d.h + Math.max(0, 2.5 - r) * t * 2.5, Math.sin(a) * r); }
+      dp.needsUpdate = true; dust.material.opacity = 0.7 * Math.max(0, 1 - t / 1.6);
+      if (t < 1.0 && t >= nextBolt) {
+        nextBolt = t + 0.07;
+        const a = Math.random() * 6.28, r = Math.random() * 1.4;
+        const from = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+        const to = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2.5, 10 + Math.random() * 8, (Math.random() - 0.5) * 2.5));
+        const b = boltMesh(zigzag(from, to, 10, 1.2), 0.045, P.core, 1); b.userData.born = t; bolts.add(b);
+      }
+      for (const b of [...bolts.children]) { const age = t - b.userData.born; b.material.opacity = Math.max(0, 1 - age / 0.22); if (age > 0.22) { b.geometry.dispose(); b.material.dispose(); bolts.remove(b); } }
+      const hk = Math.max(0, t - 0.2);
+      const ho = hk <= 0 ? 0 : Math.min(1, hk * 4) * Math.max(0, 1 - Math.max(0, hk - 1.2) / 0.8);
+      halo.children.forEach(m => { m.material.opacity = ho; m.children.forEach(c => { c.material.opacity = ho * 0.8; }); });
+      halo.position.y = 5.5 + hk * 0.6; h1.rotation.z += dt * 0.8; h2.rotation.z -= dt * 0.5;
+      halo.scale.setScalar(0.6 + easeOut(hk / 0.5) * 0.6);
+    },
+    dispose() { disposeObj(root); },
+  });
+}
+
+// ------------------------------------------------------------
+// PRISIÓN DE GUAYOTA: el suelo se raja en grietas de lava, brotan pinchos
+// de obsidiana en círculo que se cierran sobre el enemigo como una jaula,
+// lenguas de fuego y humo negro.
+// ------------------------------------------------------------
+export function guayotaPrison(getPos, P = PALETTES.guayota) {
+  if (!_scene) return;
+  const root = new THREE.Group(); _scene.add(root);
+  const place = () => { const c = typeof getPos === 'function' ? getPos() : getPos; if (c) root.position.set(c.x, (c.y || 0) + 0.03, c.z); };
+  place();
+  const light = new THREE.PointLight(0xff3a10, 0, 14, 1.4); light.position.y = 1.2; root.add(light);
+  // Grietas de lava (anchas, con brillo)
+  const cracks = new THREE.Group(); root.add(cracks);
+  const crackPts = [];
+  for (let i = 0; i < 8; i++) {
+    let x = 0, z = 0, a = (i / 8) * Math.PI * 2 + Math.random() * 0.4;
+    const segs = 5 + (Math.random() * 3 | 0);
+    for (let k = 0; k < segs; k++) {
+      const len = 0.35 + Math.random() * 0.4;
+      a += (Math.random() - 0.5) * 0.8;
+      const nx = x + Math.cos(a) * len, nz = z + Math.sin(a) * len;
+      const w = 0.2 * (1 - k / segs) + 0.04;
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(len * 1.1, w * 2.6), addMat(0xff3000, 0));
+      const core = new THREE.Mesh(new THREE.PlaneGeometry(len * 1.05, w), addMat(0xffd060, 0));
+      for (const m of [glow, core]) { m.rotation.x = -Math.PI / 2; m.rotation.z = -a; m.position.set((x + nx) / 2, 0.02 + (m === core ? 0.01 : 0), (z + nz) / 2); m.userData.d = k * 0.035; cracks.add(m); }
+      crackPts.push(new THREE.Vector3(nx, 0, nz));
+      x = nx; z = nz;
+    }
+  }
+  // Pinchos de obsidiana en círculo, inclinados hacia dentro
+  const spikeMat = new THREE.MeshStandardMaterial({ color: 0x140a10, emissive: 0x3a0400, emissiveIntensity: 1, metalness: 0.35, roughness: 0.18, flatShading: true });
+  const rimMat = addMat(0xff2a00, 0.0);
+  const spikes = [];
+  const NS = 10;
+  for (let i = 0; i < NS; i++) {
+    const a = (i / NS) * Math.PI * 2;
+    const hgt = 2.2 + Math.random() * 1.0;
+    const geo = jitterGeo(new THREE.ConeGeometry(0.3, hgt, 5, 2).translate(0, hgt / 2, 0), 0.05);
+    const piv = new THREE.Group();
+    piv.position.set(Math.cos(a) * 1.25, 0, Math.sin(a) * 1.25);
+    piv.rotation.y = -a; // mirar al centro
+    const spike = new THREE.Mesh(geo, spikeMat);
+    const rim = new THREE.Mesh(geo, rimMat); rim.scale.setScalar(1.07);
+    const tilt = new THREE.Group(); tilt.rotation.z = 0.42 + Math.random() * 0.12;   // hacia dentro
+    tilt.add(spike, rim); piv.add(tilt); root.add(piv);
+    spikes.push({ tilt, d: 0.04 + i * 0.025, hgt });
+  }
+  // Fuego (aditivo) y humo (normal)
+  const NF = 150, fire = points(NF, 0xff6a20, 0.5); root.add(fire);
+  const ff = []; for (let i = 0; i < NF; i++) ff.push({ life: Math.random(), v: 2 + Math.random() * 3, p: new THREE.Vector3() });
+  const NK = 50, smoke = points(NK, 0x120808, 1.3, THREE.NormalBlending, 0.0); root.add(smoke);
+  const kk = []; for (let i = 0; i < NK; i++) kk.push({ life: Math.random(), v: 0.6 + Math.random() * 0.8, a: Math.random() * 6.28, r: Math.random() * 1.4 });
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(3.2, 48), addMat(0xc02000, 0)); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.015; root.add(disc);
+  shake(0.5, 0.6);
+  try { screenFlash('rgba(255,60,10,1)', 0.25, 300); } catch {}
+  const END = 2.6;
+  add({
+    t: 0, dur: END + 0.6,
+    update(t, dt) {
+      place();
+      const out = Math.max(0, t - END);                     // se hunden al final
+      light.intensity = (t < 0.1 ? t * 300 : 30) * (0.75 + Math.random() * 0.35) * Math.max(0, 1 - out / 0.5);
+      cracks.children.forEach(m => { const k = t - m.userData.d; m.material.opacity = k <= 0 ? 0 : Math.min(1, k * 10) * (0.8 + 0.2 * Math.sin(t * 13 + m.position.x * 7)) * Math.max(0, 1 - Math.max(0, t - END + 0.4) / 0.8); });
+      disc.material.opacity = Math.min(0.45, t * 3) * Math.max(0, 1 - Math.max(0, t - 1.2) / 1.6);
+      for (const s of spikes) {
+        const k = (t - s.d) / 0.16;
+        const up = k <= 0 ? 0 : easeBack(k);
+        s.tilt.position.y = -s.hgt * (1 - up) - out * s.hgt * 1.6;
+        s.tilt.children[1].material.opacity = Math.max(0, 0.35 - Math.max(0, t - 0.4) * 0.12);
+      }
+      const fp = fire.geometry.attributes.position;
+      for (let i = 0; i < NF; i++) {
+        const f = ff[i]; f.life += dt * f.v * 0.6;
+        if (f.life >= 1) { f.life = 0; const c = crackPts[(Math.random() * crackPts.length) | 0]; f.p.set(c.x * Math.random(), 0.05, c.z * Math.random()); }
+        fp.setXYZ(i, f.p.x + Math.sin(t * 8 + i) * 0.08, f.p.y + f.life * 2.2, f.p.z + Math.cos(t * 7 + i) * 0.08);
+      }
+      fp.needsUpdate = true;
+      fire.material.opacity = Math.min(1, t * 6) * Math.max(0, 1 - Math.max(0, t - END + 0.6) / 0.8);
+      fire.material.size = 0.42 + 0.12 * Math.sin(t * 25);
+      const kp = smoke.geometry.attributes.position;
+      for (let i = 0; i < NK; i++) { const k = kk[i]; k.life += dt * k.v * 0.4; if (k.life >= 1) k.life = 0; kp.setXYZ(i, Math.cos(k.a) * k.r * (1 + k.life), 0.6 + k.life * 4.5, Math.sin(k.a) * k.r * (1 + k.life)); }
+      kp.needsUpdate = true;
+      smoke.material.opacity = Math.min(0.7, t * 2) * Math.max(0, 1 - Math.max(0, t - END + 0.6) / 1.0);
+    },
+    dispose() { disposeObj(root); spikeMat.dispose(); },
+  });
+}
+
+// ------------------------------------------------------------
+// JUICIO DEL TEIDE: una hilera de cristales de teiderio brota del suelo
+// desde tu golpe hasta el enemigo y, bajo él, se alza un volcán en miniatura
+// con vetas brillantes que ENTRA EN ERUPCIÓN.
+// ------------------------------------------------------------
+export function teideEruption(from, getTo, P = PALETTES.teiderio) {
+  if (!_scene) return;
+  const to0 = (typeof getTo === 'function' ? getTo() : getTo) || from;
+  const root = new THREE.Group(); _scene.add(root);
+  root.position.set(from.x, (from.y || 0), from.z);
+  const dx = to0.x - from.x, dz = to0.z - from.z, dist = Math.hypot(dx, dz);
+  const ux = dist > 0.01 ? dx / dist : 0, uz = dist > 0.01 ? dz / dist : 1;
+  const crystalMat = new THREE.MeshStandardMaterial({ color: 0x40f0e0, emissive: 0x10b0a0, emissiveIntensity: 1.3, metalness: 0.1, roughness: 0.12, flatShading: true, transparent: true, opacity: 0.93 });
+  const cGeo = new THREE.ConeGeometry(0.16, 1, 6).translate(0, 0.5, 0);
+  // Hilera de cristales
+  const crystals = [];
+  const steps = Math.max(3, Math.round(dist / 0.42));
+  for (let i = 1; i <= steps; i++) {
+    const k = i / steps * Math.max(0.2, (dist - 1.1) / Math.max(dist, 0.01));
+    for (let j = 0; j < 3; j++) {
+      const m = new THREE.Mesh(cGeo, crystalMat);
+      const off = (Math.random() - 0.5) * 0.5;
+      m.position.set(ux * dist * k - uz * off, 0, uz * dist * k + ux * off);
+      m.rotation.set((Math.random() - 0.5) * 0.9, Math.random() * 6, (Math.random() - 0.5) * 0.9);
+      const hs = 0.5 + Math.random() * 0.9 + k * 0.5;
+      m.scale.set(0.8 + Math.random() * 0.6, 0.001, 0.8 + Math.random() * 0.6);
+      root.add(m);
+      crystals.push({ m, d: i * 0.032 + j * 0.01, hs });
+    }
+  }
+  const tReach = steps * 0.032 + 0.04;
+  // Volcán en miniatura bajo el enemigo
+  const vol = new THREE.Group(); vol.position.set(dx, 0, dz); root.add(vol);
+  const coneGeo = jitterGeo(new THREE.ConeGeometry(1.7, 2.3, 10, 4, true).translate(0, 1.15, 0), 0.12);
+  // boca del cráter: cortar la punta
+  const cp = coneGeo.attributes.position; for (let i = 0; i < cp.count; i++) if (cp.getY(i) > 1.9) cp.setY(i, 1.9);
+  coneGeo.computeVertexNormals();
+  const rock = new THREE.Mesh(coneGeo, new THREE.MeshStandardMaterial({ color: 0x4a3a2e, roughness: 0.95, flatShading: true, side: THREE.DoubleSide }));
+  const veins = new THREE.Mesh(coneGeo, addMat(P.main, 0, { wireframe: true })); veins.scale.setScalar(1.012);
+  const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20), addMat(P.core, 0)); mouth.rotation.x = -Math.PI / 2; mouth.position.y = 1.92;
+  const volIn = new THREE.Group(); volIn.add(rock, veins, mouth); volIn.position.y = -2.4; vol.add(volIn);
+  // Erupción: chorro de luz, fuente de chispas y bombas de cristal
+  const jet = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.55, 12, 20, 1, true).translate(0, 6, 0), pillarMaterial(P.main)); jet.position.y = 1.9; vol.add(jet);
+  const NF = 120, fount = points(NF, P.spark, 0.2); vol.add(fount);
+  const fv = []; for (let i = 0; i < NF; i++) fv.push(new THREE.Vector3());
+  const bombs = [];
+  const bGeo = new THREE.DodecahedronGeometry(0.13, 0);
+  for (let i = 0; i < 12; i++) { const m = new THREE.Mesh(bGeo, crystalMat); m.visible = false; vol.add(m); bombs.push({ m, v: new THREE.Vector3() }); }
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 80), addMat(P.core, 0)); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; vol.add(ring);
+  const light = new THREE.PointLight(P.light, 0, 16, 1.4); light.position.y = 2.6; vol.add(light);
+  const dust = points(60, 0x8a7a66, 0.45, THREE.NormalBlending, 0); root.add(dust);
+  let erupted = false, shookLine = false;
+  const tErupt = tReach + 0.32;
+  add({
+    t: 0, dur: tErupt + 2.4,
+    update(t, dt) {
+      const to = typeof getTo === 'function' ? getTo() : null;
+      if (to) vol.position.set(to.x - from.x, 0, to.z - from.z);
+      if (!shookLine && t > 0.02) { shookLine = true; shake(0.2, Math.max(0.3, tReach)); }
+      const fade = Math.max(0, t - tErupt - 1.4);
+      for (const c of crystals) {
+        const k = (t - c.d) / 0.12;
+        c.m.scale.y = k <= 0 ? 0.001 : c.hs * easeBack(k) * Math.max(0.001, 1 - fade / 0.7);
+      }
+      // volcán sube
+      const vk = (t - tReach) / 0.22;
+      volIn.position.y = vk <= 0 ? -2.4 : -2.4 * (1 - easeBack(vk)) - fade * 2.2;
+      veins.material.opacity = vk <= 0 ? 0 : Math.min(0.4, vk) * (0.6 + 0.4 * Math.sin(t * 18));
+      mouth.material.opacity = vk <= 0 ? 0 : Math.min(1, vk * 2);
+      if (!erupted && t >= tErupt) {
+        erupted = true; shake(0.55, 0.55);
+        try { screenFlash('rgba(150,255,240,1)', 0.22, 260); } catch {}
+        const p = fount.geometry.attributes.position;
+        for (let i = 0; i < NF; i++) { p.setXYZ(i, 0, 2, 0); const a = Math.random() * 6.28, s = Math.random() * 2.6; fv[i].set(Math.cos(a) * s, 6 + Math.random() * 7, Math.sin(a) * s); }
+        for (const b of bombs) { b.m.visible = true; b.m.position.set(0, 2, 0); const a = Math.random() * 6.28, s = 2 + Math.random() * 3.5; b.v.set(Math.cos(a) * s, 5 + Math.random() * 5, Math.sin(a) * s); b.m.scale.setScalar(0.8 + Math.random() * 1.6); }
+      }
+      const ek = erupted ? t - tErupt : -1;
+      light.intensity = ek < 0 ? (vk > 0 ? 8 : 0) : (ek < 0.06 ? 60 : 60 * Math.exp(-(ek - 0.06) * 2.6));
+      jet.material.uniforms.uT.value = -t * 2;
+      jet.material.uniforms.uA.value = ek < 0 ? 0 : Math.max(0, 1 - ek / 0.9) * 0.9;
+      jet.scale.set(1 + Math.max(0, ek) * 0.8, Math.min(1, Math.max(0, ek) / 0.12), 1 + Math.max(0, ek) * 0.8);
+      if (erupted) {
+        const p = fount.geometry.attributes.position;
+        for (let i = 0; i < NF; i++) { const v = fv[i]; v.y -= 13 * dt; p.setXYZ(i, p.getX(i) + v.x * dt, Math.max(0.05, p.getY(i) + v.y * dt), p.getZ(i) + v.z * dt); }
+        p.needsUpdate = true; fount.material.opacity = Math.max(0, 1 - ek / 1.6);
+        for (const b of bombs) { b.v.y -= 14 * dt; b.m.position.addScaledVector(b.v, dt); if (b.m.position.y < 0.08) { b.m.position.y = 0.08; b.v.multiplyScalar(0.3); } b.m.rotation.x += dt * 6; b.m.rotation.z += dt * 5; }
+        ring.scale.setScalar(0.5 + easeOut(ek / 0.6) * 6.5); ring.material.opacity = Math.max(0, 1 - ek / 0.7);
+      } else fount.material.opacity = 0;
+      const dp = dust.geometry.attributes.position;
+      if (t < 0.05) for (let i = 0; i < 60; i++) { const k = Math.random(); dp.setXYZ(i, ux * dist * k + (Math.random() - 0.5) * 0.8, 0.2, uz * dist * k + (Math.random() - 0.5) * 0.8); }
+      for (let i = 0; i < 60; i++) dp.setY(i, dp.getY(i) + dt * 0.8);
+      dp.needsUpdate = true; dust.material.opacity = Math.min(0.55, t * 3) * Math.max(0, 1 - t / 1.8);
+    },
+    dispose() { disposeObj(root); crystalMat.dispose(); cGeo.dispose(); bGeo.dispose(); },
+  });
+}
+
+// ------------------------------------------------------------
+// RAYO DEL CIELO (Tindaya) — ÉPICO: se forma una tormenta morada girando
+// sobre el enemigo y cae un relámpago COLOSAL (tres latigazos), con destello
+// de pantalla, cúpula de energía, columna de fuego negro y llamas moradas.
+// El primer latigazo llega a SKYBOLT_STRIKE_MS.
+// ------------------------------------------------------------
+export const SKYBOLT_STRIKE_MS = 480;
+let _swirlTex = null;
+function swirlTexture() {
+  if (_swirlTex) return _swirlTex;
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (x - S / 2) / (S / 2), dy = (y - S / 2) / (S / 2);
+    const r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    const arm = 0.5 + 0.5 * Math.sin(a * 3 + r * 9);
+    const noise = hash3(x * 0.37 | 0, y * 0.37 | 0, 1);
+    const alpha = Math.max(0, 1 - r) ** 0.7 * (0.55 + 0.45 * arm) * (0.85 + 0.15 * noise);
+    const v = 0.15 + 0.6 * arm * (1 - r);
+    const i = (y * S + x) * 4;
+    img.data[i] = 40 + 120 * v; img.data[i + 1] = 10 + 30 * v; img.data[i + 2] = 70 + 160 * v; img.data[i + 3] = Math.min(255, alpha * 255);
+  }
+  g.putImageData(img, 0, 0);
+  _swirlTex = new THREE.CanvasTexture(c);
+  _swirlTex.colorSpace = THREE.SRGBColorSpace;
+  return _swirlTex;
+}
 export function skyBolt(getPos, P = PALETTES.vesta) {
   if (!_scene) return;
   const root = new THREE.Group(); _scene.add(root);
-  const light = new THREE.PointLight(P.light, 0, 40, 1.2); root.add(light);
+  const H = 30;
+  const STRIKE = SKYBOLT_STRIKE_MS / 1000;
+  // Tormenta girando arriba
+  const storm = new THREE.Mesh(new THREE.PlaneGeometry(26, 26), new THREE.MeshBasicMaterial({ map: swirlTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  storm.rotation.x = Math.PI / 2; storm.position.y = H; root.add(storm);
+  const storm2 = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshBasicMaterial({ map: swirlTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, color: P.main }));
+  storm2.rotation.x = Math.PI / 2; storm2.position.y = H - 0.5; root.add(storm2);
+  const cloudLight = new THREE.PointLight(P.light, 0, 50, 1.2); cloudLight.position.y = H - 3; root.add(cloudLight);
+  const light = new THREE.PointLight(P.light, 0, 70, 1.1); light.position.y = 4; root.add(light);
   const bolts = new THREE.Group(); root.add(bolts);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 96), addMat(P.core, 0));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; root.add(ring);
-  const scorch = new THREE.Mesh(new THREE.CircleGeometry(1.8, 40), new THREE.MeshBasicMaterial({ color: 0x0a0010, transparent: true, opacity: 0, depthWrite: false }));
+  const cloudBolts = new THREE.Group(); root.add(cloudBolts);
+  // Impacto
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), addMat(P.main, 0));
+  root.add(dome);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.88, 1, 120), addMat(P.core, 0)); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; root.add(ring);
+  const ring2 = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 120), addMat(P.main, 0)); ring2.rotation.x = -Math.PI / 2; ring2.position.y = 0.045; root.add(ring2);
+  const scorch = new THREE.Mesh(new THREE.CircleGeometry(2.6, 40), new THREE.MeshBasicMaterial({ color: 0x0a0010, transparent: true, opacity: 0, depthWrite: false }));
   scorch.rotation.x = -Math.PI / 2; scorch.position.y = 0.025; root.add(scorch);
-  const glow = new THREE.Mesh(new THREE.CircleGeometry(3.2, 48), addMat(P.main, 0));
-  glow.rotation.x = -Math.PI / 2; glow.position.y = 0.03; root.add(glow);
-  const N = 80, sp = points(N, P.spark, 0.24), bk = points(50, 0x0a0010, 0.6, THREE.NormalBlending, 0.9);
-  root.add(sp, bk);
-  const sv = [], bv = [];
-  for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, s = 2 + Math.random() * 7; sv.push(new THREE.Vector3(Math.cos(a) * s, 3 + Math.random() * 8, Math.sin(a) * s)); }
-  for (let i = 0; i < 50; i++) { const a = Math.random() * 6.28; bv.push({ a, r: Math.random() * 1.2, v: 1 + Math.random() * 2.5 }); }
-  const strikes = [0, 0.16, 0.34];
-  let si = 0;
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(5, 48), addMat(P.main, 0)); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.03; root.add(glow);
+  const N = 140, sp = points(N, P.spark, 0.28); root.add(sp);
+  const sv = []; for (let i = 0; i < N; i++) sv.push(new THREE.Vector3());
+  const NB = 150, bk = points(NB, 0x07000c, 0.9, THREE.NormalBlending, 0); root.add(bk);
+  const bv = []; for (let i = 0; i < NB; i++) bv.push({ a: Math.random() * 6.28, r: 0.2 + Math.random() * 1.3, v: 1.5 + Math.random() * 3, life: Math.random() });
+  const NP = 80, pf = points(NP, P.main, 0.45); root.add(pf);
+  const pv = []; for (let i = 0; i < NP; i++) pv.push({ x: (Math.random() - 0.5) * 4.5, z: (Math.random() - 0.5) * 4.5, life: Math.random(), v: 1 + Math.random() * 1.5 });
+  const strikes = [STRIKE, STRIKE + 0.13, STRIKE + 0.3];
+  let si = 0, lastStrike = -9, nextCloud = 0;
   const base = new THREE.Vector3();
-  const zap = () => {
+  const zap = (big) => {
     for (const b of [...bolts.children]) { b.geometry.dispose(); b.material.dispose(); bolts.remove(b); }
-    const top = new THREE.Vector3((Math.random() - 0.5) * 4, 34, (Math.random() - 0.5) * 4);
+    const top = new THREE.Vector3((Math.random() - 0.5) * 2, H, (Math.random() - 0.5) * 2);
     const bot = new THREE.Vector3(0, 0, 0);
-    bolts.add(boltMesh(zigzag(top, bot, 26, 2.6), 0.55, P.glow, 0.5));
-    bolts.add(boltMesh(zigzag(top, bot, 26, 2.0), 0.28, P.main, 0.9));
-    bolts.add(boltMesh(zigzag(top, bot, 26, 1.4), 0.11, P.core, 1));
-    for (let k = 0; k < 5; k++) {                       // ramas
-      const t0 = 0.15 + Math.random() * 0.6, s = new THREE.Vector3().lerpVectors(top, bot, t0);
-      const e = s.clone().add(new THREE.Vector3((Math.random() - 0.5) * 9, -2 - Math.random() * 6, (Math.random() - 0.5) * 9));
-      bolts.add(boltMesh(zigzag(s, e, 8, 1.2), 0.06, P.spark, 0.9));
+    const j = big ? 3.2 : 2.4;
+    bolts.add(boltMesh(zigzag(top, bot, 32, j * 1.1), big ? 1.5 : 1.0, P.glow, 0.42));
+    bolts.add(boltMesh(zigzag(top, bot, 32, j * 0.85), big ? 0.7 : 0.45, P.main, 0.85));
+    bolts.add(boltMesh(zigzag(top, bot, 32, j * 0.55), big ? 0.3 : 0.2, P.core, 1));
+    for (let k = 0; k < 8; k++) {
+      const t0 = 0.1 + Math.random() * 0.75, s = new THREE.Vector3().lerpVectors(top, bot, t0);
+      const e = s.clone().add(new THREE.Vector3((Math.random() - 0.5) * 14, -3 - Math.random() * 9, (Math.random() - 0.5) * 14));
+      bolts.add(boltMesh(zigzag(s, e, 10, 1.6), 0.1, P.spark, 0.9));
     }
-    shake(0.55, 0.35);
+    // rayos secundarios que caen alrededor
+    for (let k = 0; k < (big ? 3 : 1); k++) {
+      const a = Math.random() * 6.28, r = 3 + Math.random() * 5;
+      const g0 = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+      bolts.add(boltMesh(zigzag(new THREE.Vector3(g0.x * 0.4, H - 1, g0.z * 0.4), g0, 20, 2), 0.18, P.main, 0.8));
+    }
+    shake(big ? 1.0 : 0.6, 0.45);
+    try { screenFlash(big ? 'rgba(235,200,255,1)' : 'rgba(190,120,255,1)', big ? 0.75 : 0.45, big ? 380 : 220); } catch {}
   };
   add({
-    t: 0, dur: 1.8,
+    t: 0, dur: STRIKE + 2.6,
     update(t, dt) {
       const c = getPos?.(); if (c) { base.set(c.x, c.y || 0, c.z); root.position.copy(base); }
-      if (si < strikes.length && t >= strikes[si]) { zap(); si++; }
-      const since = t - strikes[Math.max(0, si - 1)];
-      const on = si > 0 && since < 0.12;
-      bolts.children.forEach(b => { b.material.opacity = on ? (b.material.userData.o ??= b.material.opacity) * (0.7 + Math.random() * 0.3) : Math.max(0, b.material.opacity - dt * 6); });
-      light.intensity = on ? 120 + Math.random() * 80 : Math.max(0, light.intensity - dt * 400);
-      light.position.y = 3;
-      const k = Math.min(1, t / 0.5);
-      ring.scale.setScalar(0.3 + k * 7); ring.material.opacity = Math.max(0, 1 - t / 0.7);
-      glow.material.opacity = Math.max(0, 0.7 - t * 0.9);
-      scorch.material.opacity = Math.min(0.75, t * 4) * Math.max(0, 1 - Math.max(0, t - 1.1) / 0.7);
-      const p = sp.geometry.attributes.position;
-      for (let i = 0; i < N; i++) { const v = sv[i]; v.y -= 15 * dt; p.setXYZ(i, p.getX(i) + v.x * dt, Math.max(0.03, p.getY(i) + v.y * dt), p.getZ(i) + v.z * dt); }
-      p.needsUpdate = true; sp.material.opacity = Math.max(0, 1 - t / 1.4);
-      const q = bk.geometry.attributes.position;
-      for (let i = 0; i < 50; i++) { const b = bv[i], h = t * b.v; q.setXYZ(i, Math.cos(b.a + h) * (b.r + h * 0.3), h * 1.4, Math.sin(b.a + h) * (b.r + h * 0.3)); }
-      q.needsUpdate = true; bk.material.opacity = 0.9 * Math.max(0, 1 - t / 1.6);
+      // tormenta: aparece girando y se va al final
+      const so = Math.min(1, t / STRIKE) * Math.max(0, 1 - Math.max(0, t - STRIKE - 1.2) / 1.0);
+      storm.material.opacity = 0.95 * so; storm2.material.opacity = 0.55 * so;
+      storm.rotation.z += dt * (1.2 + so * 1.5); storm2.rotation.z -= dt * 2.2;
+      storm.scale.setScalar(0.5 + so * 0.5);
+      cloudLight.intensity = t < STRIKE ? (Math.random() < 0.25 ? 40 + Math.random() * 60 : 6) : Math.max(0, cloudLight.intensity - dt * 120);
+      if (t < STRIKE + 0.6 && t >= nextCloud) {
+        nextCloud = t + 0.06;
+        for (const b of [...cloudBolts.children]) { b.geometry.dispose(); b.material.dispose(); cloudBolts.remove(b); }
+        for (let k = 0; k < 2; k++) {
+          const a = Math.random() * 6.28, r = 2 + Math.random() * 8;
+          const s = new THREE.Vector3(Math.cos(a) * r, H - 0.6, Math.sin(a) * r);
+          const e = new THREE.Vector3(Math.cos(a + 1) * r * 0.5, H - 1 - Math.random() * 2, Math.sin(a + 1) * r * 0.5);
+          cloudBolts.add(boltMesh(zigzag(s, e, 8, 1.4), 0.08, P.spark, 0.9));
+        }
+      }
+      if (t > STRIKE + 0.6 && cloudBolts.children.length) for (const b of [...cloudBolts.children]) { b.geometry.dispose(); b.material.dispose(); cloudBolts.remove(b); }
+      if (si < strikes.length && t >= strikes[si]) {
+        zap(si === 0); lastStrike = t; si++;
+        if (si === 1) {
+          for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, s = 3 + Math.random() * 9; sv[i].set(Math.cos(a) * s, 4 + Math.random() * 10, Math.sin(a) * s); }
+          const p = sp.geometry.attributes.position; for (let i = 0; i < N; i++) p.setXYZ(i, 0, 0.3, 0);
+        }
+      }
+      const since = t - lastStrike;
+      const on = si > 0 && since < 0.1;
+      bolts.children.forEach(b => { const o = (b.material.userData.o ??= b.material.opacity); b.material.opacity = on ? o * (0.75 + Math.random() * 0.25) : Math.max(0, b.material.opacity - dt * 5); });
+      light.intensity = on ? 300 + Math.random() * 200 : Math.max(0, light.intensity - dt * 900);
+      const ik = si > 0 ? t - STRIKE : -1;
+      if (ik >= 0) {
+        dome.scale.set(0.5 + easeOut(ik / 0.55) * 7, 0.5 + easeOut(ik / 0.55) * 5, 0.5 + easeOut(ik / 0.55) * 7);
+        dome.material.opacity = Math.max(0, 0.55 * (1 - ik / 0.6));
+        ring.scale.setScalar(0.3 + easeOut(ik / 0.7) * 11); ring.material.opacity = Math.max(0, 1 - ik / 0.8);
+        ring2.scale.setScalar(0.3 + easeOut(ik / 1.0) * 7); ring2.material.opacity = Math.max(0, 0.8 - ik / 1.1);
+        glow.material.opacity = Math.max(0, 0.75 - ik * 0.7);
+        scorch.material.opacity = Math.min(0.8, ik * 5) * Math.max(0, 1 - Math.max(0, ik - 1.6) / 0.8);
+        const p = sp.geometry.attributes.position;
+        for (let i = 0; i < N; i++) { const v = sv[i]; v.y -= 15 * dt; p.setXYZ(i, p.getX(i) + v.x * dt, Math.max(0.03, p.getY(i) + v.y * dt), p.getZ(i) + v.z * dt); }
+        p.needsUpdate = true; sp.material.opacity = Math.max(0, 1 - ik / 1.6);
+        // columna de fuego negro en espiral
+        const q = bk.geometry.attributes.position;
+        for (let i = 0; i < NB; i++) { const b = bv[i]; b.life += dt * b.v * 0.35; if (b.life >= 1) b.life = 0; const h = b.life * 7, a = b.a + h * 1.3 + t * 2; q.setXYZ(i, Math.cos(a) * (b.r + h * 0.12), h, Math.sin(a) * (b.r + h * 0.12)); }
+        q.needsUpdate = true; bk.material.opacity = Math.min(0.9, ik * 4) * Math.max(0, 1 - Math.max(0, ik - 1.3) / 0.8);
+        bk.material.size = 0.8 + 0.25 * Math.sin(t * 17);
+        // llamas moradas por el suelo
+        const r = pf.geometry.attributes.position;
+        for (let i = 0; i < NP; i++) { const f = pv[i]; f.life += dt * f.v; if (f.life >= 1) { f.life = 0; f.x = (Math.random() - 0.5) * 4.5; f.z = (Math.random() - 0.5) * 4.5; } r.setXYZ(i, f.x, f.life * 1.4, f.z); }
+        r.needsUpdate = true; pf.material.opacity = Math.min(1, ik * 4) * Math.max(0, 1 - Math.max(0, ik - 1.2) / 0.9);
+      } else { sp.material.opacity = 0; bk.material.opacity = 0; pf.material.opacity = 0; }
     },
     dispose() { disposeObj(root); },
   });
