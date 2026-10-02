@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { poolLight, releaseLight } from './spec_fx.js';   // Sesión 51
 import { isProceduralArmor, buildProceduralArmor, isProceduralWeapon, buildProceduralWeapon } from './armor_procedural.js';   // Sesión 50
 
 const CDN_BASE = 'https://pub-bb63b96c76c745f59a39649cde6678c0.r2.dev';
@@ -2232,7 +2233,7 @@ export class Character {
     // Luz del arma mientras dura
     let light = null;
     if (opts.glowColor != null && this._equippedWeaponMesh) {
-      light = new THREE.PointLight(opts.glowColor, 0, 4, 1.5);
+      light = poolLight(opts.glowColor, 0, 4, 1.5);   // S51 — prestada (sin recompilar shaders)
       this._equippedWeaponMesh.add(light);
     }
     this._spec = {
@@ -2275,7 +2276,7 @@ export class Character {
     if (!S) return;
     this._spec = null;
     if (this.mesh) this.mesh.position.y = S.baseY;
-    if (S.light) { S.light.parent?.remove(S.light); S.light.dispose?.(); }
+    if (S.light) releaseLight(S.light);
     this.isAttacking = false;
   }
 

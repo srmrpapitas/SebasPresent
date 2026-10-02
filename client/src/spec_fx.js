@@ -43,7 +43,35 @@ export const PALETTES = {
   entangle:  { core: 0xe0ffd0, main: 0x50c040, glow: 0x205a10, spark: 0xb0ff90, light: 0x80ff60, crack: 0x40a030 },
 };
 
-export function start({ scene }) { _scene = scene; }
+// Sesión 51 — LUCES REUTILIZABLES. Añadir/quitar una PointLight cambia el
+// número de luces de la escena y three.js RECOMPILA los shaders de todos los
+// materiales → tirón de lag en cada especial. Ahora hay 6 luces fijas en la
+// escena (apagadas) y los efectos las toman prestadas y las devuelven.
+const POOL_N = 6;
+const _pool = [];
+export function start({ scene }) {
+  _scene = scene;
+  if (!_pool.length) for (let i = 0; i < POOL_N; i++) {
+    const l = new THREE.PointLight(0xffffff, 0, 1, 2);
+    l.userData.pooled = true; l.userData.busy = false;
+    scene.add(l); _pool.push(l);
+  }
+}
+/** Luz prestada (misma firma que THREE.PointLight). Sin libres → objeto mudo. */
+export function poolLight(color = 0xffffff, intensity = 1, distance = 0, decay = 2) {
+  const l = _pool.find(x => !x.userData.busy);
+  if (!l) { const o = new THREE.Object3D(); o.intensity = 0; o.color = new THREE.Color(); o.isFakeLight = true; return o; }
+  l.userData.busy = true;
+  l.color.set(color); l.intensity = intensity; l.distance = distance; l.decay = decay;
+  l.position.set(0, 0, 0);
+  return l;
+}
+/** Devolver una luz prestada (vuelve a la escena, apagada). */
+export function releaseLight(l) {
+  if (!l || !l.userData?.pooled) { l?.parent?.remove(l); return; }
+  l.intensity = 0; l.userData.busy = false;
+  if (_scene) _scene.attach(l); else l.parent?.remove(l);
+}
 
 /** Paleta según el material del arma (sword_teiderio_2h → teiderio). */
 export function paletteFor(itemId) {
@@ -115,6 +143,10 @@ const addMat = (color, opacity = 1, extra = {}) => new THREE.MeshBasicMaterial({
   color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, ...extra,
 });
 function disposeObj(o) {
+  // primero devolver las luces prestadas (si no, se irían con el grupo)
+  const lights = [];
+  o.traverse?.(c => { if (c.userData?.pooled) lights.push(c); });
+  lights.forEach(releaseLight);
   o.traverse?.(c => { c.geometry?.dispose?.(); if (c.material) { (Array.isArray(c.material) ? c.material : [c.material]).forEach(m => { m.map?.dispose?.(); m.dispose?.(); }); } });
   o.parent?.remove(o);
 }
@@ -191,7 +223,7 @@ export function slam(pos, palette = PALETTES.teiderio, power = 1) {
   _scene.add(root);
 
   // Destello de luz
-  const light = new THREE.PointLight(P.light, 0, 16 * power, 1.6);
+  const light = poolLight(P.light, 0, 16 * power, 1.6);
   light.position.y = 1.2;
   root.add(light);
 
@@ -467,7 +499,7 @@ export function burst(pos, palette = PALETTES.arcane, delayMs = 0) {
     const rune = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), addMat(palette.main, 0, { map: runeTexture() }));
     rune.rotation.x = -Math.PI / 2; rune.position.y = -0.95;
     root.add(rune);
-    const light = new THREE.PointLight(palette.light, 25, 10, 1.6);
+    const light = poolLight(palette.light, 25, 10, 1.6);
     root.add(light);
     add({
       t: 0, dur: 1.0,
@@ -514,7 +546,7 @@ export function iceCube(getPos, ms = 8000, palette = PALETTES.dragomante, size =
     c.scale.setScalar(0.01);
     root.add(c); crystals.push(c);
   }
-  const light = new THREE.PointLight(palette.light, 0, 5, 1.6);
+  const light = poolLight(palette.light, 0, 5, 1.6);
   light.position.y = H * 0.5;
   root.add(light);
   const T = ms / 1000;
@@ -675,7 +707,7 @@ export function descend(getPos, P = PALETTES.tibicena, ms = 1046) {
 export function beam(getFrom, getTo, P = PALETTES.vesta, ms = 900) {
   if (!_scene) return;
   const root = new THREE.Group(); _scene.add(root);
-  const light = new THREE.PointLight(P.light, 30, 12, 1.4); root.add(light);
+  const light = poolLight(P.light, 30, 12, 1.4); root.add(light);
   const bolts = new THREE.Group(); root.add(bolts);
   // Llamas negras (humo denso) + ascuas moradas
   const NB = 160, black = points(NB, 0x08000c, 0.8, THREE.NormalBlending, 0.9);
@@ -766,7 +798,7 @@ export function clawFrenzy(pos, yaw = 0, P = PALETTES.dragon) {
   cross.position.z = 0.3; root.add(cross);
   const N = 60, sp = points(N, 0xff2a10, 0.2); root.add(sp);
   const sv = []; for (let i = 0; i < N; i++) { const a = Math.random() * 6.28; sv.push(new THREE.Vector3(Math.cos(a) * (1 + Math.random() * 3), Math.random() * 3, 1 + Math.random() * 3)); }
-  const light = new THREE.PointLight(P.light, 0, 8, 1.5); root.add(light);
+  const light = poolLight(P.light, 0, 8, 1.5); root.add(light);
   add({
     t: 0, dur: 1.3,
     update(t, dt) {
@@ -842,7 +874,7 @@ function featherGeo() {
 export function wings(getPos, yaw = 0, ms = 1046, P = PALETTES.achaman) {
   if (!_scene) return;
   const root = new THREE.Group(); _scene.add(root);
-  const light = new THREE.PointLight(P.light, 0, 9, 1.4); light.position.set(0, 1.6, -0.4); root.add(light);
+  const light = poolLight(P.light, 0, 9, 1.4); light.position.set(0, 1.6, -0.4); root.add(light);
   const sides = [];
   for (const sx of [-1, 1]) {
     const w = new THREE.Group(); w.position.set(sx * 0.22, 1.5, -0.3); w.rotation.y = -sx * 0.45; root.add(w);
@@ -910,7 +942,7 @@ export function ascend(pos, P = PALETTES.achaman) {
   const root = new THREE.Group();
   root.position.set(pos.x, (pos.y || 0) + 0.04, pos.z);
   _scene.add(root);
-  const light = new THREE.PointLight(P.light, 0, 26, 1.3); light.position.y = 4; root.add(light);
+  const light = poolLight(P.light, 0, 26, 1.3); light.position.y = 4; root.add(light);
   // Lanza de luz al cielo
   const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 60, 20, 1, true).translate(0, 30, 0), pillarMaterial(P.core));
   const spearHalo = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 60, 24, 1, true).translate(0, 30, 0), pillarMaterial(P.main));
@@ -1000,7 +1032,7 @@ export function guayotaPrison(getPos, P = PALETTES.guayota) {
   const root = new THREE.Group(); _scene.add(root);
   const place = () => { const c = typeof getPos === 'function' ? getPos() : getPos; if (c) root.position.set(c.x, (c.y || 0) + 0.03, c.z); };
   place();
-  const light = new THREE.PointLight(0xff3a10, 0, 14, 1.4); light.position.y = 1.2; root.add(light);
+  const light = poolLight(0xff3a10, 0, 14, 1.4); light.position.y = 1.2; root.add(light);
   // Grietas de lava (anchas, con brillo)
   const cracks = new THREE.Group(); root.add(cracks);
   const crackPts = [];
@@ -1127,7 +1159,7 @@ export function teideEruption(from, getTo, P = PALETTES.teiderio) {
   const bGeo = new THREE.DodecahedronGeometry(0.13, 0);
   for (let i = 0; i < 12; i++) { const m = new THREE.Mesh(bGeo, crystalMat); m.visible = false; vol.add(m); bombs.push({ m, v: new THREE.Vector3() }); }
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 80), addMat(P.core, 0)); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; vol.add(ring);
-  const light = new THREE.PointLight(P.light, 0, 16, 1.4); light.position.y = 2.6; vol.add(light);
+  const light = poolLight(P.light, 0, 16, 1.4); light.position.y = 2.6; vol.add(light);
   const dust = points(60, 0x8a7a66, 0.45, THREE.NormalBlending, 0); root.add(dust);
   let erupted = false, shookLine = false;
   const tErupt = tReach + 0.32;
@@ -1213,8 +1245,8 @@ export function skyBolt(getPos, P = PALETTES.vesta) {
   storm.rotation.x = Math.PI / 2; storm.position.y = H; root.add(storm);
   const storm2 = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshBasicMaterial({ map: swirlTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, color: P.main }));
   storm2.rotation.x = Math.PI / 2; storm2.position.y = H - 0.5; root.add(storm2);
-  const cloudLight = new THREE.PointLight(P.light, 0, 50, 1.2); cloudLight.position.y = H - 3; root.add(cloudLight);
-  const light = new THREE.PointLight(P.light, 0, 70, 1.1); light.position.y = 4; root.add(light);
+  const cloudLight = poolLight(P.light, 0, 50, 1.2); cloudLight.position.y = H - 3; root.add(cloudLight);
+  const light = poolLight(P.light, 0, 70, 1.1); light.position.y = 4; root.add(light);
   const bolts = new THREE.Group(); root.add(bolts);
   const cloudBolts = new THREE.Group(); root.add(cloudBolts);
   // Impacto
@@ -1326,7 +1358,7 @@ export function magmaClaws(getPos, yaw = 0) {
   const front = new THREE.Group(); front.rotation.y = yaw; front.position.y = 1.1; root.add(front);
   const place = () => { const c = typeof getPos === 'function' ? getPos() : getPos; if (c) root.position.set(c.x, c.y || 0, c.z); };
   place();
-  const light = new THREE.PointLight(0xff6a10, 0, 9, 1.4); light.position.y = 1.2; root.add(light);
+  const light = poolLight(0xff6a10, 0, 9, 1.4); light.position.y = 1.2; root.add(light);
   const times = [0, 0.14, 0.27, 0.38];
   const marks = times.map((d, i) => {
     const g = new THREE.Group();
