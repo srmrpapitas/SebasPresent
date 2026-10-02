@@ -765,6 +765,161 @@ const SKILL_ICONS = {
   }
 })();
 
+// ============================================================
+// Sesión 51 — Espadas y espadones con silueta PROPIA por material (estilo
+// OSRS: cada arma se reconoce por su forma, no solo por el color).
+// Se dibujan en vertical (punta arriba) y se giran 45°.
+// ============================================================
+(function addUniqueSwordIcons() {
+  const OL = 'stroke="#120c08" stroke-width=".8" stroke-linejoin="round"';
+  const svgW = (defs, body) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision"><defs>${defs}</defs><ellipse cx="16" cy="29.6" rx="10" ry="1.4" fill="#000" opacity=".28"/><g transform="rotate(45 16 16)">${body}</g></svg>`;
+  const lin = (id, stops, x2 = 1, y2 = 0) => `<linearGradient id="${id}" x1="0" y1="0" x2="${x2}" y2="${y2}">${stops.map(([o, c]) => `<stop offset="${o}" stop-color="${c}"/>`).join('')}</linearGradient>`;
+  const rad = (id, c) => `<radialGradient id="${id}" cx=".35" cy=".35" r=".75"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="${c}"/><stop offset="1" stop-color="#1a0a06"/></radialGradient>`;
+  const pts = (a) => a.map(([x, y]) => `${x},${y}`).join(' ');
+  /** Hoja simétrica de dos caras: perfil derecho de la punta a la base. */
+  const blade = (prof, hi, lo, extra = '') => {
+    const L = prof.map(([x, y]) => [32 - x, y]);
+    const yb = prof[prof.length - 1][1], yt = prof[0][1];
+    const left = pts([...L, [16, yb], [16, yt]]);
+    const right = pts([...prof, [16, yb], [16, yt]]);
+    const outline = pts([...prof, ...L.slice().reverse()]);
+    return `<polygon points="${left}" fill="${hi}"/><polygon points="${right}" fill="${lo}"/>${extra}<polygon points="${outline}" fill="none" ${OL}/>`;
+  };
+  const grip = (y0, y1, w, col, wrapC) => {
+    let lines = '';
+    for (let y = y0 + 1; y < y1 - 0.4; y += 1.5) lines += `<path d="M${16 - w / 2} ${y + 0.9} L${16 + w / 2} ${y}" stroke="${wrapC}" stroke-width=".7"/>`;
+    return `<rect x="${16 - w / 2}" y="${y0}" width="${w}" height="${y1 - y0}" rx=".5" fill="${col}" ${OL}/>${lines}`;
+  };
+  const gem = (cx, cy, r, gid) => `<circle cx="${cx}" cy="${cy}" r="${r * 1.9}" fill="url(#${gid})" opacity=".25"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${gid})" stroke="#120c08" stroke-width=".45"/>`;
+  const shine = (x, y0, y1, o = 0.55, w = 0.6) => `<path d="M${x} ${y0} L${x} ${y1}" stroke="#fff" stroke-width="${w}" stroke-linecap="round" opacity="${o}"/>`;
+
+  const D = {};
+  // ---------------- Espadas (una mano) ----------------
+  D.sword_bronze = () => svgW(lin('swBrG', [[0, '#e6a064'], [1, '#7a4420']]), `
+    ${blade([[16, -0.5], [18.2, 2.6], [18.2, 21]], '#f0b47a', '#a8622c', shine(15.1, 3, 19.5))}
+    <rect x="10.4" y="21" width="11.2" height="2.3" rx="1" fill="url(#swBrG)" ${OL}/>
+    ${grip(23.3, 29.6, 2.6, '#5a3a20', '#33200f')}
+    <circle cx="16" cy="31.1" r="1.8" fill="url(#swBrG)" ${OL}/>`);
+  D.sword_hierro = () => svgW(lin('swHiG', [[0, '#c4c8ce'], [1, '#55585e']]), `
+    ${blade([[16, -2.2], [18.4, 1.4], [18.0, 21]], '#cfd3d8', '#6e7278', `<path d="M16 2.5 V19.5" stroke="#4a4d52" stroke-width=".9"/>${shine(15.0, 2, 19.5)}`)}
+    <polygon points="9.6,21.2 22.4,21.2 21.6,23.5 10.4,23.5" fill="url(#swHiG)" ${OL}/>
+    <circle cx="9.6" cy="22.3" r="1.05" fill="#8a8e94" ${OL}/><circle cx="22.4" cy="22.3" r="1.05" fill="#8a8e94" ${OL}/>
+    ${grip(23.5, 29.6, 2.6, '#3e3a36', '#1f1c19')}
+    <rect x="14.2" y="29.6" width="3.6" height="3" rx="1" fill="url(#swHiG)" ${OL}/>`);
+  D.sword_acero = () => svgW(lin('swAcG', [[0, '#f4f8fb'], [1, '#6c7680']]), `
+    ${blade([[16, -3.8], [17.9, -0.4], [17.9, 21]], '#f6fafd', '#8a96a2', `<path d="M16 0 V20" stroke="#5c666e" stroke-width=".55"/>${shine(15.2, 0.5, 19.5, 0.7)}`)}
+    <path d="M16 20.6 Q11.5 20.8 9.2 18.4 Q8.6 17.8 9.4 17.6 Q11.8 19.5 16 19.6 Q20.2 19.5 22.6 17.6 Q23.4 17.8 22.8 18.4 Q20.5 20.8 16 20.6 Z" fill="url(#swAcG)" ${OL}/>
+    <rect x="13.6" y="20.2" width="4.8" height="2.6" rx=".8" fill="url(#swAcG)" ${OL}/>
+    ${grip(22.8, 29.4, 2.4, '#2c3a4a', '#16202a')}
+    <polygon points="16,29.2 18.1,31.2 16,33.4 13.9,31.2" fill="url(#swAcG)" ${OL}/>`);
+  // Oro: daga ancha en hoja de laurel, guarda en media luna y rubíes (Puñalada doble)
+  D.sword_oro = () => svgW(lin('swOrG', [[0, '#fff1a8'], [.5, '#d4af37'], [1, '#8a6c14']]) + rad('swOrR', '#e8282a'), `
+    ${blade([[16, 0.6], [18.6, 5.5], [19.4, 11.5], [18.4, 17.5], [17.6, 21]], '#ffe789', '#b58e1e', `<path d="M16 3.5 V19" stroke="#7a5e10" stroke-width=".7"/><path d="M15.1 5 Q14.3 11.5 15.1 18" stroke="#fff" stroke-width=".6" fill="none" opacity=".6"/>`)}
+    <path d="M10.1 23.2 Q9.3 19.6 12 18.4 Q11.6 21 16 21.4 Q20.4 21 20 18.4 Q22.7 19.6 21.9 23.2 Z" fill="url(#swOrG)" ${OL}/>
+    ${gem(16, 22.3, 1.15, 'swOrR')}
+    ${grip(23.2, 29.4, 2.5, '#6a1414', '#3a0808')}
+    ${gem(16, 30.9, 1.5, 'swOrR')}`);
+  // Obsidiana: hoja de cristal negro con filos de sierra y brillo violeta (Tajo de obsidiana)
+  D.sword_obsidiana = () => svgW(lin('swObG', [[0, '#6c5a8a'], [1, '#14101a']]) + rad('swObV', '#a36bff'), `
+    ${blade([[16, -3.4], [18, -0.2], [19, 1.4], [18.2, 2.8], [19.2, 4.8], [18.3, 6.3], [19.3, 8.3], [18.4, 9.8], [19.3, 11.8], [18.4, 13.4], [19.2, 15.4], [18.3, 16.9], [18.7, 21]], '#5a4a74', '#16121c',
+      `<path d="M16 -1 V20" stroke="#a36bff" stroke-width=".55" opacity=".85"/><polyline points="18,-0.2 19,1.4 18.2,2.8 19.2,4.8 18.3,6.3 19.3,8.3 18.4,9.8 19.3,11.8 18.4,13.4 19.2,15.4 18.3,16.9" fill="none" stroke="#c9a0ff" stroke-width=".45" opacity=".7"/><polyline points="14,-0.2 13,1.4 13.8,2.8 12.8,4.8 13.7,6.3 12.7,8.3 13.6,9.8 12.7,11.8 13.6,13.4 12.8,15.4 13.7,16.9" fill="none" stroke="#c9a0ff" stroke-width=".45" opacity=".7"/>`)}
+    <polygon points="8.6,22.3 10.2,19.6 11.8,21 13.2,19.2 14.6,20.8 16,19.9 17.4,20.8 18.8,19.2 20.2,21 21.8,19.6 23.4,22.3 21.4,23.6 10.6,23.6" fill="url(#swObG)" ${OL}/>
+    ${gem(16, 22.2, 1.05, 'swObV')}
+    ${grip(23.6, 29.4, 2.5, '#1a1420', '#5a3a8a')}
+    <polygon points="14.2,29.4 17.8,29.4 16,33.6" fill="url(#swObG)" ${OL}/>`);
+  // Basaltita: hoja curva de piedra con grietas de lava y garfios en el lomo (Garras de magma)
+  D.sword_basaltita = () => svgW(lin('swBaG', [[0, '#7a828a'], [.5, '#3a3f45'], [1, '#15171a']]) + rad('swBaL', '#ff6a2a') + lin('swBaS', [[0, '#5a6068'], [1, '#22252a']]), `
+    <path d="M13.9 21 L18.4 21 Q22.4 10.5 17.6 -1.5 Q15.6 7 13.9 21 Z" fill="url(#swBaS)"/>
+    <path d="M13.9 21 L16.2 21 Q17.8 10 17.6 -1.5 Q15.6 7 13.9 21 Z" fill="#7a828a" opacity=".55"/>
+    <polygon points="14.9,13.8 12.3,12.6 14.6,12.2" fill="#3a3f45" ${OL}/><polygon points="15.5,9.4 13,8.2 15.3,7.8" fill="#3a3f45" ${OL}/><polygon points="16.2,5 14,3.8 16.1,3.5" fill="#3a3f45" ${OL}/>
+    <path d="M13.9 21 L18.4 21 Q22.4 10.5 17.6 -1.5 Q15.6 7 13.9 21 Z" fill="none" ${OL}/>
+    <polyline points="16.4,19.5 17.6,16.5 16.8,14 18.5,11.2 17.6,8.6 18.6,5.5" fill="none" stroke="#ff6a2a" stroke-width=".7" stroke-linejoin="round"/>
+    <polyline points="16.4,19.5 17.6,16.5 16.8,14 18.5,11.2 17.6,8.6 18.6,5.5" fill="none" stroke="#ffd060" stroke-width=".3"/>
+    <path d="M11 22.6 Q11 20.4 13.5 20.6 L18.8 20.6 Q21.4 20.4 21.2 22.6 Q21 24 18.6 23.8 L13.4 23.8 Q11 24 11 22.6 Z" fill="url(#swBaG)" ${OL}/>
+    ${gem(16, 22.2, 1.1, 'swBaL')}
+    ${grip(23.8, 29.4, 2.6, '#2a2420', '#ff6a2a')}
+    <circle cx="16" cy="31" r="1.9" fill="url(#swBaG)" ${OL}/><circle cx="16" cy="31" r=".7" fill="#ff8a3a"/>`);
+  // Teiderio: hoja ancha de cristal tallado con runa, guarda dorada con alas (Finta de Echeyde)
+  D.sword_teiderio = () => svgW(lin('swTeG', [[0, '#fff3b0'], [.5, '#d8a83a'], [1, '#7a5a10']]) + rad('swTeC', '#5fffe0'), `
+    ${blade([[16, -2.8], [19.3, 1.6], [19.7, 4.8], [18.9, 21]], '#c8fff6', '#2f9e8f',
+      `<polyline points="16,-2.8 17.6,4.8 16,12 17.6,19" fill="none" stroke="#7fe8d8" stroke-width=".45"/><polyline points="16,-2.8 14.4,4.8 16,12 14.4,19" fill="none" stroke="#ffffff" stroke-width=".45" opacity=".7"/><path d="M16 3 V18.5" stroke="#5fffe0" stroke-width=".8" stroke-dasharray="1.2 .9" opacity=".9"/>`)}
+    <path d="M16 21.2 Q11.6 22 8.2 18.6 Q9 22.6 12 23.7 L20 23.7 Q23 22.6 23.8 18.6 Q20.4 22 16 21.2 Z" fill="url(#swTeG)" ${OL}/>
+    ${gem(16, 22.4, 1.2, 'swTeC')}
+    ${grip(23.7, 29.4, 2.5, '#15564d', '#d8a83a')}
+    <circle cx="16" cy="31" r="1.9" fill="url(#swTeG)" ${OL}/>${gem(16, 31, .8, 'swTeC')}`);
+
+  // ---------------- Espadones (dos manos) ----------------
+  D.sword_bronze_2h = () => svgW(lin('gsBrG', [[0, '#e6a064'], [1, '#7a4420']]), `
+    ${blade([[16, -5], [19.1, -1.2], [19.1, 19.5]], '#f0b47a', '#a8622c', shine(14.6, -1, 18.5))}
+    <rect x="7.4" y="19.5" width="17.2" height="2.8" rx="1.2" fill="url(#gsBrG)" ${OL}/>
+    ${grip(22.3, 31.4, 3, '#5a3a20', '#33200f')}
+    <circle cx="16" cy="33" r="2" fill="url(#gsBrG)" ${OL}/>`);
+  D.sword_hierro_2h = () => svgW(lin('gsHiG', [[0, '#c4c8ce'], [1, '#55585e']]), `
+    ${blade([[16, -5.2], [19.3, -1.4], [18.9, 19.5]], '#cfd3d8', '#6e7278', `<path d="M16 -1 V18" stroke="#4a4d52" stroke-width="1"/>${shine(14.4, -1, 18.5)}`)}
+    <polygon points="18.9,14.8 20.9,15.6 18.9,17" fill="#8a8e94" ${OL}/><polygon points="13.1,14.8 11.1,15.6 13.1,17" fill="#8a8e94" ${OL}/>
+    <polygon points="6.8,19.8 25.2,19.8 24,22.4 8,22.4" fill="url(#gsHiG)" ${OL}/>
+    <circle cx="6.9" cy="21.1" r="1.2" fill="#8a8e94" ${OL}/><circle cx="25.1" cy="21.1" r="1.2" fill="#8a8e94" ${OL}/>
+    ${grip(22.4, 31.4, 3, '#3e3a36', '#1f1c19')}
+    <rect x="13.9" y="31.2" width="4.2" height="3.2" rx="1.1" fill="url(#gsHiG)" ${OL}/>`);
+  D.sword_acero_2h = () => svgW(lin('gsAcG', [[0, '#f4f8fb'], [1, '#6c7680']]), `
+    ${blade([[16, -5.6], [18.7, -2], [18.7, 13.6], [17.7, 14.6], [17.7, 19.5]], '#f6fafd', '#8a96a2', `<path d="M16 -2 V13" stroke="#5c666e" stroke-width=".6"/>${shine(14.6, -1.5, 13, 0.7)}`)}
+    <rect x="10.6" y="14.1" width="10.8" height="1.4" rx=".6" fill="url(#gsAcG)" ${OL}/>
+    <path d="M16 20.6 Q10 20.9 6.6 17.6 Q6 16.9 6.9 16.7 Q10.4 19.4 16 19.4 Q21.6 19.4 25.1 16.7 Q26 16.9 25.4 17.6 Q22 20.9 16 20.6 Z" fill="url(#gsAcG)" ${OL}/>
+    <rect x="13.2" y="19.8" width="5.6" height="2.9" rx=".9" fill="url(#gsAcG)" ${OL}/>
+    ${grip(22.7, 31.4, 2.8, '#2c3a4a', '#16202a')}
+    <polygon points="16,31 18.4,33.2 16,35.4 13.6,33.2" fill="url(#gsAcG)" ${OL}/>`);
+  // Oro: cuchilla ancha y pesada con sol grabado (Golpe aplastante)
+  D.sword_oro_2h = () => svgW(lin('gsOrG', [[0, '#fff1a8'], [.5, '#d4af37'], [1, '#8a6c14']]) + rad('gsOrR', '#e8282a'), `
+    <polygon points="12,19.5 12,-1.6 14.4,-5.2 20.6,-1.2 20.6,19.5" fill="#b58e1e"/>
+    <polygon points="12,19.5 12,-1.6 14.4,-5.2 16,-4.2 16,19.5" fill="#ffe789"/>
+    <path d="M20.6 -1.2 L20.6 19.5" stroke="#fff4c0" stroke-width=".6" opacity=".7"/>
+    <circle cx="16" cy="7.5" r="2.4" fill="none" stroke="#7a5e10" stroke-width=".7"/>
+    <g stroke="#7a5e10" stroke-width=".55">${[0, 45, 90, 135, 180, 225, 270, 315].map(a => { const r = Math.PI * a / 180; return `<path d="M${(16 + Math.cos(r) * 3.1).toFixed(2)} ${(7.5 + Math.sin(r) * 3.1).toFixed(2)} L${(16 + Math.cos(r) * 4.2).toFixed(2)} ${(7.5 + Math.sin(r) * 4.2).toFixed(2)}"/>`; }).join('')}</g>
+    <polygon points="12,19.5 12,-1.6 14.4,-5.2 20.6,-1.2 20.6,19.5" fill="none" ${OL}/>
+    <rect x="6.6" y="19.5" width="18.8" height="3.4" rx="1.4" fill="url(#gsOrG)" ${OL}/>
+    <circle cx="6.8" cy="21.2" r="1.5" fill="url(#gsOrG)" ${OL}/><circle cx="25.2" cy="21.2" r="1.5" fill="url(#gsOrG)" ${OL}/>
+    ${gem(16, 21.2, 1.2, 'gsOrR')}
+    ${grip(22.9, 31.2, 3, '#6a1414', '#d4af37')}
+    <circle cx="16" cy="33" r="2.2" fill="url(#gsOrG)" ${OL}/>`);
+  // Silueta de "godsword": hoja gruesa con ventana junto a la empuñadura y empuñadura grande
+  const gsBlade = (hi, lo, edge, extra = '') => `
+    <polygon points="12.3,19.2 12.3,-1.4 16,-5.8 16,19.2" fill="${hi}"/>
+    <polygon points="19.7,19.2 19.7,-1.4 16,-5.8 16,19.2" fill="${lo}"/>
+    ${extra}
+    <rect x="15" y="12.6" width="2" height="5.2" rx=".6" fill="#2a2018" stroke="#120c08" stroke-width=".5"/>
+    <polygon points="12.3,19.2 12.3,-1.4 16,-5.8 19.7,-1.4 19.7,19.2" fill="none" ${OL}/>
+    <path d="M12.9 -1 L12.9 18.6 M19.1 -1 L19.1 18.6" stroke="${edge}" stroke-width=".45" opacity=".8"/>`;
+  const gsHilt = (gid, accent) => `
+    <polygon points="7.4,19.1 24.6,19.1 23,23.2 9,23.2" fill="url(#${gid})" ${OL}/>
+    <polygon points="7.4,19.1 5.4,15.8 9.6,18.4" fill="url(#${gid})" ${OL}/><polygon points="24.6,19.1 26.6,15.8 22.4,18.4" fill="url(#${gid})" ${OL}/>
+    <path d="M9.6 21.2 L22.4 21.2" stroke="${accent}" stroke-width=".6" opacity=".9"/>`;
+  // Obsidiana: espadón de dioses negro y violeta, empuñadura de bronce viejo (Hoja de Guayota)
+  D.sword_obsidiana_2h = () => svgW(lin('gsObH', [[0, '#d0a860'], [.5, '#8a6230'], [1, '#3a2810']]) + rad('gsObV', '#a36bff'), `
+    ${gsBlade('#4c3e64', '#120e18', '#c9a0ff', `<path d="M16 -4 V12" stroke="#a36bff" stroke-width=".6" opacity=".8"/>`)}
+    ${gsHilt('gsObH', '#3a2810')}
+    ${gem(16, 21.2, 1.35, 'gsObV')}
+    ${grip(23.2, 31.4, 3, '#3a2a1a', '#8a6230')}
+    <polygon points="13.6,31.4 18.4,31.4 17.6,34 16,35.4 14.4,34" fill="url(#gsObH)" ${OL}/>`);
+  // Basaltita: espadón de piedra con lava, empuñadura blanca y oro (Magma vital)
+  D.sword_basaltita_2h = () => svgW(lin('gsBaH', [[0, '#ffffff'], [.5, '#d8d0c0'], [1, '#8a8070']]) + rad('gsBaL', '#ff6a2a'), `
+    ${gsBlade('#6c737b', '#25282c', '#ff8a3a', `<polyline points="16.8,11.5 17.8,8.5 16.6,5.8 18.2,2.6 17.2,-0.6" fill="none" stroke="#ff6a2a" stroke-width=".75"/><polyline points="16.8,11.5 17.8,8.5 16.6,5.8 18.2,2.6 17.2,-0.6" fill="none" stroke="#ffd060" stroke-width=".3"/><polyline points="14.2,9 13.4,6 14.6,3.4" fill="none" stroke="#ff6a2a" stroke-width=".55"/>`)}
+    ${gsHilt('gsBaH', '#d8a83a')}
+    ${gem(16, 21.2, 1.35, 'gsBaL')}
+    ${grip(23.2, 31.4, 3, '#e8e0d0', '#d8a83a')}
+    <polygon points="13.6,31.4 18.4,31.4 17.6,34 16,35.4 14.4,34" fill="url(#gsBaH)" ${OL}/>`);
+  // Teiderio: espadón de dioses blanco-turquesa, empuñadura de oro con alas (Juicio del Teide)
+  D.sword_teiderio_2h = () => svgW(lin('gsTeH', [[0, '#fff3b0'], [.5, '#d8a83a'], [1, '#7a5a10']]) + rad('gsTeC', '#5fffe0'), `
+    ${gsBlade('#effffc', '#7fe8d8', '#2f9e8f', `<path d="M16 -4 V12" stroke="#2f9e8f" stroke-width=".55"/><path d="M14 0 L14 11" stroke="#fff" stroke-width=".6" opacity=".9"/>`)}
+    <path d="M9.4 19.6 Q5.2 16.4 5.4 11.2 Q7.2 14.2 8.8 14.8 Q7.8 12.2 8.8 9.6 Q10.4 13.6 12.3 15.6 L12.3 19.6 Z" fill="url(#gsTeH)" ${OL}/>
+    <path d="M22.6 19.6 Q26.8 16.4 26.6 11.2 Q24.8 14.2 23.2 14.8 Q24.2 12.2 23.2 9.6 Q21.6 13.6 19.7 15.6 L19.7 19.6 Z" fill="url(#gsTeH)" ${OL}/>
+    ${gsHilt('gsTeH', '#7a5a10')}
+    ${gem(16, 21.2, 1.45, 'gsTeC')}
+    ${grip(23.2, 31.4, 3, '#15564d', '#d8a83a')}
+    <polygon points="13.6,31.4 18.4,31.4 17.6,34 16,35.4 14.4,34" fill="url(#gsTeH)" ${OL}/>`);
+
+  for (const [id, fn] of Object.entries(D)) ICONS[id] = fn();
+})();
+
 // Sesión 50 — Arco de garras de dragón y Bastón de Dragomante
 ICONS.bow_dragon = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <path d="M10 3 Q25 16 10 29" fill="none" stroke="#2a0c0a" stroke-width="3.6" stroke-linecap="round"/>
