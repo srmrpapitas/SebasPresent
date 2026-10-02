@@ -164,6 +164,9 @@ export function clipSpecHits(hits, total) {
   return hits.map(h => { const v = Math.max(0, Math.min(h, left)); left -= v; return v; });
 }
 
+// Sesión 51 — capas de mago: +golpe máximo de los hechizos
+export const CAPE_MAGIC_BONUS = { cape_achaman: 2, cape_magec: 2, cape_chaxiraxi: 2 };
+
 // Bonus de magia de bastones (se suma al golpe máximo del hechizo y al maná).
 export const STAFF_MAGIC_BONUS = { staff_dragomante: 5 };
 export const STAFF_MANA_EXTRA = { staff_dragomante: 60 };

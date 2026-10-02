@@ -32,7 +32,7 @@ import * as magic from './magic.js';   // Sesión 41 — sistema de mago
 import { currentPrayerState, prayerEffects } from '../client/src/shared/prayer.js';   // Sesión 50
 import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jefes
 import { activeBoosts } from '../client/src/shared/herblore.js';   // Sesión 50 — pociones
-import { specialOf, resolveSpecial, clipSpecHits, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
+import { specialOf, resolveSpecial, clipSpecHits, CAPE_MAGIC_BONUS, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
 // tengan stats de maná/magia propios (llega con smithing/crafting). Base 20 +
@@ -575,6 +575,13 @@ async function dbGetUserCombatStyle(db, userId) {
  *
  * Valores esperados: 'unarmed' | '1h_sword' | '2h_sword' | 'bow' | 'staff'
  */
+// Sesión 51 — capa equipada (las capas de mago suben el golpe máximo de magia)
+async function getUserCapeId(db, userId) {
+  try {
+    const row = await db.first(`SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = 'cape'`, [userId]);
+    return row?.item_id || null;
+  } catch { return null; }
+}
 // Sesión 50 — item del arma equipada (para saber si tiene ataque especial)
 async function getUserWeaponItemId(db, userId) {
   try {
@@ -994,7 +1001,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const isMagic = (weaponType === 'staff') && !!opts.spellId;
   const spell = isMagic ? magic.getSpell(opts.spellId) : null;
   const weaponItemId = await getUserWeaponItemId(db, userId);   // Sesión 50
-  const staffMagicBonus = STAFF_MAGIC_BONUS[weaponItemId] || 0;
+  const staffMagicBonus = (STAFF_MAGIC_BONUS[weaponItemId] || 0) + (isMagic ? CAPE_MAGIC_BONUS[await getUserCapeId(db, userId)] || 0 : 0);   // Sesión 51 — capas de mago
   const staffManaBonus = STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemId] || 0);
   if (isMagic && !spell) return { error: 'invalid_spell', weapon_type: weaponType };
   if (isMagic && spell.kind) return { error: 'self_spell', weapon_type: weaponType };   // Sesión 50 — se lanzan aparte
@@ -1705,10 +1712,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const targetDefMult   = defMultOf(targetEq, targetStanceKey);
   const attackerDefMult = defMultOf(attackerEq, stanceKey);
 
+  const capeMagicPvp = (isMagicPvp && spellPvp) ? (CAPE_MAGIC_BONUS[await getUserCapeId(db, attackerId)] || 0) : 0;   // Sesión 51
   const doRollPvp = (acc = 1) => (
     isMagicPvp && spellPvp
       ? magic.rollHitMagic(rng, Math.floor(magicLevelPvp * (1 + attackerFx.mag)) + (attackerFx.flat?.magic || 0), Math.max(1, Math.round(targetLvls.defence * targetDefMult / acc)),
-          magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, STAFF_MAGIC_BONUS[weaponItemIdPvp] || 0))
+          magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, (STAFF_MAGIC_BONUS[weaponItemIdPvp] || 0) + capeMagicPvp))
       : isRanged
       ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
           totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp), targetDefMult / acc)

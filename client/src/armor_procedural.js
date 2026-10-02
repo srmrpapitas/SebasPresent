@@ -23,6 +23,7 @@
 import * as THREE from 'three';
 import { buildDragonArmor } from './armor_dragon.js';   // Sesión 51 — set de dragón propio
 import { LEGEND_IDS, buildLegendWeapon } from './weapons_legend.js';   // Sesión 51 — armas legendarias
+import { CAPE_IDS, buildCape } from './capes.js';                       // Sesión 51 — capas animadas
 
 export const ARMOR_COLORS = {
   bronze:    { base: 0xb87333, trim: 0xe6a064, gem: null,     metal: 0.75, rough: 0.38 },
@@ -46,7 +47,7 @@ export function materialOf(itemId) {
 }
 
 export function isProceduralArmor(itemId, slot) {
-  if (slot === 'cape' && PROC_CAPES[itemId]) return true;   // Sesión 50 — Capa de fuego
+  if (slot === 'cape' && (PROC_CAPES[itemId] || CAPE_IDS.has(itemId))) return true;   // Sesión 50/51 — capas procedurales
   return PROC_SLOTS.has(slot) && !!materialOf(itemId);
 }
 const PROC_CAPES = { cape_fuego: true };
@@ -982,8 +983,8 @@ export function buildProceduralWeapon(itemId, weaponType, root, handBone = null)
  * `root` = el FBX del personaje (character.mesh).
  */
 export function buildProceduralArmor(itemId, slot, root) {
-  if (slot === 'cape' && PROC_CAPES[itemId] && root) {
-    const parts = buildFireCape(root);
+  if (slot === 'cape' && CAPE_IDS.has(itemId) && root) {
+    const parts = buildCape(itemId, DRAGON_HELPERS, root);
     if (parts) for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
     return parts;
   }

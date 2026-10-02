@@ -1085,6 +1085,34 @@ ICONS.cape_fuego = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <circle cx="11" cy="4.5" r="1.4" fill="#ffa030"/><circle cx="21" cy="4.5" r="1.4" fill="#ffa030"/>
 </svg>`;
 
+// Sesión 51 — Capa de magma y capas de mago
+{
+  const CAPE = 'M10 4 L22 4 L26.5 27.6 Q16 24.6 5.5 27.6 Z';
+  const OLc = 'stroke="#120c08" stroke-width="1" stroke-linejoin="round"';
+  ICONS.cape_magma = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="icoMgm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a2a34"/><stop offset=".6" stop-color="#160c12"/><stop offset="1" stop-color="#060304"/></linearGradient>
+    <radialGradient id="icoMgD" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#fff2b0"/><stop offset=".4" stop-color="#ff6a10"/><stop offset="1" stop-color="#a01800"/></radialGradient></defs>
+    <path d="${CAPE}" fill="url(#icoMgm)" ${OLc}/>
+    <path d="M12.6 5 Q11.4 10 13.4 14 Q15 18 12.6 22 Q11.8 24.4 12.4 26 M19 5 Q20.6 9 18.6 13 Q17 17 19.6 21 Q21 24 20.4 26.2 M16 6 Q16.8 12 15.4 17" fill="none" stroke="#ff4a00" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M12.6 5 Q11.4 10 13.4 14 Q15 18 12.6 22 Q11.8 24.4 12.4 26 M19 5 Q20.6 9 18.6 13 Q17 17 19.6 21 Q21 24 20.4 26.2 M16 6 Q16.8 12 15.4 17" fill="none" stroke="#ffe080" stroke-width=".5" stroke-linecap="round"/>
+    <path d="M5.8 27.2 Q16 24.4 26.2 27.2" fill="none" stroke="#ff5a10" stroke-width="1.2"/>
+    <path d="M9.2 27.4 q.9 1.8 0 3 q-.9 -1.2 0 -3 Z M15.6 25.6 q1 2 0 3.4 q-1 -1.4 0 -3.4 Z M22.4 27 q.8 1.6 0 2.7 q-.8 -1.1 0 -2.7 Z" fill="url(#icoMgD)"/>
+    <rect x="9" y="3" width="14" height="3" rx="1" fill="#1a0806" stroke="#000" stroke-width=".8"/>
+    <circle cx="11" cy="4.5" r="1.4" fill="url(#icoMgD)"/><circle cx="21" cy="4.5" r="1.4" fill="url(#icoMgD)"/>
+  </svg>`;
+  const mage = (id, c0, c1, c2, emblem) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="ico${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset=".55" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></linearGradient></defs>
+    <path d="${CAPE}" fill="url(#ico${id})" ${OLc}/>
+    <path d="M10.8 5.4 L21.2 5.4 L25.2 26.4 Q16 23.8 6.8 26.4 Z" fill="none" stroke="#d8a83a" stroke-width=".9"/>
+    <path d="M12.6 6 L11 25 M16 6 L16 24.6 M19.4 6 L21 25" stroke="#000" stroke-width=".6" opacity=".25"/>
+    ${emblem(c2)}
+    <rect x="9" y="3" width="14" height="3" rx="1" fill="#d8a83a" stroke="#000" stroke-width=".8"/>
+  </svg>`;
+  ICONS.cape_achaman = mage('Ach', '#0e2a6a', '#2a62c8', '#e8f2ff', (c) => `<path d="M16 9 L17.1 12.6 L20.8 12.8 L17.9 15 L19 18.6 L16 16.4 L13 18.6 L14.1 15 L11.2 12.8 L14.9 12.6 Z" fill="${c}" stroke="#d8a83a" stroke-width=".6"/><circle cx="11.6" cy="20.6" r=".55" fill="#fff"/><circle cx="20.6" cy="21.6" r=".5" fill="#fff"/><circle cx="18.6" cy="8.4" r=".45" fill="#fff"/>`);
+  ICONS.cape_magec = mage('Mag', '#8a3a04', '#e8a020', '#fff4c0', (c) => `<circle cx="16" cy="14" r="3.2" fill="${c}" stroke="#a05a00" stroke-width=".6"/>${Array.from({ length: 12 }, (_, i) => { const a = i / 12 * Math.PI * 2; return `<path d="M${(16 + Math.cos(a) * 4).toFixed(2)} ${(14 + Math.sin(a) * 4).toFixed(2)} L${(16 + Math.cos(a) * (i % 2 ? 5.2 : 6.2)).toFixed(2)} ${(14 + Math.sin(a) * (i % 2 ? 5.2 : 6.2)).toFixed(2)}" stroke="${c}" stroke-width="${i % 2 ? .7 : 1}" stroke-linecap="round"/>`; }).join('')}`);
+  ICONS.cape_chaxiraxi = mage('Chx', '#14401c', '#3a8a3a', '#e8f0d0', (c) => `<circle cx="16" cy="14" r="4.4" fill="${c}" stroke="#d8a83a" stroke-width=".6"/><circle cx="17.6" cy="12.9" r="3.9" fill="#3a8a3a"/><circle cx="13.6" cy="20.6" r=".6" fill="${c}"/><circle cx="15.8" cy="21.4" r=".6" fill="${c}"/><circle cx="18" cy="20.8" r=".6" fill="${c}"/>`);
+}
+
 // Sesión 50 — Herbología: hierbas canarias, vial, gofio y pociones
 {
   const HERB_C = { hierba_tabaiba: ['#9ac040', '#e0e070'], hierba_verode: ['#5a9a3a', '#f0d040'], hierba_salvia: ['#8aa8a0', '#c0a0e0'],

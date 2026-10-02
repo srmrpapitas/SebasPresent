@@ -7,3 +7,9 @@ INSERT OR REPLACE INTO items (id,name,icon,stackable,description,created_at,base
 ('sword_tindaya','Espada larga de Tindaya','🗡️',0,'Hoja antigua grabada con los petroglifos de Tindaya. Especial: Finta de Tindaya (+20 % daño, nunca pega menos del 20 % del máximo).',0,3000000,'weapon','1h_sword',46,0,0,'antiguo',9),
 ('claws_dragon','Garras de dragón','🐾',0,'Cuatro cuchillas curvas de escama de dragón. Especial: Tajo de cuatro garras (4 golpes en cascada).',0,2500000,'weapon','1h_sword',40,0,0,'dragon',8),
 ('dagger_dragon','Daga de dragón','🗡️',0,'Daga ligera de hoja roja. Especial: Puñalada doble.',0,80000,'weapon','1h_sword',30,0,0,'dragon',8);
+-- Sesión 51 — capas
+INSERT OR REPLACE INTO items (id,name,icon,stackable,description,created_at,base_price,equip_slot,weapon_type,attack_bonus,defence_bonus,ranged_bonus,material,tier) VALUES
+('cape_magma','Capa de magma','🧥',0,'Forjada en el corazón del Teide: el magma fluye por ella y gotea sin parar. La mejor capa para el cuerpo a cuerpo.',0,400000,'cape',NULL,8,14,0,'magma',10),
+('cape_achaman','Capa de Achamán','🧥',0,'Capa de mago del cielo estrellado de Achamán. +2 al golpe máximo de los hechizos.',0,75000,'cape',NULL,0,3,0,'mago',8),
+('cape_magec','Capa de Magec','🧥',0,'Capa de mago del sol de Magec. +2 al golpe máximo de los hechizos.',0,75000,'cape',NULL,0,3,0,'mago',8),
+('cape_chaxiraxi','Capa de Chaxiraxi','🧥',0,'Capa de mago de la tierra y la luna de Chaxiraxi. +2 al golpe máximo de los hechizos.',0,75000,'cape',NULL,0,3,0,'mago',8);
