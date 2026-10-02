@@ -1896,7 +1896,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   let dmgToAttacker = 0;
   let attackerKilled = false;
 
-  if (!targetKilled) {
+  // Sesión 51 — el contragolpe automático es cuerpo a cuerpo: solo si estás
+  // A SU ALCANCE. Si le disparas de lejos, tendrá que acercarse (o usar su
+  // propio arco/bastón con su auto-respuesta normal).
+  const inMeleeReach = d <= Math.min(PVP_PLAYER_BASE_RANGE + RANGE_TOLERANCE, PVP_MELEE_MAX_RANGE);
+  if (!targetKilled && inMeleeReach) {
     const targetCooldownMs = cooldownMs; // simplificación: usa el del attacker
     const targetReady = !targetStats.last_attack_at ||
                         (now - targetStats.last_attack_at) >= targetCooldownMs;
