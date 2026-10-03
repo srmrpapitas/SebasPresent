@@ -323,6 +323,8 @@ export async function engagePlayer(targetUserId) {
   await doAttackTick(myGen);
 }
 
+// Sesión 51 — para el snapshot/WebSocket: al morir, dejar de atacar ya
+if (typeof window !== 'undefined') window.__combatDisengage = () => { try { disengage(); } catch {} };
 export function disengage() {
   const wasEngaged = currentTargetNpcId !== null || currentTargetPlayerId !== null;
   currentTargetNpcId = null;

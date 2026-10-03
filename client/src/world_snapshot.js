@@ -557,6 +557,9 @@ function handleIncomingDeath(me) {
   if (diedAt <= _lastProcessedDeathAt) return;  // ya procesado
 
   _lastProcessedDeathAt = diedAt;
+  // Sesión 51 — primero dejar de atacar (si no, el bucle de ataque seguía
+  // mandando /attack hasta recibir user_dead y "levantaba" al personaje)
+  try { window.__combatDisengage?.(); } catch {}
 
   // Disparar __playerDeath (death anim + isDead flag + skills cancel) y
   // showDeathOverlay (botón Respawn). Ambos son hooks globales (no

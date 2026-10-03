@@ -265,6 +265,9 @@ export function update(dt) {
   const maxSq = MAX_CHOP_DIST_M * MAX_CHOP_DIST_M;
 
   if (distSq > maxSq) {
+    // Sesión 51 — ya estaba talando y se ha alejado (joystick): parar, como
+    // la minería. Antes seguías con el hacha en la mano para siempre.
+    if (activeChop.started && distSq > 12 * 12) { stopChop('walked_away'); return; }
     // Aún caminando hacia el árbol. No chopeamos todavía.
     return;
   }

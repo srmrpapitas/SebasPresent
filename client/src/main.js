@@ -10,6 +10,7 @@
  */
 import * as ui from './ui.js';
 import * as auth from './auth.js';
+import * as api from './api.js';   // Sesión 51
 import * as interiors from './interiors.js';
 // Sesión 31 — Debug system (badge + panel + __sebasHealth + __diag.*)
 // Idempotente, 100% observer, no toca world.js. Se inicia ANTES que cualquier
@@ -32,9 +33,15 @@ async function boot() {
 }
 function wireEvents() {
   if (ui.els.enterBtn) {
-    ui.els.enterBtn.addEventListener('click', () => {
+    ui.els.enterBtn.addEventListener('click', async () => {
       ui.tryPlayLoginMusic();
+      // Sesión 51 — si hay sesión guardada (falló la red al abrir), reintentar
+      if (api.getToken()) {
+        if (await auth.tryResumeSession()) return;
+      }
       ui.showScreen('loginScreen');
+      const why = auth.lastResumeError?.();
+      if (why) ui.showError('login', why);
     });
   }
   if (ui.els.loginForm) {

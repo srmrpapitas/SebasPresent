@@ -99,6 +99,15 @@ function connect() {
   const token = getToken?.();
   if (!token || !apiBase) { schedule(); return; }
   const url = apiBase.replace(/^http/, 'ws') + '/api/rt?token=' + encodeURIComponent(token);
+  // Sesión 51 — cerrar el socket anterior SIN que su cierre programe otra
+  // reconexión (antes, volver a la app con el viejo aún cerrándose dejaba dos
+  // sockets y cada golpe/efecto se procesaba dos veces).
+  if (ws) {
+    const old = ws;
+    old.onclose = old.onmessage = old.onerror = null;
+    try { old.close(1000, 'replaced'); } catch {}
+    ws = null;
+  }
   let sock;
   try { sock = new WebSocket(url); } catch { schedule(); return; }
   ws = sock;
@@ -115,8 +124,17 @@ function connect() {
     }
     for (const h of handlers) { try { h(m, myId); } catch (e) { console.warn('[rt] handler:', e); } }
   };
-  sock.onclose = () => {
-    if (ws === sock) { ws = null; connected = false; }
+  sock.onclose = (e) => {
+    if (ws !== sock) return;   // un socket viejo: no tocar nada
+    ws = null; connected = false;
+    // Sesión 51 — 4000 = el servidor lo cerró porque abriste el juego en otro
+    // sitio (otra pestaña/móvil). No reconectar: si no, las dos pestañas se
+    // echaban la una a la otra cada 2 s para siempre.
+    if (e && e.code === 4000) {
+      stats.kicked = (stats.kicked || 0) + 1;
+      try { window.dispatchEvent(new CustomEvent('sebas-rt-kicked')); } catch {}
+      return;
+    }
     schedule();
   };
   sock.onerror = () => { try { sock.close(); } catch {} };

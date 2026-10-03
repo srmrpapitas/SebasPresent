@@ -875,10 +875,12 @@ export class Character {
       console.warn(`[character] attachWeapon: no hay ${handName} hand bone, no se puede equipar`);
       return;
     }
-    // Si ya hay un arma equipada, quitarla primero (del bone correcto)
-    if (this._equippedWeaponMesh) {
-      this.detachWeapon();
-    }
+    // Si ya hay un arma equipada, quitarla primero (del bone correcto).
+    // Sesión 51 — detachWeapon también invalida cualquier carga en curso:
+    // si cambias de arma (o tocas el suelo con el hacha aún cargando), el
+    // modelo que llegue tarde ya no se pega a la mano (antes: espada + hacha).
+    this.detachWeapon();
+    const seq = this._weaponSeq;
     if (!weaponId) return;
 
     // Sesión 50 — espadas de los 7 materiales: procedurales (armor_procedural.js)
@@ -897,6 +899,7 @@ export class Character {
 
     try {
       const mesh = await this._loadWeaponMesh(weaponId);
+      if (seq !== this._weaponSeq || !this.loaded) return;   // Sesión 51 — llegó tarde
 
       mesh.scale.setScalar(tf.scale);
       mesh.position.set(tf.position[0], tf.position[1], tf.position[2]);
@@ -919,6 +922,7 @@ export class Character {
    * Quita el arma actualmente equipada del bone donde se attachó.
    */
   detachWeapon() {
+    this._weaponSeq = (this._weaponSeq || 0) + 1;   // Sesión 51 — anula cargas en curso
     if (!this._equippedWeaponMesh) return;
     const bone = this._equippedWeaponHand === 'left' ? this._leftHandBone : this._rightHandBone;
     if (bone) bone.remove(this._equippedWeaponMesh);
@@ -1614,6 +1618,9 @@ export class Character {
    */
   _forceIdleReset() {
     if (!this.mixer) return;
+    // Sesión 51 — muerto: no tocar la animación de muerte (antes, sin espada
+    // en la mano, el personaje se levantaba al instante en pose de reposo).
+    if (this.isDead) return;
     const idle = this.actions.idle;
     if (!idle) return;
     // Sesion 43 - stopAllAction (abajo) para tambien las actions de piernas,

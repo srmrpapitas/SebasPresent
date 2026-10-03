@@ -246,8 +246,11 @@ if (typeof window !== 'undefined') {
 //                       Public API
 // ============================================================
 
+let starting = false;   // Sesión 51 — cerrojo síncrono: startWorld dos veces = dos bucles de render
 export async function startWorld(loggedInUser, token) {
-  if (running) return;
+  if (running || starting) return;
+  starting = true;
+  setTimeout(() => { starting = false; }, 30_000);   // por si algo falla a medias
   user = loggedInUser;
   authToken = token || null;
 
@@ -854,6 +857,12 @@ export async function startWorld(loggedInUser, token) {
         }
       });
     } catch (e) { console.warn('[world] afk start:', e); }
+    // Sesión 51 — el servidor cerró nuestro socket porque la cuenta se abrió
+    // en otro sitio: pausar esta pestaña (sin bucle de reconexiones).
+    if (!window.__rtKickedBound) {
+      window.__rtKickedBound = true;
+      window.addEventListener('sebas-rt-kicked', () => { try { afk.playingElsewhere(); } catch {} });
+    }
 
     // Sesión 30 — Woodcutting + Firemaking
     // Verificar en Eruda: window.__wcDebug(), window.__fmDebug()
@@ -3039,6 +3048,11 @@ function doCanvasTap(clientX, clientY) {
   try { follow.stop(); } catch {}   // Sesión 50 — tocar en cualquier sitio deja de seguir
   try { bankChests.cancel?.(); } catch {}
   try { townNpcs.cancel?.(); } catch {}
+  // Sesión 51 — tocar en otro sitio CANCELA ir a atacar (antes seguías
+  // corriendo hacia el monstruo o el jugador tocado aunque tocaras el suelo).
+  // Si el toque cae en otro objetivo, más abajo se vuelve a activar.
+  try { npcRenderer.cancelAutoEngage?.(); } catch {}
+  try { multiplayer.cancelAutoEngage?.(); } catch {}
 
   // Sesión 27 Bloque 3 — Tap PVP: ¿el tap impacta otro player?
   // Primero peers (PVP), después NPCs. Si el peer cae bajo el tap,

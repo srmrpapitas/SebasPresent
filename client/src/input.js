@@ -194,6 +194,15 @@ export function setup(opts) {
     const isMouse = e.pointerType === 'mouse';
     const isRight = isMouse && e.button === 2;
 
+    // Sesión 51 — un SEGUNDO dedo (pellizco, zoom…) no sustituye al primero:
+    // se cancela la pulsación larga del primero y ya no cuenta como "tocar".
+    // Antes, apoyar dos dedos para hacer zoom abría el menú de un NPC/objeto.
+    if (pointer && !isMouse) {
+      if (pointer.longPressTimer) { clearTimeout(pointer.longPressTimer); pointer.longPressTimer = null; }
+      pointer.isDrag = true;
+      return;
+    }
+
     pointer = {
       x0: e.clientX, y0: e.clientY,
       lastX: e.clientX, lastY: e.clientY,
@@ -289,7 +298,15 @@ export function setup(opts) {
   on(window, 'pointerdown',  onPointerDown,   { capture: true });
   on(window, 'pointermove',  onPointerMove,   { capture: true });
   on(window, 'pointerup',    onPointerUp,     { capture: true });
-  on(window, 'pointercancel', onPointerUp,    { capture: true });
+  // Sesión 51 — pointercancel (gesto del sistema: barra de inicio del
+  // iPhone, notificaciones…) NO es un toque: antes el personaje andaba o
+  // atacaba lo que hubiera debajo del dedo.
+  on(window, 'pointercancel', (e) => {
+    if (!pointer) return;
+    if (pointer.pointerId !== undefined && e.pointerId !== pointer.pointerId) return;
+    if (pointer.longPressTimer) clearTimeout(pointer.longPressTimer);
+    pointer = null;
+  }, { capture: true });
 
   // Sesión 29 — Bloquear menú contextual del navegador. La lógica del
   // action menu va por pointerup (button=2 sin drag), aquí solo
@@ -318,6 +335,15 @@ export function setup(opts) {
   let joyState = { active: false, x: 0, y: 0 };
   const MAX_R = 42;
   let centerX = 0, centerY = 0;
+  // Sesión 51 — el joystick sigue a SU dedo (identificador del toque). Antes
+  // leía touches[0] = el primer dedo de la pantalla: si girabas la cámara con
+  // la derecha y ponías la izquierda en el joystick, corría hacia la derecha.
+  let joyTouchId = null;
+  const joyTouch = (ev) => {
+    if (!ev.touches) return ev;   // ratón
+    for (let i = 0; i < ev.touches.length; i++) if (ev.touches[i].identifier === joyTouchId) return ev.touches[i];
+    return null;
+  };
 
   function setKnob(dx, dy) {
     if (joystickKnobEl) joystickKnobEl.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -326,7 +352,12 @@ export function setup(opts) {
   function joyStart(ev) {
     if (!joystickEl) return;
     ev.preventDefault();
-    const t = ev.touches ? ev.touches[0] : ev;
+    let t = ev;
+    if (ev.changedTouches) {
+      if (joyState.active && joyTouchId != null) return;   // ya lo lleva otro dedo
+      t = ev.changedTouches[0];
+      joyTouchId = t.identifier;
+    }
     const rect = joystickEl.getBoundingClientRect();
     centerX = rect.left + rect.width / 2;
     centerY = rect.top + rect.height / 2;
@@ -346,12 +377,19 @@ export function setup(opts) {
 
   function joyMove(ev) {
     if (!joyState.active) return;
+    const t = joyTouch(ev);
+    if (!t) return;
     ev.preventDefault();
-    const t = ev.touches ? ev.touches[0] : ev;
     joyUpdate(t.clientX, t.clientY);
   }
 
-  function joyEnd() {
+  function joyEnd(ev) {
+    if (ev && ev.changedTouches && joyTouchId != null) {
+      let mine = false;
+      for (let i = 0; i < ev.changedTouches.length; i++) if (ev.changedTouches[i].identifier === joyTouchId) mine = true;
+      if (!mine) return;   // levantó OTRO dedo
+    }
+    joyTouchId = null;
     joyState.active = false;
     joyState.x = 0;
     joyState.y = 0;

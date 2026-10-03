@@ -84,7 +84,7 @@ function pause(why, text) {
   paused = true;
   reason = why;
   console.log('[afk] pausa:', why);
-  if (why === 'idle' || why === 'cap') showOverlay(why, text);
+  if (why === 'idle' || why === 'cap' || why === 'elsewhere') showOverlay(why, text);
   notify();
 }
 
@@ -93,6 +93,12 @@ function pause(why, text) {
  * aviso. "Reintentar" vuelve a probar (si sigue cortado, vuelve a salir).
  */
 export function serverRest(text) { pause('cap', text); }
+
+/**
+ * Sesión 51 — has abierto el juego con esta cuenta en otra pestaña o en otro
+ * dispositivo: esta se pausa (sin gastar servidor) hasta que pulses "Jugar aquí".
+ */
+export function playingElsewhere() { pause('elsewhere'); }
 
 export function resume() {
   if (!paused) return;
@@ -107,6 +113,7 @@ export function resume() {
 const TEXTS = {
   idle: ['💤', 'Te has quedado dormido', 'Llevas un rato sin tocar nada, así que el juego se ha desconectado para no gastar servidor.', 'Seguir jugando'],
   cap: ['🌙', 'El servidor descansa', 'Hoy ya se ha usado todo el cupo diario del servidor. Vuelve a abrir a las 02:00 (hora de Bruselas).', 'Reintentar'],
+  elsewhere: ['📱', 'Abierto en otro sitio', 'Estás jugando con esta cuenta en otra pestaña o en otro dispositivo. Esta se ha pausado.', 'Jugar aquí'],
 };
 function setOverlayText(why, text) {
   const t = TEXTS[why] || TEXTS.idle;
