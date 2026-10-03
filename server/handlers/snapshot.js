@@ -70,6 +70,7 @@ function levelFromXp(xp) {
   return 99;
 }
 
+const SNAPSHOT_POS_TOLERANCE_M = 20;   // Sesión 51 — ver handleWorldSnapshot
 // Sesión 51 — última limpieza de criaturas caducadas (por isolate)
 let _lastExpiredSweep = 0;
 
@@ -97,18 +98,27 @@ export async function handleWorldSnapshot(request, env) {
   try {
     // Determinar centro del snapshot (donde está el que pregunta).
     // Si el cliente no pasa x,z, usamos su último heartbeat conocido.
+    // Sesión 51 — la posición que manda el cliente solo vale si está cerca de
+    // la que conoce el servidor (online_users, que escribe el Realm). Antes se
+    // aceptaba cualquiera: mandando una posición falsa los monstruos agresivos,
+    // los jefes y la Fosa nunca te pegaban.
     let centerX, centerZ;
-    if (hasPos) {
+    const posRow = await env.DB.prepare(
+      `SELECT o.x AS x, o.z AS z, u.warp_x AS wx, u.warp_z AS wz, u.warp_at AS wat
+         FROM users u LEFT JOIN online_users o ON o.user_id = u.id WHERE u.id = ?`
+    ).bind(session.user_id).first();
+    const meRow = posRow && posRow.x != null ? { x: posRow.x, z: posRow.z } : null;
+    // recién teletransportado: también vale cerca del destino del salto
+    const nearWarp = posRow && posRow.wat && now - posRow.wat < 60_000 && posRow.wx != null
+      && Math.hypot(qx - posRow.wx, qz - posRow.wz) <= SNAPSHOT_POS_TOLERANCE_M;
+    if (hasPos && Math.abs(qx) < 1e5 && Math.abs(qz) < 1e5
+        && (!meRow || nearWarp || Math.hypot(qx - meRow.x, qz - meRow.z) <= SNAPSHOT_POS_TOLERANCE_M)) {
       centerX = qx; centerZ = qz;
+    } else if (meRow) {
+      centerX = meRow.x; centerZ = meRow.z;
     } else {
-      const me = await env.DB.prepare(
-        'SELECT x, z FROM online_users WHERE user_id = ?'
-      ).bind(session.user_id).first();
-      if (!me) {
-        // Aún no ha hecho heartbeat. Devolvemos snapshot vacío con timestamp.
-        return json({ now, players: [], npcs: [] });
-      }
-      centerX = me.x; centerZ = me.z;
+      // Aún no ha hecho heartbeat. Devolvemos snapshot vacío con timestamp.
+      return json({ now, players: [], npcs: [] });
     }
 
     const margin = SNAPSHOT_RADIUS_M;

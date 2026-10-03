@@ -24,6 +24,9 @@ export function npcCellOf(x, z) { return axis(x) * MUL + axis(z); }
 
 /** Todas las celdas que tocan el cuadrado de lado 2r centrado en (x,z). */
 export function cellsAround(x, z, r) {
+  // Sesión 51 — con números absurdos (x = 1e18) el bucle no terminaba nunca y
+  // tumbaba el servidor. Coordenadas fuera de ±200 km o radios enormes → nada.
+  if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(r) || Math.abs(x) > 2e5 || Math.abs(z) > 2e5 || r < 0 || r > 1000) return [];
   const x0 = axis(x - r), x1 = axis(x + r), z0 = axis(z - r), z1 = axis(z + r);
   const out = [];
   for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) out.push(cx * MUL + cz);

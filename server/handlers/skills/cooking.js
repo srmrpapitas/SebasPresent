@@ -24,6 +24,7 @@ import { tableExists } from './_shared.js';
 import { questEvent } from '../../lib/quests.js';   // Sesión 50
 import { EDIBLE, COOKABLE } from '../../../client/src/shared/food.js';
 import { pushRealtime } from '../../lib/realtime.js';   // Sesión 50
+import { guardSlot, atomicBatch, changed } from '../../lib/atomic.js';   // Sesión 51
 
 const SKILL_ID = 'cooking';
 const FIRE_COOK_RADIUS_M = 5.0;   // Sesión 49 — subido de 2.5 (ver fix abajo)
@@ -104,32 +105,34 @@ export async function handleFoodEat(request, env) {
   const healed = Math.min(food.heal, hpMax - stats.hp_current);
   const hpAfter = stats.hp_current + healed;
 
-  // Consumir 1 del slot
-  if (invRow.quantity > 1) {
-    await env.DB.prepare(
-      'UPDATE user_inventory SET quantity = quantity - 1 WHERE user_id = ? AND slot_index = ?'
-    ).bind(userId, slot).run();
-  } else {
-    await env.DB.prepare(
-      'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?'
-    ).bind(userId, slot).run();
-  }
+  // Consumir 1 del slot — Sesión 51: SOLO si sigue ahí la misma comida
+  // (antes, comer + mover a la vez curaba sin gastar la comida).
+  const consumed = invRow.quantity > 1
+    ? await env.DB.prepare(
+        'UPDATE user_inventory SET quantity = quantity - 1 WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity > 1'
+      ).bind(userId, slot, invRow.item_id).run()
+    : await env.DB.prepare(
+        'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = 1'
+      ).bind(userId, slot, invRow.item_id).run();
+  if (!consumed?.meta?.changes) return changed();
 
   // Curar (+ sellar last_eat_at si la columna existe)
+  // Sesión 51 — curación RELATIVA (dos comidas a la vez curan las dos) y
+  // nunca por encima del máximo ni resucitando a un muerto.
   if (hasEatCol) {
     try {
       await env.DB.prepare(
-        'UPDATE combat_stats SET hp_current = ?, last_eat_at = ? WHERE user_id = ?'
-      ).bind(hpAfter, now, userId).run();
+        'UPDATE combat_stats SET hp_current = MIN(hp_current + ?, ?), last_eat_at = ? WHERE user_id = ? AND hp_current > 0'
+      ).bind(healed, hpMax, now, userId).run();
     } catch {
       await env.DB.prepare(
-        'UPDATE combat_stats SET hp_current = ? WHERE user_id = ?'
-      ).bind(hpAfter, userId).run();
+        'UPDATE combat_stats SET hp_current = MIN(hp_current + ?, ?) WHERE user_id = ? AND hp_current > 0'
+      ).bind(healed, hpMax, userId).run();
     }
   } else {
     await env.DB.prepare(
-      'UPDATE combat_stats SET hp_current = ? WHERE user_id = ?'
-    ).bind(hpAfter, userId).run();
+      'UPDATE combat_stats SET hp_current = MIN(hp_current + ?, ?) WHERE user_id = ? AND hp_current > 0'
+    ).bind(healed, hpMax, userId).run();
   }
 
   // Sesión 50 — los demás ven la cura al instante (y su barra de vida)
@@ -249,16 +252,24 @@ export async function handleCookingCook(request, env) {
     if (free === -1) {
       return json({ error: 'inventory_full', message: 'Inventario lleno.' }, 400);
     }
-    await env.DB.prepare(
-      'UPDATE user_inventory SET quantity = quantity - 1 WHERE user_id = ? AND slot_index = ?'
-    ).bind(userId, slot).run();
-    await env.DB.prepare(
-      'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity) VALUES (?, ?, ?, 1)'
-    ).bind(userId, free, resultItemId).run();
+    // Sesión 51 — atómico: guarda (el crudo sigue igual) + restar + poner el resultado
+    const ok = await atomicBatch(env, [
+      guardSlot(env, userId, slot, invRow.item_id, invRow.quantity),
+      env.DB.prepare(
+        'UPDATE user_inventory SET quantity = quantity - 1 WHERE user_id = ? AND slot_index = ? AND item_id = ?'
+      ).bind(userId, slot, invRow.item_id),
+      env.DB.prepare(
+        'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity) VALUES (?, ?, ?, 1)'
+      ).bind(userId, free, resultItemId),
+    ]);
+    if (!ok) return changed();
   } else {
-    await env.DB.prepare(
-      'UPDATE user_inventory SET item_id = ? WHERE user_id = ? AND slot_index = ?'
-    ).bind(resultItemId, userId, slot).run();
+    // Sesión 51 — SOLO si en el slot sigue el mismo crudo (antes, cocinar +
+    // mover a la vez convertía lo que hubiera en el slot: 1M monedas → 1M pollos)
+    const r = await env.DB.prepare(
+      'UPDATE user_inventory SET item_id = ? WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = 1'
+    ).bind(resultItemId, userId, slot, invRow.item_id).run();
+    if (!r?.meta?.changes) return changed();
   }
 
   // 7) XP solo si NO se quemó (OSRS-style)
@@ -272,9 +283,10 @@ export async function handleCookingCook(request, env) {
     newLevel = xpResult.newLevel;
     levelUp = xpResult.levelUp;
     if (skillRow) {
+      // Sesión 51 — relativa: dos cocinados a la vez suman los dos
       await env.DB.prepare(
-        'UPDATE user_skills SET xp = ?, updated_at = ? WHERE user_id = ? AND skill_id = ?'
-      ).bind(xpResult.newXp, now, userId, SKILL_ID).run();
+        'UPDATE user_skills SET xp = MIN(xp + ?, 200000000), updated_at = ? WHERE user_id = ? AND skill_id = ?'
+      ).bind(def.xp, now, userId, SKILL_ID).run();
     } else {
       await env.DB.prepare(
         'INSERT INTO user_skills (user_id, skill_id, xp, updated_at) VALUES (?, ?, ?, ?)'

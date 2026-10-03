@@ -566,6 +566,20 @@ async function dbGetUserPosition(db, userId) {
   };
 }
 
+// Sesión 51 — posición del atacante: la del cliente SOLO si está cerca de la
+// que conoce el servidor (online_users; el Realm la escribe cada 0,6 s en
+// combate y cada 2 s andando). Antes se aceptaba cualquiera → se podía pegar
+// a un jefe desde la otra punta del mapa o a alguien de la wilderness desde
+// fuera sin que pudiera responder.
+const CLIENT_POS_TOLERANCE_M = 15;
+async function trustedAttackerPos(db, userId, claimed) {
+  const server = await dbGetUserPosition(db, userId);
+  if (!server) return null;
+  const ok = claimed && Number.isFinite(claimed.x) && Number.isFinite(claimed.z)
+    && dist(claimed.x, claimed.z, server.x, server.z) <= CLIENT_POS_TOLERANCE_M;
+  return { pos: ok ? { x: claimed.x, z: claimed.z } : server, server };
+}
+
 async function dbGetUserCombatStyle(db, userId) {
   const row = await db.first('SELECT combat_style FROM users WHERE id = ?', [userId]);
   const style = row?.combat_style;
@@ -690,18 +704,16 @@ async function consumeArrow(db, userId, now) {
           return { ok: true, arrow_item_id: q.arrow_item_id, source: 'quiver', conserved: true };
         }
         // Se gasta — descontar del quiver
-        const newQty = q.arrow_quantity - 1;
-        if (newQty === 0) {
-          await db.run(
-            `UPDATE user_quiver SET arrow_item_id = NULL, arrow_quantity = 0, updated_at = ? WHERE user_id = ?`,
-            [ts, userId]
-          );
-        } else {
-          await db.run(
-            `UPDATE user_quiver SET arrow_quantity = ?, updated_at = ? WHERE user_id = ?`,
-            [newQty, ts, userId]
-          );
-        }
+        // Sesión 51 — RELATIVO y con guarda (antes escribía un número absoluto:
+        // disparar mientras sacabas flechas las volvía a rellenar).
+        const took = await db.run(
+          `UPDATE user_quiver
+              SET arrow_item_id = CASE WHEN arrow_quantity - 1 <= 0 THEN NULL ELSE arrow_item_id END,
+                  arrow_quantity = arrow_quantity - 1, updated_at = ?
+            WHERE user_id = ? AND arrow_item_id = ? AND arrow_quantity >= 1`,
+          [ts, userId, q.arrow_item_id]
+        );
+        if (!took?.meta?.changes) return { ok: false, error: 'no_ammo' };
         // Sesion 45 — 50% de las flechas gastadas cae al piso.
         // Visible solo para el tirador 1 minuto (dropped_by_user = userId,
         // despawn_at = now + 60s). Necesitamos la posicion del jugador;
@@ -724,25 +736,25 @@ async function consumeArrow(db, userId, now) {
   const invRow = await db.first(
     `SELECT slot_index, item_id, quantity
        FROM user_inventory
-      WHERE user_id = ? AND item_id LIKE 'arrow_%' AND quantity > 0
+      WHERE user_id = ? AND item_id LIKE 'arrow_%' AND item_id != 'arrow_shaft' AND quantity > 0
       ORDER BY slot_index ASC
       LIMIT 1`,
     [userId]
   );
   if (!invRow) return { ok: false, error: 'no_ammo' };
 
-  const newQty = invRow.quantity - 1;
-  if (newQty === 0) {
-    await db.run(
-      `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?`,
-      [userId, invRow.slot_index]
-    );
-  } else {
-    await db.run(
-      `UPDATE user_inventory SET quantity = ? WHERE user_id = ? AND slot_index = ?`,
-      [newQty, userId, invRow.slot_index]
-    );
-  }
+  // Sesión 51 — con guarda de objeto y RELATIVO (antes "SET quantity = 999" en
+  // el slot, aunque ahí hubiera ya otra cosa → 999 espadas de dragón).
+  const used = invRow.quantity <= 1
+    ? await db.run(
+        `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = 1`,
+        [userId, invRow.slot_index, invRow.item_id]
+      )
+    : await db.run(
+        `UPDATE user_inventory SET quantity = quantity - 1 WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity > 1`,
+        [userId, invRow.slot_index, invRow.item_id]
+      );
+  if (!used?.meta?.changes) return { ok: false, error: 'no_ammo' };
   return { ok: true, arrow_item_id: invRow.item_id, source: 'inventory', conserved: false };
 }
 
@@ -1015,6 +1027,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const now = opts.now || Date.now();
 
   const stats = await dbGetUserStats(db, userId);
+  const stats0 = { ...stats };   // Sesión 51 — para escribir DIFERENCIAS (no valores absolutos)
   const npc = await dbGetNpcInstance(db, npcInstanceId);
   // Sesión 27 — Si el cliente envía su posición actual en el request
   // (opts.userPos), la usamos directamente. Esto elimina el bug "fuera
@@ -1022,9 +1035,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // movimiento real del player (hasta 5.6m en ese intervalo a velocidad
   // de run boost). Fallback a la pos persistida si el cliente no la
   // manda (compatibilidad con clientes antiguos).
-  const userPos = (opts.userPos && Number.isFinite(opts.userPos.x) && Number.isFinite(opts.userPos.z))
-    ? { x: opts.userPos.x, z: opts.userPos.z }
-    : await dbGetUserPosition(db, userId);
+  const userPos = (await trustedAttackerPos(db, userId, opts.userPos))?.pos || null;   // Sesión 51
   const style = await dbGetUserCombatStyle(db, userId);
 
   if (!npc) return { error: 'npc_not_found' };
@@ -1109,12 +1120,28 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   //
   // El ranged_bonus total = bow.ranged_bonus + arrow.ranged_bonus, usado
   // por la fórmula de damage abajo.
+  // Sesión 51 — CERROJO del cooldown: solo UNA petición gana cada golpe.
+  // Antes, 8 ataques enviados a la vez pasaban todos (8 golpes, 8 muertes,
+  // 8 botines). Ahora el primero marca last_attack_at y el resto no pasa.
+  const gate = await db.run(
+    `UPDATE combat_stats SET last_attack_at = ?
+      WHERE user_id = ? AND hp_current > 0 AND (last_attack_at IS NULL OR last_attack_at <= ?)`,
+    [now, userId, now - cooldownMs]
+  );
+  if (!gate?.meta?.changes) {
+    return { error: 'on_cooldown', cooldown_remaining_ms: cooldownMs, cooldown_ms: cooldownMs, weapon_type: weaponType };
+  }
+  const releaseGate = async () => {   // si al final no se ataca (sin flechas…), devolver el turno
+    try { await db.run('UPDATE combat_stats SET last_attack_at = ? WHERE user_id = ? AND last_attack_at = ?', [stats0.last_attack_at ?? null, userId, now]); } catch {}
+  };
+
   let totalRangedBonus = 0;
   let arrowConsumed = null;
   if (isRanged) {
     const bowBonus = await getUserBowRangedBonus(db, userId);
     arrowConsumed = await consumeArrow(db, userId, now);
     if (!arrowConsumed.ok) {
+      await releaseGate();
       return {
         error: 'no_ammo',
         weapon_type: weaponType,
@@ -1220,8 +1247,8 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   if (specHits) specHits = clipSpecHits(specHits, dmgToNpc);
   const specBurn = specHits && specDef?.burn ? Math.max(0, dmgToNpc - specHits.reduce((a, b) => a + b, 0)) : 0;
   userHit.damage = dmgToNpc;
-  const npcHpAfter = npc.hp_current - dmgToNpc;
-  const npcKilled = npcHpAfter <= 0;
+  let npcHpAfter = npc.hp_current - dmgToNpc;
+  let npcKilled = npcHpAfter <= 0;   // Sesión 51 — se confirma al escribir (ver "Persist NPC")
 
   // ---- XP ----
   const xpBefore = levelsOf(stats);
@@ -1296,20 +1323,28 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const newDrainUntil = npcKilled ? 0 : (defDrained > 0 ? now + 60_000 : (npc.def_drain_until || 0));
 
   // ---- Persist NPC damage / death ----
-  // Sesión 51 — un pasivo que deambulaba se queda donde le pegaste (x,z).
-  await db.run(
+  // Sesión 51 — daño RELATIVO (dos jugadores pegando a la vez suman los dos)
+  // y la muerte se RECLAMA: solo una petición se lleva la muerte y el botín.
+  // Un pasivo que deambulaba se queda donde le pegaste (x,z).
+  const hpRow = await db.first(
     npc._wandered
-      ? `UPDATE npc_instances SET hp_current = ?, status = ?, died_at = ?, in_combat_with = ?, x = ?, z = ? WHERE id = ?`
-      : `UPDATE npc_instances SET hp_current = ?, status = ?, died_at = ?, in_combat_with = ? WHERE id = ?`,
-    [
-      npcKilled ? 0 : npcHpAfter,
-      npcKilled ? 1 : 0,
-      npcKilled ? now : null,
-      npcKilled ? null : userId,
-      ...(npc._wandered ? [npc.x, npc.z] : []),
-      npc.id,
-    ]
+      ? `UPDATE npc_instances SET hp_current = MAX(0, hp_current - ?), in_combat_with = ?, x = ?, z = ? WHERE id = ? AND status = 0 RETURNING hp_current`
+      : `UPDATE npc_instances SET hp_current = MAX(0, hp_current - ?), in_combat_with = ? WHERE id = ? AND status = 0 RETURNING hp_current`,
+    [dmgToNpc, userId, ...(npc._wandered ? [npc.x, npc.z] : []), npc.id]
   );
+  if (!hpRow) {
+    // Murió entre medias (otro jugador / otra petición): este golpe no cuenta.
+    return { error: 'npc_dead', cooldown_ms: cooldownMs, weapon_type: weaponType };
+  }
+  npcHpAfter = Math.max(0, hpRow.hp_current | 0);
+  npcKilled = false;
+  if (npcHpAfter <= 0) {
+    const claim = await db.run(
+      'UPDATE npc_instances SET status = 1, died_at = ?, in_combat_with = NULL WHERE id = ? AND status = 0 AND hp_current <= 0',
+      [now, npc.id]
+    );
+    npcKilled = !!claim?.meta?.changes;
+  }
   if (frozeMs > 0 || defDrained > 0 || (npcKilled && ((npc.frozen_until || 0) > 0 || (npc.def_drain || 0) > 0))) {
     try {
       await db.run('UPDATE npc_instances SET frozen_until = ?, def_drain = ?, def_drain_until = ? WHERE id = ?',
@@ -1405,23 +1440,33 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // legacy con solo las columnas base. Así pegar a un NPC funciona AUNQUE la
   // migración de esas columnas esté pendiente en la DB. (attackNpc se había
   // quedado sin esta protección al regenerarse para el quiver.)
+  // Sesión 51 — se escriben DIFERENCIAS (XP ganada, vida ganada/perdida) en
+  // vez de los valores leídos al principio: así un golpe de un monstruo que
+  // llegue a la vez (snapshot) no se "deshace" ni se resucita a un muerto.
+  const dxp = (k) => Math.max(0, (stats[k] || 0) - (stats0[k] || 0));
+  const hpMaxNow = levelFromXp(stats.hp_xp || 0);
+  const hpDelta = (stats.hp_current | 0) - (stats0.hp_current | 0);
   try {
     await db.run(
       `UPDATE combat_stats
-       SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
-           ranged_xp = ?, magic_xp = ?,
+       SET attack_xp = attack_xp + ?, strength_xp = strength_xp + ?, defence_xp = defence_xp + ?, hp_xp = hp_xp + ?,
+           ranged_xp = COALESCE(ranged_xp, 0) + ?, magic_xp = COALESCE(magic_xp, 0) + ?,
            mana_current = ?, mana_updated_at = ?,
            spec_energy = ?, spec_updated_at = ?,
-           hp_current = ?, last_attack_at = ?, last_died_at = ?,
-           skulled_until = ?
+           hp_current = CASE WHEN ? THEN 0 WHEN hp_current <= 0 THEN 0 ELSE MAX(0, MIN(?, hp_current + ?)) END,
+           last_attack_at = ?,
+           last_died_at = CASE WHEN ? THEN ? ELSE last_died_at END,
+           skulled_until = CASE WHEN ? THEN 0 ELSE skulled_until END
        WHERE user_id = ?`,
       [
-        stats.attack_xp, stats.strength_xp, stats.defence_xp, stats.hp_xp,
-        stats.ranged_xp || 0, stats.magic_xp || 0,
+        dxp('attack_xp'), dxp('strength_xp'), dxp('defence_xp'), dxp('hp_xp'),
+        dxp('ranged_xp'), dxp('magic_xp'),
         persistMana, persistManaAt,
         persistSpec, persistSpecAt,
-        stats.hp_current, stats.last_attack_at, stats.last_died_at,
-        stats.skulled_until || 0,
+        userKilled ? 1 : 0, hpMaxNow, hpDelta,
+        stats.last_attack_at,
+        userKilled ? 1 : 0, now,
+        userKilled ? 1 : 0,
         userId,
       ]
     );
@@ -1578,9 +1623,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   // -------- Posiciones --------
   // Atacante: usar pos del cliente (fresca). Fallback a persistida.
-  const attackerPos = (opts.userPos && Number.isFinite(opts.userPos.x) && Number.isFinite(opts.userPos.z))
-    ? { x: opts.userPos.x, z: opts.userPos.z }
-    : await dbGetUserPosition(db, attackerId);
+  const attackerTrusted = await trustedAttackerPos(db, attackerId, opts.userPos);   // Sesión 51
+  const attackerPos = attackerTrusted?.pos || null;
 
   // Target: pos PERSISTIDA en el server (la "verdad").
   const targetPosServer = await dbGetUserPosition(db, targetId);
@@ -1602,7 +1646,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   //
   // Tolerancia: 6m = 12m/s × 0.5s (run boost máximo × heartbeat
   // interval). Si la diff es mayor, ignoramos lo que dice el cliente.
-  const TARGET_POS_PLAUSIBILITY_M = 6.0;
+  const TARGET_POS_PLAUSIBILITY_M = 12.0;   // Sesión 51 — el Realm escribe cada 0,6–2 s (6 m daba "fuera de alcance")
   let targetPos = targetPosServer;
   if (opts.targetPos && Number.isFinite(opts.targetPos.x) && Number.isFinite(opts.targetPos.z)) {
     const diff = dist(opts.targetPos.x, opts.targetPos.z, targetPosServer.x, targetPosServer.z);
@@ -1622,7 +1666,9 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   //   2) Si alguno está FUERA wilderness → solo permitido si los dos
   //      tienen un duelo activo entre ellos. Si no, error.
   let skulledNow = false;   // Sesión 50
-  const attackerInWild = attackerPos.x < WILDERNESS_X_BORDER;
+  // Sesión 51 — la wilderness se decide con la posición del servidor Y la
+  // del cliente (las dos dentro): no vale "decir" que estás dentro.
+  const attackerInWild = attackerPos.x < WILDERNESS_X_BORDER && attackerTrusted.server.x < WILDERNESS_X_BORDER;
   const targetInWild   = targetPosServer.x < WILDERNESS_X_BORDER;
 
   if (attackerInWild && targetInWild) {
@@ -2263,23 +2309,34 @@ function rollQty(rng, qMin, qMax) {
  * dropped_by_user se setea a NULL: cualquier jugador puede recoger el loot
  * (no es loot privado).
  */
+// Sesión 51 — "huella" de la mochila y el equipo (nº de filas + cantidades).
+// Va como GUARDA al principio del lote del drop de muerte: si dos golpes
+// mortales llegan a la vez, el segundo encuentra la mochila ya cambiada y
+// no suelta nada (antes se soltaba todo DOS veces = duplicar objetos).
+function invPrint(rows) {
+  return `${rows.length}:${rows.reduce((a, r) => a + (r.quantity | 0), 0)}`;
+}
+function deathGuard(userId, invRows, eqCount = null) {
+  const conds = ["(SELECT COUNT(*) || ':' || COALESCE(SUM(quantity), 0) FROM user_inventory WHERE user_id = ?) = ?"];
+  const params = [userId, invPrint(invRows)];
+  if (eqCount != null) { conds.push('(SELECT COUNT(*) FROM user_equipment WHERE user_id = ?) = ?'); params.push(userId, eqCount); }
+  return { sql: `SELECT json(CASE WHEN ${conds.join(' AND ')} THEN '1' ELSE 'guard' END) AS g`, params };
+}
+// Valor de un objeto para decidir qué conservas al morir: precio de la tienda
+// general o, si no se vende allí (armas legendarias, capas…), su precio base.
+// Antes valían 0 → al morir se perdían SIEMPRE las cosas más caras.
+const UNIT_VALUE_SQL = `(CASE WHEN ui.item_id = 'coins' THEN 1 ELSE COALESCE(s.sell_price, it.base_price, 0) END)`;
+
 async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepTopN, rng) {
   rng = rng || Math.random;
 
-  // Cargar todos los slots ocupados con valor calculado vía LEFT JOIN.
-  // CASE WHEN item_id = 'coins' THEN 1 ELSE COALESCE(s.sell_price, 0) END
-  // Sesión 26 — Fix: la columna real se llama slot_index (no slot).
   const rows = await db.all(
-    `SELECT ui.slot_index, ui.item_id, ui.quantity,
-            (CASE WHEN ui.item_id = 'coins' THEN 1
-                  ELSE COALESCE(s.sell_price, 0) END) AS unit_value
+    `SELECT ui.slot_index, ui.item_id, ui.quantity, ${UNIT_VALUE_SQL} AS unit_value
      FROM user_inventory ui
-     LEFT JOIN shop_stock s
-       ON s.item_id = ui.item_id AND s.shop_id = 'general_store'
+     LEFT JOIN shop_stock s ON s.item_id = ui.item_id AND s.shop_id = 'general_store'
+     LEFT JOIN items it ON it.id = ui.item_id
      WHERE ui.user_id = ?
-     ORDER BY (ui.quantity * (CASE WHEN ui.item_id = 'coins' THEN 1
-                                   ELSE COALESCE(s.sell_price, 0) END)) DESC,
-              ui.slot_index ASC`,
+     ORDER BY (ui.quantity * ${UNIT_VALUE_SQL}) DESC, ui.slot_index ASC`,
     [userId]
   );
 
@@ -2291,32 +2348,30 @@ async function dropExcessInventoryOnDeath(db, userId, deathX, deathZ, now, keepT
   const totalSlots = rows.length;
   const dropRows = rows.slice(keepTopN); // los que se van al suelo
   const keptCount = Math.min(keepTopN, totalSlots);
-  console.log(`[combat/death-drop] user ${userId}: ${keptCount}/${totalSlots} slots conservados, ${dropRows.length} dropeados`);
-
   if (dropRows.length === 0) return;
 
   const despawnAt = now + DEATH_LOOT_LIFETIME_MS;
-
+  // Sesión 51 — TODO en un lote con guarda (atómico): o se suelta una vez o nada.
+  const stmts = [deathGuard(userId, rows)];
   for (const r of dropRows) {
-    // Pequeño jitter posicional para que los items no se apilen exactos
     const ox = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
     const oz = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
-
-    // Sesión 48 — FIX loot invisible: antes NULL → tu propio loot de muerte
-    // era invisible para TODOS (incluido tú) sus primeros 60s. Ahora se
-    // atribuye al muerto: lo ve y puede volver a por él en exclusiva 60s;
-    // luego queda público.
-    await db.run(
-      `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [r.item_id, r.quantity, deathX + ox, deathZ + oz, now, userId, despawnAt]
-    );
-
-    // DELETE del slot del user
-    await db.run(
-      `DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ?`,
-      [userId, r.slot_index]
-    );
+    stmts.push({
+      sql: 'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = ?',
+      params: [userId, r.slot_index, r.item_id, r.quantity],
+    });
+    // Se atribuye al muerto: lo ve y puede volver a por él en exclusiva 60 s.
+    stmts.push({
+      sql: `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      params: [r.item_id, r.quantity, deathX + ox, deathZ + oz, now, userId, despawnAt],
+    });
+  }
+  try {
+    await db.batch(stmts);
+    console.log(`[combat/death-drop] user ${userId}: ${keptCount}/${totalSlots} slots conservados, ${dropRows.length} dropeados`);
+  } catch (err) {
+    console.warn(`[combat/death-drop] user ${userId}: otra muerte simultánea ya soltó las cosas (${err?.message})`);
   }
 }
 
@@ -2350,12 +2405,10 @@ async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, 
 
   // ---- 1) Inventario actual del muerto
   const invRows = await db.all(
-    `SELECT ui.slot_index, ui.item_id, ui.quantity,
-            (CASE WHEN ui.item_id = 'coins' THEN 1
-                  ELSE COALESCE(s.sell_price, 0) END) AS unit_value
+    `SELECT ui.slot_index, ui.item_id, ui.quantity, ${UNIT_VALUE_SQL} AS unit_value
      FROM user_inventory ui
-     LEFT JOIN shop_stock s
-       ON s.item_id = ui.item_id AND s.shop_id = 'general_store'
+     LEFT JOIN shop_stock s ON s.item_id = ui.item_id AND s.shop_id = 'general_store'
+     LEFT JOIN items it ON it.id = ui.item_id
      WHERE ui.user_id = ?`,
     [userId]
   );
@@ -2365,10 +2418,10 @@ async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, 
   try {
     eqRows = await db.all(
       `SELECT eq.slot_id, eq.item_id,
-              COALESCE(s.sell_price, 0) AS unit_value
+              COALESCE(s.sell_price, it.base_price, 0) AS unit_value
        FROM user_equipment eq
-       LEFT JOIN shop_stock s
-         ON s.item_id = eq.item_id AND s.shop_id = 'general_store'
+       LEFT JOIN shop_stock s ON s.item_id = eq.item_id AND s.shop_id = 'general_store'
+       LEFT JOIN items it ON it.id = eq.item_id
        WHERE eq.user_id = ?`,
       [userId]
     );
@@ -2428,54 +2481,52 @@ async function dropAllExceptTopUnitsOnDeathPVP(db, userId, deathX, deathZ, now, 
     }
   }
 
-  // ---- 6) Borrar inv + equipment del muerto, reconstruir con `kept`
-  await db.run(`DELETE FROM user_inventory WHERE user_id = ?`, [userId]);
-  try {
-    await db.run(`DELETE FROM user_equipment WHERE user_id = ?`, [userId]);
-  } catch (err) {
-    console.warn('[combat/pvp-death] equipment delete failed:', err.message);
-  }
-
-  for (const e of kept) {
-    if (e.source.kind === 'eq') {
-      try {
-        await db.run(
-          `INSERT INTO user_equipment (user_id, slot_id, item_id, equipped_at)
-           VALUES (?, ?, ?, ?)`,
-          [userId, e.source.slot_id, e.item_id, now]
-        );
-      } catch (err) {
-        console.warn('[combat/pvp-death] re-equip failed, sending to inv:', err.message);
-        await safeInsertInvSlot(db, userId, e.item_id, e.kept_qty);
-      }
-    } else {
-      await safeInsertInvSlot(db, userId, e.item_id, e.kept_qty, e.source.slot_index);
-    }
-  }
-
-  // ---- 7) Dropear todo lo demás, agrupado por item_id
-  if (drop.length === 0) return;
-
+  // ---- 6+7) Sesión 51 — TODO en un lote con guarda (atómico): borrar
+  // mochila y equipo, volver a poner lo conservado y soltar el resto. Si
+  // otra muerte simultánea ya lo hizo, la guarda falla y no se hace nada.
   const dropAgg = {};
   for (const d of drop) {
     const q = d.drop_qty != null ? d.drop_qty : d.qty;
     dropAgg[d.item_id] = (dropAgg[d.item_id] || 0) + q;
   }
-
+  const stmts = [
+    deathGuard(userId, invRows || [], (eqRows || []).length),
+    { sql: 'DELETE FROM user_inventory WHERE user_id = ?', params: [userId] },
+    { sql: 'DELETE FROM user_equipment WHERE user_id = ?', params: [userId] },
+  ];
+  const usedSlots = new Set();
+  const keptInv = [];
+  for (const e of kept) {
+    if (e.source.kind === 'eq') {
+      stmts.push({ sql: 'INSERT INTO user_equipment (user_id, slot_id, item_id, equipped_at) VALUES (?, ?, ?, ?)',
+        params: [userId, e.source.slot_id, e.item_id, now] });
+    } else {
+      usedSlots.add(e.source.slot_index);
+      keptInv.push(e);
+    }
+  }
+  for (const e of keptInv) {
+    stmts.push({ sql: 'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity) VALUES (?, ?, ?, ?)',
+      params: [userId, e.source.slot_index, e.item_id, e.kept_qty] });
+  }
   const despawnAt = now + DEATH_LOOT_LIFETIME_MS;
   for (const item_id of Object.keys(dropAgg)) {
     const qty = dropAgg[item_id];
     if (qty <= 0) continue;
     const ox = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
     const oz = (rng() - 0.5) * 2 * LOOT_OFFSET_RANGE_M;
-    // Sesión 48 — FIX loot invisible: antes NULL → el loot del muerto era
-    // invisible para TODOS sus primeros 60s. Ahora se atribuye al KILLER
-    // (estilo OSRS): lo ve al instante y en exclusiva 60s, luego todos.
-    await db.run(
-      `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [item_id, qty, deathX + ox, deathZ + oz, now, killerId ?? userId, despawnAt]
-    );
+    // Se atribuye al KILLER (estilo OSRS): lo ve al instante y en exclusiva 60 s.
+    stmts.push({
+      sql: `INSERT INTO ground_items (item_id, qty, x, z, dropped_at, dropped_by_user, despawn_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      params: [item_id, qty, deathX + ox, deathZ + oz, now, killerId ?? userId, despawnAt],
+    });
+  }
+  try {
+    await db.batch(stmts);
+  } catch (err) {
+    console.warn(`[combat/pvp-death] user ${userId}: otra muerte simultánea ya soltó las cosas (${err?.message})`);
+    return;
   }
 
   console.log(
@@ -2623,6 +2674,7 @@ function makeEnvDb(env) {
     first: (sql, params = []) => env.DB.prepare(sql).bind(...params).first(),
     all: async (sql, params = []) => (await env.DB.prepare(sql).bind(...params).all()).results || [],
     run: (sql, params = []) => env.DB.prepare(sql).bind(...params).run(),
+    batch: (stmts) => env.DB.batch(stmts.map(st => env.DB.prepare(st.sql).bind(...st.params))),   // Sesión 51
   };
 }
 

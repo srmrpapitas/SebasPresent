@@ -39,6 +39,7 @@ import { questEvent } from '../lib/quests.js';   // Sesión 50
 import { pushRealtime } from '../lib/realtime.js';   // Sesión 50
 import { xpToLevel } from '../lib/skills_engine.js';
 import { equipRequirement, requirementText, magicDefOf } from '../../client/src/shared/equip_reqs.js';   // Sesión 50/51
+import { guardConds, slotCond, slotEmptyCond, atomicBatch, changed } from '../lib/atomic.js';   // Sesión 51
 
 const INVENTORY_SLOTS = 20;
 // Sesión 34 — Agregado slot 'quiver' (Bloque 2). Container especial para
@@ -230,6 +231,19 @@ export async function handleEquip(request, env) {
   // 3. Operaciones atómicas (batch)
   // ============================================================
   const ops = [];
+  const uid = session.user_id;
+  // Sesión 51 — GUARDA: todo sigue como lo leímos (mochila, equipo, escudo/arma
+  // en conflicto y hueco de destino). Si otra petición cambió algo a la vez
+  // (equipar dos cosas, equipar + desequipar, mover el objeto…), no se hace
+  // nada y el cliente reintenta. Antes así se duplicaban armas.
+  const eqIs = (slotId, itemId) => ({ sql: '(SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = ?) IS ?', params: [uid, slotId, itemId ?? null] });
+  ops.push(guardConds(env, [
+    slotCond(uid, slotIndex, invItem.item_id, invItem.quantity),
+    eqIs(targetSlot, equippedItem?.item_id),
+    conflictItem ? eqIs(conflictItem.slot_id, conflictItem.item_id) : (isEquipping2H ? eqIs('shield', null) : null),
+    // (si el hueco de destino es el del propio objeto que se equipa, se libera en este mismo lote)
+    conflictDestSlot !== null && conflictDestSlot !== slotIndex ? slotEmptyCond(uid, conflictDestSlot) : null,
+  ]));
 
   // Quitar item del inventario en slotIndex
   ops.push(env.DB.prepare(
@@ -264,7 +278,7 @@ export async function handleEquip(request, env) {
     ).bind(session.user_id, conflictDestSlot, conflictItem.item_id, now));
   }
 
-  await env.DB.batch(ops);
+  if (!(await atomicBatch(env, ops))) return changed('Tu equipo cambió mientras tanto. Inténtalo otra vez.');
   await questEvent(env, session.user_id, 'equip', invItem.item_id);   // Sesión 50 — misiones
 
   await pushEquipState(env, session.user_id);
@@ -340,7 +354,17 @@ export async function handleUnequip(request, env) {
     }
 
     const now = Date.now();
+    const uid = session.user_id;
+    const conds = [
+      { sql: "(SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = 'quiver') IS ?", params: [uid, equipped.item_id] },
+      slotEmptyCond(uid, quiverDestSlot),
+      // Sesión 51 — el contenido del carcaj sigue siendo el que leímos (antes,
+      // desequipar + sacar flechas a la vez las duplicaba)
+      q ? { sql: '(SELECT arrow_item_id IS ? AND arrow_quantity = ? FROM user_quiver WHERE user_id = ?)', params: [q.arrow_item_id ?? null, q.arrow_quantity | 0, uid] }
+        : { sql: 'NOT EXISTS (SELECT 1 FROM user_quiver WHERE user_id = ? AND arrow_quantity > 0)', params: [uid] },
+    ];
     const stmts = [
+      null,   // guarda (se pone al final, cuando sabemos todos los huecos)
       env.DB.prepare(
         `DELETE FROM user_equipment WHERE user_id = ? AND slot_id = 'quiver'`
       ).bind(session.user_id),
@@ -354,16 +378,18 @@ export async function handleUnequip(request, env) {
       // ¿Ya hay stack del mismo tipo de flecha en inv?
       const existingArrowStack = occupied.find(r => r.item_id === q.arrow_item_id);
       if (existingArrowStack) {
+        conds.push(slotCond(uid, existingArrowStack.slot_index, q.arrow_item_id));
         stmts.push(env.DB.prepare(
           `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
-           WHERE user_id = ? AND slot_index = ?`
-        ).bind(q.arrow_quantity, now, session.user_id, existingArrowStack.slot_index));
+           WHERE user_id = ? AND slot_index = ? AND item_id = ?`
+        ).bind(q.arrow_quantity, now, session.user_id, existingArrowStack.slot_index, q.arrow_item_id));
       } else {
         // Slot extra para las flechas (no puede ser el mismo que usamos para el quiver)
         const arrowDestSlot = firstFreeSlot(new Set([quiverDestSlot]));
         if (arrowDestSlot === null) {
           return json({ error: 'inventory_full', message: 'Mochila llena (flechas del carcaj no caben)' }, 400);
         }
+        conds.push(slotEmptyCond(uid, arrowDestSlot));
         stmts.push(env.DB.prepare(
           `INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at)
            VALUES (?, ?, ?, ?, ?)`
@@ -376,7 +402,8 @@ export async function handleUnequip(request, env) {
       ).bind(now, session.user_id));
     }
 
-    await env.DB.batch(stmts);
+    stmts[0] = guardConds(env, conds);
+    if (!(await atomicBatch(env, stmts))) return changed('Tu equipo cambió mientras tanto. Inténtalo otra vez.');
     await pushEquipState(env, session.user_id);
     return json({
       ok: true,
@@ -396,7 +423,12 @@ export async function handleUnequip(request, env) {
   const now = Date.now();
 
   // 3. Batch: borrar del equipment, insertar al inventario
-  await env.DB.batch([
+  // Sesión 51 — con guarda: dos "Quitar" seguidos ya no duplican el objeto
+  const okUn = await atomicBatch(env, [
+    guardConds(env, [
+      { sql: '(SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = ?) IS ?', params: [session.user_id, slotId, equipped.item_id] },
+      slotEmptyCond(session.user_id, freeSlot),
+    ]),
     env.DB.prepare(
       `DELETE FROM user_equipment WHERE user_id = ? AND slot_id = ?`
     ).bind(session.user_id, slotId),
@@ -405,6 +437,7 @@ export async function handleUnequip(request, env) {
        VALUES (?, ?, ?, 1, ?)`
     ).bind(session.user_id, freeSlot, equipped.item_id, now),
   ]);
+  if (!okUn) return changed('Tu equipo cambió mientras tanto. Inténtalo otra vez.');
 
   await pushEquipState(env, session.user_id);
   return json({

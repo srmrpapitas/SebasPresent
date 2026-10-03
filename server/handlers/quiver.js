@@ -95,14 +95,14 @@ export async function handleDepositToQuiver(request, env) {
          FROM user_inventory
         WHERE user_id = ? AND slot_index = ?`
     ).bind(session.user_id, requestedSlot).first();
-    if (!invRow || !invRow.item_id || !invRow.item_id.startsWith('arrow_')) {
+    if (!invRow || !invRow.item_id || !invRow.item_id.startsWith('arrow_') || invRow.item_id === 'arrow_shaft') {   // S51: los astiles no son munición
       return json({ error: 'no_arrow_at_slot' }, 400);
     }
   } else {
     invRow = await env.DB.prepare(
       `SELECT slot_index, item_id, quantity
          FROM user_inventory
-        WHERE user_id = ? AND item_id LIKE 'arrow_%' AND quantity > 0
+        WHERE user_id = ? AND item_id LIKE 'arrow_%' AND item_id != 'arrow_shaft' AND quantity > 0
         ORDER BY slot_index ASC LIMIT 1`
     ).bind(session.user_id).first();
     if (!invRow) return json({ error: 'no_arrow_at_slot', message: 'No hay flechas en inv' }, 400);

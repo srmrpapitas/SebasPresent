@@ -8,6 +8,7 @@
 
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
+import { guardConds, slotCond, atomicBatch, changed } from '../lib/atomic.js';   // Sesión 51
 
 export const INVENTORY_SLOTS = 20;
 
@@ -85,7 +86,10 @@ export async function handleSwapInventory(request, env) {
     }
 
     if (slotA.item_id === slotB.item_id && slotA.stackable === 1) {
-      await env.DB.batch([
+      // Sesión 51 — guarda: si el destino cambió a la vez, antes se borraba
+      // el origen igualmente y se perdía la pila.
+      const ok = await atomicBatch(env, [
+        guardConds(env, [slotCond(uid, from, slotA.item_id), slotCond(uid, to, slotA.item_id)]),
         env.DB.prepare(
           `UPDATE user_inventory
               SET quantity = quantity + COALESCE((SELECT quantity FROM user_inventory
@@ -97,7 +101,7 @@ export async function handleSwapInventory(request, env) {
           'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ?'
         ).bind(uid, from, slotA.item_id),
       ]);
-      return json({ ok: true });
+      return ok ? json({ ok: true }) : changed();
     }
 
     const tmp = -1 - from;
