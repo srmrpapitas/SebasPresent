@@ -13,6 +13,15 @@
 - Posición: nunca confiar en x,z del cliente si se aleja >15–20 m de `online_users` (ver `trustedAttackerPos`).
 - Luces: no crear `PointLight` nuevas en tiempo de juego (recompila shaders = tirón). Usar `poolLight/releaseLight` de `client/src/spec_fx.js`.
 
+## Pedido nuevo del usuario (3 oct, 13:43) — hacer junto al tutorial
+- **Banco estilo OSRS** (`client/src/bank.js`, `server/handlers/bank.js` no hace falta tocar):
+  - Cada objeto del banco muestra su **nombre debajo del icono** (texto pequeño en la parte inferior de la casilla).
+  - Al abrir el banco se ve **la mochila a la vez** (al lado en PC, debajo en móvil) para saber qué llevas.
+  - El banco se recorre **haciendo scroll** (lista/rejilla larga), sin páginas; con los nombres se encuentra todo rápido.
+    Si cabe, un buscador por nombre arriba.
+- **Mochila: NO cambiar** — sigue igual (tocar el objeto muestra nombre y opciones).
+- Después: **arreglar todos los bugs de la lista de abajo**.
+
 ## Pendiente (prioridad de arriba abajo)
 1. **Tutorial de inicio** (pedido por el usuario): guía paso a paso para cuentas nuevas con flechas a los
    botones del HUD (joystick, cámara, mochila, habilidades, misiones, mapa, banco, equipar, combate,
