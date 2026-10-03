@@ -29,7 +29,7 @@ let currentShopId = null;
 let shopData = null;
 let playerInv = null;
 
-const INVENTORY_SLOTS = 28;
+const INVENTORY_SLOTS = 20;
 
 // ============================================================
 // API pública

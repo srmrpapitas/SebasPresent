@@ -8,37 +8,50 @@
 > que tenés que leer al recibir el repo. Más útil que el código.
 
 > **Última actualización:** S31 — refactor + multi-log + kneel fix.
+> **Revisión de coherencia (2026-10):** valores de §0, §1, §4, §6.1, §9, §11.4, §14.2 y §15.2
+> sincronizados con el código actual.
 
 ---
 
-## 0. Estructura del proyecto (post-S31)
+## 0. Estructura del proyecto
 
 ```
 client/src/
   ├── build.js                 Constante BUILD (única fuente de verdad)
   ├── main.js                  Entry point. Importa debug system + ui + auth.
-  ├── world.js                 Orchestrator del mundo (2783 líneas, target: 400).
+  ├── world.js                 Orchestrator del mundo (~3700 líneas, target: 400).
   ├── character.js             Character class — anims, weapons, armor, gather.
+  ├── shared/                  Datos compartidos cliente + server (S50: vetas, pesca,
+  │                            misiones, jefes, bancos, recetas, equip_reqs...).
   ├── core/                    Núcleo extraído de world.js (S31)
   │   ├── scene.js               Setup three.js.
   │   ├── camera.js              Cámara orbital + drag + zoom + interior overrides.
-  │   └── combat_hooks.js        window.__playerEnter/Exit/Death/Revive/PlayAttack.
-  ├── skills/                  Skills aisladas (S31)
-  │   ├── _base.js               Clase base (opcional).
-  │   ├── index.js               startAll/stopAll/updateAll.
+  │   ├── combat_hooks.js        window.__playerEnter/Exit/Death/Revive/PlayAttack.
+  │   └── afk.js                 Pausa por inactividad (S51).
+  ├── skills/                  Skills aisladas (S31 + S50)
+  │   ├── index.js               startAll/stopAll/updateAll/cancelAll.
   │   ├── woodcutting.js         Tala con sistema multi-log + cae.
   │   ├── firemaking.js          Encender fuegos con kneel anim.
-  │   ├── cooking.js             Placeholder (S32).
-  │   └── mining.js              Placeholder (S33).
+  │   ├── mining.js              Minería (S50).
+  │   ├── fishing.js             Pesca (S50).
+  │   ├── smithing.js            Horno y yunque (S50).
+  │   ├── crafting.js            Flechería / Artesanía / Herbología (S50).
+  │   └── cooking.js             Placeholder (la cocina real vive en inventory.js).
   └── debug/                   Sistema de debug (S31)
       ├── index.js, dev_overlay.js, health_check.js, diag.js,
-      └── error_capture.js, weapon_debug.js, inspector.js
+      └── error_capture.js, combat_log.js, weapon_debug.js, inspector.js
 
-server/handlers/
-  ├── woodcutting.js           Tala — multi-log mechanic (S31).
-  ├── firemaking.js            Encender fuegos.
-  ├── snapshot.js              Polled cada 250ms por cliente.
-  └── ...
+server/
+  ├── worker.js                Router de la API.
+  ├── combat_engine.js         Combate, loot, muerte.
+  ├── realm.js                 Durable Object del WebSocket (S50).
+  ├── handlers/
+  │   ├── skills/                woodcutting, firemaking, mining, fishing, smithing,
+  │   │                          crafting, cooking + _shared.js.
+  │   ├── snapshot.js            Polleado por el cliente (ver §1.5).
+  │   └── ...
+  ├── migrations/              SQL de schema (referencia humana, ver §7.1).
+  └── seeds/                   SQL de datos (items, NPCs, tiendas...).
 ```
 
 ## 0.1 Regla de oro al editar
@@ -51,10 +64,10 @@ server/handlers/
 
 ## 1. Timing y constantes acopladas
 
-### 1.1 Tick de combate = 600ms
-- `combat_engine.js` server: cooldown entre attacks = 600ms.
-- `combat.js` cliente: `TICK_MS = 600`.
-- `character.js`: `ATTACK_TICK_MS = 600` — escala los Sword_Attack para que duren ese tiempo.
+### 1.1 Tick de combate = 900ms
+- `combat_engine.js` server: `TICK_MS = 900` (cooldown entre attacks).
+- `combat.js` cliente: `TICK_MS = 900`.
+- `character.js`: `ATTACK_TICK_MS = 900` — escala los Sword_Attack para que duren ese tiempo.
 - **Si cambias uno, cambia los tres.**
 
 ### 1.2 Threshold de tap táctil (INTOCABLES)
@@ -63,7 +76,8 @@ server/handlers/
 - Lección del chat 2026-05-13: subirlos rompió el tap-to-walk completamente.
 
 ### 1.3 Rango de combate
-- Server: `COMBAT_RANGE_TOLERANCE = 3.5m` en `worker.js`. Compensa los 3m del patrol radius visual de los NPCs.
+- Server (`combat_engine.js`): rango melee = `min(npc.attack_range + RANGE_TOLERANCE, MELEE_MAX_RANGE)`
+  con `RANGE_TOLERANCE = 0.8m` y `MELEE_MAX_RANGE = 3.0m`. PvP melee: `PVP_MELEE_MAX_RANGE = 4.0m`.
 - Cliente: el NPC mesh visual está en `mesh.position`, el "centro de patrol" del server está en `npc.x/z`. Usar `mesh.position` para validaciones de rango cliente.
 
 ### 1.4 Loot drops (en ms)
@@ -71,8 +85,10 @@ server/handlers/
 - `LOOT_TOTAL_LIFETIME_MS = 120_000` (2min total)
 - `LOOT_PICKUP_RADIUS_M = 5m` server, `GROUND_ITEM_PICKUP_RADIUS_M = 2.5m` cliente (cliente más estricto a propósito)
 
-### 1.5 Snapshot polling (S27)
-- `world_snapshot.js`: `POLL_INTERVAL_MS = 250` — cliente pide al server cada 250ms.
+### 1.5 Snapshot polling (S27 → S51)
+- `world_snapshot.js` sin WebSocket: `POLL_FAST_MS = 250` (combate) / `POLL_SLOW_MS = 500` (resto).
+- Con WebSocket (§27): `POLL_FAST_RT_MS = 1000` / `POLL_SLOW_RT_MS = 3000`.
+- 1 de cada `FULL_EVERY = 4` snapshots es completo; el resto son ligeros.
 - `snapshot._serverLagMs` aceptable < 500ms. Más alto = warning en debug panel.
 - Si el snapshot está stale > 3s, el debug overlay lo marca en rojo.
 
@@ -82,9 +98,10 @@ server/handlers/
 - Sin esto: bug "pegar desde lejos" — el server creía que estabas cerca cuando ya te habías alejado.
 - `POSITION_SAVE_MIN_DELTA = 5m` default, **0.5m en combate**.
 
-### 1.7 Chop tick (S30)
-- `woodcutting.js` cliente: `CHOP_TICK_S = 1.2s` — manda /chop cada 1.2 segundos.
-- Si lo bajás, el server lo va a rechazar (rate limit implícito por validaciones).
+### 1.7 Chop tick (S30 → S50)
+- `skills/woodcutting.js` cliente: `MIN_CHOP_TICK_MS = 1800` (o la duración del clip si es mayor).
+- Server (`handlers/skills/woodcutting.js`): `MIN_CHOP_TICK_MS = 1500`, rechaza con `too_fast` (429).
+- El cliente SIEMPRE tiene que ir más lento que el cerrojo del server.
 
 ---
 
@@ -165,14 +182,17 @@ server/handlers/
 
 ### 4.1 Patrón de archivo
 - Una skill por archivo en `client/src/skills/`.
-- Exporta `start(opts) / stop() / update(dt)` (cancelOnMove opcional).
+- Exporta `start(opts) / stop() / update(dt)` + `cancel(reason)` si tiene loop activo
+  (ver §13.3; `cancelOnMove()` queda como compat).
 - Estado interno en `let` privados al inicio del archivo.
 - Hook debug `window.__SKILL_NAME_Debug` para inspección.
 
 ### 4.2 Orquestador (`skills/index.js`)
 - Para agregar una skill: importar + añadir a `SKILL_MODULES`. Listo.
 - `startAll(opts)` llama a `start()` de cada una.
-- `stopAll()` y `updateAll(dt)` análogos.
+- `stopAll()`, `updateAll(dt)` y `cancelAll(reason)` análogos.
+- Activas hoy: woodcutting, firemaking, mining, fishing, crafting, smithing.
+  Mining/fishing/smithing solo usan `cancel()` vía el orquestador; world.js las arranca.
 
 ### 4.3 Woodcutting — multi-log mechanic (S31)
 - **Cada /chop hace 2 rolls independientes** server-side:
@@ -181,8 +201,8 @@ server/handlers/
 - Respuesta server: `{ ok, log_gained, tree_falls, log_item?, xp_gained?, ... }`.
 - Si `log_gained = false`: no log, no XP, cliente sigue talando.
 - Si `tree_falls = true`: árbol depleted, cliente para el loop.
-- **Tabla de árboles**: ver `server/handlers/woodcutting.js` constante `TREE_DEFS`.
-- Respawn variable según especie: normal 30s, oak 1min, willow 3min, yew 15min, magic 30min.
+- **Tabla de árboles**: ver `server/handlers/skills/woodcutting.js` constante `TREE_DEFS`.
+- Respawn variable según especie (`respawnMs`): normal 30s, oak 1min, willow 3min, yew 15min, etc.
 
 ### 4.4 Firemaking
 - Endpoint `POST /api/firemaking/light { slotIdx }`.
@@ -256,7 +276,8 @@ server/handlers/
 ## 6. Sistema de Equipment
 
 ### 6.1 Slots y weapon types
-- 9 slots OSRS: `weapon, shield, helm, body, legs, boots, cape, amulet, ring`.
+- 11 slots (`VALID_EQUIP_SLOTS` en `server/handlers/equipment.js`):
+  `weapon, shield, helm, body, legs, boots, gloves, cape, amulet, ring, quiver`.
 - **weapon_type** del item determina anims a usar:
   - `'unarmed'` → punching attack, sin draw/sheath
   - `'1h_sword'` → Sword_Draw + Sword_Attack_1-3 + Sword_Sheath
@@ -337,8 +358,7 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
 ## 9. Tamaños de UI
 
 ### 9.1 Inventario
-- 28 slots fijos (4×7), igual que OSRS clásico.
-- Si lo cambias, también cambiar `MAX_SLOTS` en `worker.js` y los SQL inserts.
+- **20 slots fijos (4×5)** desde S33 — ver §15 para la lista completa de puntos hardcoded.
 
 ### 9.2 Bank
 - Sin tope hardcoded actualmente.
@@ -406,7 +426,7 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
 ### 11.4 Pendiente (próxima sesión)
 - `core/player_controller.js` — joystick, tap, Y offset, gather Y, cancel hooks (~400 líneas).
 - `core/ui_injection.js` — CSS injection del audio panel + inv grid + skills panel.
-- Mover handlers del server a `server/handlers/skills/`.
+- ~~Mover handlers del server a `server/handlers/skills/`.~~ Hecho.
 - Mover `__weaponDebug` de `character.js` → `debug/weapon_debug.js`.
 
 ---
@@ -496,9 +516,9 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
 ### 14.2 combat_styles.js — interfaz unificada (Bloque 1 día 1)
 - Archivo creado en `client/src/combat_styles.js`. Exporta `MeleeStyle`,
   `RangedStyle`, `MagicStyle`, `getActiveStyle()`, `styleForWeaponType(wt)`.
-- HOY (S33 día 1) está creado pero **no se usa todavía** — combat.js,
-  character.js y combat_hooks.js siguen con su lógica original. La
-  migración es trabajo de día 2.
+- Migración hecha en S33 día 2: `core/combat_hooks.js` delega en
+  `getActiveStyle().onEnterCombat/onExitCombat` y `combat.js` usa
+  `getActiveStyle().canAttack()`. (Lo de 14.3 queda como registro histórico.)
 - Contrato que cada style implementa:
   - `id`: 'melee' | 'ranged' | 'magic'
   - `matchesWeaponType(wt)` → boolean. EXCLUSIVO: cada wt matchea 1 solo.
@@ -546,10 +566,11 @@ Cada item con weapon (ej `axe`) se referencia en **6 lugares**:
   consolidaron en slots libres. Decisión consciente de Nico (S33).
 - No tocar este número sin actualizar TODOS los puntos hardcoded (sección 15.2).
 
-### 15.2 Hardcoded en 9 lugares — mantener en sync
+### 15.2 Hardcoded en varios lugares — mantener en sync
 Cliente:
 - `client/src/inventory.js` → `const SLOTS = 20`
 - `client/src/bank.js` → `const INV_SLOTS = 20` (mirror del inv en el banco)
+- `client/src/shop.js` → `const INVENTORY_SLOTS = 20` (mirror del inv en la tienda)
 - `client/src/world.js` → comentario del CSS injector (el CSS usa grid-auto-rows,
   no necesita cambio)
 
@@ -557,7 +578,15 @@ Server:
 - `server/handlers/inventory.js` → `export const INVENTORY_SLOTS = 20`
 - `server/handlers/equipment.js` → `const INVENTORY_SLOTS = 20`
 - `server/handlers/shop.js` → `const INVENTORY_SLOTS = 20`
+- `server/handlers/trade.js` → `const INVENTORY_SLOTS = 20`
+- `server/handlers/quiver.js` → `const INVENTORY_SLOTS = 20`
 - `server/handlers/skills/_shared.js` → `const INVENTORY_SLOTS = 20`
+- `server/handlers/skills/crafting.js` → `const INVENTORY_SLOTS = 20`
+- `server/handlers/skills/smithing.js` → `const INVENTORY_SLOTS = 20`
+- `server/handlers/skills/cooking.js` → `const MAX_INV_SLOTS = 20`
+- `server/lib/quests.js` → `const INVENTORY_SLOTS = 20`
+- `server/lib/give.js` → `const INVENTORY_SLOTS = 20`
+- `server/minigame.js` → `const INV_SLOTS = 20`
 - `server/ge_engine.js` → `export const INVENTORY_SLOT_COUNT = 20`
 - `server/combat_engine.js` → `const MAX_SLOTS = 20`
 
@@ -569,7 +598,7 @@ Corrida una sola vez por Nico en D1 console al deployar S33.5. NO ejecutar
 de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 
 ### 15.4 Si en el futuro se quiere expandir (subir a 24, 28, etc)
-- Cambiar los 9 puntos en sync. Buscar con `grep -rn "= 20\|= INVENTORY_SLOTS"`.
+- Cambiar todos los puntos de 15.2 en sync. Buscar con `grep -rn "SLOTS = 20\|SLOT_COUNT = 20"`.
 - NO hace falta migración SQL para EXPANDIR (los slots nuevos arrancan vacíos).
 - Si va a expandir, considerá si tiene sentido extender el CSS grid_auto_rows
   o si conviene volver a un layout con scroll.

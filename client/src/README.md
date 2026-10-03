@@ -8,16 +8,19 @@ client/src/
   │   ├── scene.js              setup three.js (scene, camera, renderer, lights, fog, ocean)
   │   ├── camera.js             cámara orbital (yaw/pitch/dist + drag + zoom)
   │   ├── combat_hooks.js       window.__playerEnterCombat/Exit/Death/Revive/PlayAttack
+  │   ├── afk.js                pausa por inactividad (S51)
   │   ├── player_controller.js  ⚠ pendiente — joystick, tap, movement, Y offset
   │   └── ui_injection.js       ⚠ pendiente — CSS injection
   │
-  ├── skills/       ← una skill por archivo, todas extienden Skill
-  │   ├── _base.js              clase base con interface común (start/stop/update/cancelOnMove)
+  ├── skills/       ← una skill por archivo (módulos con estado privado)
   │   ├── woodcutting.js        tala (logs, XP, hidden trees)
   │   ├── firemaking.js         encender fuego (kneel anim + sprite)
-  │   ├── cooking.js            placeholder S32
-  │   ├── mining.js             placeholder S33
-  │   └── index.js              re-export central + startAll/stopAll/updateAll
+  │   ├── mining.js             minería (S50)
+  │   ├── fishing.js            pesca (S50)
+  │   ├── smithing.js           horno y yunque (S50)
+  │   ├── crafting.js           flechería / artesanía / herbología (S50)
+  │   ├── cooking.js            placeholder (la cocina real vive en inventory.js)
+  │   └── index.js              re-export central + startAll/stopAll/updateAll/cancelAll
   │
   ├── debug/        ← herramientas dev (instalado en S31, FASE 2)
   │   ├── index.js              initDebugSystem()
@@ -25,8 +28,12 @@ client/src/
   │   ├── health_check.js       __sebasHealth()
   │   ├── diag.js               __diag.*
   │   ├── error_capture.js      buffer de errores window.onerror
+  │   ├── combat_log.js         __combatLog — log de combate con timestamps
   │   ├── weapon_debug.js       placeholder — el real vive aún en character.js
   │   └── inspector.js          placeholder futuro
+  │
+  ├── shared/       ← datos compartidos cliente + server (vetas, pesca, misiones,
+  │                   jefes, bancos, recetas, equip_reqs...)
   │
   ├── build.js      ← única fuente de verdad de versión cliente
   │
@@ -65,4 +72,4 @@ Ver `debug/README.md`.
 - [ ] `core/player_controller.js` — joystick, tap, Y offset, gather Y, cancel hooks
 - [ ] `core/ui_injection.js` — CSS injection del audio panel + inv grid + skills panel
 - [ ] Mover `__weaponDebug` desde `character.js` → `debug/weapon_debug.js`
-- [ ] Mover server handlers a `server/handlers/skills/`
+- [x] Mover server handlers a `server/handlers/skills/`

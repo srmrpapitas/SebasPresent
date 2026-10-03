@@ -7,10 +7,13 @@ sus llamadas a la API, su anim del char, su UI propia si la tiene.
 
 | Skill | Archivo | Server handler | Estado |
 |---|---|---|---|
-| Woodcutting | `woodcutting.js` | `server/handlers/woodcutting.js` | ✅ S30 |
-| Firemaking | `firemaking.js` | `server/handlers/firemaking.js` | ✅ S30 |
-| Cooking | `cooking.js` | `server/handlers/cooking.js` | ⏳ S32 |
-| Mining | `mining.js` | `server/handlers/mining.js` | ⏳ S33 |
+| Woodcutting | `woodcutting.js` | `server/handlers/skills/woodcutting.js` | ✅ S30 |
+| Firemaking | `firemaking.js` | `server/handlers/skills/firemaking.js` | ✅ S30 |
+| Mining | `mining.js` | `server/handlers/skills/mining.js` | ✅ S50 |
+| Fishing | `fishing.js` | `server/handlers/skills/fishing.js` | ✅ S50 |
+| Smithing | `smithing.js` | `server/handlers/skills/smithing.js` | ✅ S50 |
+| Crafting (Flechería/Artesanía/Herbología) | `crafting.js` | `server/handlers/skills/crafting.js` | ✅ S50 |
+| Cooking | `cooking.js` (placeholder) | `server/handlers/skills/cooking.js` | ✅ vía `inventory.js` (menú "Cocinar") |
 
 ## Contrato de una skill
 
@@ -20,7 +23,8 @@ Cada archivo expone (por convención):
 export function start(opts) { ... }    // arranque
 export function stop() { ... }          // shutdown
 export function update(dt) { ... }     // por frame
-export function cancelOnMove() { ... } // cuando el player se mueve (opcional)
+export function cancel(reason) { ... }  // obligatorio si tiene loop activo (combate, muerte)
+export function cancelOnMove() { ... } // compat vieja (opcional)
 ```
 
 `opts` incluye getters comunes que recibe del orchestrator (`skills/index.js`):
@@ -43,9 +47,9 @@ La skill ignora los getters que no usa.
 
 ### 1. Crear el handler server
 
-`server/handlers/cooking.js`:
+`server/handlers/skills/<skill>.js`:
 ```js
-import { db } from '../lib/db.js';
+import { db } from '../../lib/db.js';
 
 export async function cook(env, req) {
   // validar nivel, consumir input (raw), dar producto + XP
@@ -63,7 +67,7 @@ if (url.pathname === '/api/cooking/cook' && req.method === 'POST') {
 
 Copiá la estructura de `woodcutting.js` como template:
 - `start(opts)` / `stop()` / `update(dt)`
-- `cancelOnMove()` si el movimiento cancela la acción
+- `cancel(reason)` que pare el loop y haga el cleanup visual (restore tool, etc.)
 - Estado del módulo en `let` privados arriba del archivo
 - Hook debug `window.__cookingDebug` o `__cookDebug` para inspección en consola
 - Si toca el char (anim de cook), seguir el patrón de `firemaking.js` con
@@ -92,14 +96,11 @@ para que sea fácil rollback si algo sale mal.
 `__sebasHealth()` debería mostrar el módulo OK. El badge de debug muestra la
 skill activa en la sección "skills active" del panel.
 
-## Por qué NO usar clases para las skills viejas
+## Por qué módulos y no clases
 
-Las skills viejas (woodcutting, firemaking) son módulos con estado privado.
-No las migré a `Skill` (la clase base de `_base.js`) para no romper su API.
-La clase base está para skills NUEVAS que prefieran un esqueleto más OO.
-
-Las dos formas funcionan con el orchestrator. No hay opinión fuerte —
-elegí lo que te resulte más natural cuando sumes Cooking/Mining.
+Todas las skills son módulos con estado privado. La clase base `_base.js`
+que se planeó en S31 ya no existe; si una skill nueva prefiere clases, que
+igualmente exponga `start/stop/update/cancel` para el orchestrator.
 
 ## Anim de gathering (woodcut/kneel/etc) — patrón estándar
 

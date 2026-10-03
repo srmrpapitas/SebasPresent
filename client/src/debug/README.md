@@ -23,6 +23,7 @@ initDebugSystem();
 | `health_check.js` | `__sebasHealth()` → tabla de chequeos del sistema. |
 | `diag.js` | `__diag.*` → bones, tracks, fuerzas, dumps. |
 | `error_capture.js` | Atrapa `window.onerror` y unhandledrejection. Buffer 50. |
+| `combat_log.js` | `__combatLog` — log de combate con timestamps en ms (dump/copy/tail/clear). |
 | `weapon_debug.js` | Placeholder — el panel real vive aún en `character.js`. |
 | `inspector.js` | Placeholder para `__inspect(subsistema)` (futuro). |
 

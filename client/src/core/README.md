@@ -16,6 +16,7 @@ quede en 300-400 líneas como **orchestrator puro**: importa los módulos de
 | `scene.js` | ✅ extraído | ~30 |
 | `camera.js` | ✅ extraído | ~30 + 2 listeners |
 | `combat_hooks.js` | ✅ extraído | ~95 |
+| `afk.js` | ✅ nuevo (S51) | — (pausa por inactividad) |
 | `player_controller.js` | ⏳ pendiente | ~400 |
 | `ui_injection.js` | ⏳ pendiente | ~300 |
 
