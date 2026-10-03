@@ -92,6 +92,7 @@ export async function handleGroundItemsPickup(request, env) {
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
 
   const rawIds = Array.isArray(body?.ids) ? body.ids : [];
   const ids = [];
@@ -124,8 +125,10 @@ export async function handleGroundItemsPickup(request, env) {
     // Anti-cheat: validamos que la pos enviada NO esté absurdamente lejos
     // de la persistida (>50m = ~5s de run boost). Si lo está, usamos la
     // persistida (asumimos cliente malicioso o desync extremo).
+    // Sesión 51 — la posición fresca del Realm (online_users) y, si no hay, la guardada
     const userRow = await db.first(
-      'SELECT last_x, last_z FROM users WHERE id = ?',
+      `SELECT COALESCE(o.x, u.last_x) AS last_x, COALESCE(o.z, u.last_z) AS last_z
+         FROM users u LEFT JOIN online_users o ON o.user_id = u.id WHERE u.id = ?`,
       [userId]
     );
     if (!userRow) return json({ error: 'user_not_found' }, 404);
@@ -137,7 +140,7 @@ export async function handleGroundItemsPickup(request, env) {
     if (cliPos && Number.isFinite(cliPos.x) && Number.isFinite(cliPos.z)) {
       const dpx = cliPos.x - persistedX;
       const dpz = cliPos.z - persistedZ;
-      const MAX_DESYNC_M = 50;
+      const MAX_DESYNC_M = 20;   // Sesión 51 — antes 50 m (se recogía desde lejos)
       if (dpx * dpx + dpz * dpz > MAX_DESYNC_M * MAX_DESYNC_M) {
         // Desync absurdo — desconfía del cliente, usa persistida.
         userX = persistedX;
@@ -274,6 +277,7 @@ export async function handleGroundItemsDrop(request, env) {
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
 
   const slot = parseInt(body?.slot, 10);
   if (!Number.isFinite(slot) || slot < 0) return json({ error: 'invalid_slot' }, 400);
@@ -290,7 +294,11 @@ export async function handleGroundItemsDrop(request, env) {
     if (!inv) return json({ error: 'empty_slot' }, 400);
 
     // Posición del jugador (mismo patrón anti-desfase que el pickup).
-    const userRow = await db.first('SELECT last_x, last_z FROM users WHERE id = ?', [userId]);
+    const userRow = await db.first(
+      `SELECT COALESCE(o.x, u.last_x) AS last_x, COALESCE(o.z, u.last_z) AS last_z
+         FROM users u LEFT JOIN online_users o ON o.user_id = u.id WHERE u.id = ?`,
+      [userId]
+    );   // Sesión 51 — posición fresca del Realm
     if (!userRow) return json({ error: 'user_not_found' }, 404);
     const persistedX = userRow.last_x ?? 0;
     const persistedZ = userRow.last_z ?? 0;
@@ -298,7 +306,7 @@ export async function handleGroundItemsDrop(request, env) {
     const cliPos = body?.userPos;
     if (cliPos && Number.isFinite(cliPos.x) && Number.isFinite(cliPos.z)) {
       const dpx = cliPos.x - persistedX, dpz = cliPos.z - persistedZ;
-      const MAX_DESYNC_M = 50;
+      const MAX_DESYNC_M = 20;   // Sesión 51 — antes 50 m (se recogía desde lejos)
       if (dpx * dpx + dpz * dpz <= MAX_DESYNC_M * MAX_DESYNC_M) {
         userX = cliPos.x; userZ = cliPos.z;
       }

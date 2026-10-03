@@ -8,7 +8,7 @@
  * (<10s) dentro de un radio de 100m del que pregunta.
  */
 
-import { maxSpeed, SPEED_TOLERANCE, BURST_MAX_M } from '../../client/src/shared/movement.js';   // Sesión 50
+import { maxSpeed, SPEED_TOLERANCE, BURST_MAX_M, LOGIN_NEAR_M, WARP_WINDOW_MS, WARP_NEAR_M } from '../../client/src/shared/movement.js';   // Sesión 50/51
 import { json } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 
@@ -22,6 +22,7 @@ export async function handleWorldHeartbeat(request, env) {
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const x   = Number(body?.x);
   const z   = Number(body?.z);
   const yaw = Number(body?.yaw ?? 0);
@@ -36,19 +37,34 @@ export async function handleWorldHeartbeat(request, env) {
   try {
     // requireSession no incluye username — lo buscamos manualmente
     const userRow = await env.DB.prepare(
-      'SELECT username FROM users WHERE id = ?'
+      'SELECT username, last_x, last_z, warp_x, warp_z, warp_at FROM users WHERE id = ?'
     ).bind(session.user_id).first();
     const username = userRow?.username || `user${session.user_id}`;
 
-    // Sesión 50 — anti speed hack (respaldo HTTP del Realm): si el salto es
+    // Sesión 50/51 — anti speed hack (respaldo HTTP del Realm): si el salto es
     // imposible desde la última posición conocida, solo se renueva last_seen.
+    // Sesión 51: con la velocidad de las monturas que de verdad tienes, y si
+    // no hay posición reciente, se ancla a la última guardada (antes, tras 60 s
+    // quieto, se aceptaba CUALQUIER posición = teletransporte).
+    const nearWarp = userRow?.warp_at && now - userRow.warp_at < WARP_WINDOW_MS && userRow.warp_x != null
+      && Math.hypot(x - userRow.warp_x, z - userRow.warp_z) <= WARP_NEAR_M;
     const prev = await env.DB.prepare('SELECT x, z, last_seen FROM online_users WHERE user_id = ?').bind(session.user_id).first();
-    if (prev && now - prev.last_seen < 60_000) {
-      const dt = Math.max(0.2, (now - prev.last_seen) / 1000);
-      const allowed = maxSpeed('pardela', true) * SPEED_TOLERANCE * dt + BURST_MAX_M;
-      if (Math.hypot(x - prev.x, z - prev.z) > allowed) {
-        await env.DB.prepare('UPDATE online_users SET last_seen = ?, state = ? WHERE user_id = ?').bind(now, state, session.user_id).run();
-        return json({ ok: true, ts: now, fix: { x: prev.x, z: prev.z } });
+    if (!nearWarp) {
+      if (prev && now - prev.last_seen < 60_000) {
+        const owned = ((await env.DB.prepare('SELECT mount_id FROM user_mounts WHERE user_id = ?').bind(session.user_id).all().catch(() => null))?.results || []).map(r => r.mount_id);
+        const vmax = Math.max(maxSpeed(null, false), ...owned.map(m => maxSpeed(m, true)));
+        const dt = Math.max(0.2, (now - prev.last_seen) / 1000);
+        const allowed = vmax * SPEED_TOLERANCE * dt + BURST_MAX_M;
+        if (Math.hypot(x - prev.x, z - prev.z) > allowed) {
+          await env.DB.prepare('UPDATE online_users SET last_seen = ?, state = ? WHERE user_id = ?').bind(now, state, session.user_id).run();
+          return json({ ok: true, ts: now, fix: { x: prev.x, z: prev.z } });
+        }
+      } else {
+        const ax = prev ? prev.x : (userRow?.last_x ?? 0), az = prev ? prev.z : (userRow?.last_z ?? 0);
+        if (Math.hypot(x - ax, z - az) > LOGIN_NEAR_M) {
+          if (prev) await env.DB.prepare('UPDATE online_users SET last_seen = ?, state = ? WHERE user_id = ?').bind(now, state, session.user_id).run();
+          return json({ ok: true, ts: now, fix: { x: ax, z: az } });
+        }
       }
     }
     // Upsert: si ya existe, actualiza; si no, inserta.

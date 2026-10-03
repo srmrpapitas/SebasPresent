@@ -10,6 +10,7 @@
  * falla, la acción principal no se ve afectada.
  */
 
+import { guardConds, slotCond, atomicBatch } from './atomic.js';   // Sesión 51
 import { QUESTS, QUEST_ORDER } from '../../client/src/shared/quests.js';
 import { xpToLevel, MAX_XP } from './skills_engine.js';
 
@@ -19,40 +20,44 @@ async function tableReady(env) {
   try { await env.DB.prepare('SELECT 1 FROM user_quests LIMIT 1').all(); return true; } catch { return false; }
 }
 
-/** Da un item: a la mochila si cabe, si no al banco. */
+/** Da un item: a la mochila si cabe, si no al banco.
+ *  Sesión 51 — robusto ante cambios simultáneos: se suma a la pila POR
+ *  item_id (no por número de slot) y cada inserción en un hueco libre se
+ *  reintenta en el siguiente si otro proceso lo ocupó a la vez. */
 export async function grantItem(env, userId, itemId, qty = 1) {
   if (!qty || qty <= 0) return;
   const now = Date.now();
   const meta = await env.DB.prepare('SELECT stackable FROM items WHERE id = ?').bind(itemId).first();
   if (!meta) return;
-  const inv = await env.DB.prepare('SELECT slot_index, item_id FROM user_inventory WHERE user_id = ?').bind(userId).all();
-  const rows = inv.results || [];
-  const used = new Set(rows.map(r => r.slot_index));
-  const free = [];
-  for (let i = 0; i < INVENTORY_SLOTS; i++) if (!used.has(i)) free.push(i);
+  const freeSlots = async () => {
+    const inv = await env.DB.prepare('SELECT slot_index FROM user_inventory WHERE user_id = ?').bind(userId).all();
+    const used = new Set((inv.results || []).map(r => r.slot_index));
+    const free = [];
+    for (let i = 0; i < INVENTORY_SLOTS; i++) if (!used.has(i)) free.push(i);
+    return free;
+  };
+  const tryInsert = async (slot, q) => {
+    try {
+      await env.DB.prepare('INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)')
+        .bind(userId, slot, itemId, q, now).run();
+      return true;
+    } catch { return false; }   // hueco ocupado entre medias
+  };
 
   if (meta.stackable === 1) {
-    const st = rows.find(r => r.item_id === itemId);
-    if (st) {
-      await env.DB.prepare('UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ?')
-        .bind(qty, now, userId, st.slot_index).run();
-      return;
-    }
-    if (free.length) {
-      await env.DB.prepare('INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)')
-        .bind(userId, free[0], itemId, qty, now).run();
-      return;
-    }
+    const up = await env.DB.prepare(
+      `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
+        WHERE user_id = ? AND item_id = ?
+          AND slot_index = (SELECT slot_index FROM user_inventory WHERE user_id = ? AND item_id = ? LIMIT 1)`
+    ).bind(qty, now, userId, itemId, userId, itemId).run();
+    if (up?.meta?.changes) return;
+    for (const slot of await freeSlots()) if (await tryInsert(slot, qty)) return;
   } else {
     let left = qty;
-    const stmts = [];
-    for (const slot of free) {
+    for (const slot of await freeSlots()) {
       if (left <= 0) break;
-      stmts.push(env.DB.prepare('INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, 1, ?)')
-        .bind(userId, slot, itemId, now));
-      left--;
+      if (await tryInsert(slot, 1)) left--;
     }
-    if (stmts.length) await env.DB.batch(stmts);
     qty = left;
     if (qty <= 0) return;
   }
@@ -175,13 +180,15 @@ export async function deliverToNpc(env, userId, npcId) {
       `UPDATE user_quests SET progress = 1, updated_at = ? WHERE user_id = ? AND quest_id = ? AND step = ? AND status = 0 AND progress = 0`
     ).bind(now, userId, row.quest_id, row.step).run();
     if (!mark?.meta?.changes) continue;
-    const stmts = [];
+    const stmts = [null];   // [0] = guarda (Sesión 51)
+    const conds = [];
     for (const [id, n] of step.items) {
       let left = n;
       for (const r of invRows) {
         if (left <= 0) break;
         if (r.item_id !== id || r.quantity <= 0) continue;
         const take = Math.min(left, r.quantity);
+        conds.push(slotCond(userId, r.slot_index, id, r.quantity));
         stmts.push(take >= r.quantity
           ? env.DB.prepare('DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ?').bind(userId, r.slot_index, id)
           : env.DB.prepare('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND slot_index = ? AND item_id = ?').bind(take, userId, r.slot_index, id));
@@ -189,7 +196,14 @@ export async function deliverToNpc(env, userId, npcId) {
         left -= take;
       }
     }
-    if (stmts.length) await env.DB.batch(stmts);
+    // Sesión 51 — GUARDA: los objetos siguen ahí. Antes, entregar mientras
+    // movías la mochila completaba la misión sin quitarte nada.
+    stmts[0] = guardConds(env, conds);
+    if (!(await atomicBatch(env, stmts))) {
+      await env.DB.prepare('UPDATE user_quests SET progress = 0 WHERE user_id = ? AND quest_id = ? AND step = ? AND status = 0 AND progress = 1')
+        .bind(userId, row.quest_id, row.step).run();
+      return { error: 'changed', message: 'Tu mochila cambió mientras tanto. Inténtalo otra vez.' };
+    }
     const res = await advanceStep(env, userId, row, q, step, now);
     if (res) results.push(res);
   }

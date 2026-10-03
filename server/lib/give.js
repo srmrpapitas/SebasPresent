@@ -31,6 +31,9 @@ export async function placeStmts(env, uid, items, now, { bankFallback = false } 
     if (!(it.qty > 0)) continue;
     if (st[it.item_id]) {
       if (stackSlot[it.item_id] != null) {
+        // Sesión 51 — guarda: la pila sigue en ese hueco (si no, el lote se deshace entero)
+        stmts.push(env.DB.prepare(`SELECT json(CASE WHEN (SELECT item_id = ? FROM user_inventory WHERE user_id = ? AND slot_index = ?) THEN '1' ELSE 'guard' END) AS g`)
+          .bind(it.item_id, uid, stackSlot[it.item_id]));
         stmts.push(env.DB.prepare('UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?')
           .bind(it.qty, now, uid, stackSlot[it.item_id], it.item_id));
       } else if (free.length) {
@@ -53,7 +56,7 @@ export async function placeStmts(env, uid, items, now, { bankFallback = false } 
     let next = (maxRow?.m ?? -1) + 1;
     for (const it of toBank) {
       const ex = await env.DB.prepare('SELECT slot_index FROM user_bank WHERE user_id = ? AND item_id = ?').bind(uid, it.item_id).first();
-      if (ex) stmts.push(env.DB.prepare('UPDATE user_bank SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ?').bind(it.qty, now, uid, ex.slot_index));
+      if (ex) stmts.push(env.DB.prepare('UPDATE user_bank SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND item_id = ?').bind(it.qty, now, uid, it.item_id));   // S51: por objeto, no por hueco
       else stmts.push(env.DB.prepare('INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)').bind(uid, next++, it.item_id, it.qty, now));
     }
   }

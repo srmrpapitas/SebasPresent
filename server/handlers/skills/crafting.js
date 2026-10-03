@@ -15,6 +15,7 @@ import { requireSession } from '../../lib/auth.js';
 import { xpToLevel, MAX_XP } from '../../lib/skills_engine.js';
 import { RECIPES_BY_ID, TOOL_NAMES, SKILL_LABEL, CRAFT_MIN_TICK_MS } from '../../../client/src/shared/crafting.js';
 import { questEvent } from '../../lib/quests.js';
+import { guardConds, slotCond } from '../../lib/atomic.js';   // Sesión 51
 
 const INVENTORY_SLOTS = 20;
 
@@ -55,7 +56,10 @@ export async function handleCraftingMake(request, env) {
     return json({ error: 'no_tool', message: `Necesitas ${TOOL_NAMES[rec.tool] || rec.tool}.`, tool: rec.tool }, 400);
   }
 
-  const stmts = [];
+  const stmts = [null];   // [0] = guarda (Sesión 51), se rellena abajo
+  const conds = [];
+  // la herramienta sigue en la mochila
+  if (rec.tool) conds.push({ sql: 'EXISTS (SELECT 1 FROM user_inventory WHERE user_id = ? AND item_id = ?)', params: [userId, rec.tool] });
   const freed = [];
   for (const [itemId, qty] of rec.in) {
     const have = rows.filter(r => r.item_id === itemId);
@@ -67,6 +71,7 @@ export async function handleCraftingMake(request, env) {
     for (const r of have) {
       if (left <= 0) break;
       const take = Math.min(left, r.quantity);
+      conds.push(slotCond(userId, r.slot_index, itemId, r.quantity));   // Sesión 51 — sigue igual que al leerla
       if (take >= r.quantity) {
         stmts.push(env.DB.prepare(
           'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ?'
@@ -87,9 +92,10 @@ export async function handleCraftingMake(request, env) {
   if (!meta) return json({ error: 'unknown_item', message: 'Objeto desconocido.' }, 500);
   const stack = meta.stackable === 1 ? rows.find(r => r.item_id === outId && !freed.includes(r.slot_index)) : null;
   if (stack) {
+    conds.push(slotCond(userId, stack.slot_index, outId));
     stmts.push(env.DB.prepare(
-      'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-    ).bind(outQty, now, userId, stack.slot_index));
+      'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?'
+    ).bind(outQty, now, userId, stack.slot_index, outId));
   } else {
     const nSlots = meta.stackable === 1 ? 1 : outQty;
     const used = new Set(rows.map(r => r.slot_index));
@@ -113,10 +119,16 @@ export async function handleCraftingMake(request, env) {
   stmts.push(env.DB.prepare(
     'UPDATE user_skills SET xp = MIN(xp + ?, ?) WHERE user_id = ? AND skill_id = ?'
   ).bind(rec.xp, MAX_XP, userId, rec.skill));
+  // Sesión 51 — GUARDA: herramienta y materiales siguen exactamente como los
+  // leímos. Antes, fabricar mientras guardabas el material en el banco te
+  // daba el producto Y te quedabas el material.
+  stmts[0] = guardConds(env, conds);
   try {
     await env.DB.batch(stmts);
   } catch (err) {
-    // p. ej. el hueco se ocupó entre medias (PK) → no se hizo nada
+    // la guarda falló o el hueco se ocupó entre medias (PK) → no se hizo nada
+    await env.DB.prepare('UPDATE user_skills SET updated_at = ? WHERE user_id = ? AND skill_id = ? AND updated_at = ?')
+      .bind(now - CRAFT_MIN_TICK_MS, userId, rec.skill, now).run().catch(() => {});   // devolver el turno
     return json({ error: 'conflict', message: 'Inténtalo otra vez.' }, 409);
   }
   await questEvent(env, userId, rec.skill === 'fletching' ? 'fletch' : rec.skill === 'herblore' ? 'herb' : 'craft', outId);

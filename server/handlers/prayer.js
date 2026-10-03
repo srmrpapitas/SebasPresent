@@ -13,6 +13,7 @@
 import { atHouseWith } from './house.js';   // Sesión 50
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
+import { guardSlot, atomicBatch, changed } from '../lib/atomic.js';   // Sesión 51
 import { xpToLevel, MAX_XP } from '../lib/skills_engine.js';
 import { getPlayerPosition, isWithinDistance } from './skills/_shared.js';
 import { questEvent } from '../lib/quests.js';
@@ -65,7 +66,7 @@ export async function handlePrayerBury(request, env) {
   const inv = await env.DB.prepare(
     'SELECT item_id, quantity FROM user_inventory WHERE user_id = ? AND slot_index = ?'
   ).bind(userId, slot).first();
-  const bone = inv && BONES[inv.item_id];
+  const bone = inv && Object.prototype.hasOwnProperty.call(BONES, inv.item_id) ? BONES[inv.item_id] : null;
   if (!bone) return json({ error: 'not_bones', message: 'Eso no se puede enterrar.' }, 400);
 
   const { xp: prevXp } = await prayerLevel(env, userId);
@@ -75,7 +76,10 @@ export async function handlePrayerBury(request, env) {
   ).bind(now, userId, SKILL_ID, now - BURY_TICK_MS).run();
   if (!gate?.meta?.changes) return json({ error: 'too_fast' }, 429);
 
-  await env.DB.batch([
+  // Sesión 51 — con GUARDA: el hueso sigue ahí (enterrar + mover a la vez
+  // daba la XP y dejaba el hueso: XP infinita con un súper hueso).
+  const okBury = await atomicBatch(env, [
+    guardSlot(env, userId, slot, inv.item_id, inv.quantity),
     inv.quantity > 1
       ? env.DB.prepare('UPDATE user_inventory SET quantity = quantity - 1, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?')
           .bind(now, userId, slot, inv.item_id)
@@ -84,6 +88,11 @@ export async function handlePrayerBury(request, env) {
     env.DB.prepare('UPDATE user_skills SET xp = MIN(xp + ?, ?) WHERE user_id = ? AND skill_id = ?')
       .bind(bone.xp, MAX_XP, userId, SKILL_ID),
   ]);
+  if (!okBury) {
+    await env.DB.prepare('UPDATE user_skills SET updated_at = ? WHERE user_id = ? AND skill_id = ? AND updated_at = ?')
+      .bind(now - BURY_TICK_MS, userId, SKILL_ID, now).run().catch(() => {});
+    return changed();
+  }
   await questEvent(env, userId, 'bury', inv.item_id);
   const newXp = prevXp + bone.xp;
   const prevLevel = xpToLevel(prevXp), newLevel = xpToLevel(newXp);

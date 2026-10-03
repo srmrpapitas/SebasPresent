@@ -213,6 +213,7 @@ export async function handlePartyInvite(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const targetId = parseInt(body.target_user_id, 10);
   if (!Number.isFinite(targetId) || targetId <= 0) {
     return json({ error: 'invalid_target' }, 400);
@@ -265,6 +266,7 @@ export async function handlePartyAccept(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const fromId = parseInt(body.from_user_id, 10);
   if (!Number.isFinite(fromId) || fromId <= 0) return json({ error: 'invalid_from' }, 400);
 
@@ -314,10 +316,14 @@ export async function handlePartyAccept(request, env) {
       if (c.c >= p.max_size) return json({ error: 'party_full' }, 400);
     }
 
-    await db.run(
-      `INSERT INTO party_members (party_id, user_id, joined_at) VALUES (?, ?, ?)`,
-      [partyId, session.user_id, now]
+    // Sesión 51 — el tope del grupo se comprueba DENTRO del insert (antes, con
+    // invitaciones enviadas antes de existir el grupo, se llegaba a 7 de 4).
+    const joined = await db.run(
+      `INSERT INTO party_members (party_id, user_id, joined_at)
+       SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM party_members WHERE party_id = ?) < (SELECT max_size FROM parties WHERE id = ?)`,
+      [partyId, session.user_id, now, partyId, partyId]
     );
+    if (!joined?.meta?.changes) return json({ error: 'party_full' }, 400);
 
     await db.run(`DELETE FROM party_invites WHERE to_user_id = ?`, [session.user_id]);
 
@@ -336,6 +342,7 @@ export async function handlePartyDecline(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const fromId = parseInt(body.from_user_id, 10);
   if (!Number.isFinite(fromId) || fromId <= 0) return json({ error: 'invalid_from' }, 400);
 
@@ -404,6 +411,7 @@ export async function handlePartyKick(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const targetId = parseInt(body.target_user_id, 10);
   if (!Number.isFinite(targetId) || targetId <= 0) return json({ error: 'invalid_target' }, 400);
   if (targetId === session.user_id) return json({ error: 'cannot_kick_self' }, 400);

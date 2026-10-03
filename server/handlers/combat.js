@@ -39,6 +39,7 @@ export async function handleCombatAttack(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const npcId = parseInt(body.npc_id, 10);
   if (!Number.isFinite(npcId) || npcId <= 0) {
     return json({ error: 'invalid_npc_id' }, 400);
@@ -126,6 +127,7 @@ export async function handleCombatAttackPlayer(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const targetUserId = parseInt(body.target_user_id, 10);
   if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
     return json({ error: 'invalid_target_user_id' }, 400);
@@ -227,6 +229,7 @@ export async function handleCombatStyle(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid_body' }, 400); }
+  if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400);   // S51: 'null' daba 500
   const style = body && typeof body.style === 'string' ? body.style : null;
   if (!style || !VALID_STYLES.includes(style)) {
     return json({

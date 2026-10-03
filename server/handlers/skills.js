@@ -115,16 +115,31 @@ export async function initSkillsForNewUser(env, userId) {
  * is_you en la fila propia. Cap defensivo de 200 jugadores.
  */
 const HIGHSCORES_LIMIT = 200;
+// Sesión 51 — el ranking lee TODAS las filas de user_skills (~18 por jugador).
+// Sin caché ni login, cualquiera podía pedirlo en bucle y agotar el cupo
+// diario de la base de datos (y cortar el juego a todos). Ahora: hace falta
+// sesión y el cálculo se guarda 60 s por isolate.
+const HS_CACHE_MS = 60_000;
+let _hsCache = null, _hsAt = 0;
 
 export async function handleHighscores(request, env) {
-  // La sesión es opcional: si está, resaltamos al jugador. Si no, igual
-  // devolvemos el ranking (es info pública de competencia).
   let meUserId = null;
   try {
     const session = await requireSession(request, env);
     if (session) meUserId = session.user_id;
-  } catch { /* sin sesión → ranking anónimo */ }
+  } catch { /* sin sesión */ }
+  if (meUserId == null) return json({ error: 'unauthorized' }, 401);
 
+  const nowHs = Date.now();
+  if (!_hsCache || nowHs - _hsAt > HS_CACHE_MS) {
+    _hsCache = await computeHighscores(env);
+    _hsAt = nowHs;
+  }
+  const out = _hsCache.map(({ user_id, ...p }) => ({ ...p, is_you: user_id === meUserId }));
+  return json({ players: out, count: out.length });
+}
+
+async function computeHighscores(env) {
   const rows = await env.DB.prepare(
     `SELECT u.id AS user_id, u.username AS username, us.skill_id AS skill_id, us.xp AS xp
        FROM users u
@@ -172,14 +187,12 @@ export async function handleHighscores(request, env) {
     return a.username.localeCompare(b.username);
   });
 
-  const out = players.slice(0, HIGHSCORES_LIMIT).map((p) => ({
+  return players.slice(0, HIGHSCORES_LIMIT).map((p) => ({
+    user_id: p.user_id,
     username: p.username,
     total_level: p.total_level,
     combat_level: p.combat_level,
     total_xp: p.total_xp,
     skills: p.skills,
-    is_you: meUserId != null && p.user_id === meUserId,
   }));
-
-  return json({ players: out, count: out.length });
 }

@@ -22,6 +22,7 @@ import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { pushRealtime } from '../lib/realtime.js';
 import { stackableMap, placeStmts } from '../lib/give.js';
+import { guard, atomicBatch } from '../lib/atomic.js';   // Sesión 51
 
 const INVENTORY_SLOTS = 20;
 const PENDING_TTL_MS = 60_000;
@@ -48,15 +49,46 @@ async function names(env, ids) {
 // ------------------------------------------------------------
 // Poner objetos en una mochila (y si no caben, en el banco)
 // ------------------------------------------------------------
-/** Devuelve lo retenido a sus dueños (mochila o, si no cabe, banco). */
+/** Devuelve lo retenido a sus dueños (mochila o, si no cabe, banco).
+ *  Sesión 51 — robusto: agrupa por objeto, reintenta si la mochila cambió a
+ *  la vez y, como último recurso, lo manda al banco objeto a objeto. Antes un
+ *  fallo dejaba los objetos "colgados" en el comercio para siempre. */
 async function returnEscrow(env, tradeId, now) {
-  const rows = (await env.DB.prepare('SELECT id, owner_id, item_id, qty FROM trade_items WHERE trade_id = ?').bind(tradeId).all()).results || [];
-  const byOwner = {};
-  for (const r of rows) (byOwner[r.owner_id] ||= []).push({ item_id: r.item_id, qty: r.qty });
-  for (const [uid, items] of Object.entries(byOwner)) {
-    const { stmts } = await placeStmts(env, Number(uid), items, now, { bankFallback: true });
-    stmts.push(env.DB.prepare('DELETE FROM trade_items WHERE trade_id = ? AND owner_id = ?').bind(tradeId, Number(uid)));
-    await env.DB.batch(stmts);
+  const load = async () => (await env.DB.prepare('SELECT id, owner_id, item_id, qty FROM trade_items WHERE trade_id = ?').bind(tradeId).all()).results || [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const rows = await load();
+    if (!rows.length) return;
+    const byOwner = {};
+    for (const r of rows) {
+      const m = (byOwner[r.owner_id] ||= {});
+      m[r.item_id] = (m[r.item_id] || 0) + r.qty;
+    }
+    let failed = false;
+    for (const [uid, agg] of Object.entries(byOwner)) {
+      const items = Object.entries(agg).map(([item_id, qty]) => ({ item_id, qty }));
+      try {
+        const { stmts } = await placeStmts(env, Number(uid), items, now, { bankFallback: true });
+        stmts.push(env.DB.prepare('DELETE FROM trade_items WHERE trade_id = ? AND owner_id = ?').bind(tradeId, Number(uid)));
+        await env.DB.batch(stmts);
+      } catch (err) {
+        failed = true;
+        console.warn('[trade] returnEscrow intento', attempt + 1, err?.message);
+      }
+    }
+    if (!failed) return;
+  }
+  // Último recurso: al banco, fila a fila (suma si ya tenía ese objeto)
+  for (const r of await load()) {
+    try {
+      const max = await env.DB.prepare('SELECT COALESCE(MAX(slot_index), -1) AS m FROM user_bank WHERE user_id = ?').bind(r.owner_id).first();
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = user_bank.quantity + excluded.quantity, updated_at = excluded.updated_at`
+        ).bind(r.owner_id, (max?.m ?? -1) + 1, r.item_id, r.qty, now),
+        env.DB.prepare('DELETE FROM trade_items WHERE id = ?').bind(r.id),
+      ]);
+    } catch (err) { console.error('[trade] returnEscrow al banco falló', r, err?.message); }
   }
 }
 
@@ -174,7 +206,8 @@ export async function handleTradeOffer(request, env) {
   const body = await readJson(request);
   const itemId = String(body?.item_id || '');
   let qty = Math.floor(Number(body?.qty));
-  if (!itemId || !(qty > 0)) return json({ error: 'bad_request' }, 400);
+  if (!itemId || !(qty > 0) || !Number.isSafeInteger(qty)) return json({ error: 'bad_request' }, 400);   // S51: sin Infinity
+  qty = Math.min(qty, 2_000_000_000);
   const t = await myActive(env, uid);
   if (!t) return json({ error: 'no_trade' }, 400);
 
@@ -220,7 +253,7 @@ export async function handleTradeRemove(request, env) {
   const body = await readJson(request);
   const itemId = String(body?.item_id || '');
   const want = Math.floor(Number(body?.qty));
-  if (!itemId || !(want > 0)) return json({ error: 'bad_request' }, 400);
+  if (!itemId || !(want > 0) || !Number.isSafeInteger(want)) return json({ error: 'bad_request' }, 400);
   const t = await myActive(env, uid);
   if (!t) return json({ error: 'no_trade' }, 400);
   const row = await env.DB.prepare('SELECT id, qty FROM trade_items WHERE trade_id = ? AND owner_id = ? AND item_id = ?').bind(t.id, uid, itemId).first();
@@ -228,19 +261,20 @@ export async function handleTradeRemove(request, env) {
   const q = Math.min(want, row.qty);
   const { stmts, fits } = await placeStmts(env, uid, [{ item_id: itemId, qty: q }], now);
   if (!fits) return json({ error: 'inventory_full', message: 'No te cabe en la mochila.' }, 400);
-  // quitar de la oferta (con guarda) + devolver, todo junto
-  const guard = q >= row.qty
-    ? env.DB.prepare(`DELETE FROM trade_items WHERE id = ? AND qty = ? AND EXISTS (SELECT 1 FROM trades WHERE id = ? AND status IN ('open','confirm'))`).bind(row.id, row.qty, t.id)
-    : env.DB.prepare(`UPDATE trade_items SET qty = qty - ? WHERE id = ? AND qty > ? AND EXISTS (SELECT 1 FROM trades WHERE id = ? AND status IN ('open','confirm'))`).bind(q, row.id, q, t.id);
-  const r = await guard.run();
-  if (!r?.meta?.changes) return json({ error: 'try_again' }, 409);
-  try { await env.DB.batch(stmts); }
-  catch {
-    // no se pudo devolver (mochila cambió): vuelve a la oferta
-    await env.DB.prepare('INSERT INTO trade_items (trade_id, owner_id, item_id, qty) VALUES (?, ?, ?, ?)').bind(t.id, uid, itemId, q).run();
-    return json({ error: 'try_again' }, 409);
-  }
-  await bump(env, t.id, now);
+  // Sesión 51 — TODO en un lote atómico y en este orden: 1) se anulan los
+  // "aceptar" (versión nueva), 2) guarda: el comercio sigue abierto y la
+  // oferta tal cual, 3) quitar de la oferta, 4) devolver a la mochila.
+  // Antes se quitaba primero y la versión cambiaba después: un "aceptar" del
+  // otro entre medias cerraba el trato sin tu objeto (y él perdía lo suyo).
+  const ok = await atomicBatch(env, [
+    env.DB.prepare(`UPDATE trades SET a_ok = 0, b_ok = 0, status = 'open', version = version + 1, updated_at = ? WHERE id = ? AND status IN ('open','confirm')`).bind(now, t.id),
+    guard(env, `EXISTS (SELECT 1 FROM trades WHERE id = ? AND status = 'open') AND (SELECT qty FROM trade_items WHERE id = ?) = ?`, [t.id, row.id, row.qty]),
+    q >= row.qty
+      ? env.DB.prepare('DELETE FROM trade_items WHERE id = ?').bind(row.id)
+      : env.DB.prepare('UPDATE trade_items SET qty = qty - ? WHERE id = ?').bind(q, row.id),
+    ...stmts,
+  ]);
+  if (!ok) return json({ error: 'try_again', message: 'Inténtalo otra vez.' }, 409);
   await notify(env, t);
   return json({ ok: true, removed: q });
 }

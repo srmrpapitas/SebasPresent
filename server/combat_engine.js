@@ -911,10 +911,14 @@ async function reviveExpiredNpcs(db, opts = {}) {
  */
 async function applyPassiveHpRegen(db, userId, stats, now) {
   const hpMax = levelFromXp(stats.hp_xp);
+  const stats0LastAttack = stats.last_attack_at || 0;
   if (stats.hp_current <= 0) return;            // muerto: respawn requerido
   if (stats.hp_current >= hpMax) return;        // ya al máximo
 
-  const baseTs = stats.last_attack_at || 0;
+  // Sesión 51 — también cuenta el último GOLPE RECIBIDO: antes un monstruo
+  // te bajaba la vida y /combat/state te la rellenaba al instante con el
+  // tiempo "ahorrado" mientras tenías la vida llena.
+  const baseTs = Math.max(stats.last_attack_at || 0, stats.last_hit_at || 0);
   const elapsed = now - baseTs;
   if (elapsed < HP_REGEN_COMBAT_LOCKOUT_MS) return; // aún en combate
 
@@ -931,12 +935,15 @@ async function applyPassiveHpRegen(db, userId, stats, now) {
   stats.hp_current += ticksToApply;
   // Avanzar last_attack_at virtualmente para que la próxima llamada
   // continúe el conteo desde aquí (evita doble-aplicación).
-  const newLastAttackAt = baseTs + HP_REGEN_COMBAT_LOCKOUT_MS + ticksToApply * regenInterval;
+  // Sesión 51 — sin volver a sumar el bloqueo de combate (antes cada punto
+  // tardaba 28 s en vez de 20 s).
+  const newLastAttackAt = baseTs + ticksToApply * regenInterval;
   stats.last_attack_at = newLastAttackAt;
 
+  // relativo y solo si nadie lo tocó entre medias (golpe, comida, muerte)
   await db.run(
-    'UPDATE combat_stats SET hp_current = ?, last_attack_at = ? WHERE user_id = ?',
-    [stats.hp_current, newLastAttackAt, userId]
+    'UPDATE combat_stats SET hp_current = MIN(?, hp_current + ?), last_attack_at = ? WHERE user_id = ? AND hp_current > 0 AND COALESCE(last_attack_at, 0) = ?',
+    [hpMax, ticksToApply, newLastAttackAt, userId, stats0LastAttack]
   );
 }
 
@@ -1593,10 +1600,14 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // -------- Sanity checks --------
   if (attackerId === targetId) return { error: 'cannot_attack_self' };
 
+  // Sesión 51 — que el objetivo exista (si no, se creaba su fila de stats y
+  // fallaba la clave externa → error 500)
+  if (!(await db.first('SELECT 1 AS ok FROM users WHERE id = ?', [targetId]))) return { error: 'target_not_found' };
   const attackerStats = await dbGetUserStats(db, attackerId);
   const targetStats   = await dbGetUserStats(db, targetId);
   if (!attackerStats) return { error: 'attacker_not_found' };
   if (!targetStats)   return { error: 'target_not_found' };
+  const attacker0 = { ...attackerStats }, target0 = { ...targetStats };   // Sesión 51 — para escribir diferencias
 
   if (attackerStats.hp_current <= 0) return { error: 'user_dead' };
   if (targetStats.hp_current <= 0)   return { error: 'target_dead' };
@@ -1748,6 +1759,22 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     };
   }
 
+  // Sesión 51 — CERROJO del cooldown (igual que contra monstruos): varias
+  // peticiones a la vez ya no dan varios golpes en el mismo turno.
+  const gatePvp = await db.run(
+    `UPDATE combat_stats SET last_attack_at = ?
+      WHERE user_id = ? AND hp_current > 0 AND (last_attack_at IS NULL OR last_attack_at <= ?)`,
+    [now, attackerId, now - cooldownMs]
+  );
+  if (!gatePvp?.meta?.changes) {
+    return { error: 'on_cooldown', cooldown_remaining_ms: cooldownMs, cooldown_ms: cooldownMs, weapon_type: weaponType };
+  }
+  // si al final no se ataca (sin energía, flechas o maná), devolver el turno
+  const releasePvp = async (res) => {
+    try { await db.run('UPDATE combat_stats SET last_attack_at = ? WHERE user_id = ? AND last_attack_at = ?', [attacker0.last_attack_at ?? null, attackerId, now]); } catch {}
+    return res;
+  };
+
   // -------- Spec: validar energia ANTES de consumir flechas --------
   const weaponItemIdPvp = await getUserWeaponItemId(db, attackerId);   // Sesión 50
   const specDefPvp = specialOf(weaponItemIdPvp);                      // Sesión 51
@@ -1757,7 +1784,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   if (opts.useSpecial && specDefPvp && !!specDefPvp.magic === !!(isMagicPvp && opts.spellId)) {
     specEnergyNowPvp = computeSpecEnergy(attackerStats, now);
     if (specEnergyNowPvp < specCostPvp) {
-      return { error: 'no_spec_energy', spec_energy: specEnergyNowPvp, spec_cost: specCostPvp };
+      return releasePvp({ error: 'no_spec_energy', spec_energy: specEnergyNowPvp, spec_cost: specCostPvp });
     }
     specActivePvp = true;
   }
@@ -1768,7 +1795,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   if (isRanged) {
     const bowBonus  = await getUserBowRangedBonus(db, attackerId);
     arrowConsumedPvp = await consumeArrow(db, attackerId, now);
-    if (!arrowConsumedPvp.ok) return { error: 'no_ammo', weapon_type: weaponType };
+    if (!arrowConsumedPvp.ok) return releasePvp({ error: 'no_ammo', weapon_type: weaponType });
     const arrowBonus = await getArrowRangedBonus(db, arrowConsumedPvp.arrow_item_id);
     totalRangedBonusPvp = bowBonus + arrowBonus;
   }
@@ -1782,12 +1809,12 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   let manaAfterPvp = null;
   if (isMagicPvp && opts.spellId) {
     spellPvp = magic.getSpell(opts.spellId);
-    if (!spellPvp) return { error: 'unknown_spell' };
-    if (spellPvp.kind) return { error: 'self_spell' };   // Sesión 50
+    if (!spellPvp) return releasePvp({ error: 'unknown_spell' });
+    if (spellPvp.kind) return releasePvp({ error: 'self_spell' });   // Sesión 50
     magicLevelPvp = levelsOf(attackerStats).magic || 1;
     // Sesión 47 — gate de nivel de magia en PvP (faltaba; el de NPC lo tenía).
     if (magicLevelPvp < spellPvp.magic_level_req) {
-      return { error: 'magic_level_too_low', required: spellPvp.magic_level_req };
+      return releasePvp({ error: 'magic_level_too_low', required: spellPvp.magic_level_req });
     }
     const maxMana = magic.computeMaxMana(magicLevelPvp, STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemIdPvp] || 0));
     const regenPerSec = magic.manaRegenPerSec(true, 0);
@@ -1796,7 +1823,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       attackerStats.mana_updated_at || 0, now, regenPerSec
     );
     if (manaNow < (spellPvp.mana_cost || 0)) {
-      return { error: 'no_mana', mana_current: manaNow, mana_max: maxMana, mana_cost: spellPvp.mana_cost };
+      return releasePvp({ error: 'no_mana', mana_current: manaNow, mana_max: maxMana, mana_cost: spellPvp.mana_cost });
     }
     manaAfterPvp = manaNow - (spellPvp.mana_cost || 0);
   }
@@ -2033,22 +2060,23 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // legacy sin los campos nuevos.
   try {
     await db.run(
+      // Sesión 51 — XP y vida como DIFERENCIAS (no deshace golpes simultáneos)
       `UPDATE combat_stats
-       SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
-           ranged_xp = ?, magic_xp = ?,
+       SET attack_xp = attack_xp + ?, strength_xp = strength_xp + ?, defence_xp = defence_xp + ?, hp_xp = hp_xp + ?,
+           ranged_xp = COALESCE(ranged_xp, 0) + ?, magic_xp = COALESCE(magic_xp, 0) + ?,
            spec_energy = ?, spec_updated_at = ?,
            mana_current = ?, mana_updated_at = ?,
-           hp_current = ?, last_attack_at = ?, last_died_at = ?,
+           hp_current = CASE WHEN ? THEN 0 WHEN hp_current <= 0 THEN 0 ELSE MAX(0, MIN(?, hp_current + ?)) END,
+           last_attack_at = ?, last_died_at = ?,
            last_hit_from_user_id = ?, last_hit_damage = ?,
            last_hit_at = ?, last_hit_is_crit = ?, skulled_until = ?
        WHERE user_id = ?`,
       [
-        attackerStats.attack_xp, attackerStats.strength_xp,
-        attackerStats.defence_xp, attackerStats.hp_xp,
-        attackerStats.ranged_xp || 0, attackerStats.magic_xp || 0,
+        ...['attack_xp', 'strength_xp', 'defence_xp', 'hp_xp', 'ranged_xp', 'magic_xp'].map(k => Math.max(0, (attackerStats[k] || 0) - (attacker0[k] || 0))),
         persistSpecPvp, persistSpecAtPvp,
         persistManaPvp, persistManaAtPvp,
-        attackerStats.hp_current, attackerStats.last_attack_at,
+        (attackerStats.hp_current <= 0 && attacker0.hp_current > 0) ? 1 : 0, levelFromXp(attackerStats.hp_xp || 0), (attackerStats.hp_current | 0) - (attacker0.hp_current | 0),
+        attackerStats.last_attack_at,
         attackerStats.last_died_at,
         attackerStats.last_hit_from_user_id ?? null,
         attackerStats.last_hit_damage ?? null,
@@ -2082,16 +2110,18 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // Sesión 32 — incluir last_hit_* (mismo fallback).
   try {
     await db.run(
+      // Sesión 51 — XP y vida como DIFERENCIAS
       `UPDATE combat_stats
-       SET attack_xp = ?, strength_xp = ?, defence_xp = ?, hp_xp = ?,
-           hp_current = ?, last_attack_at = ?, last_died_at = ?,
+       SET attack_xp = attack_xp + ?, strength_xp = strength_xp + ?, defence_xp = defence_xp + ?, hp_xp = hp_xp + ?,
+           hp_current = CASE WHEN ? THEN 0 WHEN hp_current <= 0 THEN 0 ELSE MAX(0, MIN(?, hp_current + ?)) END,
+           last_attack_at = ?, last_died_at = ?,
            last_hit_from_user_id = ?, last_hit_damage = ?,
            last_hit_at = ?, last_hit_is_crit = ?, skulled_until = ?
        WHERE user_id = ?`,
       [
-        targetStats.attack_xp, targetStats.strength_xp,
-        targetStats.defence_xp, targetStats.hp_xp,
-        targetStats.hp_current, targetStats.last_attack_at,
+        ...['attack_xp', 'strength_xp', 'defence_xp', 'hp_xp'].map(k => Math.max(0, (targetStats[k] || 0) - (target0[k] || 0))),
+        (targetStats.hp_current <= 0 && target0.hp_current > 0) ? 1 : 0, levelFromXp(targetStats.hp_xp || 0), (targetStats.hp_current | 0) - (target0.hp_current | 0),
+        targetStats.last_attack_at,
         targetStats.last_died_at,
         targetStats.last_hit_from_user_id ?? null,
         targetStats.last_hit_damage ?? null,

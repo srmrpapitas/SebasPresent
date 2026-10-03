@@ -266,9 +266,11 @@ export async function handleBankWithdraw(request, env) {
       if (!invMap.has(i)) freeSlots.push(i);
       if (freeSlots.length >= qty) break;
     }
-    if (freeSlots.length < qty) {
-      return json({ error: 'inv_full', message: 'No hay espacio suficiente en la mochila.' }, 400);
+    if (freeSlots.length === 0) {
+      return json({ error: 'inv_full', message: 'No hay espacio en la mochila.' }, 400);
     }
+    // Sesión 51 — como en OSRS: si no cabe todo, saca lo que quepa
+    if (freeSlots.length < qty) qty = freeSlots.length;
     for (let i = 0; i < qty; i++) {
       // la unidad nº i+1 solo se crea si el banco tiene al menos i+1
       stmts.push(env.DB.prepare(

@@ -64,14 +64,14 @@ export async function handleStealNpc(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   const uid = session.user_id, now = Date.now();
   const body = await readJson(request);
-  const npc = TOWN_NPCS_BY_ID[body?.npc_id];
+  const npc = Object.prototype.hasOwnProperty.call(TOWN_NPCS_BY_ID, body?.npc_id) ? TOWN_NPCS_BY_ID[body.npc_id] : null;   // S51: sin '__proto__'
   if (!npc) return json({ error: 'invalid_npc' }, 400);
   const P = profileOf(npc.id);
   const lvl = await thiefLevel(env, uid);
   if (lvl < P.level) return json({ error: 'low_level', message: `Necesitas nivel ${P.level} de Robo para robar a ${npc.name}.`, need: P.level }, 400);
 
   const pos = await env.DB.prepare('SELECT x, z FROM online_users WHERE user_id = ?').bind(uid).first();
-  if (!pos || npcDist(npc, pos.x, pos.z) > STEAL_DIST_SERVER_M) return json({ error: 'too_far', message: 'Acércate más.' }, 400);
+  if (!pos || !(npcDist(npc, pos.x, pos.z) <= STEAL_DIST_SERVER_M)) return json({ error: 'too_far', message: 'Acércate más.' }, 400);
   const st = await env.DB.prepare('SELECT hp_current FROM combat_stats WHERE user_id = ?').bind(uid).first();
   if (!st || st.hp_current <= 0) return json({ error: 'dead' }, 400);
   const turn = await takeTurn(env, uid, now); if (turn) return turn;
@@ -84,7 +84,8 @@ export async function handleStealNpc(request, env) {
   const [item, qty] = rollLoot(P);
   const { stmts, fits } = await placeStmts(env, uid, [{ item_id: item, qty }], now);
   if (!fits) return json({ error: 'inventory_full', message: 'No te cabe nada más en la mochila.' }, 400);
-  await env.DB.batch(stmts);
+  try { await env.DB.batch(stmts); }
+  catch { return json({ error: 'changed', message: 'Tu mochila cambió mientras tanto. Inténtalo otra vez.' }, 409); }
   await grantXp(env, uid, THIEF_SKILL, P.xp);
   const meta = await env.DB.prepare('SELECT name, icon FROM items WHERE id = ?').bind(item).first();
   return json({ ok: true, caught: false, item, qty, name: meta?.name || item, icon: meta?.icon, xp: P.xp, chance });

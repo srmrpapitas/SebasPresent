@@ -23,6 +23,7 @@ import {
   MATERIALS, MATERIAL_NAMES, SMELT, SMITH_XP_PER_BAR, getStation, STATION_USE_DIST_M,
 } from '../../../client/src/shared/smithing.js';
 import { questEvent } from '../../lib/quests.js';
+import { guardConds, slotCond } from '../../lib/atomic.js';   // Sesión 51
 
 const SKILL_ID = 'smithing';
 const INVENTORY_SLOTS = 20;
@@ -112,12 +113,14 @@ async function buildTransform(env, userId, itemId, qty, productId, now) {
   const total = have.reduce((t, r) => t + r.quantity, 0);
   if (total < qty) return { error: 'missing_materials', have: total };
 
-  const stmts = [];
+  const stmts = [null];   // [0] = guarda (Sesión 51)
+  const conds = [];
   const freed = [];
   let left = qty;
   for (const r of have) {
     if (left <= 0) break;
     const take = Math.min(left, r.quantity);
+    conds.push(slotCond(userId, r.slot_index, itemId, r.quantity));   // Sesión 51 — sigue igual
     if (take >= r.quantity) {
       stmts.push(env.DB.prepare(
         'DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ?'
@@ -125,8 +128,8 @@ async function buildTransform(env, userId, itemId, qty, productId, now) {
       freed.push(r.slot_index);
     } else {
       stmts.push(env.DB.prepare(
-        'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-      ).bind(take, now, userId, r.slot_index));
+        'UPDATE user_inventory SET quantity = quantity - ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?'
+      ).bind(take, now, userId, r.slot_index, itemId));
     }
     left -= take;
   }
@@ -135,9 +138,10 @@ async function buildTransform(env, userId, itemId, qty, productId, now) {
   if (!meta) return { error: 'unknown_item' };
   const stack = meta.stackable === 1 ? rows.find(r => r.item_id === productId) : null;
   if (stack) {
+    conds.push(slotCond(userId, stack.slot_index, productId));
     stmts.push(env.DB.prepare(
-      'UPDATE user_inventory SET quantity = quantity + 1, updated_at = ? WHERE user_id = ? AND slot_index = ?'
-    ).bind(now, userId, stack.slot_index));
+      'UPDATE user_inventory SET quantity = quantity + 1, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?'
+    ).bind(now, userId, stack.slot_index, productId));
   } else {
     let slot = freed.length ? freed[0] : null;
     if (slot === null) {
@@ -149,14 +153,24 @@ async function buildTransform(env, userId, itemId, qty, productId, now) {
       'INSERT INTO user_inventory (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, 1, ?)'
     ).bind(userId, slot, productId, now));
   }
+  // Sesión 51 — GUARDA: el mineral/lingotes siguen ahí (antes, fundir y tirar
+  // el mineral a la vez daba el lingote y el mineral en el suelo).
+  stmts[0] = guardConds(env, conds);
   return { stmts };
 }
 
-async function finish(env, userId, stmts, xpGain, prevXp) {
+async function finish(env, userId, stmts, xpGain, prevXp, now = 0) {
   stmts.push(env.DB.prepare(
     'UPDATE user_skills SET xp = MIN(xp + ?, ?) WHERE user_id = ? AND skill_id = ?'
   ).bind(xpGain, MAX_XP, userId, SKILL_ID));
-  await env.DB.batch(stmts);
+  try {
+    await env.DB.batch(stmts);
+  } catch (e) {
+    // Sesión 51 — algo cambió a la vez (guarda o hueco ocupado): no se hizo nada
+    if (now) await env.DB.prepare('UPDATE user_skills SET updated_at = ? WHERE user_id = ? AND skill_id = ? AND updated_at = ?')
+      .bind(now - MIN_TICK_MS, userId, SKILL_ID, now).run().catch(() => {});
+    return null;
+  }
   const after = await env.DB.prepare(
     'SELECT xp FROM user_skills WHERE user_id = ? AND skill_id = ?'
   ).bind(userId, SKILL_ID).first();
@@ -189,7 +203,8 @@ export async function handleSmithingSmelt(request, env) {
   const t = await buildTransform(env, c.userId, ore, 1, bar, now);
   if (t.error) return errorResponse(t);
   if (!(await gate(env, c.userId, now))) return json({ error: 'too_fast' }, 429);
-  const r = await finish(env, c.userId, t.stmts, rule.xp, c.xp);
+  const r = await finish(env, c.userId, t.stmts, rule.xp, c.xp, now);
+  if (!r) return json({ error: 'conflict', message: 'Inténtalo otra vez.' }, 409);
   await questEvent(env, c.userId, 'smelt', material);
   return json({ ok: true, action: 'smelt', material, consumed: { item_id: ore, qty: 1 }, produced: bar, skill_id: SKILL_ID, ...r });
 }
@@ -217,7 +232,8 @@ export async function handleSmithingSmith(request, env) {
   if (t.error) return errorResponse(t);
   if (!(await gate(env, c.userId, now))) return json({ error: 'too_fast' }, 429);
   const xp = recipe.bars_required * (SMITH_XP_PER_BAR[recipe.material] || 10);
-  const r = await finish(env, c.userId, t.stmts, xp, c.xp);
+  const r = await finish(env, c.userId, t.stmts, xp, c.xp, now);
+  if (!r) return json({ error: 'conflict', message: 'Inténtalo otra vez.' }, 409);
   await questEvent(env, c.userId, 'smith', recipe.id);
   return json({ ok: true, action: 'smith', consumed: { item_id: bar, qty: recipe.bars_required }, produced: recipe.id, produced_name: recipe.name, skill_id: SKILL_ID, ...r });
 }

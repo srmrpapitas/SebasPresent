@@ -27,6 +27,7 @@
 
 import { isAsoMember } from './aso.js';   // Sesión 50
 import { json, readJson } from '../lib/db.js';
+import { guardSlot } from '../lib/atomic.js';   // Sesión 51
 import { requireSession } from '../lib/auth.js';
 
 const INVENTORY_SLOTS = 20;
@@ -197,10 +198,13 @@ export async function handleShopBuy(request, env) {
     const existingSlot = inv.find(r => r.item_id === itemId);
     if (existingSlot) {
       // Merge en slot existente
+      // Sesión 51 — guarda: en ese slot sigue la misma pila (si no, moverla a
+      // la vez convertía otra cosa en N flechas/espadas)
+      ops.push(guardSlot(env, session.user_id, existingSlot.slot_index, itemId));
       ops.push(env.DB.prepare(
         `UPDATE user_inventory SET quantity = quantity + ?, updated_at = ?
-         WHERE user_id = ? AND slot_index = ?`
-      ).bind(qty, now, session.user_id, existingSlot.slot_index));
+         WHERE user_id = ? AND slot_index = ? AND item_id = ?`
+      ).bind(qty, now, session.user_id, existingSlot.slot_index, itemId));
     } else {
       // Slot nuevo
       let freeSlot = null;

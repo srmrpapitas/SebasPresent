@@ -12,6 +12,7 @@ import { ensureQuests, getUserQuests, startQuest, deliverToNpc, questEvent } fro
 import { TOWN_NPCS_BY_ID, TALK_DIST_SERVER_M, npcDist } from '../../client/src/shared/town_npcs.js';   // Sesión 50
 import { getPlayerPosition } from './skills/_shared.js';
 import { QUESTS } from '../../client/src/shared/quests.js';
+import { own } from '../lib/atomic.js';   // Sesión 51 — lookups sin '__proto__'
 
 export async function handleQuestsGet(request, env) {
   const session = await requireSession(request, env);
@@ -25,8 +26,11 @@ export async function handleQuestsSkip(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
   const body = await readJson(request);
-  const q = QUESTS[body?.quest_id];
+  const q = own(QUESTS, body?.quest_id);
   if (!q) return json({ error: 'invalid_quest' }, 400);
+  // Sesión 51 — solo se puede saltar el tutorial (antes cualquier misión, y
+  // saltarla contaba como hecha para los requisitos de las siguientes).
+  if (q.id !== 'tutorial') return json({ error: 'cannot_skip', message: 'Esa misión no se puede saltar.' }, 400);
   await env.DB.prepare(
     `UPDATE user_quests SET status = 1, step = ?, progress = 0, updated_at = ? WHERE user_id = ? AND quest_id = ? AND status = 0`
   ).bind(q.steps.length - 1, Date.now(), session.user_id, q.id).run();
@@ -51,12 +55,12 @@ async function doneQuests(env, uid) {
 }
 
 async function nearNpc(env, userId, npcId) {
-  const npc = TOWN_NPCS_BY_ID[npcId];
+  const npc = own(TOWN_NPCS_BY_ID, npcId);
   if (!npc) return { error: 'invalid_npc' };
   const pos = await getPlayerPosition(env, userId);
   if (!pos) return { error: 'no_position' };
   const d = npcDist(npc, pos.x, pos.z);
-  if (d > TALK_DIST_SERVER_M) return { error: 'too_far', distance: d };
+  if (!(d <= TALK_DIST_SERVER_M)) return { error: 'too_far', distance: Number.isFinite(d) ? d : null };
   return { npc };
 }
 
@@ -76,7 +80,7 @@ export async function handleQuestStart(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
   const body = await readJson(request);
-  const q = QUESTS[body?.quest_id];
+  const q = own(QUESTS, body?.quest_id);
   if (!q || !q.giver) return json({ error: 'invalid_quest' }, 400);
   const near = await nearNpc(env, session.user_id, q.giver);
   if (near.error) return json(near, 400);

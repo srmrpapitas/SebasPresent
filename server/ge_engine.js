@@ -813,9 +813,15 @@ export function tryDepositToInventory(stmts, state, userId, itemId, qty, stackab
     for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
       const s = state.slots[i];
       if (s && s.item_id === itemId) {
+        // Sesión 51 — guarda: la pila sigue en ese slot (si se movió a la vez,
+        // el lote entero se deshace en vez de sumar a otro objeto)
         stmts.push({
-          sql: 'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ?',
-          params: [qty, now, userId, i],
+          sql: `SELECT json(CASE WHEN (SELECT item_id = ? FROM user_inventory WHERE user_id = ? AND slot_index = ?) THEN '1' ELSE 'guard' END) AS g`,
+          params: [itemId, userId, i],
+        });
+        stmts.push({
+          sql: 'UPDATE user_inventory SET quantity = quantity + ?, updated_at = ? WHERE user_id = ? AND slot_index = ? AND item_id = ?',
+          params: [qty, now, userId, i, itemId],
         });
         s.quantity += qty;
         return true;

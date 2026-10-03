@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
   last_login INTEGER,
   last_x REAL, last_z REAL,
   combat_style TEXT NOT NULL DEFAULT 'controlled',
-  home_tele_cooldown_until INTEGER NOT NULL DEFAULT 0
+  home_tele_cooldown_until INTEGER NOT NULL DEFAULT 0,
+  home_tele_started_at INTEGER NOT NULL DEFAULT 0   -- Sesión 51 (migración 022)
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
