@@ -2575,6 +2575,8 @@ function ensureBankOverlay() {
         width: 100%;
         max-width: 720px;
         height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+        height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+        max-width: 980px;
         max-height: 100%;
         background: rgba(20, 14, 8, 0.97);
         border: 3px solid #c8a043;
@@ -2588,7 +2590,7 @@ function ensureBankOverlay() {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 14px;
+        padding: 5px 10px;
         border-bottom: 2px solid rgba(200, 160, 67, 0.3);
         background: rgba(40, 25, 15, 0.6);
         flex: 0 0 auto;
@@ -2614,18 +2616,28 @@ function ensureBankOverlay() {
         -webkit-tap-highlight-color: transparent;
       }
       .bank-overlay-close:active { transform: scale(0.92); background: rgba(120,60,40,0.95); }
+      @media (max-height: 480px) {
+        .bank-overlay-header { padding: 2px 8px; }
+        .bank-overlay-title { font-size: 14px; }
+        .bank-overlay-close { width: 28px; height: 28px; font-size: 14px; }
+      }
 
       /* El pane del banco se mete aquí dentro y necesita rellenar el frame */
       .bank-overlay-body {
         flex: 1 1 auto;
-        overflow-y: auto;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
         padding: 0;
       }
       .bank-overlay-body .osrs-tab-pane[data-tab="bank"] {
-        display: block !important;
+        display: flex !important;
+        flex: 1 1 auto;
+        min-height: 0;
         height: auto !important;
-        padding: 12px !important;
+        padding: 6px !important;
         background: transparent !important;
+        overflow: hidden !important;
       }
     `;
     document.head.appendChild(style);
@@ -2660,6 +2672,10 @@ function ensureBankOverlay() {
   return bankOverlayEl;
 }
 
+// Solo para pruebas locales (localhost): abrir el banco sin ir al NPC
+if (typeof location !== 'undefined' && location.hostname === 'localhost') {
+  window.__openBankTest = () => { try { bank.onOpen?.(); } catch {} openBankOverlay(); };
+}
 function openBankOverlay() {
   const overlay = ensureBankOverlay();
   const body = overlay.querySelector('#bankOverlayBody');

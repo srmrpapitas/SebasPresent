@@ -38,30 +38,124 @@ import { renderItemIcon } from './item_icons.js';
   const style = document.createElement('style');
   style.id = 'bank-layout-compact-styles';
   style.textContent = `
+    /* Sesión 52 — banco estilo OSRS: banco con scroll + mochila siempre visible,
+       controles pequeños en una esquina inferior, nombres bajo cada icono. */
+    .bank-root {
+      display: flex !important; flex-direction: column; gap: 4px;
+      flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; box-sizing: border-box;
+    }
+    .bank-top { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+    .bank-search {
+      flex: 1 1 auto; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px;
+      font: 13px 'IM Fell English', serif; color: #f0e0b0;
+      background: rgba(10,6,3,0.75); border: 1px solid #5a4020; border-radius: 4px; outline: none;
+    }
+    .bank-search:focus { border-color: #c8a043; }
+    .bank-search::placeholder { color: rgba(200,170,120,0.5); }
+    .bank-count { font: 11px 'IM Fell English', serif; color: rgba(200,170,120,0.8); white-space: nowrap; }
+    .bank-main { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; }
+    .bank-area {
+      position: relative; flex: 1 1 auto; min-height: 90px; display: flex; flex-direction: column;
+      border: 1px solid #3a2a1a; border-radius: 4px; background: rgba(0,0,0,0.25); overflow: hidden;
+    }
+    .bank-scroll {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch; padding-bottom: 34px; /* hueco para los controles */
+    }
     .bank-grid {
       display: grid !important;
-      grid-template-columns: repeat(6, 1fr) !important;
+      grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)) !important;
       gap: 3px !important;
       padding: 4px !important;
     }
     .bank-slot-bank {
-      width: 100% !important;
-      min-width: 0 !important;
-      max-width: none !important;
-      aspect-ratio: 1 / 1 !important;
-      height: auto !important;
-      min-height: 0 !important;
-      max-height: none !important;
-      font-size: 22px !important;
-      padding: 0 !important;
-      position: relative !important;
-      box-sizing: border-box !important;
+      width: 100% !important; min-width: 0 !important; max-width: none !important;
+      aspect-ratio: auto !important; height: 62px !important; min-height: 0 !important; max-height: none !important;
+      font-size: 24px !important; padding: 2px 1px 0 !important;
+      position: relative !important; box-sizing: border-box !important;
+      display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: flex-start !important;
     }
     .bank-slot-bank .bank-icon {
-      font-size: inherit !important;
+      font-size: inherit !important; flex: 0 0 auto; height: 34px; width: 34px;
+      display: flex; align-items: center; justify-content: center; margin-top: 2px;
     }
-    .bank-slot-bank .bank-qty {
-      font-size: 10px !important;
+    .bank-slot-bank .bank-icon svg { width: 100%; height: 100%; }
+    .bank-slot-bank .bank-qty { font-size: 10px !important; }
+    .bank-slot.bank-slot-bank { touch-action: pan-y !important; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    .bank-name {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      width: 100%; margin-top: 1px; padding: 0 1px; box-sizing: border-box;
+      font: 8.5px/1.1 'IM Fell English', Georgia, serif; color: #e6d3a3; text-align: center;
+      text-shadow: 0 1px 1px #000; word-break: break-word; pointer-events: none;
+    }
+    .bank-empty-msg { padding: 14px; text-align: center; font: 12px 'IM Fell English', serif; color: rgba(200,170,120,0.6); }
+
+    /* Controles pequeños en la esquina inferior derecha del banco */
+    .bank-controls {
+      position: absolute; right: 4px; bottom: 4px; z-index: 2;
+      display: flex; gap: 2px; padding: 2px; border-radius: 4px;
+      background: rgba(20,12,6,0.92); border: 1px solid #5a4020; box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    }
+    .bank-controls .bank-qty-bar { display: flex !important; gap: 2px !important; margin: 0 !important; padding: 0 !important; }
+    .bank-controls .bank-qty-btn, .bank-controls .bank-note-btn {
+      width: auto !important; min-width: 26px; height: 24px; margin: 0 !important; padding: 0 5px !important;
+      font: bold 11px 'IM Fell English', serif !important; flex: 0 0 auto !important;
+      display: flex; align-items: center; justify-content: center;
+      color: #d8c89a; background: rgba(60,45,30,0.85); border: 1px solid #3a2a1a; border-radius: 3px;
+      cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .bank-controls .bank-qty-btn.active { background: rgba(140,100,40,0.95) !important; border-color: #e8c560 !important; color: #fff3c0 !important; }
+    .bank-controls .bank-note-btn.on { background: rgba(140,100,40,0.95) !important; border-color: #e8c560 !important; color: #fff3c0 !important; }
+
+    /* Mochila siempre visible */
+    .bank-inv-panel {
+      flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px;
+      border: 1px solid #3a2a1a; border-radius: 4px; background: rgba(0,0,0,0.25); padding: 3px;
+    }
+    .bank-inv-panel .bank-section-label { margin: 0 0 1px 2px !important; font-size: 11px; }
+    .bank-inv-panel .bank-inv-grid {
+      display: grid !important; grid-template-columns: repeat(10, 1fr) !important; gap: 2px !important; padding: 0 !important;
+    }
+    .bank-inv-panel .bank-slot-inv {
+      width: 100% !important; min-width: 0 !important; height: auto !important; aspect-ratio: 1 / 1 !important;
+      font-size: 18px !important; padding: 0 !important; position: relative !important; box-sizing: border-box !important;
+    }
+    .bank-inv-panel .bank-slot-inv { display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; }
+    .bank-inv-panel .bank-slot-inv .bank-icon {
+      width: 78%; height: 78%; max-width: 40px; max-height: 40px;
+      display: flex; align-items: center; justify-content: center; font-size: inherit !important;
+    }
+    .bank-inv-panel .bank-slot-inv .bank-icon svg, .bank-inv-panel .bank-slot-inv .bank-icon img { width: 100% !important; height: 100% !important; }
+    .bank-inv-panel .bank-slot-inv .bank-qty { font-size: 9px !important; }
+    @media (orientation: portrait) and (max-width: 420px) {
+      .bank-inv-panel .bank-inv-grid { grid-template-columns: repeat(5, 1fr) !important; }
+      .bank-inv-panel .bank-slot-inv { aspect-ratio: auto !important; height: 38px !important; }
+    }
+    /* Pantallas anchas / móvil en horizontal: mochila a la derecha como OSRS */
+    @media (min-width: 700px), (orientation: landscape) and (min-width: 560px) {
+      .bank-main { flex-direction: row; }
+      .bank-inv-panel { width: 200px; align-self: stretch; overflow-y: auto; }
+      .bank-inv-panel .bank-inv-grid { grid-template-columns: repeat(4, 1fr) !important; }
+    }
+    @media (orientation: landscape) and (max-height: 480px) {
+      .bank-inv-panel { width: 168px; }
+      .bank-inv-panel .bank-slot-inv { aspect-ratio: auto !important; height: calc((100dvh - 120px) / 5) !important; max-height: 44px; }
+    }
+    .bank-error { flex: 0 0 auto; }
+
+    /* Cuadro para la cantidad X (sustituye a prompt()) */
+    .bank-xbox {
+      position: absolute; right: 4px; bottom: 34px; z-index: 3; display: none; gap: 4px; align-items: center;
+      padding: 5px; border-radius: 4px; background: rgba(20,12,6,0.97); border: 1px solid #c8a043;
+    }
+    .bank-xbox.visible { display: flex; }
+    .bank-xbox input {
+      width: 84px; height: 26px; box-sizing: border-box; padding: 0 6px; font: 14px 'IM Fell English', serif;
+      color: #f0e0b0; background: rgba(10,6,3,0.85); border: 1px solid #5a4020; border-radius: 3px; outline: none;
+    }
+    .bank-xbox button {
+      height: 26px; padding: 0 8px; font: bold 12px 'IM Fell English', serif; color: #fff3c0;
+      background: rgba(140,100,40,0.95); border: 1px solid #e8c560; border-radius: 3px; cursor: pointer;
     }
   `;
   document.head.appendChild(style);
@@ -80,6 +174,7 @@ let invMirrorEl = null;
 let qtyButtonsEl = null;
 
 let quantityMode = 1;     // 1, 5, 10, 'x', 'all'
+let searchText = '';      // filtro por nombre (solo visual)
 let customQty = null;     // valor numerico cuando modo es 'x'
 
 let dragState = null;     // { pointerId, source: 'bank'|'inv', slot, startX, startY, moved, ghostEl, hover }
@@ -101,31 +196,47 @@ export async function init() {
 
   pane.innerHTML = `
     <div class="bank-root">
-      <div class="bank-header">
-        <span class="bank-title">Banco</span>
+      <div class="bank-top">
+        <input class="bank-search" id="bankSearch" type="search" placeholder="Buscar en el banco…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
         <span class="bank-count" id="bankCount">0</span>
       </div>
 
-      <div class="bank-qty-bar" id="bankQtyBar">
-        <button class="bank-qty-btn active" data-qty="1">1</button>
-        <button class="bank-qty-btn" data-qty="5">5</button>
-        <button class="bank-qty-btn" data-qty="10">10</button>
-        <button class="bank-qty-btn" data-qty="x">X</button>
-        <button class="bank-qty-btn" data-qty="all">Todo</button>
+      <div class="bank-main">
+        <div class="bank-area">
+          <div class="bank-scroll" id="bankScroll">
+            <div class="bank-grid" id="bankGrid"></div>
+          </div>
+          <div class="bank-xbox" id="bankXBox">
+            <input type="number" inputmode="numeric" min="1" id="bankXInput" placeholder="Cantidad">
+            <button id="bankXOk">OK</button>
+          </div>
+          <div class="bank-controls">
+            <button class="bank-note-btn" id="bankNoteBtn" title="Sacar como nota: los objetos que no se apilan salen en un solo hueco">📜</button>
+            <div class="bank-qty-bar" id="bankQtyBar">
+              <button class="bank-qty-btn active" data-qty="1">1</button>
+              <button class="bank-qty-btn" data-qty="5">5</button>
+              <button class="bank-qty-btn" data-qty="10">10</button>
+              <button class="bank-qty-btn" data-qty="x">X</button>
+              <button class="bank-qty-btn" data-qty="all">Todo</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bank-inv-panel">
+          <div class="bank-section-label">Mochila</div>
+          <div class="bank-inv-grid" id="bankInvGrid"></div>
+        </div>
       </div>
-      <button class="bank-note-btn" id="bankNoteBtn" title="Sacar como nota: los objetos que no se apilan salen en un solo hueco">📜 Sacar como nota: <b>NO</b></button>
-
-      <div class="bank-section-label">Banco</div>
-      <div class="bank-grid" id="bankGrid"></div>
-
-      <div class="bank-section-label">Mochila</div>
-      <div class="bank-inv-grid" id="bankInvGrid"></div>
 
       <div class="bank-error" id="bankError"></div>
     </div>
   `;
 
   bankGridEl = document.getElementById('bankGrid');
+  // Mientras se arrastra un objeto del banco, que la lista no haga scroll
+  document.getElementById('bankScroll')?.addEventListener('touchmove', (e) => {
+    if (dragState && dragState.armed) e.preventDefault();
+  }, { passive: false });
   invMirrorEl = document.getElementById('bankInvGrid');
   qtyButtonsEl = document.getElementById('bankQtyBar');
 
@@ -145,9 +256,35 @@ export async function init() {
     ev.preventDefault();
     withdrawAsNote = !withdrawAsNote;
     noteBtn.classList.toggle('on', withdrawAsNote);
-    noteBtn.innerHTML = `📜 Sacar como nota: <b>${withdrawAsNote ? 'SÍ' : 'NO'}</b>`;
+    noteBtn.title = withdrawAsNote ? 'Sacando como nota (toca para quitar)' : 'Sacar como nota';
+    showError(withdrawAsNote ? 'Sacar como nota: SÍ' : 'Sacar como nota: NO', true);
   });
   ensureNoteCss();
+
+  // Buscador por nombre
+  const searchEl = document.getElementById('bankSearch');
+  searchEl?.addEventListener('input', () => {
+    searchText = (searchEl.value || '').trim().toLowerCase();
+    renderBank();
+  });
+
+  // Cuadro de cantidad X
+  const xBox = document.getElementById('bankXBox');
+  const xInput = document.getElementById('bankXInput');
+  const confirmX = () => {
+    const n = parseInt(xInput.value, 10);
+    if (!Number.isFinite(n) || n <= 0) { showError('Cantidad inválida.'); return; }
+    customQty = Math.min(n, 2_000_000_000);
+    quantityMode = 'x';
+    xBox.classList.remove('visible');
+    xInput.blur();
+    updateQtyButtons();
+  };
+  document.getElementById('bankXOk')?.addEventListener('pointerup', (ev) => { ev.preventDefault(); confirmX(); });
+  xInput?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); confirmX(); }
+    else if (ev.key === 'Escape') { xBox.classList.remove('visible'); }
+  });
 
   // Listeners del selector de cantidad
   qtyButtonsEl.querySelectorAll('.bank-qty-btn').forEach(btn => {
@@ -156,15 +293,12 @@ export async function init() {
       ev.preventDefault();
       const val = btn.dataset.qty;
       if (val === 'x') {
-        const input = prompt('Cantidad personalizada:', customQty || 100);
-        if (input === null) return;
-        const n = parseInt(input, 10);
-        if (!Number.isFinite(n) || n <= 0) {
-          showError('Cantidad inválida.');
-          return;
-        }
-        customQty = n;
-        quantityMode = 'x';
+        const xBox = document.getElementById('bankXBox');
+        const xInput = document.getElementById('bankXInput');
+        const show = !xBox.classList.contains('visible');
+        xBox.classList.toggle('visible', show);
+        if (show) { xInput.value = customQty || ''; setTimeout(() => xInput.focus(), 30); }
+        return;
       } else if (val === 'all') {
         quantityMode = 'all';
       } else {
@@ -257,13 +391,19 @@ function renderBank() {
   // Limpia y recrea (el banco es dinamico)
   bankGridEl.innerHTML = '';
 
-  // Slots ocupados
-  bankSlots.forEach((data, visualIdx) => {
+  const filtering = searchText.length > 0;
+  const shown = filtering
+    ? bankSlots.filter(d => String(d.name || d.item_id || '').toLowerCase().includes(searchText)
+                        || String(d.item_id || '').toLowerCase().replace(/_/g, ' ').includes(searchText))
+    : bankSlots;
+
+  shown.forEach((data, visualIdx) => {
     const slotEl = document.createElement('div');
     slotEl.className = 'bank-slot bank-slot-bank occupied';
     slotEl.dataset.source = 'bank';
     slotEl.dataset.slot = String(data.slot);     // slot real del server
     slotEl.dataset.visualIdx = String(visualIdx); // posicion visual
+    slotEl.title = data.name || '';
     slotEl.addEventListener('pointerdown', onSlotPointerDown);
 
     const iconEl = document.createElement('span');
@@ -279,20 +419,34 @@ function renderBank() {
       slotEl.appendChild(qtyEl);
     }
 
+    // Sesión 52 — nombre pequeño bajo el icono (solo en el banco)
+    const nameEl = document.createElement('span');
+    nameEl.className = 'bank-name';
+    nameEl.textContent = data.name || String(data.item_id || '').replace(/_/g, ' ');
+    slotEl.appendChild(nameEl);
+
     bankGridEl.appendChild(slotEl);
   });
 
-  // Algunos slots vacios visuales al final (para drag-to-empty al reordenar)
-  // Renderiza siempre minimo 8 slots o multiplo de 4 superior al numero
-  // ocupado, para tener huecos donde soltar.
+  if (filtering) {
+    if (!shown.length) {
+      const msg = document.createElement('div');
+      msg.className = 'bank-empty-msg';
+      msg.style.gridColumn = '1 / -1';
+      msg.textContent = 'No hay nada con ese nombre.';
+      bankGridEl.appendChild(msg);
+    }
+    return; // sin huecos vacios mientras se busca
+  }
+
+  // Algunos slots vacios al final (para soltar al reordenar)
   const minVisualSlots = Math.max(8, Math.ceil((bankSlots.length + 4) / 4) * 4);
   const emptyToAdd = Math.max(0, minVisualSlots - bankSlots.length);
+  const maxSlot = bankSlots.length > 0 ? Math.max(...bankSlots.map(s => s.slot)) : -1;
   for (let i = 0; i < emptyToAdd; i++) {
     const slotEl = document.createElement('div');
     slotEl.className = 'bank-slot bank-slot-bank';
     slotEl.dataset.source = 'bank';
-    // Slot logico: el siguiente despues del max actual + i
-    const maxSlot = bankSlots.length > 0 ? Math.max(...bankSlots.map(s => s.slot)) : -1;
     slotEl.dataset.slot = String(maxSlot + 1 + i);
     slotEl.dataset.visualIdx = String(bankSlots.length + i);
     bankGridEl.appendChild(slotEl);
@@ -355,12 +509,15 @@ function formatQty(n) {
   return Math.floor(n / 1_000_000) + 'M';
 }
 
-function showError(msg) {
+let errTimer = null;
+function showError(msg, info = false) {
   const el = document.getElementById('bankError');
   if (!el) return;
   el.textContent = msg;
+  el.classList.toggle('info', !!info);
   el.classList.add('visible');
-  setTimeout(() => el.classList.remove('visible'), 2500);
+  clearTimeout(errTimer);
+  errTimer = setTimeout(() => el.classList.remove('visible'), 2500);
 }
 function clearError() {
   const el = document.getElementById('bankError');
@@ -383,11 +540,24 @@ function onSlotPointerDown(ev) {
   // no la seleccion de OSRS Mobile del inv.
   const data = getSlotData(source, slot);
   if (!data) return;
+  if (dragState) return; // ya hay otro dedo arrastrando
 
-  ev.preventDefault();
-  slotEl.setPointerCapture?.(ev.pointerId);
+  // Sesión 52 — en el banco con el dedo: deslizar = scroll; mantener ~0,2 s = arrastrar.
+  const holdToDrag = source === 'bank' && ev.pointerType !== 'mouse';
+  if (!holdToDrag) {
+    ev.preventDefault();
+    slotEl.setPointerCapture?.(ev.pointerId);
+  }
 
   dragState = {
+    armed: !holdToDrag,
+    holdTimer: holdToDrag ? setTimeout(() => {
+      if (!dragState || dragState.moved) return;
+      dragState.armed = true;
+      try { slotEl.setPointerCapture?.(ev.pointerId); } catch {}
+      slotEl.classList.add('dragging');
+      try { navigator.vibrate?.(15); } catch {}
+    }, 220) : null,
     pointerId: ev.pointerId,
     source,
     slot,
@@ -400,8 +570,8 @@ function onSlotPointerDown(ev) {
   };
 
   document.addEventListener('pointermove', onPointerMove);
-  document.addEventListener('pointerup', onPointerUp, { once: true });
-  document.addEventListener('pointercancel', onPointerCancel, { once: true });
+  document.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('pointercancel', onPointerCancel);
 }
 
 function getSlotData(source, slot) {
@@ -421,6 +591,13 @@ function onPointerMove(ev) {
   const dy = ev.clientY - dragState.startY;
 
   if (!dragState.moved && (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX)) {
+    if (!dragState.armed) {
+      // Se movió antes de mantener: es scroll, no arrastre
+      clearTimeout(dragState.holdTimer);
+      detachDocListeners();
+      dragState = null;
+      return;
+    }
     dragState.moved = true;
     createGhost(ev.clientX, ev.clientY);
   }
@@ -431,14 +608,18 @@ function onPointerMove(ev) {
   }
 }
 
-function onPointerUp(ev) {
+function detachDocListeners() {
   document.removeEventListener('pointermove', onPointerMove);
+  document.removeEventListener('pointerup', onPointerUp);
+  document.removeEventListener('pointercancel', onPointerCancel);
+}
 
-  if (!dragState || ev.pointerId !== dragState.pointerId) {
-    dragState = null;
-    return;
-  }
+function onPointerUp(ev) {
+  if (dragState && ev.pointerId !== dragState.pointerId) return; // otro dedo: ignorar
+  detachDocListeners();
+  if (!dragState) return;
 
+  clearTimeout(dragState.holdTimer);
   const { source, slot, moved, hover } = dragState;
   destroyGhost();
 
@@ -452,8 +633,10 @@ function onPointerUp(ev) {
   dragState = null;
 }
 
-function onPointerCancel() {
-  document.removeEventListener('pointermove', onPointerMove);
+function onPointerCancel(ev) {
+  if (dragState && ev && ev.pointerId !== dragState.pointerId) return;
+  detachDocListeners();
+  if (dragState) clearTimeout(dragState.holdTimer);
   destroyGhost();
   dragState = null;
 }
@@ -520,7 +703,13 @@ function updateHover(x, y) {
 // ACCIONES: tap y drop
 // ============================================================
 
+let busyOp = false;
 async function handleTap(source, slot) {
+  if (busyOp) return; // evita dobles toques mientras el server responde
+  busyOp = true;
+  try { await handleTapInner(source, slot); } finally { busyOp = false; }
+}
+async function handleTapInner(source, slot) {
   // Tap en banco -> retirar al inv
   // Tap en inv -> depositar al banco
   const qty = getEffectiveQuantity();
