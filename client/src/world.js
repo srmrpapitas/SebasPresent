@@ -66,7 +66,8 @@ import * as crafting from './skills/crafting.js'; // Sesión 50 — flechería/a
 import * as realtime from './realtime.js';        // Sesión 50 — WebSocket (PvP en vivo, menos peticiones)
 import * as afk from './core/afk.js';            // Sesión 51 — desconexión por inactividad
 import { HUNTING_ZONES } from './shared/hunting_zones.js';   // Sesión 51 — zonas de caza
-import * as bankChests from './bank_chests.js';  // Sesión 50 — cofres de banco por el mapa
+import * as bankChests from './bank_chests.js';
+import * as onboarding from './onboarding.js';   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
@@ -1079,12 +1080,22 @@ export async function startWorld(loggedInUser, token) {
     } catch (e) { console.warn('[world] skull start:', e); }
     // Sesión 50 — Misiones (tutorial). Debug: window.__questsDebug()
     try {
-      quests.start({
+      Promise.resolve(quests.start({
         scene,
         getPlayer:   () => player,
         getSnapshot: () => worldSnapshot.getSnapshot(),
         feedLog:     (type, msg) => combat.feedLog?.(type, msg),
-      });
+      })).then(() => {
+        // Sesión 52 — guía de inicio para jugadores nuevos, cuando ya se ve el mundo
+        const tryOnboard = (tries = 0) => {
+          if (!running) return;
+          const loading = document.getElementById('worldLoading');
+          const busy = (loading && !loading.classList.contains('hidden')) || document.querySelector('.osrs-dialog-overlay.visible, .npc-dialog.visible');
+          if (busy && tries < 40) { setTimeout(() => tryOnboard(tries + 1), 500); return; }
+          onboarding.maybeStart({ getQuestState: quests.getQuestState });
+        };
+        setTimeout(() => tryOnboard(0), 1500);
+      }).catch(e => console.warn('[world] quests start:', e));
     } catch (e) { console.warn('[world] quests start:', e); }
     try {
       firemaking.start({
@@ -2155,8 +2166,14 @@ function injectAudioSettingsPanel() {
       <button class="audio-mute-btn ${prefs.muted ? 'muted' : ''}" data-audio-mute>
         ${prefs.muted ? '🔇 Música silenciada · Tap para activar' : '🔊 Silenciar música'}
       </button>
+      <button class="audio-mute-btn" data-onboard-replay>📖 Ver la guía de inicio</button>
     </div>
   `;
+  pane.querySelector('[data-onboard-replay]')?.addEventListener('pointerup', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault();
+    onboarding.start();
+  });
 
   // Listener mute (único control)
   const muteBtn = pane.querySelector('[data-audio-mute]');
