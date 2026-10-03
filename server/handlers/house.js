@@ -47,7 +47,7 @@ export async function handleHouseBuy(request, env) {
   const uid = session.user_id;
   const body = await readJson(request);
   const to = body?.tier;
-  if (!HOUSE_TIERS[to]) return json({ error: 'invalid_tier' }, 400);
+  if (typeof to !== 'string' || !Object.prototype.hasOwnProperty.call(HOUSE_TIERS, to)) return json({ error: 'invalid_tier' }, 400);   // S51: sin '__proto__'
 
   const agent = TOWN_NPCS_BY_ID[HOUSE_AGENT];
   const pos = await getPlayerPosition(env, uid);

@@ -101,6 +101,14 @@ export async function scheduledHandler(event, env, ctx) {
     // Tabla puede no existir — silencioso.
   }
 
+  // Sesión 51 — combat_log crecía para siempre (nadie lo borraba). Se usa
+  // para el auto-contraataque (segundos) y la calavera (20 min): se borra lo
+  // de hace más de 1 hora, una vez por hora (con su índice por ts).
+  if (every(60, 22)) try {
+    const r = await env.DB.prepare('DELETE FROM combat_log WHERE ts < ?').bind(Date.now() - 3600_000).run();
+    if (r?.meta?.changes) console.log(`[combat-log-cron] cleaned=${r.meta.changes}`);
+  } catch {}
+
   // 6) Fires cleanup: borra fuegos cuyo expires_at ya pasó (Sesión 30).
   try {
     const now = Date.now();

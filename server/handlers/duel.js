@@ -513,21 +513,20 @@ export async function handleDuelLeave(request, env) {
   }
 
   const endsAt = now + LEAVE_CAST_MS;
-  if (isA) {
-    await db.run(
-      `UPDATE duels SET leaving_a_at = ?, leave_cast_ends_at = ? WHERE id = ?`,
-      [now, endsAt, duel.id]
-    );
-  } else {
-    await db.run(
-      `UPDATE duels SET leaving_b_at = ?, leave_cast_ends_at = ? WHERE id = ?`,
-      [now, endsAt, duel.id]
-    );
-  }
+  // Sesión 51 — si el otro ya estaba saliendo, se mantiene el final más
+  // temprano (antes el segundo "salir" alargaba la cuenta atrás del primero).
+  await db.run(
+    `UPDATE duels SET ${isA ? 'leaving_a_at' : 'leaving_b_at'} = ?,
+            leave_cast_ends_at = CASE WHEN leave_cast_ends_at IS NOT NULL AND leave_cast_ends_at > ? THEN MIN(leave_cast_ends_at, ?) ELSE ? END
+      WHERE id = ?`,
+    [now, now, endsAt, endsAt, duel.id]
+  );
+  const after = await db.first('SELECT leave_cast_ends_at FROM duels WHERE id = ?', [duel.id]);
+  const effectiveEnds = after?.leave_cast_ends_at || endsAt;
 
   return json({
     ok: true,
-    leave_cast_ends_at: endsAt,
+    leave_cast_ends_at: effectiveEnds,
     cast_duration_ms: LEAVE_CAST_MS,
   });
 }

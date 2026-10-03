@@ -21,7 +21,7 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { pushRealtime } from '../lib/realtime.js';
-import { stackableMap, placeStmts } from '../lib/give.js';
+import { stackableMap, placeStmts, giveRobust } from '../lib/give.js';
 import { guard, atomicBatch } from '../lib/atomic.js';   // Sesión 51
 
 const INVENTORY_SLOTS = 20;
@@ -237,8 +237,7 @@ export async function handleTradeOffer(request, env) {
     ? await env.DB.prepare(`UPDATE trade_items SET qty = qty + ? WHERE id = ? AND EXISTS (SELECT 1 FROM trades WHERE id = ? AND status IN ('open','confirm'))`).bind(took, ex.id, t.id).run()
     : await env.DB.prepare(`INSERT INTO trade_items (trade_id, owner_id, item_id, qty) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM trades WHERE id = ? AND status IN ('open','confirm'))`).bind(t.id, uid, itemId, took, t.id).run();
   if (!put?.meta?.changes) {
-    const { stmts } = await placeStmts(env, uid, [{ item_id: itemId, qty: took }], now, { bankFallback: true });
-    await env.DB.batch(stmts);
+    await giveRobust(env, uid, [{ item_id: itemId, qty: took }], now);   // Sesión 51 — nunca se pierde
     return json({ error: 'no_trade', message: 'El comercio se ha cerrado.' }, 400);
   }
   await bump(env, t.id, now);

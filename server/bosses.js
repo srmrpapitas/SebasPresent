@@ -23,7 +23,8 @@
 import {
   BOSSES, BOSS_TICK_MS, BOSS_MOVE_SPEED, BOSS_EMPTY_RESET_MS, hitsRock,
 } from '../client/src/shared/bosses.js';
-import { playerDefProfile, monsterRoll, damagePlayerFromMonster } from './combat_engine.js';
+import { playerDefProfile, monsterRoll, damagePlayerFromMonster, levelFromXp } from './combat_engine.js';
+import { currentPrayerState } from '../client/src/shared/prayer.js';   // Sesión 51
 
 const VIEW_R = 140;   // el snapshot incluye jefes a esta distancia
 
@@ -214,8 +215,24 @@ async function tickBoss(env, bossId, now, rng) {
         if (!hitsRock(B, tx, tz, B.bodyR)) { bx = tx; bz = tz; break; }
       }
     } else if (sp.kind === 'drain') {
+      // Sesión 51 — mitad de los puntos ACTUALES (con el gasto aplicado y
+      // reiniciando el reloj). Antes partía los guardados sin descontar el
+      // gasto y NULL (nunca usada = llena) se quedaba en 0.
       for (const p of players) {
-        await env.DB.prepare('UPDATE combat_stats SET prayer_points = MAX(0, COALESCE(prayer_points, 0) * 0.5) WHERE user_id = ?').bind(p.user_id).run();
+        try {
+          const row = await env.DB.prepare(
+            `SELECT c.prayer_points, c.prayer_updated_at, c.active_prayers,
+                    (SELECT xp FROM user_skills WHERE user_id = c.user_id AND skill_id = 'prayer') AS pxp
+               FROM combat_stats c WHERE c.user_id = ?`
+          ).bind(p.user_id).first();
+          if (!row) continue;
+          const lvl = levelFromXp(row.pxp || 0);
+          const base = row.prayer_points == null ? lvl : Math.min(lvl, row.prayer_points);
+          const cur = currentPrayerState(base, row.prayer_updated_at, row.active_prayers, now);
+          const half = cur.points * 0.5;
+          await env.DB.prepare('UPDATE combat_stats SET prayer_points = ?, prayer_updated_at = ?, active_prayers = ? WHERE user_id = ?')
+            .bind(half, now, half > 0 ? cur.active.join(',') : '', p.user_id).run();
+        } catch (err) { console.warn('[boss] drain:', err?.message); }
       }
     } else if (sp.kind === 'switch') {
       style = style === 'magic' ? 'ranged' : 'magic';

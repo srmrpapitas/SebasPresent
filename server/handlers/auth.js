@@ -20,8 +20,8 @@ export async function handleRegister(request, env) {
   const body = await readJson(request);
   if (!body) return json({ error: 'bad_request' }, 400);
 
-  const username = (body.username || '').trim();
-  const password = body.password || '';
+  const username = String(body.username ?? '').trim();
+  const password = typeof body.password === 'string' ? body.password : '';
 
   if (!USERNAME_REGEX.test(username)) {
     return json({
@@ -103,14 +103,16 @@ export async function handleLogin(request, env) {
   const body = await readJson(request);
   if (!body) return json({ error: 'bad_request' }, 400);
 
-  const username = (body.username || '').trim();
-  const password = body.password || '';
+  const username = String(body.username ?? '').trim();
+  const password = typeof body.password === 'string' ? body.password : '';
 
   if (!username || !password || password.length > PASSWORD_MAX_LENGTH) {
     return json({ error: 'missing_credentials' }, 400);
   }
   // Sesión 50 — fuerza bruta: límite por IP y por cuenta
-  const ip = clientIp(request), uname = username.toLowerCase();
+  // Sesión 51 — el contador de fallos va por cuenta + IP: antes 10 intentos
+  // de cualquiera (desde cualquier sitio) te dejaban sin poder entrar 15 min.
+  const ip = clientIp(request), uname = username.toLowerCase() + '|' + ip;
   if (over('login_ip', await hit(env, 'login_ip', ip))) return limited();
   if (over('login_fail', await peek(env, 'login_fail', uname) + 1)) return limited();
   const fail = async () => {
@@ -118,9 +120,13 @@ export async function handleLogin(request, env) {
     return json({ error: 'invalid_credentials', message: 'Usuario o contraseña incorrectos.' }, 401);
   };
 
-  const user = await env.DB.prepare(
+  // Sesión 51 — sin distinguir mayúsculas (el móvil pone "Sebas6" en vez de
+  // "sebas6"); primero el nombre exacto por si hubiera dos cuentas antiguas.
+  const user = (await env.DB.prepare(
     'SELECT id, username, password_hash, created_at FROM users WHERE username = ?'
-  ).bind(username).first();
+  ).bind(username).first()) || (await env.DB.prepare(
+    'SELECT id, username, password_hash, created_at FROM users WHERE username = ? COLLATE NOCASE ORDER BY id LIMIT 1'
+  ).bind(username).first());
 
   if (!user) return fail();
 

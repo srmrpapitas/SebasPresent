@@ -109,6 +109,9 @@ export async function handleGePlace(request, env) {
   else if (body.side === 'sell' || body.side === 1) side = SIDE_SELL;
   else return json({ error: 'invalid_side', message: 'side debe ser "buy" o "sell".' }, 400);
 
+  if (typeof body.item_id !== 'string' || !body.item_id || body.item_id.length > 64) {
+    return json({ error: 'invalid_item', message: 'Elige un objeto.' }, 400);   // S51: antes 500
+  }
   const db = makeDbAdapter(env);
   try {
     // Sesión 50 — si eligen una NOTA para vender, la orden es del objeto real

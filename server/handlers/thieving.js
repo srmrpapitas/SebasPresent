@@ -12,7 +12,7 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { pushRealtime } from '../lib/realtime.js';
-import { placeStmts } from '../lib/give.js';
+import { placeStmts, giveRobust } from '../lib/give.js';
 import { grantXp } from '../lib/quests.js';
 import { levelFromXp } from '../combat_engine.js';
 import { TOWN_NPCS_BY_ID, npcDist } from '../../client/src/shared/town_npcs.js';
@@ -139,8 +139,7 @@ export async function handleStealPlayer(request, env) {
   try { await env.DB.batch(give.stmts); }
   catch {
     // devolvérselo a la víctima si no se pudo dar
-    const back = await placeStmts(env, target, [{ item_id: s.item_id, qty }], now, { bankFallback: true });
-    await env.DB.batch(back.stmts);
+    await giveRobust(env, target, [{ item_id: s.item_id, qty }], now);   // Sesión 51 — nunca se pierde
     return json({ error: 'try_again' }, 409);
   }
   await grantXp(env, uid, THIEF_SKILL, PLAYER_STEAL_XP);

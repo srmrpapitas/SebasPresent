@@ -63,3 +63,33 @@ export async function placeStmts(env, uid, items, now, { bankFallback = false } 
   return { stmts, fits: toBank.length === 0, toBank };
 }
 
+
+/**
+ * Sesión 51 — Dar objetos SIN perderlos nunca: lo intenta en la mochila
+ * (hasta 3 veces, por si cambió a la vez) y si no, al banco objeto a objeto
+ * (sumando si ya lo tenía). Para devoluciones y pagos ya cobrados.
+ */
+export async function giveRobust(env, uid, items, now = Date.now()) {
+  const list = (items || []).filter(it => it && it.qty > 0);
+  if (!list.length) return true;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { stmts } = await placeStmts(env, uid, list, now, { bankFallback: true });
+      if (stmts.length) await env.DB.batch(stmts);
+      return true;
+    } catch (err) {
+      console.warn('[give] reintento', attempt + 1, err?.message);
+    }
+  }
+  let ok = true;
+  for (const it of list) {
+    try {
+      const max = await env.DB.prepare('SELECT COALESCE(MAX(slot_index), -1) AS m FROM user_bank WHERE user_id = ?').bind(uid).first();
+      await env.DB.prepare(
+        `INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = user_bank.quantity + excluded.quantity, updated_at = excluded.updated_at`
+      ).bind(uid, (max?.m ?? -1) + 1, it.item_id, it.qty, now).run();
+    } catch (err) { ok = false; console.error('[give] al banco falló', uid, it, err?.message); }
+  }
+  return ok;
+}

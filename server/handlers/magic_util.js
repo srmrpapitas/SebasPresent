@@ -8,7 +8,7 @@
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { serverWarp } from '../lib/warp.js';
-import { placeStmts } from '../lib/give.js';
+import { placeStmts, giveRobust } from '../lib/give.js';
 import * as magic from '../magic.js';
 import { levelFromXp } from '../combat_engine.js';
 import { STAFF_MANA_EXTRA } from '../../client/src/shared/equip_reqs.js';
@@ -63,8 +63,7 @@ export async function handleMagicUtility(request, env) {
       : env.DB.prepare('DELETE FROM user_inventory WHERE user_id = ? AND slot_index = ? AND item_id = ? AND quantity = 1').bind(uid, slot, row.item_id);
     const r = await take.run();
     if (!r?.meta?.changes) return json({ error: 'try_again' }, 409);
-    const give = await placeStmts(env, uid, [{ item_id: 'coins', qty: coins }], now, { bankFallback: true });
-    await env.DB.batch(give.stmts);
+    await giveRobust(env, uid, [{ item_id: 'coins', qty: coins }], now);   // Sesión 51 — nunca se pierde
     extra = { item: row.item_id, item_name: row.name, coins };
   }
 
