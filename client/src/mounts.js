@@ -112,10 +112,13 @@ async function loadGlbRetry(url, tries = 4) {
   }
   throw last;
 }
+const _failWarned = new Set();
 function loadFail(what, e) {
   const msg = e?.message || String(e || '');
   console.warn(`[mounts] ${what} no cargó:`, msg);
-  try { feedLog('warning', `⚠ No se pudo cargar el modelo del ${what} (${msg.slice(0, 80)}). Se usa uno simple; vuelve a montar en un rato.`); } catch {}
+  if (_failWarned.has(what)) return;   // Sesión 52 — avisar una vez (se reintenta solo)
+  _failWarned.add(what);
+  try { feedLog('warning', `⚠ No se pudo cargar el modelo del ${what} (${msg.slice(0, 80)}). Se usa uno simple y se sigue intentando.`); } catch {}
 }
 function loadDragon() {
   if (_dragonP) return _dragonP;
@@ -187,13 +190,30 @@ function animateHorse(H, moving, time) {
 
 // Mientras carga el modelo de verdad NO se enseña el de cajas (se veía un instante y
 // luego cambiaba); solo aparece si el modelo nuevo no se puede cargar.
-function hideUntil(g, p, attach) {
+function hideUntil(g, p, attach, reload) {
   for (const ch of g.children) ch.visible = false;
-  p.then(ok => { if (ok) attach(g); else for (const ch of g.children) ch.visible = true; });
+  p.then(ok => {
+    if (ok) { attach(g); return; }
+    for (const ch of g.children) ch.visible = true;   // respaldo mientras tanto
+    // Sesión 52 — antes el respaldo (pardela / caballo de cajas) se quedaba
+    // hasta volver a montar. Ahora se reintenta en segundo plano y se cambia
+    // solo en cuanto llega el modelo (móvil con mala cobertura).
+    if (reload) retryInBackground(g, attach, reload, 0);
+  });
+}
+function retryInBackground(g, attach, reload, n) {
+  if (n >= 12) return;
+  setTimeout(() => {
+    if (!g.parent) return;                        // ya te bajaste / el peer se fue
+    reload().then(ok => {
+      if (ok) { attach(g); try { feedLog('info', '✅ Modelo de la montura cargado.'); } catch {} }
+      else retryInBackground(g, attach, reload, n + 1);
+    });
+  }, 20000);
 }
 export function buildPardela() {
   const g = buildPardelaBird();
-  if (_dragon) attachDragon(g); else hideUntil(g, loadDragon(), attachDragon);
+  if (_dragon) attachDragon(g); else hideUntil(g, loadDragon(), attachDragon, loadDragon);
   return g;
 }
 function animateDragon(D, moving, time, flying, bank) {
@@ -287,7 +307,7 @@ function buildPardelaBird() {
 export function buildMount(id) {
   if (id === 'pardela') return buildPardela();
   const g = buildHorse();
-  if (_horse) attachHorse(g); else hideUntil(g, loadHorse(), attachHorse);
+  if (_horse) attachHorse(g); else hideUntil(g, loadHorse(), attachHorse, loadHorse);
   return g;
 }
 
