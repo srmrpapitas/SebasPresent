@@ -22,10 +22,27 @@
   multitáctil en mochila/banco, errores en crudo, geometría compartida, preload de Mixamo, cámara tras
   teletransportarse desde un edificio.
 
-## Pendiente
-1. Diseño pendiente con el usuario: cueros por animal + armaduras de arquero (bonus distancia y def. mágica),
-   túnicas de mago con poder mágico; problema de sebas6 (padre) que ve una pardela en vez del dragón.
-2. Probar en móvil real: arrastrar en el banco (mantener ~0,2 s), guía de inicio en iPhone.
+## Hecho después (16 oct, tarde)
+- Montura: si el dragón no carga, se reintenta solo en segundo plano (arreglo para sebas6).
+- Armaduras de arquero por animal (lobo 20, escorpión 35, yeti 50, escama 70) y túnicas de mago
+  (algodón 1, lino 25, seda 45, Cabildo 60, Magister 70) con poder mágico (+golpe máx. y maná).
+  Datos en `client/src/shared/gear_sets.js`; seed 023 (ya aplicado en producción).
+- El bonus de distancia de la armadura ahora cuenta al disparar.
+
+## Pendiente — "el juego se siente vacío" (diagnóstico del 16 oct, acordado con el usuario)
+Orden decidido:
+1. **Ambiente** (rápido): música audible por defecto (hoy `music: 0.0007` en audio.js), ciclo día/noche,
+   sonidos de ambiente (mar, viento, pájaros), gaviotas/pájaros volando, voces distintas para los borrachos.
+2. **Historia principal de Guayota por capítulos** (la "carne"): escenas, decisiones, combate final contra
+   Guayota. Hoy el arco del villano es una sola misión (`sombra_cabildo`) y Guayota solo sale en la Fosa.
+   El canon está en `LORE.md` / `client/src/shared/lore.js`. Ojo: Morgath/Chona y `fosa_ignaroth` (nombres viejos).
+3. **Motivos para volver**: tareas diarias, logros + registro de colección, contador de jefes, récord de la Fosa visible.
+4. **Jugar juntos**: eventos del mundo ("¡el Teide ruge!": jefe para todos, botín repartido), chat de grupo,
+   XP/botín compartido en grupo.
+5. **Rellenar el mapa**: 30 de 64 celdas de 512 m sin contenido (sur/sureste, noroeste, este Güímar–Santa Cruz);
+   pueblos fuera de La Laguna con 1–4 NPC.
+6. Habilidades que se acaban pronto (Plegaria 43, Artesanía/Flechería 30): más contenido de nivel alto.
+7. Probar en el juego: armaduras nuevas puestas en el personaje real (solo se vieron en el maniquí Xbot).
 
 ## Pruebas
 Scripts locales con D1 simulada (node:sqlite): `d1shim.mjs` + `worker.fetch(new Request(...), env)`.
