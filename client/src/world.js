@@ -70,7 +70,8 @@ import * as bankChests from './bank_chests.js';
 import { STAFF_MANA_EXTRA, robeMagicBonus } from './shared/equip_reqs.js';   // Sesión 52 — maná máximo en el HUD
 import * as onboarding from './onboarding.js';
 import * as daynight from './daynight.js';   // Sesión 52 — día y noche
-import * as ambience from './ambience.js';   // Sesión 52 — sonidos de ambiente   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
+import * as ambience from './ambience.js';   // Sesión 52 — sonidos de ambiente
+import * as birds from './birds.js';         // Sesión 52 — gaviotas, pajarillos y murciélagos   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
@@ -291,6 +292,16 @@ export async function startWorld(loggedInUser, token) {
         isAsleep: () => !!afk.isPaused?.(),
       });
     } catch (e) { console.warn('[world] ambience:', e); }
+    try {
+      birds.start({
+        scene,
+        getPlayer: () => player,
+        biomeAt: (x, z) => terrain.biomeAt(x, z),
+        isNight: () => daynight.isNight(),
+        isIndoors: () => !!interiors.isActive?.(),
+        isCave: () => !!caves.isActive?.(),
+      });
+    } catch (e) { console.warn('[world] birds:', e); }
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
@@ -1170,6 +1181,7 @@ export function stopWorld() {
   try { damageSplat.stop(); } catch {}
   try { daynight.stop(); } catch {}   // Sesión 52
   try { ambience.stop(); } catch {}
+  try { birds.stop(); } catch {}
 
   // Sesión 27 Bloque 1 — world_snapshot cleanup
   try { worldSnapshot.stop(); } catch {}
@@ -3371,6 +3383,7 @@ function animate() {
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
   try { daynight.update(dt); } catch (e) { if (!window.__dnErr) { window.__dnErr = e; console.warn('[daynight]', e); } }   // Sesión 52
   try { ambience.update(dt); } catch (e) { if (!window.__amErr) { window.__amErr = e; console.warn('[ambience]', e); } }   // Sesión 52
+  try { birds.update(dt); } catch (e) { if (!window.__bdErr) { window.__bdErr = e; console.warn('[birds]', e); } }   // Sesión 52
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   renderer.render(scene, camera);
