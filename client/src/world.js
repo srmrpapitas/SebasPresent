@@ -68,7 +68,8 @@ import * as afk from './core/afk.js';            // Sesión 51 — desconexión 
 import { HUNTING_ZONES } from './shared/hunting_zones.js';   // Sesión 51 — zonas de caza
 import * as bankChests from './bank_chests.js';
 import { STAFF_MANA_EXTRA, robeMagicBonus } from './shared/equip_reqs.js';   // Sesión 52 — maná máximo en el HUD
-import * as onboarding from './onboarding.js';   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
+import * as onboarding from './onboarding.js';
+import * as daynight from './daynight.js';   // Sesión 52 — día y noche   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
@@ -269,6 +270,16 @@ export async function startWorld(loggedInUser, token) {
       fogFar:  FOG_FAR,
     }));
     ocean = sceneSetup.setupOcean({ scene, palette: PALETTE, worldHalf: WORLD_HALF });
+    // Sesión 52 — día y noche (hora del servidor, sin peticiones nuevas)
+    try {
+      daynight.start({
+        scene, camera,
+        getServerNow: () => worldSnapshot.getServerNow?.(),
+        isIndoors: () => !!interiors.isActive?.(),
+        isCave: () => !!caves.isActive?.(),
+        onChange: (period) => combat.feedLog?.('info', period === 'night' ? '🌙 Cae la noche sobre la isla.' : '🌅 Amanece en Tenerife.'),
+      });
+    } catch (e) { console.warn('[world] daynight:', e); }
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
@@ -1146,6 +1157,7 @@ export function stopWorld() {
 
   // Sesión 21 — damage_splat cleanup
   try { damageSplat.stop(); } catch {}
+  try { daynight.stop(); } catch {}   // Sesión 52
 
   // Sesión 27 Bloque 1 — world_snapshot cleanup
   try { worldSnapshot.stop(); } catch {}
@@ -2943,6 +2955,7 @@ function applyWildernessVisuals(isWild) {
   if (caves.isActive()) return;     // Sesión 50 — la cueva pone su oscuridad
   scene.background.setHex(isWild ? PALETTE.skyWild : PALETTE.sky);
   scene.fog.color.setHex(isWild ? PALETTE.fogWild : PALETTE.fog);
+  try { daynight.setBase(isWild ? PALETTE.skyWild : PALETTE.sky, isWild ? PALETTE.fogWild : PALETTE.fog); } catch {}   // Sesión 52
 }
 
 
@@ -3318,6 +3331,7 @@ function animate() {
   firemaking.update(dt);      // Sesión 30 — sync fires + flicker anim
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
+  try { daynight.update(dt); } catch (e) { if (!window.__dnErr) { window.__dnErr = e; console.warn('[daynight]', e); } }   // Sesión 52
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   renderer.render(scene, camera);
