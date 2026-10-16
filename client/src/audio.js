@@ -115,6 +115,8 @@ const DEFAULT_PREFS = {
   music: 0.0007,   // Sesión 50 — otro 90 % menos: súper sutil
   ui: 0.5,
   muted: false,
+  ambient: 0.45,   // Sesión 52 — sonidos de ambiente (mar, viento, pájaros, grillos)
+  musicSet: false, // Sesión 52 — true si el jugador movió el control de música (no recapear)
 };
 
 let initialized = false;
@@ -415,6 +417,7 @@ export function setSfxVolume(v)   {
 }
 export function setMusicVolume(v) {
   prefs.music = clamp01(v);
+  prefs.musicSet = true;   // Sesión 52
   if (prefs.muted && v > 0) prefs.muted = false;
   savePrefs();
   cancelMusicFade();
@@ -438,6 +441,7 @@ export function toggleMute() {
   if (!prefs.muted) {
     // Mutear
     prefs.muted = true;
+    if (prefs.music > 0) prefs.musicBeforeMute = prefs.music;   // Sesión 52
     prefs.music = 0;
     if (musicAudio) {
       musicAudio.volume = 0;
@@ -446,7 +450,7 @@ export function toggleMute() {
   } else {
     // Desmutear
     prefs.muted = false;
-    prefs.music = 0.0007;
+    prefs.music = prefs.musicBeforeMute ?? 0.0007;   // Sesión 52 — vuelve al volumen que tenías
     if (musicAudio) {
       musicAudio.volume = prefs.music * prefs.master;
       if (musicAudio.src && musicAudio.paused) {
@@ -497,6 +501,12 @@ export async function voice(url, opts = {}) {
 }
 export function getPrefs() { return { ...prefs }; }
 
+// Sesión 52 — canal de ambiente (lo usa ambience.js)
+export function setAmbientVolume(v) { prefs.ambient = clamp01(v); savePrefs(); }
+export function getAmbientVolume() { return (prefs.ambient ?? 0.45) * prefs.master; }
+/** AudioContext compartido (null si el navegador no tiene Web Audio). */
+export function getContext() { if (!initialized) init(); return ensureAudioContext(); }
+
 function cancelMusicFade() {
   if (activeMusicFade) {
     clearInterval(activeMusicFade);
@@ -520,7 +530,7 @@ function loadPrefs() {
   // alto), recapear al nuevo máximo. Sin esto, el cambio de DEFAULT_PREFS
   // no surte efecto para users existentes.
   const MUSIC_CAP = 0.001;  // Sesión 50 — 0,1 % del máximo: ambient súper sutil
-  if (prefs.music > MUSIC_CAP) {
+  if (prefs.music > MUSIC_CAP && !prefs.musicSet) {   // Sesión 52 — si lo subió el jugador, se respeta
     prefs.music = MUSIC_CAP;
     savePrefs();
   }

@@ -69,7 +69,8 @@ import { HUNTING_ZONES } from './shared/hunting_zones.js';   // Sesión 51 — z
 import * as bankChests from './bank_chests.js';
 import { STAFF_MANA_EXTRA, robeMagicBonus } from './shared/equip_reqs.js';   // Sesión 52 — maná máximo en el HUD
 import * as onboarding from './onboarding.js';
-import * as daynight from './daynight.js';   // Sesión 52 — día y noche   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
+import * as daynight from './daynight.js';   // Sesión 52 — día y noche
+import * as ambience from './ambience.js';   // Sesión 52 — sonidos de ambiente   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
@@ -280,6 +281,16 @@ export async function startWorld(loggedInUser, token) {
         onChange: (period) => combat.feedLog?.('info', period === 'night' ? '🌙 Cae la noche sobre la isla.' : '🌅 Amanece en Tenerife.'),
       });
     } catch (e) { console.warn('[world] daynight:', e); }
+    try {
+      ambience.start({
+        getPlayer: () => player,
+        biomeAt: (x, z) => terrain.biomeAt(x, z),
+        isNight: () => daynight.isNight(),
+        isIndoors: () => !!interiors.isActive?.(),
+        isCave: () => !!caves.isActive?.(),
+        isAsleep: () => !!afk.isPaused?.(),
+      });
+    } catch (e) { console.warn('[world] ambience:', e); }
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
@@ -1158,6 +1169,7 @@ export function stopWorld() {
   // Sesión 21 — damage_splat cleanup
   try { damageSplat.stop(); } catch {}
   try { daynight.stop(); } catch {}   // Sesión 52
+  try { ambience.stop(); } catch {}
 
   // Sesión 27 Bloque 1 — world_snapshot cleanup
   try { worldSnapshot.stop(); } catch {}
@@ -2187,9 +2199,35 @@ function injectAudioSettingsPanel() {
       <button class="audio-mute-btn ${prefs.muted ? 'muted' : ''}" data-audio-mute>
         ${prefs.muted ? '🔇 Música silenciada · Tap para activar' : '🔊 Silenciar música'}
       </button>
+      <div class="audio-row"><label>🎵 Música</label><input type="range" min="0" max="100" step="1" data-vol="music"><span class="audio-val" data-val="music"></span></div>
+      <div class="audio-row"><label>🌊 Ambiente</label><input type="range" min="0" max="100" step="1" data-vol="ambient"><span class="audio-val" data-val="ambient"></span></div>
+      <div class="audio-row"><label>🔔 Efectos</label><input type="range" min="0" max="100" step="1" data-vol="sfx"><span class="audio-val" data-val="sfx"></span></div>
       <button class="audio-mute-btn" data-onboard-replay>📖 Ver la guía de inicio</button>
     </div>
   `;
+  // Sesión 52 — volúmenes. La música va en curva: el 12 % ≈ el volumen
+  // sutil de siempre (0,0007), el 100 % = 0,05.
+  const MUSIC_MAX = 0.05;
+  const toSlider = { music: (p) => Math.round(Math.sqrt((p.music || 0) / MUSIC_MAX) * 100), ambient: (p) => Math.round((p.ambient ?? 0.45) * 100), sfx: (p) => Math.round((p.sfx ?? 0.6) * 100) };
+  const fromSlider = { music: (v) => Math.pow(v / 100, 2) * MUSIC_MAX, ambient: (v) => v / 100, sfx: (v) => v / 100 };
+  const setters = { music: audio.setMusicVolume, ambient: audio.setAmbientVolume, sfx: audio.setSfxVolume };
+  const p0 = audio.getPrefs();
+  pane.querySelectorAll('input[data-vol]').forEach(inp => {
+    const k = inp.dataset.vol;
+    const valEl = pane.querySelector(`[data-val="${k}"]`);
+    inp.value = String(Math.min(100, toSlider[k](p0)));
+    if (valEl) valEl.textContent = inp.value + '%';
+    inp.addEventListener('input', () => {
+      const v = Number(inp.value);
+      try { setters[k]?.(fromSlider[k](v)); } catch {}
+      if (valEl) valEl.textContent = v + '%';
+      if (k === 'music' && v > 0) {
+        const mb = pane.querySelector('[data-audio-mute]');
+        if (mb) { mb.classList.remove('muted'); mb.textContent = '🔊 Silenciar música'; }
+        if (!interiors.isActive?.() && player) { try { audio.musicForBiome(terrain.biomeAt(player.position.x, player.position.z).id); } catch {} }
+      }
+    });
+  });
   pane.querySelector('[data-onboard-replay]')?.addEventListener('pointerup', (ev) => {
     if (ev.button !== undefined && ev.button !== 0) return;
     ev.preventDefault();
@@ -3332,6 +3370,7 @@ function animate() {
   groundItems.update(dt);
   interiors.update?.(dt);  // Sesión 11c-2 — tick del mixer del NPC del interior
   try { daynight.update(dt); } catch (e) { if (!window.__dnErr) { window.__dnErr = e; console.warn('[daynight]', e); } }   // Sesión 52
+  try { ambience.update(dt); } catch (e) { if (!window.__amErr) { window.__amErr = e; console.warn('[ambience]', e); } }   // Sesión 52
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   renderer.render(scene, camera);
