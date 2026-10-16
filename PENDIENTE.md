@@ -6,6 +6,12 @@
 ## Cómo se trabaja
 - Push directo a `main` (Cloudflare despliega solo). D1 de producción: `bd9c29c7-493d-4ece-ac6e-6f97d49558b9`.
 - Hay tope diario de D1 (`server/lib/budget.js`); no lo quites.
+- **PLAN GRATIS de Cloudflare** (el usuario canceló el de pago el 17 oct; no quiere gastar nada). Límites:
+  D1 5 M lecturas / 100 k escrituras al día (tope propio en wrangler.toml: 4,5 M / 90 k), Workers 100 k
+  peticiones al día y 10 ms de CPU por petición, Durable Objects 100 k peticiones al día.
+  Medido el 17 oct: ~80 peticiones/min por jugador (≈ 20 h de juego al día en total); CPU 1–3 ms (máx ~7 ms
+  en snapshot completo, medido en local con SQLite incluido). NO añadas más sondeos ni peticiones por segundo:
+  lo nuevo, por el WebSocket o en peticiones que ya existen.
 - **Patrón anti-carreras nuevo:** `server/lib/atomic.js` (`guard`, `guardSlot`, `atomicBatch`, `changed()`).
   Toda escritura que dependa de algo leído antes (slot de mochila, equipo, pila) debe ir en un
   `env.DB.batch` con una guarda al principio. Si la guarda falla → 409 `changed`.
