@@ -1,4 +1,4 @@
-# SebasPresent — PENDIENTE (3 oct 2026)
+# SebasPresent — PENDIENTE (17 oct 2026)
 
 > Para la próxima IA que tome el repo. Lee también `INVARIANTS.md`.
 > Hecho hoy: 4 commits de seguridad del servidor + 1 del cliente (ver `git log`).
@@ -35,20 +35,38 @@
   Datos en `client/src/shared/gear_sets.js`; seed 023 (ya aplicado en producción).
 - El bonus de distancia de la armadura ahora cuenta al disparar.
 
-## Pendiente — "el juego se siente vacío" (diagnóstico del 16 oct, acordado con el usuario)
-Orden decidido:
-1. **Ambiente** (rápido): música audible por defecto (hoy `music: 0.0007` en audio.js), ciclo día/noche,
-   sonidos de ambiente (mar, viento, pájaros), gaviotas/pájaros volando, voces distintas para los borrachos.
-2. **Historia principal de Guayota por capítulos** (la "carne"): escenas, decisiones, combate final contra
-   Guayota. Hoy el arco del villano es una sola misión (`sombra_cabildo`) y Guayota solo sale en la Fosa.
-   El canon está en `LORE.md` / `client/src/shared/lore.js`. Ojo: Morgath/Chona y `fosa_ignaroth` (nombres viejos).
+## Hecho el 17 oct (tarea programada de la 01:00)
+- **Ambiente**: ciclo de día y noche igual para todos (40 min: 28 de día y 12 de noche; `client/src/shared/daytime.js`
+  y `client/src/daynight.js`, sin luces nuevas), sonidos de ambiente sintetizados según bioma y hora
+  (`client/src/ambience.js`: mar, viento, pájaros, gaviotas, grillos, búhos, ranas, goteo en cuevas),
+  gaviotas/gorriones/murciélagos (`client/src/birds.js`), 13 borrachos con frases y voz propias.
+  Ajustes ⚙: deslizadores de Música, Ambiente y Efectos. La música sigue baja por defecto porque el usuario
+  pidió "90 % más baja"; ahora se sube con el deslizador y se recuerda.
+- **Historia principal «El Sello de Achamán»** (6 capítulos, `SAGA` en `client/src/shared/quests.js`,
+  escenas en `client/src/story.js`):
+  1. *La tierra tiembla* (Eldric, combate 15) · 2. *Voces bajo el Cabildo* (Alma; la reja solo de noche) ·
+  3. *Las tres llaves* (Candelaria, Guajara, Chinamada) · 4. *La traición* (Magister Perdomo) ·
+  5. *La corona de Varkhul* (Tibiabin) · 6. *El despertar de Guayota* (combate 70 + plegaria 43).
+  Decisiones guardadas en `user_quest_flags` (migración 023): `aviso` cabildo/alma, `chinamada` lucha/presente,
+  `corona` envolver/escuchar, `final` sello/pacto (Capa del Sello de Achamán o Capa de Guayota).
+  Motor nuevo: pasos `visit` (con `night`), `choice`, pasos condicionales `if: {flag: valor}`, capítulos
+  encadenados con `next`. Rutas `/api/quests/visit` y `/api/quests/choose`.
+- **Guayota en la Boca del Teide** (640, -1620) con 3 fases (`B.phases` en `client/src/shared/bosses.js`,
+  `boss_state.phase`): al 66 % despierta 3 tibicenas dormidos; al 33 % eclipse (círculos de luz de Magec, fuera
+  pega 34). Tibicenas en la grieta de Las Cañadas. Seed 024 aplicado en producción.
+- Nombres viejos: Morgath → Chona. El id interno `fosa_ignaroth` se queda (su nombre visible ya es "Guayota";
+  cambiar el id rompería registros guardados). La Fosa del este sigue teniendo su propio "eco" de Guayota.
+
+## Pendiente — "el juego se siente vacío" (orden acordado)
+1. ~~Ambiente~~ ✔ · 2. ~~Historia de Guayota~~ ✔
 3. **Motivos para volver**: tareas diarias, logros + registro de colección, contador de jefes, récord de la Fosa visible.
 4. **Jugar juntos**: eventos del mundo ("¡el Teide ruge!": jefe para todos, botín repartido), chat de grupo,
    XP/botín compartido en grupo.
 5. **Rellenar el mapa**: 30 de 64 celdas de 512 m sin contenido (sur/sureste, noroeste, este Güímar–Santa Cruz);
    pueblos fuera de La Laguna con 1–4 NPC.
 6. Habilidades que se acaban pronto (Plegaria 43, Artesanía/Flechería 30): más contenido de nivel alto.
-7. Probar en el juego: armaduras nuevas puestas en el personaje real (solo se vieron en el maniquí Xbot).
+7. Probar en el juego: armaduras nuevas puestas en el personaje real (solo se vieron en el maniquí Xbot),
+   la historia completa con un personaje real y la pelea de Guayota con 2–3 jugadores.
 
 ## Pruebas
 Scripts locales con D1 simulada (node:sqlite): `d1shim.mjs` + `worker.fetch(new Request(...), env)`.

@@ -74,6 +74,15 @@ Las hierbas son plantas canarias. La poción se hace con hierba y vial de agua; 
 
 Los ids internos (`tele_robledal`, `bank_concejo`…) no cambian: solo los nombres visibles.
 
+## La historia principal: «El Sello de Achamán»
+Seis capítulos que se desbloquean uno tras otro (ver `SAGA` en `client/src/shared/quests.js`). Tus decisiones cambian diálogos y pasos.
+1. **La tierra tiembla** — Eldric (Observatorio de Izaña) nota temblores. En la grieta humeante de Las Cañadas salen los primeros **tibicenas**. *Decisión*: avisar al **Cabildo** (consejero Benítez) o a **Alma**.
+2. **Voces bajo el Cabildo** — De noche, por la reja del sótano del Cabildo, se oye a los magos cantar a Guayota: el Cabildo quiere romper el sello.
+3. **Las tres llaves** — Para renovar el sello hacen falta la **Lágrima de Chaxiraxi** (Candelaria), la **Piedra de Echeyde** (Mina de Guajara) y el **Añepa de Tinerfe** (los guanches de Chinamada). *Decisión*: retar al mencey o llevarle un presente.
+4. **La traición** — El Cabildo ataca el rito de Alma. Hay que vencer a sus acólitos y al **Magister Perdomo** en Las Mercedes.
+5. **La corona de Varkhul** — **Tibiabin**, la vidente, sabe que la corona del mencey traidor abre el camino por el fuego. *Decisión*: envolverla en su tamarco o escuchar la voz que susurra.
+6. **El despertar de Guayota** — En la **Boca del Teide**, Guayota pelea en tres fases: llama a sus tibicenas y luego devora el sol (eclipse: solo la luz de Magec protege). *Decisión final*: arrojar su corazón a la lava y cantar el sello (**Capa del Sello de Achamán**) o quedártelo (**Capa de Guayota**).
+
 ## En el juego
 Los NPC de `client/src/shared/lore.js` tienen en su diálogo la opción "📖 Cuéntame…" con su capítulo:
 - Aldric: la isla y el Cabildo.
