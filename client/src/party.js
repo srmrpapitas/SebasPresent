@@ -115,7 +115,8 @@ export async function inviteUser(targetUserId, targetUsername) {
     refreshState().catch(() => {});
     return true;
   } catch (err) {
-    _feedLogFn?.('warning', 'No se pudo enviar la invitación.');
+    // Sesión 52 — apiFetch lanza en no-2xx: el código viene en err.code.
+    _feedLogFn?.('warning', err?.code === 'network_error' ? err.message : mapInviteError(err?.code, targetUsername));
     return false;
   }
 }
@@ -202,8 +203,8 @@ function showInviteToast(invite) {
       const r = await api.partyAccept(invite.from_user_id);
       if (r.error) _feedLogFn?.('warning', mapAcceptError(r.error));
       else _feedLogFn?.('info', `Te has unido al grupo de ${invite.from_username}.`);
-    } catch {
-      _feedLogFn?.('warning', 'No se pudo aceptar la invitación.');
+    } catch (err) {
+      _feedLogFn?.('warning', mapAcceptError(err?.code));   // Sesión 52 — err.code, no r.error
     } finally {
       closeToast();
       refreshState();
@@ -371,7 +372,10 @@ function wireDropdownActions(el) {
         const r = await api.partyLeave();
         if (r.error) _feedLogFn?.('warning', 'No se pudo salir.');
         else _feedLogFn?.('info', 'Has salido del grupo.');
-      } catch {}
+      } catch (err) {
+        // Sesión 52 — antes el error se tragaba en silencio.
+        _feedLogFn?.('warning', mapPartyError(err?.code, 'No se pudo salir del grupo.'));
+      }
       closeDropdown();
       refreshState();
       return;
@@ -383,7 +387,10 @@ function wireDropdownActions(el) {
       try {
         const r = await api.partyKick(uid);
         if (r.error) _feedLogFn?.('warning', 'No se pudo echar.');
-      } catch {}
+      } catch (err) {
+        // Sesión 52 — leer err.code (apiFetch lanza en no-2xx).
+        _feedLogFn?.('warning', mapPartyError(err?.code, 'No se pudo echar.'));
+      }
       refreshState();
       return;
     }
@@ -394,8 +401,8 @@ function wireDropdownActions(el) {
         const r = await api.partyAccept(uid);
         if (r.error) _feedLogFn?.('warning', mapAcceptError(r.error));
         else _feedLogFn?.('info', 'Te has unido al grupo.');
-      } catch {
-        _feedLogFn?.('warning', 'No se pudo aceptar.');
+      } catch (err) {
+        _feedLogFn?.('warning', mapAcceptError(err?.code));   // Sesión 52
       }
       refreshState();
       return;
@@ -432,8 +439,22 @@ function mapInviteError(code, target) {
   }
 }
 
+// Sesión 52 — errores de salir/echar (códigos del server → español).
+function mapPartyError(code, fallback) {
+  switch (code) {
+    case 'not_in_party':        return 'No estás en ningún grupo.';
+    case 'not_leader':          return 'Solo el líder puede hacer eso.';
+    case 'target_not_in_party': return 'Ese jugador ya no está en el grupo.';
+    case 'cannot_kick_self':    return 'No puedes echarte a ti mismo.';
+    case 'party_disabled':      return 'Sistema de grupos no disponible.';
+    case 'network_error':       return 'Sin conexión con el servidor.';
+    default:                    return fallback;
+  }
+}
+
 function mapAcceptError(code) {
   switch (code) {
+    case 'network_error':               return 'Sin conexión con el servidor.';   // Sesión 52
     case 'invite_not_found_or_expired': return 'La invitación expiró.';
     case 'already_in_party':            return 'Ya estás en un grupo.';
     case 'party_full':                  return 'Ese grupo está lleno.';

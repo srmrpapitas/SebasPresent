@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as interiors from './interiors.js';
+import { poolLight, releaseLight } from './spec_fx.js';   // Sesión 52 — luces del pool (sin recompilar shaders)
 import { hangingLine } from './item_tex.js';   // tendedero del porche
 import { CASONAS, CASONA_W, CASONA_D } from './shared/casonas.js';   // casonas del banco
 import { puebloHouses } from './shared/pueblo_blanco.js';          // Arico, el pueblo blanco
@@ -353,7 +354,7 @@ function buildInterior(tierId) {
     }
     g.add(hog);
     items.push({ kind: 'fuego', x: fx + 0.5, z: fz, r: 2.0, mesh: hog, deco: true });
-    fireLight = new THREE.PointLight(0xffa050, 1.2, 9, 1.5);
+    fireLight = poolLight(0xffa050, 1.2, 9, 1.5);   // Sesión 52 — prestada, ya está en la escena
     fireLight.position.set(C.x + fx + 0.6, 1.2, C.z + fz); inside_lights.push(fireLight);
   }
   // Mesa con sillas y un escaldón de gofio
@@ -454,7 +455,7 @@ function enterInterior(tier, owner) {
   inside_lights.length = 0;
   const h = buildInterior(tier);
   scene.add(h.group); scene.add(h.floor);
-  for (const l of inside_lights) scene.add(l);
+  // Sesión 52 — las luces del pool ya están en la escena: no se añaden
   inside = h;
   const C = HOUSE_CENTER;
   const ok = interiors.enterRoom({
@@ -485,7 +486,8 @@ function featuresText(tier) {
 function cleanupInside() {
   if (!inside) return;
   try { scene.remove(inside.group); scene.remove(inside.floor); } catch {}
-  for (const l of inside_lights) try { scene.remove(l); } catch {}
+  for (const l of inside_lights) releaseLight(l);   // Sesión 52 — devolver (apagada), nunca quitar
+  inside_lights.length = 0;
   inside.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
   inside.floor.geometry.dispose();
   inside = null; pendingUse = null; fireLight = null; visitingOwner = null;

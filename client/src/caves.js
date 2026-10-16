@@ -13,6 +13,7 @@
  */
 import * as THREE from 'three';
 import * as api from './api.js';
+import { poolLight, releaseLight } from './spec_fx.js';   // Sesión 52 — luces del pool (sin recompilar shaders)
 import { CAVE_LIST, caveAt, caveClearance, caveSpawn, caveExitMarker, mouthOutside, inCaveZone } from './shared/caves.js';
 
 const MOUNTAIN_R = 20;          // radio de la base de la montaña (colisión)
@@ -212,8 +213,10 @@ function buildInterior(cave) {
   // Luces: una por sala (con parpadeo suave)
   const lights = [];
   cave.rooms.forEach(([x, z, r], i) => {
-    const L = new THREE.PointLight(i === 0 ? 0xffe0b0 : cave.light, i === 0 ? LIGHT_I0 : LIGHT_I, r * 4.5, 1);
-    L.position.set(B.x + x, 7, B.z + z); g.add(L); lights.push(L);
+    // Sesión 52 — luz prestada del pool de spec_fx (ya está en la escena, en
+    // coordenadas de mundo): NO se añade al grupo y se devuelve al salir.
+    const L = poolLight(i === 0 ? 0xffe0b0 : cave.light, i === 0 ? LIGHT_I0 : LIGHT_I, r * 4.5, 1);
+    L.position.set(B.x + x, 7, B.z + z); lights.push(L);
   });
   g.userData.lights = lights;
   // Salida: luz de día que entra + cartel
@@ -244,6 +247,9 @@ function activate(cave) {
 }
 function deactivate() {
   if (!active) return;
+  // Sesión 52 — devolver las luces prestadas (apagadas, siguen en la escena)
+  for (const L of (active.group.userData.lights || [])) releaseLight(L);
+  active.group.userData.lights = [];
   try { scene.remove(active.group); } catch {}
   active.group.traverse(o => { if (o.geometry) o.geometry.dispose?.(); });
   const s = active.saved;

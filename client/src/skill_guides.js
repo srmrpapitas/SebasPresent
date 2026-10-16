@@ -296,7 +296,7 @@ function ensureDom() {
   css.textContent = `
     #skillGuideOverlay { position: fixed; inset: 0; z-index: 9000; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); }
     #skillGuideOverlay.visible { display: flex; }
-    #skillGuideOverlay .sgx-book { width: min(520px, calc(100vw - 16px)); height: min(720px, calc(100vh - 24px)); display: flex; flex-direction: column;
+    #skillGuideOverlay .sgx-book { width: min(520px, calc(100vw - 16px)); height: min(720px, calc(100vh - 24px)); height: min(720px, calc(100dvh - 24px)); display: flex; flex-direction: column;
       background: linear-gradient(#4a3f30, #3a3124); border: 3px solid #c8a043; border-radius: 10px; color: #f3e6c4; box-shadow: 0 10px 40px rgba(0,0,0,0.7); overflow: hidden; }
     #skillGuideOverlay .sgx-head { display: flex; gap: 10px; align-items: flex-start; padding: 12px 12px 8px; border-bottom: 1px solid #6a5530; }
     #skillGuideOverlay .sgx-ico { width: 46px; height: 46px; flex: 0 0 46px; display: flex; align-items: center; justify-content: center; font-size: 32px;

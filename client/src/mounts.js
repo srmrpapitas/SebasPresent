@@ -130,6 +130,7 @@ function loadDragon() {
 function attachDragon(g) {
   if (!_dragon || g.userData.dragon) return;
   const d = SkeletonUtils.clone(_dragon.scene);
+  d.traverse(o => { if (o.geometry) o.geometry.userData.shared = true; });   // Sesión 52 — geometría del modelo cargado: no liberarla al bajarse
   d.scale.setScalar(DRAGON_SCALE);
   d.position.z = DRAGON_SEAT_Z;
   const mixer = new THREE.AnimationMixer(d);
@@ -163,6 +164,7 @@ function loadHorse() {
 function attachHorse(g) {
   if (!_horse || g.userData.horse) return;
   const d = SkeletonUtils.clone(_horse.scene);
+  d.traverse(o => { if (o.geometry) o.geometry.userData.shared = true; });   // Sesión 52 — geometría del modelo cargado: no liberarla al bajarse
   d.scale.setScalar(HORSE_SCALE);
   d.rotation.y = -Math.PI / 2;
   const mixer = new THREE.AnimationMixer(d);
@@ -387,7 +389,7 @@ export function dismount(msg = null) {
   if (p && current === 'pardela' && alt > 0.5 && findLanding) {
     try { const f = findLanding(p.position.x, p.position.z); if (f) { p.position.x = f.x; p.position.z = f.z; } } catch {}
   }
-  if (obj) { scene.remove(obj); obj.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  if (obj) { scene.remove(obj); obj.traverse(o => { if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose(); }); }
   obj = null; current = null; alt = 0;
   if (msg) feedLog('warning', msg);
   renderOrb();

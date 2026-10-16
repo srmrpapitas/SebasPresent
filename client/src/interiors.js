@@ -318,6 +318,10 @@ export function leave() {
 export function forceLeave() {
   if (!active) return;
   finishLeave();
+  // Sesión 52 — también restaurar cámara/música exterior (antes se quedaba la
+  // cámara de interior tras teletransportarse). La posición NO se toca: el
+  // teletransporte ya colocó al jugador.
+  try { onLeaveCallback(); } catch (e) { console.warn('[interiors] onLeave (force):', e); }
 }
 
 function finishLeave() {

@@ -93,6 +93,7 @@ const STYLES = `
   width: 100%;
   max-width: 560px;
   max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px);
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px);
   background:
     radial-gradient(ellipse at top, rgba(80, 50, 25, 0.4), transparent 60%),
     linear-gradient(160deg, rgba(50, 30, 16, 0.98), rgba(28, 16, 8, 0.98));

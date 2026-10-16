@@ -52,7 +52,7 @@ import * as equipment from './equipment.js';  // Sesión 37 — engage range din
 // Sesión 34 — B-001b: peers ven el arma REAL que tiene cada uno equipada,
 // no la del local player heredada por SkeletonUtils.clone.
 import { attachWeaponMeshToBone, resolveWeaponHand } from './character.js';
-import { isProceduralArmor, buildProceduralArmor } from './armor_procedural.js';   // Sesión 50 — armadura de los peers
+import { isProceduralArmor, buildProceduralArmor, isProceduralWeapon } from './armor_procedural.js';   // Sesión 50 — armadura de los peers
 import * as realtime from './realtime.js';   // Sesión 50 — posiciones y eventos por WebSocket
 
 // ============================================================
@@ -1081,6 +1081,25 @@ function findHandBoneByNames(clonedMesh, candidateNames) {
  * Retorna { left, right } con los hand bones encontrados (para reusar después
  * cuando attachemos el arma real).
  */
+// Sesión 52 — recursos COMPARTIDOS. El clon de Nico (SkeletonUtils.clone)
+// comparte las geometrías con el jugador local; las armas GLB salen de la
+// caché de character.js (clone(true) → misma geometría y material); los
+// materiales de armadura/espadas procedurales salen de la caché de
+// armor_procedural.js. Se marcan con `userData.shared = true` y al quitar un
+// peer/arma solo se libera lo propio de esa instancia.
+function markShared(root, { geometry = false, material = false } = {}) {
+  root?.traverse?.(o => {
+    if (geometry && o.geometry) o.geometry.userData.shared = true;
+    if (material && o.material) for (const m of [].concat(o.material)) if (m) m.userData.shared = true;
+  });
+}
+function disposeOwned(root) {
+  root?.traverse?.(o => {
+    if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose?.();
+    if (o.material) for (const m of [].concat(o.material)) if (m && !m.userData?.shared) m.dispose?.();
+  });
+}
+
 function cleanupInheritedWeapons(clonedMesh) {
   const rightHand = findHandBoneByNames(clonedMesh, PEER_HAND_BONE_NAMES_RIGHT);
   const leftHand  = findHandBoneByNames(clonedMesh, PEER_HAND_BONE_NAMES_LEFT);
@@ -1090,16 +1109,9 @@ function cleanupInheritedWeapons(clonedMesh) {
     const toRemove = bone.children.filter(c => !c.isBone && !c.isSkinnedMesh);
     for (const c of toRemove) {
       bone.remove(c);
-      // Dispose para evitar leak. Los meshes del clone ya tienen materials
-      // tinteados (clonados del original), así que disponerlos no afecta
-      // al local player.
-      c.traverse(o => {
-        if (o.geometry) o.geometry.dispose?.();
-        if (o.material) {
-          const mats = Array.isArray(o.material) ? o.material : [o.material];
-          mats.forEach(m => m.dispose?.());
-        }
-      });
+      // Dispose para evitar leak. Los materials tinteados son propios del
+      // peer; la geometría es la del jugador local (marcada compartida) → se respeta.
+      disposeOwned(c);   // Sesión 52
     }
   }
   return { left: leftHand, right: rightHand };
@@ -1135,14 +1147,14 @@ function syncPeerArmor(peer, equipStr) {
     const bodyChanged = slot === 'cape' && peer._armorBodyGen !== peer._armorCapeGen;
     if (cur && cur.itemId === itemId && !bodyChanged) continue;
     if (cur) {
-      for (const pt of cur.parts) pt.bone.remove(pt.mesh);
+      for (const pt of cur.parts) { pt.bone.remove(pt.mesh); disposeOwned(pt.mesh); }   // Sesión 52 — geometría propia fuera; materiales de caché se quedan
       delete peer._armorParts[slot];
     }
     if (!itemId || !isProceduralArmor(itemId, slot)) continue;
     try {
       const parts = buildProceduralArmor(itemId, slot, peer.meshRoot);
       if (!parts) continue;
-      for (const pt of parts) pt.bone.add(pt.mesh);
+      for (const pt of parts) { markShared(pt.mesh, { material: true }); pt.bone.add(pt.mesh); }   // Sesión 52 — materiales de caché
       peer._armorParts[slot] = { itemId, parts };
       if (slot === 'body') peer._armorBodyGen = (peer._armorBodyGen || 0) + 1;
       if (slot === 'cape') peer._armorCapeGen = peer._armorBodyGen;
@@ -1167,6 +1179,9 @@ async function attachPeerWeapon(peer, weaponItemId, weaponType, handBones) {
       return;
     }
     const mesh = await attachWeaponMeshToBone(bone, weaponItemId, weaponType);
+    // Sesión 52 — procedural: geometría propia, materiales de caché.
+    // GLB: geometría y material de la caché de character.js.
+    if (mesh) markShared(mesh, { geometry: !isProceduralWeapon(weaponItemId, weaponType), material: true });
     if (mesh) {
       peer._peerWeaponMesh = mesh;
       peer._peerWeaponBone = bone;
@@ -1182,13 +1197,7 @@ async function attachPeerWeapon(peer, weaponItemId, weaponType, handBones) {
 function detachPeerWeapon(peer) {
   if (!peer._peerWeaponMesh || !peer._peerWeaponBone) return;
   peer._peerWeaponBone.remove(peer._peerWeaponMesh);
-  peer._peerWeaponMesh.traverse(o => {
-    if (o.geometry) o.geometry.dispose?.();
-    if (o.material) {
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      mats.forEach(m => m.dispose?.());
-    }
-  });
+  disposeOwned(peer._peerWeaponMesh);   // Sesión 52 — no tocar la caché de armas
   peer._peerWeaponMesh = null;
   peer._peerWeaponBone = null;
   peer._peerWeaponItemId = null;
@@ -1217,6 +1226,7 @@ function createPeer(p) {
       // .clone() del mesh comparte el skeleton entre instancias y se queda quieto.
       const clonedMesh = SkeletonUtils.clone(characterRef.mesh);
       clonedMesh.scale.copy(characterRef.mesh.scale);
+      markShared(clonedMesh, { geometry: true });   // Sesión 52 — geometría = la del jugador local
       clonedMesh.position.y = NICO_Y_OFFSET;
 
       // Tinte de color por hash del username (para distinguir peers)
@@ -1228,11 +1238,13 @@ function createPeer(p) {
           if (Array.isArray(obj.material)) {
             obj.material = obj.material.map(m => {
               const cloned = m.clone();
+              delete cloned.userData.shared;   // Sesión 52 — el clon es propio (clone() copia userData)
               if (cloned.color) cloned.color.multiply(tint);
               return cloned;
             });
           } else {
             obj.material = obj.material.clone();
+            delete obj.material.userData.shared;   // Sesión 52 — el clon es propio
             if (obj.material.color) obj.material.color.multiply(tint);
           }
           obj.frustumCulled = false;
@@ -1367,13 +1379,7 @@ function removePeer(userId) {
   if (peer.mixer) peer.mixer.stopAllAction();
   if (peer.group) {
     if (scene) scene.remove(peer.group);
-    peer.group.traverse(o => {
-      if (o.geometry) o.geometry.dispose?.();
-      if (o.material) {
-        if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
-        else o.material.dispose?.();
-      }
-    });
+    disposeOwned(peer.group);   // Sesión 52 — respeta geometrías/materiales compartidos
   }
   if (peer.nameTagDiv) peer.nameTagDiv.remove();
   // Sesión 18 — limpiar HP bar del peer

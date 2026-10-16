@@ -47,7 +47,11 @@ export const PALETTES = {
 // número de luces de la escena y three.js RECOMPILA los shaders de todos los
 // materiales → tirón de lag en cada especial. Ahora hay 6 luces fijas en la
 // escena (apagadas) y los efectos las toman prestadas y las devuelven.
-const POOL_N = 6;
+// Sesión 52 — cuevas (hasta 4 salas) y casas (1 hoguera) también toman luces
+// del pool en vez de crear PointLights nuevas. 8 en total: cada luz cuesta en
+// cada píxel aunque esté apagada, así que no subir más (en una cueva quedan 4
+// para especiales; si se agotan, poolLight devuelve una luz muda sin error).
+const POOL_N = 8;
 const _pool = [];
 export function start({ scene }) {
   _scene = scene;

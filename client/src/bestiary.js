@@ -177,7 +177,7 @@ function ensureDom() {
     #bestiaryOverlay { position: fixed; inset: 0; z-index: 9000; display: none; align-items: center; justify-content: center;
       background: rgba(0,0,0,0.55); }
     #bestiaryOverlay.visible { display: flex; }
-    #bestiaryOverlay .bst-book { width: min(560px, calc(100vw - 16px)); height: min(720px, calc(100vh - 24px)); display: flex; flex-direction: column;
+    #bestiaryOverlay .bst-book { width: min(560px, calc(100vw - 16px)); height: min(720px, calc(100vh - 24px)); height: min(720px, calc(100dvh - 24px)); display: flex; flex-direction: column;
       background: linear-gradient(#4a3f30, #3a3124); border: 3px solid #c8a043; border-radius: 10px; color: #f3e6c4;
       box-shadow: 0 10px 40px rgba(0,0,0,0.7), inset 0 0 0 2px #2a2318; overflow: hidden; }
     #bestiaryOverlay .bst-top { display: flex; align-items: center; padding: 10px 12px 6px; }

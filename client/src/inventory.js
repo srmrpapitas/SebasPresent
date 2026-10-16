@@ -253,6 +253,16 @@ function onSlotPointerDown(ev) {
   // Ignore non-primary buttons (botón central, etc.)
   if (ev.button !== undefined && ev.button !== 0) return;
 
+  // Sesión 52 — multitáctil: si ya hay un arrastre/pulsación en curso con otro
+  // dedo, ignorar este nuevo pointerdown (no pisar dragState). Salvaguarda: si
+  // el estado es del mismo puntero o lleva >15 s (pointerup perdido), se limpia.
+  if (dragState) {
+    if (dragState.pointerId !== ev.pointerId && performance.now() - (dragState.t0 || 0) < 15000) return;
+    detachDragListeners();
+    destroyGhost();
+    dragState = null;
+  }
+
   // Tapping an empty slot:
   //  - if we have a selectedSlot, that's a tap-to-tap destination → swap
   //  - otherwise it's a no-op
@@ -282,6 +292,7 @@ function onSlotPointerDown(ev) {
     hoverSlot: null,
     longPressed: false,
     isMouse,
+    t0: performance.now(),   // Sesión 52 — para la salvaguarda multitáctil
   };
 
   // Long-press: tras LONG_PRESS_MS sin moverse, abrir menú contextual
@@ -294,9 +305,19 @@ function onSlotPointerDown(ev) {
   }, LONG_PRESS_MS);
 
   // Listen on document so we keep tracking even outside the slot
+  // Sesión 52 — sin { once: true }: un segundo dedo que se levante antes
+  // consumía el listener y rompía el arrastre. Ahora se filtra por pointerId
+  // y se quitan a mano con detachDragListeners().
   document.addEventListener('pointermove', onPointerMove);
-  document.addEventListener('pointerup', onPointerUp, { once: true });
-  document.addEventListener('pointercancel', onPointerCancel, { once: true });
+  document.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('pointercancel', onPointerCancel);
+}
+
+// Sesión 52 — quitar los listeners de documento del arrastre activo.
+function detachDragListeners() {
+  document.removeEventListener('pointermove', onPointerMove);
+  document.removeEventListener('pointerup', onPointerUp);
+  document.removeEventListener('pointercancel', onPointerCancel);
 }
 
 function onPointerMove(ev) {
@@ -323,13 +344,12 @@ function onPointerMove(ev) {
 }
 
 function onPointerUp(ev) {
-  document.removeEventListener('pointermove', onPointerMove);
+  // Sesión 52 — ignorar el pointerup de otro dedo: el arrastre sigue vivo.
+  if (dragState && ev.pointerId !== dragState.pointerId) return;
+  detachDragListeners();
   if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
 
-  if (!dragState || ev.pointerId !== dragState.pointerId) {
-    dragState = null;
-    return;
-  }
+  if (!dragState) return;
 
   const { fromSlot, moved, hoverSlot, longPressed, isMouse } = dragState;
   destroyGhost();
@@ -386,8 +406,10 @@ function onPointerUp(ev) {
   renderAll();
 }
 
-function onPointerCancel() {
-  document.removeEventListener('pointermove', onPointerMove);
+function onPointerCancel(ev) {
+  // Sesión 52 — solo cancela si es el dedo del arrastre activo.
+  if (dragState && ev && ev.pointerId !== dragState.pointerId) return;
+  detachDragListeners();
   if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   destroyGhost();
   dragState = null;
@@ -564,7 +586,7 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
           }
         } catch (err) {
           console.warn('[inventory] to_quiver err:', err);
-          showError('No se pudo meter las flechas al carcaj.');
+          if (!handleChanged(err)) showError('No se pudo meter las flechas al carcaj.');   // Sesión 52
         }
       } else if (act === 'craft_f' || act === 'craft_c' || act === 'craft_h') {
         window.__crafting?.open?.(item.item_id, act === 'craft_f' ? 'fletching' : act === 'craft_h' ? 'herblore' : 'crafting');
@@ -629,7 +651,7 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
           }
         } catch (err) {
           console.warn('[inventory] drop err:', err);
-          showError('No se pudo soltar el ítem.');
+          if (!handleChanged(err)) showError('No se pudo soltar el ítem.');   // Sesión 52
         }
       }
       // 'cancel' o cualquier otra: nada
@@ -690,7 +712,7 @@ async function eatInstant(slotIdx) {
       try { window.__feedLog?.('info', 'Ya tienes la vida llena.'); } catch {}
     } else if (err.code === 'eat_cooldown') {
       try { window.__feedLog?.('warning', 'Aún estás comiendo…'); } catch {}
-    } else {
+    } else if (!handleChanged(err)) {   // Sesión 52
       showError(err.message || 'No se pudo comer.');
     }
   }
@@ -767,15 +789,28 @@ async function startCookAll(itemId) {
   }
 }
 
+// Sesión 52 — guardia anti doble toque en Equipar (se libera en finally).
+let equipInFlight = false;
+
 async function doEquip(slotIdx) {
-  const result = await equipment.equipFromInventory(slotIdx);
-  if (result.error) {
-    const msg = result.message || result.error;
-    showError('No se pudo equipar: ' + msg);
-    return;
+  if (equipInFlight) return;
+  equipInFlight = true;
+  try {
+    const result = await equipment.equipFromInventory(slotIdx);
+    if (result.busy) return;   // Sesión 52 — otro equipar/quitar en vuelo
+    if (result.error) {
+      // Sesión 52 — mensaje amigable (nunca el código en crudo); si fue
+      // 409 'changed', mostrar su mensaje y refrescar.
+      const msg = equipment.friendlyEquipError(result);
+      showError(result.error === 'changed' ? msg : 'No se pudo equipar: ' + msg);
+      if (result.error === 'changed') await refresh();
+      return;
+    }
+    // Refrescar inventario (el item se movió)
+    await refresh();
+  } finally {
+    equipInFlight = false;
   }
-  // Refrescar inventario (el item se movió)
-  await refresh();
 }
 
 function escapeHtml(s) {
@@ -862,8 +897,20 @@ async function commitMove(from, to) {
     slots[from] = before.from;
     slots[to]   = before.to;
     renderAll();
+    // Sesión 52 — 409 'changed': mostrar el mensaje del server y re-sincronizar.
+    if (handleChanged(err)) return;
     showError('No se pudo mover el objeto.');
   }
+}
+
+// Sesión 52 — si el error es 409 'changed' (otra acción cambió la mochila a la
+// vez), muestra su mensaje ("Tu mochila cambió mientras tanto…") y refresca.
+// Devuelve true si lo ha gestionado.
+function handleChanged(err) {
+  if (!err || err.code !== 'changed') return false;
+  showError(err.message || 'Tu mochila cambió mientras tanto. Inténtalo otra vez.');
+  refresh();
+  return true;
 }
 
 /**

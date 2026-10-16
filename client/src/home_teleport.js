@@ -59,6 +59,9 @@ let intervalHandle = null;
 
 let castingUntil = 0;
 let cooldownUntil = 0;
+// Sesión 52 — peticiones en vuelo (evita /start doble y /finish repetido).
+let startInFlight = false;
+let finishInFlight = false;
 let playerStartPos = null;
 let playerStartHp = null;
 
@@ -104,6 +107,7 @@ export function stop() {
   cdLabelEl = null;
   castingUntil = 0;
   cooldownUntil = 0;
+  startInFlight = finishInFlight = false;   // Sesión 52
   playerStartPos = null;
   playerStartHp = null;
   getPlayer = getAuthToken = apiBase = getCombatHp = feedLog = onTeleported = null;
@@ -154,24 +158,37 @@ function ensureCss() { /* no-op */ }
 // ============================================================
 // Lógica del cast (sin cambios funcionales)
 // ============================================================
+// Sesión 52 — mensaje legible para un rechazo del server (nunca el código
+// en crudo ni el texto de un internal_error).
+function rejectMessage(data, fallback) {
+  if (!data || data.error === 'internal_error' || !data.message) return fallback;
+  return data.message;
+}
+
 async function onClick() {
+  if (startInFlight || finishInFlight) return;   // Sesión 52 — petición en vuelo
   if (castingUntil > Date.now()) return;     // ya casteando
   if (cooldownUntil > Date.now()) return;    // en cooldown
   const token = getAuthToken();
   if (!token) return;
 
+  // Sesión 52 — el server exige este /start (POST .../home_teleport) ≥ 10 s
+  // antes de /finish y fuera de combate. Si lo rechaza (in_combat, dead,
+  // too_deep, in_cave…), se muestra su mensaje.
+  startInFlight = true;
   try {
     const r = await fetch(`${apiBase}/api/magic/home_teleport`, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token },
     });
-    const data = await r.json();
+    let data = null;
+    try { data = await r.json(); } catch { data = {}; }   // Sesión 52 — cuerpo vacío
     if (!r.ok || data.error) {
       if (data.error === 'on_cooldown' && data.cooldown_remaining_ms) {
         cooldownUntil = Date.now() + data.cooldown_remaining_ms;
         feedLog('warn', data.message || 'En cooldown');
       } else {
-        feedLog('warn', 'No puedes teletransportarte ahora');
+        feedLog('warn', rejectMessage(data, 'No puedes teletransportarte ahora.'));
       }
       return;
     }
@@ -186,6 +203,9 @@ async function onClick() {
     feedLog('info', 'Concentrándote para teletransportarte... (10s)');
   } catch (err) {
     console.warn('home tele start failed:', err);
+    feedLog('warn', 'Sin conexión con el servidor.');   // Sesión 52
+  } finally {
+    startInFlight = false;
   }
 }
 
@@ -204,18 +224,28 @@ function cancel(reason) {
 }
 
 async function finish() {
+  // Sesión 52 — poner castingUntil = 0 ANTES del fetch: si no, el tick de
+  // 100 ms volvía a llamar a finish() varias veces mientras esperaba.
+  if (finishInFlight) return;
+  castingUntil = 0;
   const token = getAuthToken();
-  if (!token) return;
+  if (!token) { btnEl?.classList.remove('casting'); return; }
+  finishInFlight = true;
   try {
     const r = await fetch(`${apiBase}/api/magic/home_teleport/finish`, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token },
     });
-    const data = await r.json();
+    let data = null;
+    try { data = await r.json(); } catch { data = {}; }   // Sesión 52
     if (!r.ok || data.error) {
-      feedLog('warn', 'No se pudo completar el teletransporte');
+      // Sesión 52 — mostrar el mensaje del server (p. ej. "No puedes
+      // teletransportarte en pleno combate.") en vez de uno genérico.
+      if (data.error === 'on_cooldown' && data.cooldown_remaining_ms) {
+        cooldownUntil = Date.now() + data.cooldown_remaining_ms;
+      }
+      feedLog('warn', rejectMessage(data, 'No se pudo completar el teletransporte.'));
       btnEl?.classList.remove('casting');
-      castingUntil = 0;
       return;
     }
     // Teletransportar visualmente
@@ -234,8 +264,11 @@ async function finish() {
     try { onTeleported(); } catch {}
   } catch (err) {
     console.warn('home tele finish failed:', err);
+    feedLog('warn', 'Sin conexión con el servidor.');   // Sesión 52
     btnEl?.classList.remove('casting');
     castingUntil = 0;
+  } finally {
+    finishInFlight = false;   // Sesión 52
   }
 }
 

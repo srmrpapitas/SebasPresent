@@ -382,26 +382,29 @@ function itemNameById(itemId) {
 
 function renderSearchView() {
   const q = viewState.q || '';
-  const results = viewState.results || [];
-  const loading = !!viewState.loading;
   return `
     <div class="ge-search-bar">
       <input type="text" class="ge-search-input"
              placeholder="Buscar item..." value="${escapeHtml(q)}"
              autocapitalize="off" autocorrect="off" autocomplete="off" />
     </div>
-    <div class="ge-search-results">
-      ${loading ? '<div class="ge-loading">Buscando…</div>' :
-        results.length === 0 ? '<div class="ge-search-empty">Sin resultados</div>' :
-        results.map(it => `
-          <button class="ge-search-result" data-action="pick-item" data-item-id="${escapeHtml(it.id)}">
-            <span class="ge-search-icon">${escapeHtml(it.icon || '')}</span>
-            <span class="ge-search-name">${escapeHtml(it.name)}</span>
-            <span class="ge-search-price">≈ ${formatNum(it.suggested_price)}gp</span>
-          </button>
-        `).join('')}
-    </div>
+    <div class="ge-search-results">${renderSearchResultsInner()}</div>
   `;
+}
+
+// Sesión 52 — separado para poder repintar solo los resultados.
+function renderSearchResultsInner() {
+  const results = viewState.results || [];
+  const loading = !!viewState.loading;
+  return loading ? '<div class="ge-loading">Buscando…</div>' :
+    results.length === 0 ? '<div class="ge-search-empty">Sin resultados</div>' :
+    results.map(it => `
+      <button class="ge-search-result" data-action="pick-item" data-item-id="${escapeHtml(it.id)}">
+        <span class="ge-search-icon">${escapeHtml(it.icon || '')}</span>
+        <span class="ge-search-name">${escapeHtml(it.name)}</span>
+        <span class="ge-search-price">≈ ${formatNum(it.suggested_price)}gp</span>
+      </button>
+    `).join('');
 }
 
 // ============================================================
@@ -559,6 +562,13 @@ function onClick(e) {
 
 function onInput(e) {
   const target = e.target;
+  // Sesión 52 — la búsqueda va por 'input' (valor ya actualizado), no por keydown.
+  if (view === 'search' && target.classList && target.classList.contains('ge-search-input')) {
+    clearTimeout(viewState._searchDebounce);
+    viewState.q = target.value;
+    viewState._searchDebounce = setTimeout(() => doSearch(target.value), 200);
+    return;
+  }
   if (!target.dataset.field) return;
   const field = target.dataset.field;
   const val = parseInt(target.value, 10);
@@ -569,12 +579,8 @@ function onInput(e) {
 }
 
 function onKeydown(e) {
-  if (view !== 'search') return;
-  if (e.target.classList && e.target.classList.contains('ge-search-input')) {
-    clearTimeout(viewState._searchDebounce);
-    const q = e.target.value;
-    viewState._searchDebounce = setTimeout(() => doSearch(q), 200);
-  }
+  // Sesión 52 — antes buscaba aquí con el valor VIEJO (keydown llega antes de
+  // que cambie el input). Ahora la búsqueda vive en onInput; aquí no hacemos nada.
 }
 
 // ============================================================
@@ -600,27 +606,38 @@ async function openSearch() {
   doSearch('');
 }
 
+// Sesión 52 — contador para descartar respuestas viejas que lleguen desordenadas.
+let searchSeq = 0;
+
 async function doSearch(q) {
+  if (view !== 'search') return;   // Sesión 52 — debounce que dispara tras salir de la vista
+  const seq = ++searchSeq;
   viewState.q = q;
   viewState.loading = true;
-  // re-render solo la zona de resultados para no perder foco del input
-  const resultsEl = frameEl.querySelector('.ge-search-results');
-  if (resultsEl) resultsEl.innerHTML = '<div class="ge-loading">Buscando…</div>';
+  // Sesión 52 — solo repintamos la zona de resultados; el input NUNCA se
+  // reconstruye mientras escribes (así no se pierde foco ni cursor).
+  paintSearchResults();
   try {
     const data = await api.searchGeItems(q);
+    if (seq !== searchSeq || view !== 'search') return;
     viewState.loading = false;
     viewState.results = data.items || [];
     viewState._lastQ = q;
     viewState._lastResults = viewState.results;
-    if (view !== 'search') return;
-    render();
-    const input = frameEl.querySelector('.ge-search-input');
-    if (input) { input.focus(); input.value = q; input.setSelectionRange(q.length, q.length); }
+    paintSearchResults();
   } catch (err) {
+    if (seq !== searchSeq) return;
     viewState.loading = false;
     showError(err.message || 'Error en búsqueda');
-    if (view === 'search') render();
+    if (view === 'search') paintSearchResults();
   }
+}
+
+// Sesión 52 — repinta solo .ge-search-results (si no existe, render completo).
+function paintSearchResults() {
+  const resultsEl = frameEl && frameEl.querySelector('.ge-search-results');
+  if (!resultsEl) { if (view === 'search') render(); return; }
+  resultsEl.innerHTML = renderSearchResultsInner();
 }
 
 async function openPlaceForItem(itemId) {
@@ -666,7 +683,20 @@ function updatePlaceTotal() {
   if (totalEl) totalEl.textContent = formatNum((viewState.price || 0) * (viewState.qty || 0)) + 'gp';
 }
 
+// Sesión 52 — guardas anti doble-tap (una petición en vuelo por acción).
+let placeInFlight = false;
+let claimInFlight = false;
+let cancelInFlight = false;
+
+function setActionDisabled(action, disabled) {
+  const els = frameEl ? frameEl.querySelectorAll(`[data-action="${action}"]`) : [];
+  els.forEach(el => { el.disabled = disabled; });
+}
+
 async function submitPlace() {
+  if (placeInFlight) return;   // Sesión 52 — doble tap
+  placeInFlight = true;
+  setActionDisabled('submit-place', true);
   const itemId = viewState.itemId;
   const side = viewState.side === 0 ? 'buy' : 'sell';
   const price = viewState.price;
@@ -683,6 +713,9 @@ async function submitPlace() {
     const msg = mapPlaceError(err);
     pushFeed(FEED_ERROR, msg);
     showError(msg);
+  } finally {
+    placeInFlight = false;
+    setActionDisabled('submit-place', false);
   }
 }
 
@@ -722,6 +755,8 @@ function clickCancel() {
 }
 
 async function confirmCancel(orderId) {
+  if (cancelInFlight) return;   // Sesión 52 — doble tap
+  cancelInFlight = true;
   clearCancelConfirm();
   try {
     await api.cancelGeOrder(orderId);
@@ -731,6 +766,8 @@ async function confirmCancel(orderId) {
     await refreshAndKeepFeed();
   } catch (err) {
     showError(err.message || 'Error al cancelar');
+  } finally {
+    cancelInFlight = false;
   }
 }
 
@@ -747,6 +784,10 @@ async function claim(target) {
   if (!lastSnapshot || !lastSnapshot.totals) return;
   const t = lastSnapshot.totals;
   if (!t.pending_coins && Object.keys(t.pending_items_by_id || {}).length === 0) return;
+  if (claimInFlight) return;   // Sesión 52 — doble tap
+  claimInFlight = true;
+  setActionDisabled('claim-inv', true);
+  setActionDisabled('claim-bank', true);
   try {
     const res = await api.claimAll(target);
     const claimedCount = (res.claimed || []).length;
@@ -779,6 +820,13 @@ async function claim(target) {
     await refreshAndKeepFeed();
   } catch (err) {
     showError(err.message || 'Error al reclamar');
+  } finally {
+    claimInFlight = false;
+    // Sesión 52 — si no hubo re-render, reactivamos según lo pendiente.
+    const tt = lastSnapshot && lastSnapshot.totals;
+    const nothing = !tt || (!tt.pending_coins && Object.keys(tt.pending_items_by_id || {}).length === 0);
+    setActionDisabled('claim-inv', nothing);
+    setActionDisabled('claim-bank', nothing);
   }
 }
 

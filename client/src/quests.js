@@ -93,6 +93,7 @@ export function applyServerRows(rows) { applyRows(rows || [], true); }
 export function track(id) { trackedId = id; render(); }
 
 function applyRows(rows, announce) {
+  let rewarded = false;   // Sesión 52 — ¿hubo paso/misión completada? (recompensas a la mochila)
   for (const r of rows) {
     const q = QUESTS[r.quest_id];
     if (!q) continue;
@@ -100,6 +101,7 @@ function applyRows(rows, announce) {
     state[r.quest_id] = { step: r.step, progress: r.progress, status: r.status, updatedAt: r.updated_at || Date.now() };
     if (!announce || !prev) continue;
     if (r.status === 1 && prev.status === 0) {
+      rewarded = true;
       const last = q.steps[prev.step];
       if (last) feedLog('info', `✅ ${last.text}`);
       feedLog('info', `🏆 ¡Misión completada: ${q.name}! Recompensa: ${q.reward?.text || ''}`);
@@ -107,6 +109,7 @@ function applyRows(rows, announce) {
       setTimeout(() => audio.synth?.('craft_done', { volume: 0.8 }), 250);
       celebrate(`¡${q.name} completada!`);
     } else if (r.step > prev.step) {
+      rewarded = true;
       const done = q.steps[prev.step];
       const next = q.steps[r.step];
       if (done) feedLog('info', `✅ ${done.text}${done.reward?.coins ? ` (+${done.reward.coins} monedas)` : ''}`);
@@ -119,6 +122,9 @@ function applyRows(rows, announce) {
     }
   }
   render();
+  // Sesión 52 — las recompensas (monedas/items) y las entregas cambian la
+  // mochila: refrescarla igual que hacen skills/*.js.
+  if (rewarded) { try { window.inventory?.refresh?.(); } catch {} }
 }
 
 // ------------------------------------------------------------
@@ -346,8 +352,10 @@ function ensureCss() {
   const st = document.createElement('style');
   st.id = 'quest-css';
   st.textContent = `
-    .quest-tracker { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 58px); left: 10px; z-index: 40;
-      max-width: min(62vw, 300px); background: rgba(20,14,8,0.82); border: 1px solid #c8a043; border-radius: 6px;
+    /* Sesión 52 — debajo del botón de chat (chat.js publica --chat-tab-bottom);
+       fallback: chat en top 56px + ~34px de botón + 6px de aire. */
+    .quest-tracker { position: fixed; top: calc(var(--chat-tab-bottom, calc(env(safe-area-inset-top, 0px) + 90px)) + 6px); left: 10px; z-index: 40;
+      max-width: min(62vw, 300px, calc(100vw - 230px));   /* Sesión 52 — sin tapar vida/energía (columna junto al minimapa) */ background: rgba(20,14,8,0.82); border: 1px solid #c8a043; border-radius: 6px;
       padding: 6px 9px; color: #f0e0b0; font-family: 'IM Fell English', serif; box-shadow: 0 3px 10px rgba(0,0,0,0.5);
       user-select: none; -webkit-user-select: none; }
     .quest-tracker .qt-title { font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700; color: #e8c560; text-shadow: 1px 1px 0 #000; }
@@ -355,6 +363,8 @@ function ensureCss() {
     .quest-tracker .qt-text { font-size: 13px; line-height: 1.25; margin-top: 2px; text-shadow: 1px 1px 0 #000; }
     .quest-tracker .qt-prog { color: #9fe07a; font-weight: 700; }
     .quest-tracker .qt-tip { font-size: 12px; color: #d8c89a; margin-top: 4px; border-top: 1px solid rgba(200,160,67,0.3); padding-top: 4px; }
+    /* Sesión 52 — con el panel de chat abierto, el rastreador se aparta (si no lo taparía). */
+    body.chat-open .quest-tracker { display: none; }
     .quest-tracker.qt-pulse { animation: qtPulse .6s ease-out; }
     @keyframes qtPulse { 0% { box-shadow: 0 0 0 0 rgba(255,211,90,0.9); } 100% { box-shadow: 0 0 0 14px rgba(255,211,90,0); } }
     .quest-celebrate { position: fixed; left: 50%; top: 28%; transform: translateX(-50%); z-index: 220; pointer-events: none;

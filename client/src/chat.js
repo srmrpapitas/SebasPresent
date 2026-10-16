@@ -79,6 +79,18 @@ let unreadCount    = 0;
 
 // Mensajes ya recibidos (evita duplicados al pintar local + poll después)
 const seenIds      = new Set();
+// Sesión 52 — solape del poll (ms) y tope del set de ids vistos.
+const POLL_OVERLAP_MS = 5000;
+const SEEN_IDS_MAX    = 500;
+function rememberId(id) {
+  if (id == null) return;
+  seenIds.add(id);
+  // Set mantiene orden de inserción: borramos los más viejos.
+  while (seenIds.size > SEEN_IDS_MAX) {
+    const oldest = seenIds.values().next().value;
+    seenIds.delete(oldest);
+  }
+}
 let messages       = [];   // [{id, user_id, username, message, sent_at}]
 
 // Overhead bubbles activos: userId → { div, expiresAt, message }
@@ -134,6 +146,8 @@ export async function start({
 export function stop() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   if (rootEl)    { rootEl.remove(); rootEl = null; }
+  // Sesión 52 — limpiar el offset/clase que usa el rastreador de misiones.
+  try { document.documentElement.style.removeProperty('--chat-tab-bottom'); document.body.classList.remove('chat-open'); } catch {}
   for (const [, b] of bubbles) {
     try { b.div?.remove(); } catch {}
   }
@@ -178,7 +192,7 @@ async function fetchInitial() {
     lastServerNow = r?.server_now || Date.now();
     const list = Array.isArray(r?.messages) ? r.messages : [];
     for (const msg of list) {
-      seenIds.add(msg.id);
+      rememberId(msg.id);   // Sesión 52 — set con tope
       messages.push(msg);
     }
     trimMessages();
@@ -192,7 +206,10 @@ async function fetchInitial() {
 async function poll() {
   if (!started || chatDisabled) return;
   try {
-    const r = await api.chatRecent(lastServerNow);
+    // Sesión 52 — pedimos con solape (since - 5s) para no perder mensajes que
+    // el server guardó con sent_at algo anterior a nuestro cursor; seenIds deduplica.
+    const since = lastServerNow ? Math.max(0, lastServerNow - POLL_OVERLAP_MS) : 0;
+    const r = await api.chatRecent(since || undefined);
     if (r?.chat_disabled) {
       hideUiDisabled();
       return;
@@ -202,7 +219,7 @@ async function poll() {
     let newAny = false;
     for (const msg of list) {
       if (seenIds.has(msg.id)) continue;
-      seenIds.add(msg.id);
+      rememberId(msg.id);   // Sesión 52
       messages.push(msg);
       newAny = true;
       // Overhead para todos los mensajes nuevos del poll.
@@ -228,6 +245,8 @@ function trimMessages() {
   if (messages.length > MAX_MESSAGES_IN_VIEW) {
     messages = messages.slice(-MAX_MESSAGES_IN_VIEW);
   }
+  // Sesión 52 — seenIds ahora tiene tope (SEEN_IDS_MAX, ver rememberId), muy
+  // por encima de lo que cabe en la vista + el solape del poll.
   // seenIds NO se purga aquí: si lo hiciera, un mensaje ya scrolled-out
   // podría volver a aparecer si lo trae un poll posterior. Tamaño máximo
   // del set sigue al cap del server: ~30 últimos + 50 por poll = del orden
@@ -262,15 +281,16 @@ async function trySend() {
         sent_at:  r.sent_at  || Date.now(),
       };
       if (localMsg.id != null && !seenIds.has(localMsg.id)) {
-        seenIds.add(localMsg.id);
+        rememberId(localMsg.id);   // Sesión 52
         messages.push(localMsg);
         trimMessages();
         renderMessages();
       }
       // Overhead sobre mi cabeza.
       showOverhead(myUserId, localMsg.message);
-      // Avanzar cursor para que el siguiente poll no me devuelva mi propio msg.
-      if (localMsg.sent_at > lastServerNow) lastServerNow = localMsg.sent_at;
+      // Sesión 52 — YA NO avanzamos el cursor al enviar: eso saltaba mensajes
+      // de otros llegados entre el último poll y el envío. Mi propio mensaje
+      // lo filtra seenIds cuando vuelva en el poll.
     } else {
       _feedLogFn('warning', mapSendError(r?.error));
     }
@@ -334,6 +354,7 @@ function renderRoot() {
 
   panelEl    = rootEl.querySelector('.chat-panel');
   toggleEl   = rootEl.querySelector('.chat-tab-toggle');
+  syncChatOffset();   // Sesión 52 — el rastreador de misiones se coloca debajo
   messagesEl = rootEl.querySelector('.chat-messages');
   inputEl    = rootEl.querySelector('.chat-input');
   unreadEl   = rootEl.querySelector('.chat-unread');
@@ -378,8 +399,32 @@ function renderRoot() {
   panelEl.addEventListener('pointerdown', (ev) => ev.stopPropagation());
 }
 
+// Sesión 52 — publicamos dónde acaba el botón de chat (--chat-tab-bottom) para
+// que el rastreador de misiones (quests.js) se coloque justo debajo, y una
+// clase en <body> mientras el panel está abierto para que el rastreador se oculte.
+let offsetListenerOn = false;
+function syncChatOffset() {
+  try {
+    const root = document.documentElement;
+    if (!rootEl || rootEl.style.display === 'none') {
+      root.style.removeProperty('--chat-tab-bottom');
+    } else if (toggleEl && minimized) {
+      // Solo se puede medir con el botón visible (minimizado).
+      const r = toggleEl.getBoundingClientRect();
+      if (r.height > 0) root.style.setProperty('--chat-tab-bottom', `${Math.ceil(r.bottom)}px`);
+    }
+    if (!offsetListenerOn) {
+      offsetListenerOn = true;
+      window.addEventListener('resize', () => syncChatOffset());
+      window.addEventListener('orientationchange', () => setTimeout(syncChatOffset, 250));
+      document.fonts?.ready?.then(() => syncChatOffset()).catch(() => {});
+    }
+  } catch {}
+}
+
 function expand() {
   if (!rootEl) return;
+  document.body.classList.add('chat-open');   // Sesión 52
   rootEl.classList.remove('chat-min');
   rootEl.classList.add('chat-expanded');
   minimized = false;
@@ -393,6 +438,8 @@ function minimize() {
   rootEl.classList.remove('chat-expanded');
   rootEl.classList.add('chat-min');
   minimized = true;
+  document.body.classList.remove('chat-open');   // Sesión 52
+  syncChatOffset();
   if (inputEl) inputEl.blur();   // cierra teclado virtual iOS
 }
 
@@ -424,6 +471,8 @@ function renderUnreadBadge() {
 function hideUiDisabled() {
   chatDisabled = true;
   if (rootEl) rootEl.style.display = 'none';
+  // Sesión 52 — sin chat visible, el rastreador vuelve a su sitio por defecto.
+  try { document.documentElement.style.removeProperty('--chat-tab-bottom'); document.body.classList.remove('chat-open'); } catch {}
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 

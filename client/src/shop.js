@@ -64,6 +64,7 @@ export async function open(shopId = 'general_store') {
 export function close() {
   if (!overlay) return;
   overlay.style.display = 'none';
+  clearAllLpTimers();   // Sesión 52 — ningún long-press tras cerrar
   try { onCloseCallback(); } catch {}
 }
 
@@ -158,8 +159,17 @@ function buildOverlay() {
   });
 }
 
+// Sesión 52 — timers de long-press vivos. Se limpian en cada re-render para
+// que no disparen sobre celdas ya desconectadas del DOM.
+const lpTimers = new Set();
+function clearAllLpTimers() {
+  for (const t of lpTimers) clearTimeout(t);
+  lpTimers.clear();
+}
+
 function render() {
   if (!shopData) return;
+  clearAllLpTimers();   // Sesión 52
 
   const coinsEl = document.getElementById('shopCoinsValue');
   if (coinsEl) coinsEl.textContent = formatQty(shopData.player_coins || 0);
@@ -242,11 +252,14 @@ function attachBuyHandlers(cell, item) {
     if (ev.button !== undefined && ev.button !== 0) return;
     didLongPress = false;
     if (lpTimer) clearTimeout(lpTimer);
-    lpTimer = setTimeout(() => {
-      didLongPress = true;
+    const t = lpTimer = setTimeout(() => {
+      lpTimers.delete(t);
       lpTimer = null;
+      if (!cell.isConnected) return;   // Sesión 52 — celda re-renderizada
+      didLongPress = true;
       buyItem(item, 5);
     }, 500);
+    lpTimers.add(t);
   });
 
   cell.addEventListener('pointerup', (ev) => {
@@ -274,12 +287,15 @@ function attachSellHandlers(cell, slot) {
     if (ev.button !== undefined && ev.button !== 0) return;
     didLongPress = false;
     if (lpTimer) clearTimeout(lpTimer);
-    lpTimer = setTimeout(() => {
-      didLongPress = true;
+    const t = lpTimer = setTimeout(() => {
+      lpTimers.delete(t);
       lpTimer = null;
+      if (!cell.isConnected) return;   // Sesión 52 — celda re-renderizada
+      didLongPress = true;
       const qty = Math.min(5, slot.quantity);
       sellItem(slot.slot, qty);
     }, 500);
+    lpTimers.add(t);
   });
 
   cell.addEventListener('pointerup', (ev) => {
@@ -323,6 +339,8 @@ async function buyItem(item, qty) {
     const data = await res.json();
     if (!res.ok) {
       showError(translateError(data.error, data.message));
+      // Sesión 52 — 409 'changed': la mochila cambió; re-sincronizar.
+      if (data.error === 'changed') { try { await refresh(); onInventoryChange(); } catch {} }
       return;
     }
     await refresh();
@@ -345,6 +363,8 @@ async function sellItem(slotIndex, qty) {
     const data = await res.json();
     if (!res.ok) {
       showError(translateError(data.error, data.message));
+      // Sesión 52 — 409 'changed': la mochila cambió; re-sincronizar.
+      if (data.error === 'changed') { try { await refresh(); onInventoryChange(); } catch {} }
       return;
     }
     await refresh();
@@ -365,7 +385,9 @@ function translateError(code, msg) {
     case 'cannot_sell_coins':  return 'No puedes vender monedas.';
     case 'item_not_in_shop':   return 'Este item no está en venta.';
     case 'aso_no_socio':       return 'Solo socios de La ASO. Habla con Carmita.';
-    default:                   return 'Error: ' + code;
+    // Sesión 52 — nunca mostrar el código en crudo.
+    case 'changed':            return 'Tu mochila cambió mientras tanto. Inténtalo otra vez.';
+    default:                   return 'No se pudo completar la operación.';
   }
 }
 

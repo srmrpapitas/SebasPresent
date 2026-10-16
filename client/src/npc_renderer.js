@@ -101,7 +101,32 @@ export const RIG_ENEMIES = {
   fosa_bruto:     { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 2.4 }, h: 2.3, fb: 'fosa_bruto' },   // Bruto de magma (la Fosa)
   bruto_echeyde:  { model: 'warrok', anims: 'mutant', tint: { fire: true, fireGain: 3.0 }, h: 2.6, scale: 1.15, fb: 'fosa_bruto' },   // jefe de la Cueva de Echeyde
 };
+// Sesión 52 — liberar SOLO lo propio de cada NPC. Las geometrías de los GLB
+// horneados (NPC_GEOMS) y las de los clones Mixamo (SkeletonUtils.clone
+// comparte la geometría del template) son compartidas: se marcan con
+// `geometry.userData.shared = true` / `material.userData.shared = true` y no
+// se liberan aquí (antes se marcaba el Object3D, lo que además filtraba el
+// material clonado de cada instancia GLB).
+function disposeNpcResources(root) {
+  root?.traverse?.(obj => {
+    if (obj.geometry && !obj.geometry.userData?.shared) obj.geometry.dispose?.();
+    if (obj.material) for (const m of [].concat(obj.material)) if (m && !m.userData?.shared) m.dispose?.();
+  });
+}
 function rigReady(R) { return mixamoRig.isLoaded(R.model) && mixamoRig.animsLoaded(R.anims); }
+// Sesión 52 — preload memorizado: antes se llamaba a mixamoRig.preload() en
+// CADA frame mientras el modelo cargaba (cadena de promesas nuevas sin fin).
+// Una promesa por modelo+anims; si al terminar sigue sin estar listo (falló),
+// se olvida a los 8 s para reintentar.
+const _rigPreloads = new Map();
+function preloadRig(R) {
+  const k = R.model + '|' + (R.anims || '');
+  if (_rigPreloads.has(k)) return _rigPreloads.get(k);
+  const p = Promise.resolve(mixamoRig.preload(R.model, R.anims)).catch(() => null)
+    .then(() => { if (!rigReady(R)) setTimeout(() => _rigPreloads.delete(k), 8000); });
+  _rigPreloads.set(k, p);
+  return p;
+}
 // Sesión 50 — mini jefes: '<tipo>_jefe' usa el modelo de su tipo, más grande y de otro color
 const MINIBOSS_SCALE = 1.55;
 export const baseTypeOf = (id) => String(id || '').replace(/_jefe$/, '');
@@ -337,13 +362,7 @@ export function stop() {
   _rigCount = 0;
   for (const m of npcMeshes.values()) {
     if (m.parent) m.parent.remove(m);
-    m.traverse?.(obj => {
-      if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
-      if (obj.material && !obj.userData?.shared) {
-        if (Array.isArray(obj.material)) obj.material.forEach(mm => mm.dispose());
-        else obj.material.dispose();
-      }
-    });
+    disposeNpcResources(m);   // Sesión 52 — respeta geometrías/materiales compartidos
   }
   npcMeshes.clear();
   npcDataList = [];
@@ -395,7 +414,7 @@ function upgradeBakedGoblins() {
     const R = RIG_ENEMIES[baseTypeOf(npc.def_id)];
     if (R) {
       if (mesh.userData.rig) continue;                   // ya es Mixamo
-      if (!rigReady(R)) { mixamoRig.preload(R.model, R.anims); continue; }   // aún cargando (o reintenta si falló)
+      if (!rigReady(R)) { preloadRig(R); continue; }   // aún cargando (o reintenta si falló)
       if (_rigCount >= RIG_CAP && !isMiniBoss(npc.def_id)) continue;      // tope: se queda con el modelo ligero
     } else {
       if (!npcAnimated.isReady()) continue;
@@ -405,13 +424,7 @@ function upgradeBakedGoblins() {
     // Recrear como animado, conservando posición/rotación visual actual.
     const curX = mesh.position.x, curZ = mesh.position.z, curRotY = mesh.rotation.y;
     scene.remove(mesh);
-    mesh.traverse?.(obj => {
-      if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
-      if (obj.material && !obj.userData?.shared) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
-      }
-    });
+    disposeNpcResources(mesh);   // Sesión 52 — respeta geometrías/materiales compartidos
     const fresh = createMesh(npc);
     if (!fresh) continue;
     fresh.position.x = curX; fresh.position.z = curZ; fresh.rotation.y = curRotY;
@@ -570,6 +583,8 @@ async function loadGLBs() {
         !!NPC_GLB_FORCE_NO_ZUP[typeId],
       );
       if (!baked) return;
+      // Sesión 52 — compartidas entre todos los NPC de este tipo
+      for (const p of baked.parts) { if (p.geometry) p.geometry.userData.shared = true; if (p.material) p.material.userData.shared = true; }
       NPC_GEOMS[typeId] = { id: typeId, glbParts: baked.parts };
       console.log(`Loaded NPC '${typeId}' — scaleFactor=${baked.scaleFactor.toFixed(4)} target=${NPC_TARGET_HEIGHTS[typeId] || 1.0}m`);
     } catch (err) {
@@ -622,13 +637,7 @@ function syncMeshes() {
         if (mesh.userData?.anim) {
           try { npcAnimated.disposeAnimatedInstance(mesh.userData.anim); } catch {}
         }
-        mesh.traverse?.(obj => {
-          if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
-          if (obj.material && !obj.userData?.shared) {
-            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-            else obj.material.dispose();
-          }
-        });
+        disposeNpcResources(mesh);   // Sesión 52 — respeta geometrías/materiales compartidos
         mesh = createMesh(npc);
         if (!mesh) continue;
         scene.add(mesh);
@@ -705,13 +714,7 @@ function syncMeshes() {
         try { npcAnimated.disposeAnimatedInstance(mesh.userData.anim); } catch {}
       }
       if (mesh.userData?.rig) { _rigCount = Math.max(0, _rigCount - 1); try { mesh.userData.rig.dispose(); } catch {} }
-      mesh.traverse?.(obj => {
-        if (obj.geometry && !obj.userData?.shared) obj.geometry.dispose?.();
-        if (obj.material && !obj.userData?.shared) {
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-          else obj.material.dispose();
-        }
-      });
+      disposeNpcResources(mesh);   // Sesión 52 — respeta geometrías/materiales compartidos
       npcMeshes.delete(id);
     }
   }
@@ -760,10 +763,12 @@ function createMesh(npc) {
       const tint = boss ? (R.tint?.fire ? { fire: true, fireGain: (R.tint.fireGain || 1) * 1.8 } : { hue: 0.55, sat: 1.5, val: 0.9 }) : R.tint;
       try { rig = mixamoRig.create(R.model, { tint, weapon: R.weapon, armor: R.armor, style: R.style, anims: R.anims, scale: R.scale, ownMaterials: true }); } catch (e) { rig = null; }
       if (rig) _rigCount++;
-    } else mixamoRig.preload(R.model, R.anims);
+    } else preloadRig(R);
   }
   if (rig) {
-    rig.root.traverse(o => { if (o.isMesh) o.userData = { ...o.userData, kind: 'npc-body', npcId: npc.id }; });
+    // Sesión 52 — la geometría del clon Mixamo es la del template (compartida);
+    // los materiales propios y las piezas extra (arma/armadura) los libera rig.dispose().
+    rig.root.traverse(o => { if (o.isMesh) { o.userData = { ...o.userData, kind: 'npc-body', npcId: npc.id }; if (o.geometry) o.geometry.userData.shared = true; } });
     group.add(rig.root);
     group.userData.rig = rig;
     group.userData.bodyMaterials.push(...rig.materials.filter(m => m.emissive && !R.tint?.fire));
@@ -782,7 +787,7 @@ function createMesh(npc) {
       const ownMat = part.material.clone();
       ownMat.userData = { baseColor: ownMat.color.clone() };
       const mesh = new THREE.Mesh(part.geometry, ownMat);
-      mesh.userData = { kind: 'npc-body', npcId: npc.id, shared: true };
+      mesh.userData = { kind: 'npc-body', npcId: npc.id };   // Sesión 52 — la geometría ya va marcada como compartida; ownMat es propio
       group.add(mesh);
       group.userData.bodyMaterials.push(ownMat);
     }

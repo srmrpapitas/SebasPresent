@@ -383,6 +383,8 @@ async function talkTo(o) {
       try {
         const r = await api.npcDeliver(n.id);
         quests.applyServerRows(r?.quests);
+        // Sesión 52 — los items entregados salen de la mochila: refrescarla ya.
+        try { window.inventory?.refresh?.(); } catch {}
         await afterProgress(d, t.q);
       } catch (err) {
         await d.npc(err?.code === 'missing_items' ? 'Te falta algo… revisa tu mochila.' : 'Acércate un poco más.');

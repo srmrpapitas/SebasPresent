@@ -267,7 +267,18 @@ function injectSpells() {
       '<div class="spellbook-svg">' + (SVG[sp.id] || '') + '</div>';
     btn.title = sp.name + ' — ' + (sp.desc || '');
     // Click izquierdo = seleccionar
-    btn.addEventListener('click', (e) => { e.preventDefault(); onSelectSpell(sp.id); });
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Sesión 52 — iOS: tras un long-press (menú de info) llega igualmente un
+      // click sintético; ignorarlo para que no lance/seleccione el hechizo ni
+      // cierre el menú recién abierto.
+      if (btn.dataset.lpSwallow === '1') {
+        delete btn.dataset.lpSwallow;
+        e.stopPropagation();
+        return;
+      }
+      onSelectSpell(sp.id);
+    });
     // Click derecho (PC) = menú
     btn.addEventListener('contextmenu', (e) => { e.preventDefault(); openMenu(sp.id, e.clientX, e.clientY); });
     // Long press (móvil) = menú
@@ -285,14 +296,23 @@ function attachLongPress(btn, spellId) {
   const onDown = (e) => {
     const t = e.touches ? e.touches[0] : e;
     startXY = { x: t.clientX, y: t.clientY };
+    delete btn.dataset.lpSwallow;   // Sesión 52 — toque nuevo, sin residuos
     timer = setTimeout(() => {
       timer = null;
+      // Sesión 52 — marcar para tragarse el próximo tap/click de este botón.
+      btn.dataset.lpSwallow = '1';
+      setTimeout(() => { delete btn.dataset.lpSwallow; }, 1000);   // salvaguarda
       openMenu(spellId, startXY.x, startXY.y);
     }, LONG_MS);
   };
   const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  // Sesión 52 — al soltar tras un long-press, evitar el click sintético.
+  const onEnd = (e) => {
+    cancel();
+    if (btn.dataset.lpSwallow === '1' && e.cancelable) e.preventDefault();
+  };
   btn.addEventListener('touchstart', onDown, { passive: true });
-  btn.addEventListener('touchend', cancel);
+  btn.addEventListener('touchend', onEnd);
   btn.addEventListener('touchmove', cancel);
   btn.addEventListener('touchcancel', cancel);
 }

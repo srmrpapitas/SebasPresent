@@ -285,11 +285,59 @@ export function onChange(cb) {
  *
  * @example
  *   const res = await equipment.equipFromInventory(3);
- *   if (res.error === 'level_too_low') alert(res.message);
+ *   if (res.error === 'level_too_low') reportEquipError(res);   // Sesión 52 — sin alert
  */
+// Sesión 52 — guardia anti doble toque: mientras haya un equipar/quitar en
+// vuelo, los toques repetidos se ignoran (devuelven { busy: true }, sin error).
+let equipInFlight = false;
+
+/**
+ * Sesión 52 — mensaje amigable en español para un resultado con error.
+ * Prioriza el `message` del servidor; si no hay, traduce el código.
+ */
+export function friendlyEquipError(result) {
+  if (!result) return 'No se pudo completar la acción.';
+  if (result.message) return result.message;
+  const MAP = {
+    slot_empty: 'No hay nada en esa casilla.',
+    invalid_slot: 'Casilla no válida.',
+    invalid_slot_id: 'Ranura no válida.',
+    invalid_equip_slot: 'Ese objeto no se puede equipar.',
+    not_equipable: 'Este objeto no se puede equipar.',
+    inventory_full: 'Mochila llena.',
+    bag_full: 'Mochila llena.',
+    no_quiver_equipped: 'No llevas un carcaj equipado.',
+    quiver_empty: 'El carcaj está vacío.',
+    busy: 'Inténtalo otra vez.',
+    changed: 'Tu mochila cambió mientras tanto. Inténtalo otra vez.',
+    unauthorized: 'Tu sesión ha caducado. Vuelve a entrar.',
+    no_token: 'Tu sesión ha caducado. Vuelve a entrar.',
+    network: 'Sin conexión con el servidor.',
+  };
+  return MAP[result.error] || 'No se pudo completar la acción.';
+}
+
+/**
+ * Sesión 52 — mostrar el error en el feed del juego (nunca alert ni códigos en
+ * crudo). Si fue 409 'changed', refrescar equipo + mochila.
+ */
+export function reportEquipError(result, prefix = '') {
+  const msg = prefix + friendlyEquipError(result);
+  try {
+    if (typeof window.__feedLog === 'function') window.__feedLog('warning', msg);
+    else console.warn('[equipment]', msg);
+  } catch {}
+  if (result && result.error === 'changed') {
+    refresh().catch(() => {});
+    try { window.__inventoryRefresh?.(); } catch {}
+  }
+}
+
 export async function equipFromInventory(slotIndex) {
   const token = getToken?.();
   if (!token) return { error: 'no_token' };
+  if (equipInFlight) return { busy: true };   // Sesión 52
+  equipInFlight = true;
   try {
     const res = await fetch(`${apiBase}/api/equipment/equip`, {
       method: 'POST',
@@ -310,6 +358,8 @@ export async function equipFromInventory(slotIndex) {
   } catch (err) {
     console.error('[equipment] equip err:', err);
     return { error: 'network' };
+  } finally {
+    equipInFlight = false;   // Sesión 52
   }
 }
 
@@ -323,6 +373,8 @@ export async function equipFromInventory(slotIndex) {
 export async function unequip(slotId) {
   const token = getToken?.();
   if (!token) return { error: 'no_token' };
+  if (equipInFlight) return { busy: true };   // Sesión 52
+  equipInFlight = true;
   try {
     const res = await fetch(`${apiBase}/api/equipment/unequip`, {
       method: 'POST',
@@ -336,6 +388,8 @@ export async function unequip(slotId) {
   } catch (err) {
     console.error('[equipment] unequip err:', err);
     return { error: 'network' };
+  } finally {
+    equipInFlight = false;   // Sesión 52
   }
 }
 
@@ -723,9 +777,13 @@ function showSlotTooltip(slotId, clientX, clientY) {
       ev.stopPropagation();
       const act = btn.dataset.action;
       if (act === 'unequip') {
+        // Sesión 52 — doble toque sobre "Quitar": ignorar mientras está en vuelo.
+        if (btn.dataset.busy === '1') return;
+        btn.dataset.busy = '1';
         const result = await unequip(slotId);
-        if (result.error) {
-          alert(result.message || result.error);
+        if (result.busy) { /* otro quitar/equipar en vuelo: ignorar */ }
+        else if (result.error) {
+          reportEquipError(result);   // Sesión 52 — antes alert('slot_empty')
         } else {
           // Sesion 45 — refrescar inventario: el item vuelve a la mochila
           // pero sin esto el slot no aparece hasta el proximo poll.
@@ -734,9 +792,11 @@ function showSlotTooltip(slotId, clientX, clientY) {
         el.remove();
       } else if (act === 'withdraw') {
         // Sesion 45 — sacar TODAS las flechas del carcaj al inventario.
+        if (btn.dataset.busy === '1') return;   // Sesión 52 — anti doble toque
+        btn.dataset.busy = '1';
         const result = await withdrawQuiver();
         if (result && result.error) {
-          alert(result.message || result.error);
+          reportEquipError(result);   // Sesión 52 — sin alert ni código en crudo
         } else {
           try { window.__inventoryRefresh?.(); } catch {}
         }
