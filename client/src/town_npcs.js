@@ -366,7 +366,7 @@ function hideCallout() { if (calloutEl) { calloutEl.remove(); calloutEl = null; 
 
 async function talkTo(o) {
   const n = o.n;
-  if (n.voice) { try { audio.voice?.(n.voice); } catch {} }   // Sesión 50 — habla con su voz
+  if (n.voice) { try { audio.voice?.(n.voice, { rate: n.voiceRate || 1 }); } catch {} }   // Sesión 50 — habla con su voz (S52: tono propio)
   talking = o;
   o.gestureT = 1.2;
   try { audio.sfx?.('book_open'); } catch {}

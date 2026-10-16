@@ -491,6 +491,7 @@ export async function voice(url, opts = {}) {
   try {
     if (_voiceSrc) { try { _voiceSrc.stop(); } catch {} _voiceSrc = null; }
     const src = ctx.createBufferSource(); src.buffer = buf;
+    if (opts.rate && opts.rate !== 1) src.playbackRate.value = Math.max(0.6, Math.min(1.5, opts.rate));   // Sesión 52 — cada voz con su tono
     const g = ctx.createGain();
     g.gain.value = Math.max(0, Math.min(1.5, (opts.volume ?? 1) * prefs.sfx * prefs.master * 1.8));
     src.connect(g).connect(ctx.destination);
