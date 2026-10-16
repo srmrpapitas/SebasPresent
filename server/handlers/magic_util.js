@@ -5,6 +5,7 @@
  *     alch     → el objeto del slot desaparece y recibes monedas (pct del precio base)
  * Requisitos: nivel de Magia y maná. No hace falta bastón.
  */
+import { robeBonusOf } from '../lib/robes.js';   // Sesión 52
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { serverWarp } from '../lib/warp.js';
@@ -34,7 +35,8 @@ export async function handleMagicUtility(request, env) {
     `SELECT ue.item_id, i.weapon_type FROM user_equipment ue JOIN items i ON i.id = ue.item_id WHERE ue.user_id = ? AND ue.slot_id = 'weapon'`
   ).bind(uid).first();
   const hasStaff = w?.weapon_type === 'staff';
-  const maxMana = magic.computeMaxMana(lvl, hasStaff ? STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[w.item_id] || 0) : 0);
+  const robeU = await robeBonusOf(env, uid);   // Sesión 52 — túnicas dan maná
+  const maxMana = magic.computeMaxMana(lvl, (hasStaff ? STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[w.item_id] || 0) : 0) + robeU.mana);
   const mana = magic.regenMana(st.mana_current || 0, maxMana, st.mana_updated_at || 0, now, magic.manaRegenPerSec(hasStaff, 0));
   if (mana < spell.mana_cost) return json({ error: 'no_mana', message: 'No tienes maná suficiente.' }, 400);
 

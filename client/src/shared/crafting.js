@@ -13,6 +13,7 @@
  *   group: pestaña del panel
  */
 
+import { ARCHER_SETS, MAGE_SETS, GEAR_SLOTS, PIECE_COST, MAGE_PIECE_COST, PIECE_LEVEL_OFFSET, ARCHER_PIECE_NAMES, MAGE_PIECE_NAMES } from './gear_sets.js';   // Sesión 52
 export const SKILL_LABEL = { fletching: 'Flechería', crafting: 'Artesanía', herblore: 'Herbología' };
 import { HERBLORE_RECIPES } from './herblore.js';   // Sesión 50
 
@@ -69,7 +70,31 @@ export const RECIPES = [
     tool: 'needle', in: [['leather', 2], ['thread', 1]], out: ['legs_cuero', 1] },
   { id: 'quiver_bronze', skill: 'crafting', group: 'Armadura de cuero', name: 'Carcaj de cuero', level: 20, xp: 40,
     tool: 'needle', in: [['leather', 4], ['thread', 2]], out: ['quiver_bronze', 1] },
+  // Sesión 52 — cuero por animal (arquero) y túnicas de mago
+  ...gearRecipes(),
 ];
+
+function gearRecipes() {
+  const out = [];
+  for (const [m, s] of Object.entries(ARCHER_SETS)) {
+    if (s.raw) out.push({ id: `tan_${m}`, skill: 'crafting', group: 'Cuero', name: m === 'escorpion' ? 'Limpiar caparazón' : `Curtir piel ${s.label}`,
+      level: s.level, xp: s.tanXp, tool: null, in: [[s.raw, 1]], out: [s.mat, 1] });
+    for (const slot of GEAR_SLOTS) {
+      const level = s.level + PIECE_LEVEL_OFFSET[slot], n = PIECE_COST[slot];
+      out.push({ id: `${slot}_${m}`, skill: 'crafting', group: `Armadura ${s.label}`, name: `${ARCHER_PIECE_NAMES[slot]} ${s.label}`,
+        level, xp: n * (8 + level), tool: 'needle', in: [[s.mat, n], ['thread', 1]], out: [`${slot}_${m}`, 1] });
+    }
+  }
+  for (const [m, s] of Object.entries(MAGE_SETS)) {
+    if (!s.craft) continue;
+    for (const slot of GEAR_SLOTS) {
+      const level = s.level + PIECE_LEVEL_OFFSET[slot], n = MAGE_PIECE_COST[slot];
+      out.push({ id: `${slot}_${m}`, skill: 'crafting', group: `Ropa de mago ${s.label}`, name: `${MAGE_PIECE_NAMES[slot]} ${s.label}`,
+        level, xp: Math.round(n * (6 + level * 0.9)), tool: 'needle', in: [[s.cloth, n], ['thread', 1]], out: [`${slot}_${m}`, 1] });
+    }
+  }
+  return out;
+}
 
 export const RECIPES_BY_ID = Object.fromEntries(RECIPES.map(r => [r.id, r]));
 

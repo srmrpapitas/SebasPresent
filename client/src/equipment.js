@@ -17,6 +17,7 @@
  */
 
 import { getItemIconHtml, getEquipSlotIconHtml } from './item_icons.js';
+import { STAFF_MAGIC_BONUS, CAPE_MAGIC_BONUS, robeMagicBonus } from './shared/equip_reqs.js';   // Sesión 52 — poder mágico en el panel
 
 let apiBase = null;
 let getToken = null;
@@ -676,6 +677,13 @@ function renderPanel() {
     }
   }
 
+  // Sesión 52 — poder mágico (bastón + capa de mago + túnicas)
+  let magicPower = 0;
+  try {
+    const ids = EQUIP_SLOTS.map(sl => equipped[sl.id]?.item_id).filter(Boolean);
+    magicPower = (STAFF_MAGIC_BONUS[equipped.weapon?.item_id] || 0) + (CAPE_MAGIC_BONUS[equipped.cape?.item_id] || 0) + robeMagicBonus(ids).hit;
+  } catch {}
+
   let html = '<div class="equip-panel">';
   html += '<div class="equip-panel-title">⚔ Equipamiento</div>';
   html += '<div class="equip-grid">';
@@ -705,6 +713,7 @@ function renderPanel() {
       <span title="Distancia">🏹 <b>+${rangedBonus}</b></span>
       <span title="Fuerza (golpe máximo)">💪 <b>+${strengthBonus}</b></span>
       <span title="Defensa mágica">🔮 <b>${magicDef >= 0 ? '+' : ''}${magicDef}</b></span>
+      ${magicPower ? `<span title="Poder mágico: golpe máximo de los hechizos (bastón, capa y túnicas)">✨ <b>+${magicPower}</b></span>` : ''}
     </div>
   `;
   html += '</div>';

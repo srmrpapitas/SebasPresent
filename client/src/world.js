@@ -67,6 +67,7 @@ import * as realtime from './realtime.js';        // Sesión 50 — WebSocket (P
 import * as afk from './core/afk.js';            // Sesión 51 — desconexión por inactividad
 import { HUNTING_ZONES } from './shared/hunting_zones.js';   // Sesión 51 — zonas de caza
 import * as bankChests from './bank_chests.js';
+import { STAFF_MANA_EXTRA, robeMagicBonus } from './shared/equip_reqs.js';   // Sesión 52 — maná máximo en el HUD
 import * as onboarding from './onboarding.js';   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
@@ -539,7 +540,15 @@ export async function startWorld(loggedInUser, token) {
           // el maná REGENERANDO en vivo (raw del server + tiempo transcurrido)
           // para que en el HUD se vea subir, no solo al castear.
           const hasStaff = (() => { try { return equipment.getWeaponType?.() === 'staff'; } catch { return false; } })();
-          const max = 20 + (hasStaff ? 100 : 0);
+          // Sesión 52 — + maná extra del bastón (Dragomante) y de las túnicas de mago
+          let extra = 0;
+          try {
+            const all = equipment.getAll?.() || {};
+            const ids = Object.values(all).map(e => e?.item_id).filter(Boolean);
+            const w = all.weapon?.item_id;
+            extra = (hasStaff ? (STAFF_MANA_EXTRA[w] || 0) : 0) + robeMagicBonus(ids).mana;
+          } catch {}
+          const max = 20 + (hasStaff ? 100 : 0) + extra;
           const rate = hasStaff ? 1.0 : 0.2;   // maná/seg (1.0 = 10 cada 10s)
           const raw = me.mana_current || 0;
           const updatedAt = me.mana_updated_at || 0;

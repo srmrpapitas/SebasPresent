@@ -5,6 +5,7 @@
  * El escudo se guarda en combat_stats.boosts.escudo = { v, until } y el motor
  * de combate lo resta de todo el daño que recibes (monstruos, jefes y PvP).
  */
+import { robeBonusOf } from '../lib/robes.js';   // Sesión 52
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import * as magic from '../magic.js';
@@ -36,7 +37,8 @@ export async function handleMagicSelf(request, env) {
   const cdKey = 'cd_' + spell.id;
   if (boosts[cdKey]?.until > now) return json({ error: 'cooldown', until: boosts[cdKey].until, message: `${spell.name} aún se está recargando.` }, 400);
 
-  const maxMana = magic.computeMaxMana(lvl, STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[w.item_id] || 0));
+  const robeS = await robeBonusOf(env, uid);   // Sesión 52 — túnicas dan maná
+  const maxMana = magic.computeMaxMana(lvl, STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[w.item_id] || 0) + robeS.mana);
   const mana = magic.regenMana(st.mana_current || 0, maxMana, st.mana_updated_at || 0, now, magic.manaRegenPerSec(true, 0));
   if (mana < spell.mana_cost) return json({ error: 'no_mana', mana_current: mana, mana_max: maxMana, message: 'No tienes maná suficiente.' }, 400);
 

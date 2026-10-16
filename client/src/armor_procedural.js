@@ -37,8 +37,22 @@ export const ARMOR_COLORS = {
   cuero:     { base: 0x7a4a26, trim: 0x3e2412, gem: null,     metal: 0.0,  rough: 0.9 },
   // Sesión 50 — equipo de dragón (lo sueltan los jefes)
   dragon:    { base: 0xa3161a, trim: 0x2a1412, gem: 0xffa030, metal: 0.55, rough: 0.32 },
+  // Sesión 52 — cuero de arquero por animal
+  lobo:      { base: 0x6e6a66, trim: 0x3a3632, gem: null,     metal: 0.0,  rough: 0.95 },
+  escorpion: { base: 0x6a4416, trim: 0xd09a38, gem: null,     metal: 0.15, rough: 0.45 },
+  yeti:      { base: 0xe6edf2, trim: 0x8aa2b4, gem: null,     metal: 0.0,  rough: 0.95 },
+  escama:    { base: 0x5c1212, trim: 0x1c0a08, gem: 0xffa030, metal: 0.25, rough: 0.42 },
+  // Sesión 52 — túnicas de mago (forma propia: sombrero, túnica y falda)
+  algodon:   { base: 0xe8dcc0, trim: 0x8a7650, gem: null,     metal: 0.0,  rough: 0.95 },
+  lino:      { base: 0x7f9cc2, trim: 0xece2c6, gem: null,     metal: 0.0,  rough: 0.9 },
+  seda:      { base: 0x5a2a8a, trim: 0xd8b040, gem: null,     metal: 0.05, rough: 0.55 },
+  cabildo:   { base: 0x7a1420, trim: 0x1a1414, gem: 0xff4030, metal: 0.05, rough: 0.6 },
+  magister:  { base: 0x1a2a6a, trim: 0xf0d060, gem: 0x60c0ff, metal: 0.1,  rough: 0.5 },
 };
-const TIER = { cuero: 0, bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, basaltita: 5, teiderio: 6, dragon: 7 };
+const TIER = { cuero: 0, bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, basaltita: 5, teiderio: 6, dragon: 7,
+  lobo: 0, escorpion: 1, yeti: 1, escama: 2,                                  // Sesión 52
+  algodon: 0, lino: 0, seda: 0, cabildo: 0, magister: 0 };
+const ROBE_MATS = new Set(['algodon', 'lino', 'seda', 'cabildo', 'magister']);   // Sesión 52
 const PROC_SLOTS = new Set(['helm', 'body', 'legs', 'boots', 'gloves', 'shield']);
 
 export function materialOf(itemId) {
@@ -1015,7 +1029,11 @@ function _buildProceduralArmor(itemId, slot, root) {
     catch (e) { console.warn('[armor] dragón falló, uso el genérico:', e?.message); parts = null; }
     if (parts) return parts;
   }
-  if (slot === 'helm') parts = buildHelm(root, matId);
+  if (ROBE_MATS.has(matId) && (slot === 'helm' || slot === 'body' || slot === 'legs')) {   // Sesión 52 — ropa de mago
+    try { parts = slot === 'helm' ? buildMageHat(root, matId) : slot === 'body' ? buildRobeBody(root, matId) : buildRobeSkirt(root, matId); }
+    catch (e) { console.warn('[armor] túnica falló:', e?.message); parts = null; }
+  }
+  else if (slot === 'helm') parts = buildHelm(root, matId);
   else if (slot === 'body') parts = buildBody(root, matId);
   else if (slot === 'shield') parts = buildShield(root, matId);
   else if (slot === 'legs') parts = buildLegs(root, matId);
@@ -1024,6 +1042,224 @@ function _buildProceduralArmor(itemId, slot, root) {
   if (!parts) return null;
   for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
   return parts;
+}
+
+// ------------------------------------------------------------
+// Sesión 52 — Ropa de mago: sombrero de pico, túnica con mangas de campana
+// y falda larga. Tela (sin placas ni remaches) con ribete del color "trim".
+// ------------------------------------------------------------
+/** Posición de reposo del hueso `name` en el espacio local de `frame` (o null). */
+function restIn(root, frame, name) {
+  let out = null;
+  root.traverse(o => {
+    if (out || !o.isSkinnedMesh || !o.skeleton) return;
+    const sk = o.skeleton;
+    const fi = sk.bones.indexOf(frame);
+    const b = sk.bones.find(x => bare(x.name) === name);
+    if (fi < 0 || !b) return;
+    const world = new THREE.Vector3().setFromMatrixPosition(sk.boneInverses[sk.bones.indexOf(b)].clone().invert());
+    out = world.applyMatrix4(sk.boneInverses[fi]);
+  });
+  return out;
+}
+
+function buildMageHat(root, matId) {
+  const head = findBone(root, 'Head');
+  if (!head) return null;
+  const top = childNamed(head, 'HeadTop_End');
+  const { fwd, up } = boneBasis(root, head);
+  const basis = orient(top ? top.position.clone().normalize() : up, fwd);
+  const M = mats(matId), tn = tune('helm');
+  let box = fitBox(boneVerts(root, [head, ...(top ? [top] : [])], head), basis);
+  if (!box) {
+    const L = top ? top.position.length() : fallbackLen(head, 0.2);
+    box = new THREE.Box3(new THREE.Vector3(-0.45 * L, -0.1 * L, -0.5 * L), new THREE.Vector3(0.45 * L, 1.05 * L, 0.55 * L));
+  }
+  const h = box.max.y - box.min.y;
+  const baseY = box.min.y + h * (0.62 + tn.y);
+  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2 + h * tn.z;
+  const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2 * 1.08 * tn.s;
+  const u = new THREE.Group();
+  // Ala ancha
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.8, 0.07, 20), M.base);
+  u.add(brim);
+  // Copa: cono en dos tramos, la punta se dobla hacia atrás
+  const c1 = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 1.0, 1.15, 16), M.base);
+  c1.position.y = 0.6; u.add(c1);
+  const tip = new THREE.Group(); tip.position.set(0, 1.15, 0); tip.rotation.x = -0.45; u.add(tip);
+  const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.62, 1.25, 16), M.base);
+  c2.position.y = 0.6; tip.add(c2);
+  // Cinta
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.02, 0.24, 18, 1, true), M.trim);
+  band.position.y = 0.16; u.add(band);
+  if (M.gem) {
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.17, 0), M.gem);
+    gem.position.set(0, 0.17, 1.03); u.add(gem);
+  } else {
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 0.06), M.trim);
+    buckle.position.set(0, 0.16, 1.02); u.add(buckle);
+  }
+  u.scale.set(r, r * 1.05, r);
+  u.position.set(cx, baseY, cz);
+  const g = framed(basis);
+  g.add(u);
+  return [{ bone: head, mesh: g }];
+}
+
+function buildRobeBody(root, matId) {
+  const M = mats(matId), tn = tune('body');
+  const sp = findBone(root, 'Spine'), sp1 = findBone(root, 'Spine1'), sp2 = findBone(root, 'Spine2');
+  const hips = findBone(root, 'Hips');
+  if (!sp || !sp2) return null;
+  const out = [];
+  const s = tn.s;
+  // Pecho (Spine2): tela holgada con cuello y tira central del ribete
+  {
+    const basis = spineFrame(root, sp2, 'Neck');
+    const box = fitBox(boneVerts(root, [sp2], sp2), basis);
+    if (box) {
+      const g = framed(basis);
+      const h = box.max.y - box.min.y;
+      const rx = (box.max.x - box.min.x) / 2 * 1.2 * s, rz = (box.max.z - box.min.z) / 2 * 1.26 * s;
+      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+      const y0 = box.min.y - h * 0.14, y1 = box.max.y - h * 0.02;
+      const shell = new THREE.Mesh(new THREE.CylinderGeometry(0.96, 1, 1, 16, 1, true), M.baseDS);
+      shell.scale.set(rx, y1 - y0, rz); shell.position.set(cx, (y0 + y1) / 2, cz); g.add(shell);
+      const yoke = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.98, 16, 1), M.baseDS);
+      yoke.rotation.x = -Math.PI / 2; yoke.scale.set(rx, rz, 1); yoke.position.set(cx, y1, cz); g.add(yoke);
+      const collar = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.09, 6, 16), M.trim);
+      collar.rotation.x = Math.PI / 2; collar.scale.set(rx, rz, rx); collar.position.set(cx, y1 + h * 0.02, cz); g.add(collar);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(rx * 0.22, (y1 - y0) * 1.02, rz * 0.06), M.trim);
+      stripe.position.set(cx, (y0 + y1) / 2, cz + rz * 1.0); g.add(stripe);
+      if (M.gem) {
+        const gem = new THREE.Mesh(new THREE.OctahedronGeometry(rx * 0.13, 0), M.gem);
+        gem.position.set(cx, y0 + (y1 - y0) * 0.7, cz + rz * 1.06); g.add(gem);
+      }
+      out.push({ bone: sp2, mesh: g });
+    }
+  }
+  // Vientre (Spine + Spine1)
+  {
+    const fb = sp1 || sp;
+    const basis = spineFrame(root, fb, sp1 ? 'Spine2' : 'Spine1');
+    const box = fitBox(boneVerts(root, [sp, ...(sp1 ? [sp1] : [])], fb), basis);
+    if (box) {
+      const g = framed(basis);
+      const rx = (box.max.x - box.min.x) / 2 * 1.22 * s, rz = (box.max.z - box.min.z) / 2 * 1.26 * s;
+      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.02, 1, 16, 1, true), M.baseDS);
+      m.scale.set(rx, box.max.y - box.min.y, rz); m.position.set(cx, (box.min.y + box.max.y) / 2, cz); g.add(m);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(rx * 0.22, box.max.y - box.min.y, rz * 0.06), M.trim);
+      stripe.position.set(cx, (box.min.y + box.max.y) / 2, cz + rz * 1.02); g.add(stripe);
+      out.push({ bone: fb, mesh: g });
+    }
+  }
+  // Fajín en la cintura (Hips)
+  if (hips) {
+    const basis = spineFrame(root, hips, 'Spine');
+    const box = fitBox(boneVerts(root, [hips], hips), basis);
+    if (box) {
+      const g = framed(basis);
+      const h = box.max.y - box.min.y;
+      const rx = (box.max.x - box.min.x) / 2 * 1.24 * s, rz = (box.max.z - box.min.z) / 2 * 1.3 * s;
+      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+      const sash = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 16, 1, true), M.trim);
+      sash.scale.set(rx, h * 0.22, rz); sash.position.set(cx, box.max.y - h * 0.16, cz); g.add(sash);
+      const knot = new THREE.Mesh(new THREE.BoxGeometry(rx * 0.22, h * 0.55, rz * 0.08), M.trim);
+      knot.position.set(cx + rx * 0.45, box.max.y - h * 0.42, cz + rz * 0.92); knot.rotation.z = 0.12; g.add(knot);
+      out.push({ bone: hips, mesh: g });
+    }
+  }
+  // Mangas: tela sobre el brazo y campana en el antebrazo
+  for (const side of ['Left', 'Right']) {
+    const arm = findBone(root, side + 'Arm');
+    const fore = arm ? childNamed(arm, side + 'ForeArm') : null;
+    if (!arm || !fore) continue;
+    {
+      const dir = fore.position.clone().normalize();
+      const basis = orient(dir, boneBasis(root, arm).fwd);
+      const box = fitBox(boneVerts(root, [arm], arm), basis);
+      if (box) {
+        const g = framed(basis);
+        const h = box.max.y - Math.max(0, box.min.y);
+        g.add(tubeFromBox(box, Math.max(0, box.min.y), box.min.y + h * 1.0, M.baseDS, 1.28 * s, 0.95));
+        out.push({ bone: arm, mesh: g });
+      }
+    }
+    {
+      const hand = childNamed(fore, side + 'Hand');
+      const dir = hand ? hand.position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+      const basis = orient(dir, boneBasis(root, fore).fwd);
+      const box = fitBox(boneVerts(root, [fore], fore), basis);
+      if (box) {
+        const g = framed(basis);
+        const L = hand ? hand.position.length() : (box.max.y - box.min.y);
+        const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+        const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+        const bell = new THREE.Mesh(new THREE.CylinderGeometry(r * 2.1, r * 1.2, L * 0.82, 14, 1, true), M.baseDS);
+        bell.position.set(cx, L * 0.45, cz); g.add(bell);
+        const cuff = new THREE.Mesh(new THREE.TorusGeometry(r * 2.1, r * 0.16, 5, 16), M.trim);
+        cuff.rotation.x = Math.PI / 2; cuff.position.set(cx, L * 0.86, cz); g.add(cuff);
+        out.push({ bone: fore, mesh: g });
+      }
+    }
+  }
+  return out.length ? out : null;
+}
+
+function buildRobeSkirt(root, matId) {
+  const M = mats(matId), tn = tune('legs');
+  const hips = findBone(root, 'Hips');
+  if (!hips) return null;
+  const out = [];
+  const basis = spineFrame(root, hips, 'Spine');
+  const box = fitBox(boneVerts(root, [hips], hips), basis);
+  const inv = basis.clone().transpose();
+  const knee = restIn(root, hips, 'LeftLeg'), foot = restIn(root, hips, 'LeftFoot');
+  if (box && knee && foot) {
+    const g = framed(basis);
+    const kneeY = knee.clone().applyMatrix4(inv).y, footY = foot.clone().applyMatrix4(inv).y;
+    const h = box.max.y - box.min.y;
+    const rx = (box.max.x - box.min.x) / 2 * 1.2 * tn.s, rz = (box.max.z - box.min.z) / 2 * 1.26 * tn.s;
+    const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+    const yTop = box.max.y - h * 0.1;
+    const yBot = kneeY + (footY - kneeY) * 0.62;          // por debajo de la rodilla, sin tapar las botas
+    const len = yTop - yBot;
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.7, 1, 18, 1, true), M.baseDS);
+    skirt.scale.set(rx, len, rz); skirt.position.set(cx, (yTop + yBot) / 2, cz); g.add(skirt);
+    const hem = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.05, 5, 22), M.trim);
+    hem.rotation.x = Math.PI / 2; hem.scale.set(rx, rz, rx); hem.position.set(cx, yBot, cz); g.add(hem);
+    // Paño delantero del color del ribete
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(rx * 0.5, len * 0.98, rz * 0.05), M.trim);
+    panel.position.set(cx, (yTop + yBot) / 2, cz + rz * 1.36); panel.rotation.x = -0.32; g.add(panel);
+    out.push({ bone: hips, mesh: g });
+  }
+  // Pantalón holgado debajo (para que al andar no se vea la pierna desnuda)
+  for (const side of ['Left', 'Right']) {
+    const up = findBone(root, side + 'UpLeg');
+    const leg = findBone(root, side + 'Leg');
+    if (!up || !leg) continue;
+    const foot2 = childNamed(leg, side + 'Foot') || findBone(root, side + 'Foot');
+    const dirS = foot2 ? foot2.position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+    const bS = orient(dirS, boneBasis(root, leg).fwd);
+    const boxS = fitBox(boneVerts(root, [leg], leg), bS);
+    if (boxS) {
+      const gS = framed(bS);
+      const hS = boxS.max.y - boxS.min.y;
+      gS.add(tubeFromBox(boxS, boxS.min.y + hS * 0.05, boxS.max.y - hS * 0.08, M.dark, 1.2 * tn.s, 0.9));
+      out.push({ bone: leg, mesh: gS });
+    }
+    const dirT = leg.position.clone().normalize();
+    const bT = orient(dirT, boneBasis(root, up).fwd);
+    const boxT = fitBox(boneVerts(root, [up], up), bT);
+    if (boxT) {
+      const gT = framed(bT);
+      const hT = boxT.max.y - boxT.min.y;
+      gT.add(tubeFromBox(boxT, boxT.min.y + hT * 0.15, boxT.max.y, M.dark, 1.14 * tn.s, 0.86));
+      out.push({ bone: up, mesh: gT });
+    }
+  }
+  return out.length ? out : null;
 }
 
 export const DRAGON_HELPERS = { findBone, childNamed, boneBasis, orient, boneVerts, fitBox, framed, tune, spineFrame };

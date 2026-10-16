@@ -610,7 +610,19 @@ const SKILL_ICONS = {
     teiderio:  { base: '#2f9e8f', hi: '#7fe8d8', lo: '#15564d', gem: '#5fffe0' },
     cuero:     { base: '#8a5a30', hi: '#b88050', lo: '#4a2e18', gem: '#c89060' },   // Sesión 50
     dragon:    { base: '#a3161a', hi: '#e8443a', lo: '#2a1412', gem: '#ffa030' },   // Sesión 50 — jefes
+    // Sesión 52 — cuero de arquero por animal y ropa de mago (las túnicas se
+    // redibujan abajo con forma propia; aquí salen guantes y botas)
+    lobo:      { base: '#6e6a66', hi: '#a8a29c', lo: '#34312e', gem: '#c8c0b8' },
+    escorpion: { base: '#7a4e1a', hi: '#d09a38', lo: '#3a2408', gem: '#ffd070' },
+    yeti:      { base: '#d8e2ea', hi: '#ffffff', lo: '#8aa2b4', gem: '#eaf6ff' },
+    escama:    { base: '#6a1414', hi: '#b83a2a', lo: '#1c0a08', gem: '#ffa030' },
+    algodon:   { base: '#e0d4b6', hi: '#fbf4e2', lo: '#8a7650', gem: '#c8b890' },
+    lino:      { base: '#7f9cc2', hi: '#b8cce6', lo: '#3c5274', gem: '#ece2c6' },
+    seda:      { base: '#5a2a8a', hi: '#9a62c8', lo: '#2a1044', gem: '#d8b040' },
+    cabildo:   { base: '#7a1420', hi: '#c03040', lo: '#2a080c', gem: '#ff4030' },
+    magister:  { base: '#1a2a6a', hi: '#3a5ac0', lo: '#0a1030', gem: '#60c0ff' },
   };
+  const NO_METAL_EXTRAS = new Set(['lobo', 'escorpion', 'yeti', 'escama', 'algodon', 'lino', 'seda', 'cabildo', 'magister', 'cuero']);
   // Sesión 51 — iconos rehechos: degradados metálicos, sombreado, remaches,
   // brillos y adornos por material (cuernos/púas en dragón, gema en los altos).
   const svg = (defs, inner) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision"><defs>${defs}</defs><ellipse cx="16" cy="29.6" rx="10" ry="1.5" fill="#000" opacity=".28"/>${inner}</svg>`;
@@ -746,12 +758,13 @@ const SKILL_ICONS = {
 
     const add = (id, v) => { if (!Object.prototype.hasOwnProperty.call(ICONS, id)) ICONS[id] = v; };
     // Dragón: solo drop de jefes (no hay mena, lingote, espadas ni flechas)
-    if (!isDr) { add(`ore_${m}`, ore); add(`bar_${m}`, bar); }
+    if (!isDr && !NO_METAL_EXTRAS.has(m)) { add(`ore_${m}`, ore); add(`bar_${m}`, bar); }
     add(`helm_${m}`, helm);
     add(m === 'bronze' ? 'chest_bronze' : `body_${m}`, body);
     add(`legs_${m}`, legs);
     add(`boots_${m}`, boots);
     add(`gloves_${m}`, gloves);
+    if (NO_METAL_EXTRAS.has(m) && m !== 'cuero') continue;   // Sesión 52 — sin espadas/escudos/flechas de cuero o tela
     if (!isDr) { ICONS[`sword_${m}`] = sword; ICONS[`sword_${m}_2h`] = sword2h; }
     ICONS[`shield_${m}`] = shield;
     if (isDr) continue;
@@ -763,6 +776,78 @@ const SKILL_ICONS = {
       <polygon points="3,25 8,24 7,29" fill="#f0f0f0" stroke="#000" stroke-width="0.7"/>
       <polygon points="5,22 10,22 8,26" fill="#e8e8e8" stroke="#000" stroke-width="0.7"/>`));
   }
+})();
+
+// ============================================================
+// Sesión 52 — Ropa de mago (sombrero de pico, túnica, falda) y materiales
+// nuevos (pieles, caparazón, escamas, telas).
+// ============================================================
+(function addRobeAndHideIcons() {
+  const ROBES = {
+    algodon:  ['#e0d4b6', '#fbf4e2', '#8a7650', '#8a7650', null],
+    lino:     ['#7f9cc2', '#b8cce6', '#3c5274', '#ece2c6', null],
+    seda:     ['#5a2a8a', '#9a62c8', '#2a1044', '#d8b040', null],
+    cabildo:  ['#7a1420', '#c03040', '#2a080c', '#1a1414', '#ff4030'],
+    magister: ['#1a2a6a', '#3a5ac0', '#0a1030', '#f0d060', '#60c0ff'],
+  };
+  const S = 'stroke="#140d08" stroke-width=".9" stroke-linejoin="round"';
+  const wrap = (id, base, hi, lo, inner) => `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision"><defs><linearGradient id="rb${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${hi}"/><stop offset=".55" stop-color="${base}"/><stop offset="1" stop-color="${lo}"/></linearGradient></defs><ellipse cx="16" cy="29.6" rx="10" ry="1.5" fill="#000" opacity=".28"/>${inner}</svg>`;
+  for (const [m, [base, hi, lo, trim, gem]] of Object.entries(ROBES)) {
+    const F = `url(#rb${m})`;
+    const gemSvg = (x, y, r) => gem ? `<path d="M${x} ${y - r} L${x + r} ${y} L${x} ${y + r} L${x - r} ${y} Z" fill="${gem}" stroke="#fff" stroke-width=".4"/>` : '';
+    ICONS[`helm_${m}`] = wrap(`h${m}`, base, hi, lo, `
+      <ellipse cx="16" cy="23.5" rx="13" ry="3.4" fill="${F}" ${S}/>
+      <path d="M8.6 23 Q10 14 14 9 Q17 5 21.5 2.6 Q19.6 7 20.4 11 Q22 17 23.4 23 Q16 25.4 8.6 23 Z" fill="${F}" ${S}/>
+      <path d="M8.9 21.2 Q16 23.4 23.1 21.2 L23.4 23 Q16 25.4 8.6 23 Z" fill="${trim}" ${S}/>
+      ${gemSvg(16, 22.4, 1.5)}
+      <path d="M11.6 18 Q13 12.6 16.4 8.6" fill="none" stroke="#fff" stroke-width=".9" opacity=".45" stroke-linecap="round"/>`);
+    ICONS[`body_${m}`] = wrap(`b${m}`, base, hi, lo, `
+      <path d="M10.6 5 L13.4 4 Q16 6.6 18.6 4 L21.4 5 L22.6 13 L25 27.4 Q16 29.4 7 27.4 L9.4 13 Z" fill="${F}" ${S}/>
+      <path d="M10.6 5 Q5.4 6.4 2.6 15.6 L6.8 17.4 L9.6 11 Z" fill="${F}" ${S}/>
+      <path d="M21.4 5 Q26.6 6.4 29.4 15.6 L25.2 17.4 L22.4 11 Z" fill="${F}" ${S}/>
+      <path d="M2.6 15.6 L6.8 17.4" stroke="${trim}" stroke-width="1.6"/><path d="M29.4 15.6 L25.2 17.4" stroke="${trim}" stroke-width="1.6"/>
+      <path d="M13.4 4 Q16 6.6 18.6 4" fill="none" stroke="${trim}" stroke-width="1.4"/>
+      <path d="M15 6.4 H17 V28.2 H15 Z" fill="${trim}" opacity=".95"/>
+      <path d="M9.4 15.2 H22.6 V17 H9.4 Z" fill="${trim}" ${S}/>
+      ${gemSvg(16, 11, 1.4)}
+      <path d="M11.4 8 Q10.6 14 9.6 22" fill="none" stroke="#fff" stroke-width=".9" opacity=".4" stroke-linecap="round"/>`);
+    ICONS[`legs_${m}`] = wrap(`l${m}`, base, hi, lo, `
+      <path d="M10.4 4.6 H21.6 L26.6 26.6 Q16 29 5.4 26.6 Z" fill="${F}" ${S}/>
+      <rect x="10" y="3.6" width="12" height="3" rx=".6" fill="${trim}" ${S}/>
+      <path d="M5.6 25.8 Q16 28.2 26.4 25.8" fill="none" stroke="${trim}" stroke-width="1.4"/>
+      <path d="M14.6 6.6 H17.4 L18.6 27.6 H13.4 Z" fill="${trim}" opacity=".9"/>
+      <path d="M11.6 8 L8.6 24" stroke="#fff" stroke-width=".9" opacity=".4" stroke-linecap="round"/>
+      ${gemSvg(16, 5.1, 1.1)}`);
+  }
+  // Materiales
+  const hide = (id, base, hi, lo, spots) => wrap(id, base, hi, lo, `
+    <path d="M7 6 Q11 3.4 16 5.4 Q21 3.4 25 6 Q24 10 26.6 13 Q24.6 17 26 21.4 Q22 25.6 16 24.4 Q10 25.6 6 21.4 Q7.4 17 5.4 13 Q8 10 7 6 Z" fill="url(#rb${id})" ${S}/>
+    ${spots}`);
+  ICONS.piel_lobo = hide('pl', '#7a7672', '#b0aaa4', '#3a3632', '<path d="M11 10 Q16 8 21 10 M10 15 Q16 13 22 15 M11 20 Q16 18.4 21 20" fill="none" stroke="#3a3632" stroke-width=".9" opacity=".7"/>');
+  ICONS.piel_yeti = hide('py', '#e6edf2', '#ffffff', '#9ab0c0', '<path d="M10 10 q1 -1.4 2 0 M15 9 q1 -1.4 2 0 M20 10 q1 -1.4 2 0 M12 16 q1 -1.4 2 0 M18 16 q1 -1.4 2 0 M15 21 q1 -1.4 2 0" fill="none" stroke="#9ab0c0" stroke-width=".8"/>');
+  const roll = (id, base, hi, lo, band) => wrap(id, base, hi, lo, `
+    <path d="M6 9 H22 V25 H6 Z" fill="url(#rb${id})" ${S}/>
+    <ellipse cx="22" cy="17" rx="3.6" ry="8" fill="${hi}" ${S}/><ellipse cx="22" cy="17" rx="1.4" ry="3.2" fill="${lo}"/>
+    <ellipse cx="6" cy="17" rx="3.6" ry="8" fill="${base}" ${S}/>
+    <path d="M12 9 V25" stroke="${band}" stroke-width="1.6"/>`);
+  ICONS.cuero_lobo = roll('cl', '#6e6a66', '#a8a29c', '#34312e', '#3a2410');
+  ICONS.cuero_yeti = roll('cy', '#dde6ec', '#ffffff', '#8aa2b4', '#5a6a78');
+  ICONS.tela_algodon = roll('ta', '#e8dcc0', '#fbf6e8', '#a8946a', '#c8a85a');
+  ICONS.tela_lino = roll('tl', '#7f9cc2', '#c4d4ea', '#3c5274', '#ece2c6');
+  ICONS.tela_seda = roll('ts', '#6a34a0', '#b07ae0', '#2a1044', '#d8b040');
+  ICONS.caparazon_escorpion = wrap('ce', '#7a4e1a', '#d09a38', '#3a2408', `
+    <path d="M16 3.6 Q25 6 25.6 15 Q25 24 16 28 Q7 24 6.4 15 Q7 6 16 3.6 Z" fill="url(#rbce)" ${S}/>
+    <path d="M8 11 Q16 8.6 24 11 M7 16 Q16 13.6 25 16 M8 21 Q16 18.6 24 21" fill="none" stroke="#3a2408" stroke-width="1"/>
+    <path d="M16 4 V27.4" stroke="#3a2408" stroke-width=".8" opacity=".7"/>
+    <path d="M10.6 8.6 Q12.6 6 15.4 5.4" fill="none" stroke="#fff" stroke-width=".9" opacity=".5" stroke-linecap="round"/>`);
+  ICONS.placa_escorpion = wrap('pe', '#7a4e1a', '#d09a38', '#3a2408', `
+    <path d="M6 10 L16 6 L26 10 L24 24 L16 27 L8 24 Z" fill="url(#rbpe)" ${S}/>
+    <path d="M8.6 14 L16 11 L23.4 14 M9 19 L16 16 L23 19" fill="none" stroke="#3a2408" stroke-width=".9"/>`);
+  ICONS.escama_dragon = wrap('ed', '#8a1a14', '#e0503a', '#2a0806', `
+    <path d="M16 3 Q26 9 24 19 Q22 26 16 29 Q10 26 8 19 Q6 9 16 3 Z" fill="url(#rbed)" ${S}/>
+    <path d="M16 6 V26" stroke="#2a0806" stroke-width="1"/>
+    <path d="M16 10 L11 14 M16 15 L10.6 19.4 M16 10 L21 14 M16 15 L21.4 19.4" stroke="#2a0806" stroke-width=".8" opacity=".8"/>
+    <path d="M12 8 Q13.6 6 15.4 5.4" fill="none" stroke="#ffd0a0" stroke-width=".9" opacity=".7" stroke-linecap="round"/>`);
 })();
 
 // ============================================================

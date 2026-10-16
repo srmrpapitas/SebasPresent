@@ -34,7 +34,7 @@ import { BOSSES } from '../client/src/shared/bosses.js';   // Sesión 50 — jef
 import { activeBoosts } from '../client/src/shared/herblore.js';   // Sesión 50 — pociones
 import { wanderPos, isWanderer } from '../client/src/shared/wander.js';   // Sesión 51
 import { cellsAround } from '../client/src/shared/grid.js';            // Sesión 51 — celdas
-import { specialOf, resolveSpecial, clipSpecHits, CAPE_MAGIC_BONUS, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA, magicDefOf, magicDamageMult } from '../client/src/shared/equip_reqs.js';                // Sesión 50
+import { specialOf, resolveSpecial, clipSpecHits, CAPE_MAGIC_BONUS, STAFF_MAGIC_BONUS, STAFF_MANA_EXTRA, magicDefOf, magicDamageMult, robeMagicBonus } from '../client/src/shared/equip_reqs.js';                // Sesión 50
 
 // Sesión 41 — Bonus de maná del staff normal. Hardcodeado hasta que los ítems
 // tengan stats de maná/magia propios (llega con smithing/crafting). Base 20 +
@@ -603,6 +603,13 @@ async function getUserCapeId(db, userId) {
     return row?.item_id || null;
   } catch { return null; }
 }
+// Sesión 52 — túnicas de mago: +golpe máximo de hechizos y +maná
+async function getUserRobeBonus(db, userId) {
+  try {
+    const rows = await db.all(`SELECT item_id FROM user_equipment WHERE user_id = ?`, [userId]);
+    return robeMagicBonus((rows || []).map(r => r.item_id));
+  } catch { return { hit: 0, mana: 0 }; }
+}
 // Sesión 50 — item del arma equipada (para saber si tiene ataque especial)
 async function getUserWeaponItemId(db, userId) {
   try {
@@ -652,7 +659,16 @@ async function getUserBowRangedBonus(db, userId) {
        WHERE ue.user_id = ? AND ue.slot_id = 'quiver'`,
       [userId]
     );
-    return (bow?.ranged_bonus || 0) + (quiver?.ranged_bonus || 0);
+    // Sesión 52 — y el de la armadura (cuero de arquero, capa de fuego…).
+    // Antes solo salía en el panel de equipo y no contaba al disparar.
+    const armour = await db.first(
+      `SELECT COALESCE(SUM(i.ranged_bonus), 0) AS rb
+       FROM user_equipment ue
+       JOIN items i ON i.id = ue.item_id
+       WHERE ue.user_id = ? AND ue.slot_id NOT IN ('weapon', 'quiver', 'ammo')`,
+      [userId]
+    );
+    return (bow?.ranged_bonus || 0) + (quiver?.ranged_bonus || 0) + (armour?.rb || 0);
   } catch (err) {
     console.warn('[combat] getUserBowRangedBonus fallback 0:', err.message);
     return 0;
@@ -1062,8 +1078,9 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const isMagic = (weaponType === 'staff') && !!opts.spellId;
   const spell = isMagic ? magic.getSpell(opts.spellId) : null;
   const weaponItemId = await getUserWeaponItemId(db, userId);   // Sesión 50
-  const staffMagicBonus = (STAFF_MAGIC_BONUS[weaponItemId] || 0) + (isMagic ? CAPE_MAGIC_BONUS[await getUserCapeId(db, userId)] || 0 : 0);   // Sesión 51 — capas de mago
-  const staffManaBonus = STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemId] || 0);
+  const robe = isMagic ? await getUserRobeBonus(db, userId) : { hit: 0, mana: 0 };   // Sesión 52 — túnicas
+  const staffMagicBonus = (STAFF_MAGIC_BONUS[weaponItemId] || 0) + (isMagic ? CAPE_MAGIC_BONUS[await getUserCapeId(db, userId)] || 0 : 0) + robe.hit;   // Sesión 51 — capas de mago
+  const staffManaBonus = STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemId] || 0) + robe.mana;
   if (isMagic && !spell) return { error: 'invalid_spell', weapon_type: weaponType };
   if (isMagic && spell.kind) return { error: 'self_spell', weapon_type: weaponType };   // Sesión 50 — se lanzan aparte
   const stanceKey = STYLE_TO_STANCE[style] || 'smash';
@@ -1807,6 +1824,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   let spellPvp = null;
   let magicLevelPvp = 0;
   let manaAfterPvp = null;
+  let robePvp = { hit: 0, mana: 0 };   // Sesión 52 — túnicas del atacante
   if (isMagicPvp && opts.spellId) {
     spellPvp = magic.getSpell(opts.spellId);
     if (!spellPvp) return releasePvp({ error: 'unknown_spell' });
@@ -1816,7 +1834,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     if (magicLevelPvp < spellPvp.magic_level_req) {
       return releasePvp({ error: 'magic_level_too_low', required: spellPvp.magic_level_req });
     }
-    const maxMana = magic.computeMaxMana(magicLevelPvp, STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemIdPvp] || 0));
+    robePvp = await getUserRobeBonus(db, attackerId);   // Sesión 52 — túnicas
+    const maxMana = magic.computeMaxMana(magicLevelPvp, STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemIdPvp] || 0) + robePvp.mana);
     const regenPerSec = magic.manaRegenPerSec(true, 0);
     const manaNow = magic.regenMana(
       attackerStats.mana_current || 0, maxMana,
@@ -1844,7 +1863,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const doRollPvp = (acc = 1) => (
     isMagicPvp && spellPvp
       ? magic.rollHitMagic(rng, Math.floor(magicLevelPvp * (1 + attackerFx.mag)) + (attackerFx.flat?.magic || 0), Math.max(1, Math.round(targetLvls.defence * targetDefMult / acc)),
-          magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, (STAFF_MAGIC_BONUS[weaponItemIdPvp] || 0) + capeMagicPvp))
+          magic.calcMaxHitMagic(magicLevelPvp, spellPvp.base_max_hit, (STAFF_MAGIC_BONUS[weaponItemIdPvp] || 0) + capeMagicPvp + robePvp.hit))
       : isRanged
       ? rollHitRanged(rng, attackerLvls.ranged, targetLvls.defence,
           totalRangedBonusPvp, calcMaxHitRanged(attackerLvls.ranged, totalRangedBonusPvp), targetDefMult / acc)

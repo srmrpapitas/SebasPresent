@@ -9,6 +9,9 @@
  * examinar y en el libro de skills.
  */
 
+import { gearRequirement, GEAR_MDEF_FACTORS } from './gear_sets.js';   // Sesión 52 — arquero por animal y túnicas
+export { robeMagicBonus } from './gear_sets.js';
+
 export const EQUIP_LEVEL = {
   bronze: 1, hierro: 5, acero: 10, oro: 20, obsidiana: 30, basaltita: 40, teiderio: 60,
   dragon: 60,   // Sesión 50 — no se fabrica: la sueltan los jefes (1/20)
@@ -51,6 +54,9 @@ export function equipRequirement(item) {
   if (!item) return null;
   const id = item.id || item.item_id;
   if (BY_ITEM[id]) return BY_ITEM[id];
+  // Sesión 52 — cuero por animal pide Distancia; túnicas piden Magia
+  const g = gearRequirement(id, item.equip_slot);
+  if (g) return g;
   const mat = (item.material && EQUIP_LEVEL[item.material] != null) ? item.material : materialFromId(id);
   if (!mat) return null;
   const level = EQUIP_LEVEL[mat];
@@ -172,6 +178,7 @@ const MAGIC_DEF_BY_MATERIAL = {
   cotton: 1, cotton_linen: 1, linen: 1, linen_silk: 1.2, silk: 1.4, polyester: 1, polyester_cotton: 1,
   earth: 1, ice: 1.2, lava: 1, fire: 0.6, magma: 0.7,
   bronze: -0.3, hierro: -0.3, acero: -0.3, oro: -0.25, obsidiana: -0.25, basaltita: -0.25, teiderio: -0.25, dragon: -0.15,
+  ...GEAR_MDEF_FACTORS,   // Sesión 52 — lobo, escorpión, yeti, escama; algodón… magister
 };
 export function magicDefOf(material, defenceBonus) {
   const f = MAGIC_DEF_BY_MATERIAL[material];
