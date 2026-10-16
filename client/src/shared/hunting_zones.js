@@ -44,6 +44,10 @@ export const HUNTING_ZONES = [
   { id: 'cumbres_yeti', name: 'Cumbres de los yetis', x: -250, z: -1650, r: 36,
     mobs: [['yeti', 16], ['yeti_jefe', 1]],
     how: 'En la nieve del norte, unos 450 m al oeste de Las Cañadas. Lleva comida.' },
+  // Sesión 52 — historia «El Sello de Achamán»
+  { id: 'grieta_tibicenas', name: 'Grieta de Las Cañadas', x: 420, z: -1560, r: 22,
+    mobs: [['tibicena', 8]],
+    how: 'Entre Las Cañadas y el Teide, unos 230 m al este del pueblo. Los tibicenas salen de la grieta humeante.' },
   { id: 'bosque_ogros', name: 'Bosque de los ogros', x: 1500, z: -1160, r: 34,
     mobs: [['ogro_anaga', 10], ['ogro_anaga_jefe', 1]],
     how: 'En el monte de Anaga, unos 400 m al norte de Santa Cruz.' },
@@ -91,6 +95,8 @@ export const BEAST_EXTRA_PLACES = {
   rey_yeti: 'Cumbres de Las Cañadas, entre Las Cañadas y El Teide.',
   bruto_echeyde: 'Al fondo de la Cueva de Echeyde (boca en el Malpaís, junto al Cementerio de Teno).',
   fosa_ignaroth: 'La última oleada de la Fosa de Guayota.',
+  guayota: 'La Boca del Teide, al este de Las Cañadas (final de la historia «El Sello de Achamán»).',   // Sesión 52
+  tibicena_guayota: 'Solo aparecen cuando Guayota los llama, en la Boca del Teide.',
 };
 
 /** Cuevas: además de su zona, estas criaturas viven aquí. */
@@ -104,10 +110,10 @@ export const BEAST_CAVES = {
 /** Categorías del Bestiario (orden de las pestañas). */
 export const BEAST_GROUPS = [
   { id: 'animales', name: 'Animales', ids: ['chicken', 'cow', 'cabra', 'rat', 'rat_jefe', 'boar', 'boar_jefe', 'wolf', 'wolf_jefe', 'spider', 'spider_jefe', 'scorpion', 'scorpion_jefe'] },
-  { id: 'criaturas', name: 'Criaturas', ids: ['goblin', 'goblin_jefe', 'golem', 'golem_jefe', 'yeti', 'yeti_jefe', 'ogro_anaga', 'ogro_anaga_jefe'] },
+  { id: 'criaturas', name: 'Criaturas', ids: ['goblin', 'goblin_jefe', 'golem', 'golem_jefe', 'yeti', 'yeti_jefe', 'ogro_anaga', 'ogro_anaga_jefe', 'tibicena', 'tibicena_guayota'] },
   { id: 'malditos', name: 'No-muertos', ids: ['skeleton', 'skeleton_jefe', 'zombi', 'zombi_jefe', 'zombi_igneo', 'zombi_igneo_jefe', 'bruto_echeyde'] },
   { id: 'gente', name: 'Gente', ids: ['bandido', 'bandido_jefe', 'guanche_guerrero', 'guanche_hondero', 'guanche_faycan', 'guanche_mencey', 'acolito_cabildo'] },
-  { id: 'jefes', name: 'Jefes', ids: ['magister_cabildo', 'bruja_pantano', 'coloso_obsidiana', 'reina_escorpion', 'rey_yeti', 'rey_esqueleto', 'leviatan', 'dragon_rojo', 'dragon_negro', 'fosa_ignaroth'] },
+  { id: 'jefes', name: 'Jefes', ids: ['magister_cabildo', 'bruja_pantano', 'coloso_obsidiana', 'reina_escorpion', 'rey_yeti', 'rey_esqueleto', 'leviatan', 'dragon_rojo', 'dragon_negro', 'fosa_ignaroth', 'guayota'] },
 ];
 
 /** Nivel de combate de un monstruo (misma fórmula que el de los jugadores). */

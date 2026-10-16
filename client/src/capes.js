@@ -14,7 +14,8 @@
  */
 import * as THREE from 'three';
 
-export const CAPE_IDS = new Set(['cape_fuego', 'cape_magma', 'cape_achaman', 'cape_magec', 'cape_chaxiraxi']);
+export const CAPE_IDS = new Set(['cape_fuego', 'cape_magma', 'cape_achaman', 'cape_magec', 'cape_chaxiraxi', 'cape_sello', 'cape_guayota']);   // S52: capas del final de la historia
+const MAGMA_LIKE = new Set(['cape_magma', 'cape_guayota']);   // Sesión 52 — la de Guayota es magma vivo
 
 const now = () => performance.now() / 1000;
 
@@ -137,6 +138,7 @@ function mageTex(id) {
       cape_achaman:   ['#0e2a6a', '#2a62c8', '#e8f2ff'],
       cape_magec:     ['#8a3a04', '#e8a020', '#fff4c0'],
       cape_chaxiraxi: ['#14401c', '#3a8a3a', '#e8f0d0'],
+      cape_sello:     ['#c89a3a', '#fff4d0', '#ffffff'],   // Sesión 52 — Sello de Achamán
     }[id];
     const bg = g.createLinearGradient(0, 0, 0, h);
     bg.addColorStop(0, C[0]); bg.addColorStop(0.55, C[1]); bg.addColorStop(1, C[0]);
@@ -159,6 +161,13 @@ function mageTex(id) {
     } else if (id === 'cape_magec') {
       g.beginPath(); g.arc(0, 0, 34, 0, Math.PI * 2); g.fill(); g.stroke();
       for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 42, Math.sin(a) * 42); g.lineTo(Math.cos(a) * (i % 2 ? 58 : 72), Math.sin(a) * (i % 2 ? 58 : 72)); g.lineWidth = i % 2 ? 4 : 7; g.strokeStyle = C[2]; g.stroke(); }
+    } else if (id === 'cape_sello') {
+      // Sol de Magec dentro del anillo del sello y las tres llaves
+      g.strokeStyle = '#a07018'; g.lineWidth = 6;
+      g.beginPath(); g.arc(0, 0, 70, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#ffd860'; g.beginPath(); g.arc(0, 0, 30, 0, Math.PI * 2); g.fill(); g.stroke();
+      for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 36, Math.sin(a) * 36); g.lineTo(Math.cos(a) * 54, Math.sin(a) * 54); g.lineWidth = 5; g.strokeStyle = '#d8a020'; g.stroke(); }
+      for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + i / 3 * Math.PI * 2; g.fillStyle = ['#4aa0ff', '#ff5a20', '#c03030'][i]; g.beginPath(); g.arc(Math.cos(a) * 70, Math.sin(a) * 70, 11, 0, Math.PI * 2); g.fill(); }
     } else {
       g.beginPath(); g.arc(0, 0, 52, 0, Math.PI * 2); g.fill(); g.stroke();
       g.fillStyle = C[1]; g.beginPath(); g.arc(18, -10, 46, 0, Math.PI * 2); g.fill();
@@ -318,7 +327,7 @@ function topOf(o) {
  */
 function clothGeometry(R, len, itemId) {
   const NU = 34, NV = 26;
-  const magma = itemId === 'cape_magma';
+  const magma = MAGMA_LIKE.has(itemId);
   const pos = [], uv = [], hang = [], idx = [];
   const hemPts = [];
   const lerp = (a, b, k) => a + (b - a) * k;
@@ -374,7 +383,7 @@ export function buildCape(itemId, H, root) {
   const h = box.max.y - box.min.y;
   const rz = (box.max.z - box.min.z) / 2;
   const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
-  const isMage = itemId === 'cape_achaman' || itemId === 'cape_magec' || itemId === 'cape_chaxiraxi';
+  const isMage = itemId === 'cape_achaman' || itemId === 'cape_magec' || itemId === 'cape_chaxiraxi' || itemId === 'cape_sello';
   // Medidas SIN armadura (como antes)
   let R = (box.max.x - box.min.x) / 2 * 1.22 * tn.s * 1.08;      // radio arriba
   let axisZ = cz + rz * 0.15;
@@ -389,7 +398,7 @@ export function buildCape(itemId, H, root) {
     axisZ = Math.min(axisZ, backZ + R);
     top = Math.max(top, Math.min(arm.maxYBack(cz), top + h * 0.45));
   }
-  const len = h * (itemId === 'cape_magma' ? 4.4 : 4.0) * tn.s;   // S51: más cortas (×2)
+  const len = h * (MAGMA_LIKE.has(itemId) ? 4.4 : 4.0) * tn.s;   // S51: más cortas (×2)
   const rx = R / 1.08;   // (para las piezas de abajo: broches, gotas)
   // Sesión 51 — forma de TELA (ya no medio tubo, que parecía un escudo):
   // nace estrecha en el cuello, cae sobre los hombros con las esquinas de
@@ -404,7 +413,7 @@ export function buildCape(itemId, H, root) {
   if (itemId === 'cape_fuego') {
     const map = fireTex(), em = fireGlow();
     mat = swayMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 0.9, side: THREE.DoubleSide, roughness: 0.75 }, amp, len);
-  } else if (itemId === 'cape_magma') {
+  } else if (MAGMA_LIKE.has(itemId)) {
     const map = magmaTex(), em = magmaGlow();
     mat = swayMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 1.7, side: THREE.DoubleSide, roughness: 0.35, metalness: 0.2 }, amp * 0.8, len);
   } else {
@@ -446,7 +455,7 @@ export function buildCape(itemId, H, root) {
   let frontRoot = null, lastRootPos = null, speedS = 0;
   cape.frustumCulled = false; cape.castShadow = true;
   // Animación: tiempo del ondeo + scroll de la lava (map lento, brillo rápido)
-  const hemPts = itemId === 'cape_magma' ? hem : [];
+  const hemPts = MAGMA_LIKE.has(itemId) ? hem : [];
   cape.onBeforeRender = (renderer, scene) => {
     const t = now();
     const dtC = Math.min(0.1, t - (cape.userData.lastFrame || t));
@@ -507,12 +516,12 @@ export function buildCape(itemId, H, root) {
       }
     }
     if (mat.map && mat.map.wrapT === THREE.RepeatWrapping) {
-      const speed = itemId === 'cape_magma' ? 0.05 : 0.08;
+      const speed = MAGMA_LIKE.has(itemId) ? 0.05 : 0.08;
       mat.map.offset.y = (t * speed) % 1;
       if (mat.emissiveMap) mat.emissiveMap.offset.y = (t * speed * 1.9) % 1;
-      mat.emissiveIntensity = (itemId === 'cape_magma' ? 1.5 : 0.9) + Math.sin(t * 2.3) * 0.25;
+      mat.emissiveIntensity = (MAGMA_LIKE.has(itemId) ? 1.5 : 0.9) + Math.sin(t * 2.3) * 0.25;
     }
-    if (itemId === 'cape_magma' && !cape.userData.drips && scene) {
+    if (MAGMA_LIKE.has(itemId) && !cape.userData.drips && scene) {
       cape.userData.drips = makeDrips(cape, hemPts);
       scene.add(cape.userData.drips);
     }
@@ -520,7 +529,7 @@ export function buildCape(itemId, H, root) {
   const g = H.framed(basis);
   g.add(pivot);
   // Broches en los hombros (gema según la capa)
-  const gemCol = { cape_fuego: 0xffa030, cape_magma: 0xff4a10, cape_achaman: 0x7ab8ff, cape_magec: 0xffd040, cape_chaxiraxi: 0x80e080 }[itemId];
+  const gemCol = { cape_fuego: 0xffa030, cape_magma: 0xff4a10, cape_achaman: 0x7ab8ff, cape_magec: 0xffd040, cape_chaxiraxi: 0x80e080, cape_sello: 0xfff0a0, cape_guayota: 0xff2000 }[itemId];
   const gemMat = new THREE.MeshStandardMaterial({ color: gemCol, emissive: gemCol, emissiveIntensity: 1.4, roughness: 0.2 });
   const ringMat = new THREE.MeshStandardMaterial({ color: isMage ? 0xd8a83a : 0x2a0c08, metalness: 0.6, roughness: 0.35 });
   // Broches donde la tela se sujeta (las puntas de arriba de la capa)

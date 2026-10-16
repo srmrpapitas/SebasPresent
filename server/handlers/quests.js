@@ -8,7 +8,8 @@ import { combatLevelFrom } from '../../client/src/shared/mounts.js';
 import { levelFromXp } from '../combat_engine.js';
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
-import { ensureQuests, getUserQuests, startQuest, deliverToNpc, questEvent } from '../lib/quests.js';
+import { ensureQuests, getUserQuests, startQuest, deliverToNpc, questEvent, getFlags, visitStep, chooseStep } from '../lib/quests.js';
+import { isNightAt, minutesToNight } from '../../client/src/shared/daytime.js';   // Sesión 52
 import { TOWN_NPCS_BY_ID, TALK_DIST_SERVER_M, npcDist } from '../../client/src/shared/town_npcs.js';   // Sesión 50
 import { getPlayerPosition } from './skills/_shared.js';
 import { QUESTS } from '../../client/src/shared/quests.js';
@@ -19,7 +20,7 @@ export async function handleQuestsGet(request, env) {
   if (!session) return json({ error: 'unauthorized' }, 401);
   const ok = await ensureQuests(env, session.user_id);
   if (!ok) return json({ quests: [], disabled: true });
-  return json({ quests: await getUserQuests(env, session.user_id) });
+  return json({ quests: await getUserQuests(env, session.user_id), flags: await getFlags(env, session.user_id) });
 }
 
 export async function handleQuestsSkip(request, env) {
@@ -103,4 +104,52 @@ export async function handleNpcDeliver(request, env) {
   const r = await deliverToNpc(env, session.user_id, body.npc_id);
   if (r.error) return json(r, 400);
   return json({ ok: true, results: r.results, quests: await getUserQuests(env, session.user_id) });
+}
+
+
+// ============================================================
+// Sesión 52 — Historia: "ve a tal sitio" y decisiones
+// ============================================================
+const VISIT_SLACK_M = 6;   // margen por el retraso de la posición guardada
+
+/** POST /api/quests/visit { quest_id } → paso "ve a…" (hay que estar allí; algunos solo de noche) */
+export async function handleQuestVisit(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  const body = await readJson(request);
+  const q = own(QUESTS, body?.quest_id);
+  if (!q) return json({ error: 'invalid_quest' }, 400);
+  const row = await env.DB.prepare('SELECT step FROM user_quests WHERE user_id = ? AND quest_id = ? AND status = 0').bind(session.user_id, q.id).first();
+  const step = row ? q.steps[row.step] : null;
+  if (!step || step.event !== 'visit' || !step.at) return json({ error: 'not_now' }, 400);
+  const pos = await getPlayerPosition(env, session.user_id);
+  if (!pos) return json({ error: 'no_position' }, 400);
+  const d = Math.hypot(pos.x - step.at.x, pos.z - step.at.z);
+  if (!(d <= step.at.r + VISIT_SLACK_M)) return json({ error: 'too_far', distance: Math.round(d) }, 400);
+  if (step.night && !isNightAt(Date.now())) {
+    const m = minutesToNight(Date.now());
+    return json({ error: 'not_night', minutes: m, message: `Aquí no pasa nada de día. Vuelve de noche (en unos ${m} min).` }, 400);
+  }
+  const r = await visitStep(env, session.user_id, q.id);
+  if (r.error) return json(r, 400);
+  return json({ ok: true, results: r.results, quests: await getUserQuests(env, session.user_id), flags: await getFlags(env, session.user_id) });
+}
+
+/** POST /api/quests/choose { quest_id, option } → decisión del jugador (al lado del NPC si lo pide) */
+export async function handleQuestChoose(request, env) {
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: 'unauthorized' }, 401);
+  const body = await readJson(request);
+  const q = own(QUESTS, body?.quest_id);
+  if (!q) return json({ error: 'invalid_quest' }, 400);
+  const row = await env.DB.prepare('SELECT step FROM user_quests WHERE user_id = ? AND quest_id = ? AND status = 0').bind(session.user_id, q.id).first();
+  const step = row ? q.steps[row.step] : null;
+  if (!step || step.event !== 'choice') return json({ error: 'not_now' }, 400);
+  if (step.npc) {
+    const near = await nearNpc(env, session.user_id, step.npc);
+    if (near.error) return json(near, 400);
+  }
+  const r = await chooseStep(env, session.user_id, q.id, String(body?.option || ''));
+  if (r.error) return json(r, 400);
+  return json({ ok: true, results: r.results, quests: await getUserQuests(env, session.user_id), flags: await getFlags(env, session.user_id) });
 }

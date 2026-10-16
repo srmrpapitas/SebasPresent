@@ -110,6 +110,22 @@ export const TOWN_NPCS = [
       'Reza en el altar para recuperar tus puntos de plegaria.',
       '"Protegerse del cuerpo a cuerpo" te salva la vida ante cualquier bestia. Llega a nivel 43.',
     ] },
+  // Sesión 52 — Historia principal «El Sello de Achamán»
+  { id: 'consejero_benitez', name: 'Consejero Benítez', title: 'Consejero del Cabildo', x: -44, z: -2, rotY: 1.2, role: '🏛️',
+    look: { skin: 0xe0b890, shirt: 0x2a2a3a, pants: 0x2a2a3a, hair: 0x6a6a6a, acc: 'none' },
+    lines: [
+      '¡Buenos días! El Cabildo trabaja para usted. Bueno… para todos. Para todos.',
+      'Las fiestas de este año van a ser las mejores. Lo prometo yo, el consejero Benítez.',
+      '¿Temblores? Cosa de la naturaleza. Nada de qué preocuparse. Nada.',
+      'Si ve usted gente con capucha roja, no les haga caso. Una cofradía. Muy devotos.',
+    ] },
+  { id: 'tibiabin_vidente', name: 'Tibiabin', title: 'La última harimaguada', x: 560, z: -1555, rotY: 3.6, role: '👁️',
+    look: { skin: 0x9a6a42, shirt: 0x7a5a32, pants: 0x5a4224, hair: 0xe8e8e8, acc: 'hood' },
+    lines: [
+      'Los muertos hablan bajito, forastero. Hay que callarse para oírlos.',
+      'Las harimaguadas cuidábamos el fuego sagrado. Ahora solo cuido esta hoguera de retama.',
+      'Guayota no odia a los hombres. Los desprecia. Es peor.',
+    ] },
   { id: 'rosa_granjera', name: 'Rosa', title: 'Granjera', x: 40, z: 150, rotY: 3.1, role: '🌾',
     look: { skin: 0xe8b98c, shirt: 0xb04a3a, pants: 0x4a5a8a, hair: 0xc08040, acc: 'hat' },
     lines: [

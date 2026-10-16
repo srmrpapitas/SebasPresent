@@ -16,7 +16,8 @@ import { nearestZoneOf } from './shared/hunting_zones.js';   // Sesión 51 — p
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as audio from './audio.js';
-import { QUESTS, QUEST_ORDER, checkReqs, questDifficulty } from './shared/quests.js';
+import { QUESTS, QUEST_ORDER, checkReqs, questDifficulty, SAGA } from './shared/quests.js';
+import * as story from './story.js';   // Sesión 52 — escenas, lugares y decisiones de la historia
 import { combatLevelFrom } from './shared/mounts.js';   // Sesión 50
 import { getRegionInfo } from './terrain.js';
 import * as skills from './skills.js';
@@ -32,6 +33,10 @@ let beam = null;
 let hintPos = null;
 let syncTimer = 0;
 let timeAcc = 0;
+let flags = {};            // Sesión 52 — decisiones del jugador (user_quest_flags)
+let storyTimer = 0;
+let getServerNow = () => null;
+const choiceOffered = new Set();
 
 function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -44,11 +49,13 @@ export async function start(opts) {
   getSnapshot = opts.getSnapshot || (() => null);
   getPlayer = opts.getPlayer || (() => null);
   feedLog = opts.feedLog || (() => {});
+  getServerNow = opts.getServerNow || (() => null);
   started = true;
   ensureCss();
   buildBeam();
   try {
     const r = await api.questsGet();
+    if (r?.flags) flags = { ...r.flags };
     applyRows(r?.quests || [], false);
   } catch (e) {
     console.warn('[quests] GET falló:', e?.message);
@@ -88,7 +95,14 @@ function activeQuest() {
 export function getQuestState(id) { return state[id] || null; }
 export function getAllStates() { return { ...state }; }
 /** Sesión 50 — aplicar filas que devuelve el server tras hablar/aceptar/entregar. */
-export function applyServerRows(rows) { applyRows(rows || [], true); }
+export function applyServerRows(rows, newFlags) {
+  if (newFlags && typeof newFlags === 'object') flags = { ...newFlags };   // Sesión 52
+  applyRows(rows || [], true);
+}
+/** Sesión 52 — decisiones guardadas del jugador. */
+export function getFlags() { return { ...flags }; }
+const storyCtx = { applyRows: (rows, f) => applyServerRows(rows, f), flags: () => flags, serverNow: () => getServerNow(), track: (id) => track(id) };
+export function storyContext() { return storyCtx; }
 /** Sesión 50 — fijar misión en el rastreador. */
 export function track(id) { trackedId = id; render(); }
 
@@ -99,6 +113,12 @@ function applyRows(rows, announce) {
     if (!q) continue;
     const prev = state[r.quest_id];
     state[r.quest_id] = { step: r.step, progress: r.progress, status: r.status, updatedAt: r.updated_at || Date.now() };
+    // Sesión 52 — capítulo nuevo de la historia que empieza solo
+    if (announce && !prev && q.saga && r.status === 0) {
+      feedLog('info', `📖 Historia principal · Capítulo ${q.chapter}: ${q.name}. ${q.steps[r.step]?.text || ''}`);
+      setTimeout(() => celebrate(`📖 Capítulo ${q.chapter}: ${q.name}`), 2800);
+      trackedId = r.quest_id;
+    }
     if (!announce || !prev) continue;
     if (r.status === 1 && prev.status === 0) {
       rewarded = true;
@@ -145,6 +165,7 @@ function renderTracker() {
     trackerEl.className = 'quest-tracker';
     trackerEl.addEventListener('pointerup', (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      if (reopenChoice()) return;   // Sesión 52
       expanded = !expanded; renderTracker();
     });
     trackerEl.addEventListener('pointerdown', ev => ev.stopPropagation());
@@ -152,7 +173,7 @@ function renderTracker() {
   }
   const prog = step.count > 1 ? ` <span class="qt-prog">${a.s.progress}/${step.count}</span>` : '';
   trackerEl.innerHTML = `
-    <div class="qt-title">📜 ${esc(a.q.name)} <span class="qt-step">${a.s.step + 1}/${a.q.steps.length}</span></div>
+    <div class="qt-title">${a.q.saga ? `📖 Cap. ${a.q.chapter} · ` : '📜 '}${esc(a.q.name)} <span class="qt-step">${a.s.step + 1}/${a.q.steps.length}</span></div>
     <div class="qt-text">${esc(step.text)}${prog}</div>
     ${expanded && step.tip ? `<div class="qt-tip">💡 ${esc(step.tip)}</div>` : ''}`;
 }
@@ -194,8 +215,13 @@ function renderTab() {
   const nDone = done.size;
   let html = `<div class="quest-tab"><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
     <div class="qtab-legend"><span class="c-new">■</span> sin empezar <span class="c-cur">■</span> en curso <span class="c-done">■</span> hecha</div>`;
-  for (const id of QUEST_ORDER) {
+  // Sesión 52 — la historia principal arriba, con sus capítulos
+  const order = [...SAGA.chapters, ...QUEST_ORDER.filter(id => !QUESTS[id]?.saga)];
+  const sagaDone = SAGA.chapters.filter(id => state[id]?.status === 1).length;
+  for (const id of order) {
     const q = QUESTS[id]; if (!q) continue;
+    if (id === SAGA.chapters[0]) html += `<div class="qtab-saga">📖 Historia principal<br><b>${esc(SAGA.name)}</b> <span>${sagaDone}/${SAGA.chapters.length}</span></div>`;
+    if (id === order[SAGA.chapters.length]) html += `<div class="qtab-saga qtab-side">📜 Otras misiones</div>`;
     const s = state[id];
     const isDone = s?.status === 1, isCur = s && !isDone;
     const reqs = checkReqs(id, lv, done);
@@ -204,7 +230,7 @@ function renderTab() {
     const open = openIds.has(id);
     const isTracked = act && act.q.id === id;
     html += `<div class="qrow ${cls}${open ? ' open' : ''}">
-      <div class="qrow-title" data-toggle="${id}"><span class="qrow-arrow">${open ? '▾' : '▸'}</span>${esc(q.name)}${isTracked ? ' <span class="qrow-pin">📍</span>' : ''}${!s && !canStart ? ' <span class="qrow-lock">🔒</span>' : ''}</div>`;
+      <div class="qrow-title" data-toggle="${id}"><span class="qrow-arrow">${open ? '▾' : '▸'}</span>${q.saga ? `<span class="qrow-ch">${q.chapter}.</span> ` : ''}${esc(q.name)}${isTracked ? ' <span class="qrow-pin">📍</span>' : ''}${!s && !canStart ? ' <span class="qrow-lock">🔒</span>' : ''}</div>`;
     if (open) {
       html += '<div class="qrow-body">';
       html += `<div class="qtab-sum">${esc(String(q.summary || '').replace(/\s*Recomendado:[^.]*\.?/g, '').replace(/\s*\(¡wilderness!\)/g, ''))}</div>`;
@@ -226,6 +252,10 @@ function renderTab() {
       if (s) {
         html += `<div class="qrow-k">Progreso:</div><ol class="qtab-steps">`;
         q.steps.forEach((st, i) => {
+          // Sesión 52 — pasos de otro camino (según tus decisiones) no se enseñan
+          if (st.if && !Object.entries(st.if).every(([k, v]) => (Array.isArray(v) ? v.includes(flags[k]) : flags[k] === v))) {
+            if (Object.keys(st.if).every(k => flags[k] != null)) return;
+          }
           const c = isDone || i < s.step ? 'done' : i === s.step ? 'cur' : '';
           const mark = c === 'done' ? '✓' : c === 'cur' ? '►' : '○';
           const prog = c === 'cur' && st.count > 1 ? ` (${s.progress}/${st.count})` : '';
@@ -314,6 +344,34 @@ function computeHint() {
   return null;
 }
 
+function checkStorySteps() {
+  if (story.isBusy()) return;
+  const p = getPlayer?.();
+  if (!p) return;
+  for (const id of QUEST_ORDER) {
+    const st = state[id];
+    if (!st || st.status !== 0) continue;
+    const q = QUESTS[id], step = q?.steps?.[st.step];
+    if (!step) continue;
+    if (step.event === 'visit' && step.at) {
+      const d = Math.hypot(p.position.x - step.at.x, p.position.z - step.at.z);
+      if (d <= step.at.r) { story.runVisit(q, step, storyCtx); return; }
+    } else if (step.event === 'choice' && !step.npc) {
+      const key = `${id}:${st.step}`;
+      const h = step.hint;
+      const near = !h || !Number.isFinite(h.x) || Math.hypot(p.position.x - h.x, p.position.z - h.z) < 60;
+      if (near && !choiceOffered.has(key)) { choiceOffered.add(key); story.runChoice(q, step, storyCtx); return; }
+    }
+  }
+}
+/** Sesión 52 — volver a abrir una decisión pendiente sin personaje (al tocar el rastreador). */
+function reopenChoice() {
+  const a = activeQuest();
+  const step = a?.q.steps[a.s.step];
+  if (step?.event === 'choice' && !step.npc && !story.isBusy()) { story.runChoice(a.q, step, storyCtx); return true; }
+  return false;
+}
+
 export function update(dt) {
   if (!started) return;
   timeAcc += dt;
@@ -329,6 +387,12 @@ export function update(dt) {
       if (changed) applyRows(rows, true);
     }
     hintPos = computeHint();
+  }
+  // Sesión 52 — historia: llegar a un sitio (visit) y decisiones sin personaje
+  storyTimer += dt;
+  if (storyTimer >= 1) {
+    storyTimer = 0;
+    try { checkStorySteps(); } catch (e) { console.warn('[quests] historia:', e?.message); }
   }
   if (beam) {
     const p = getPlayer?.();
@@ -379,6 +443,12 @@ function ensureCss() {
     .qtab-card.qtab-new { border-style: dashed; }
     .qtab-giver { font-size: 11px; color: #ffe27a; margin-top: 4px; }
     .qtab-count { font-size: 11px; color: #d8c89a; margin: 0 0 6px; text-align: center; }
+    .qtab-saga { margin: 6px 0 2px; padding: 6px 8px; border-radius: 5px; background: linear-gradient(90deg, rgba(160,60,20,0.55), rgba(40,20,10,0.2));
+      border: 1px solid #c8a043; font: 11px 'IM Fell English', serif; color: #f0d8a0; }
+    .qtab-saga b { font: bold 14px 'Cinzel', serif; color: #ffd070; }
+    .qtab-saga span { float: right; color: #ffe8a0; font-weight: bold; }
+    .qtab-saga.qtab-side { background: rgba(0,0,0,0.2); font-weight: bold; margin-top: 12px; }
+    .qrow-ch { color: #ffb050; }
     .qtab-beast { display: block; width: 100%; margin: 0 0 8px; padding: 7px 8px; font: inherit; font-size: 12px; font-weight: 700; color: #fff3cf; background: linear-gradient(#6a4a1c, #4a3214); border: 1px solid #c8a043; border-radius: 6px; cursor: pointer; }
     .qtab-name { font-family: 'Cinzel', serif; font-weight: 700; color: #e8c560; font-size: 14px; }
     .qtab-sum { font-size: 12px; color: #bba878; margin: 4px 0 6px; }

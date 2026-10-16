@@ -38,7 +38,7 @@ INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always)
 DELETE FROM npc_instances WHERE def_id='reina_escorpion';
 INSERT INTO npc_instances (def_id,hp_current,x,z,status,spawn_x,spawn_z) VALUES ('reina_escorpion',280,1480,400,0,1480,400);
 INSERT OR IGNORE INTO boss_state (boss_id,last_tick,hazards) VALUES ('reina_escorpion',0,'[]');
-INSERT OR REPLACE INTO npc_defs (id,name,max_hp,attack_lvl,strength_lvl,defence_lvl,attack_speed_ticks,max_hit,xp_per_kill,respawn_ms,spawn_x,spawn_z,attack_range,model,behavior,aggro_radius,style) VALUES ('bruja_pantano','Morgath',240,66,60,48,5,18,0,120000,-640,760,4,'bruja_pantano','boss',0,'magic');
+INSERT OR REPLACE INTO npc_defs (id,name,max_hp,attack_lvl,strength_lvl,defence_lvl,attack_speed_ticks,max_hit,xp_per_kill,respawn_ms,spawn_x,spawn_z,attack_range,model,behavior,aggro_radius,style) VALUES ('bruja_pantano','Chona',240,66,60,48,5,18,0,120000,-640,760,4,'bruja_pantano','boss',0,'magic');
 DELETE FROM npc_loot_table WHERE npc_def_id='bruja_pantano';
 INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always) VALUES ('bruja_pantano','bones',3,3,1,1);
 INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always) VALUES ('bruja_pantano','shark',2,2,1,1);

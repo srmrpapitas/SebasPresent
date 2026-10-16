@@ -179,6 +179,7 @@ const MAGIC_DEF_BY_MATERIAL = {
   earth: 1, ice: 1.2, lava: 1, fire: 0.6, magma: 0.7,
   bronze: -0.3, hierro: -0.3, acero: -0.3, oro: -0.25, obsidiana: -0.25, basaltita: -0.25, teiderio: -0.25, dragon: -0.15,
   ...GEAR_MDEF_FACTORS,   // Sesión 52 — lobo, escorpión, yeti, escama; algodón… magister
+  sello: 2.5, guayota: 0.6,   // Sesión 52 — capas del final de la historia
 };
 export function magicDefOf(material, defenceBonus) {
   const f = MAGIC_DEF_BY_MATERIAL[material];
@@ -190,7 +191,7 @@ export function magicDamageMult(magicDef) {
 }
 
 // Sesión 51 — capas de mago: +golpe máximo de los hechizos
-export const CAPE_MAGIC_BONUS = { cape_achaman: 2, cape_magec: 2, cape_chaxiraxi: 2 };
+export const CAPE_MAGIC_BONUS = { cape_achaman: 2, cape_magec: 2, cape_chaxiraxi: 2, cape_sello: 3 };   // S52: capa del Sello
 
 // Bonus de magia de bastones (se suma al golpe máximo del hechizo y al maná).
 export const STAFF_MAGIC_BONUS = { staff_dragomante: 5 };

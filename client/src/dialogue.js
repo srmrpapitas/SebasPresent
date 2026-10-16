@@ -54,8 +54,14 @@ export function close() {
 function show(who, npc, text) {
   const box = ensureEl();
   box.classList.add('show');
+  box.classList.toggle('dlg-narr', who === 'narr');   // Sesión 52 — narrador
   const portrait = box.querySelector('.dlg-portrait');
-  if (who === 'npc') {
+  if (who === 'narr') {
+    portrait.style.background = 'radial-gradient(circle at 50% 35%, #4a3a20, #1a120a)';
+    portrait.textContent = '📜';
+    box.querySelector('.dlg-name').textContent = '';
+    box.classList.remove('dlg-me');
+  } else if (who === 'npc') {
     portrait.style.background = `radial-gradient(circle at 50% 35%, ${hex(npc.look?.shirt ?? 0x6a5a3a)}, #1a120a)`;
     portrait.textContent = npc.role || '🙂';
     box.querySelector('.dlg-name').innerHTML = `${esc(npc.name)}${npc.title ? ` <small>${esc(npc.title)}</small>` : ''}`;
@@ -98,8 +104,12 @@ export function begin(npc) {
   const wait = () => new Promise(res => { me.resolve = res; });
   const api = {
     get closed() { return me.closed; },
+    get npcId() { return npc?.id; },   // Sesión 52
     async npc(text) { if (me.closed) return null; me.choosing = false; show('npc', npc, text); return wait(); },
     async player(text) { if (me.closed) return null; me.choosing = false; show('player', npc, text); return wait(); },
+    // Sesión 52 — escenas: narrador y otros personajes en el mismo diálogo
+    async narr(text) { if (me.closed) return null; me.choosing = false; show('narr', npc, text); return wait(); },
+    async as(who, text) { if (me.closed) return null; me.choosing = false; show('npc', who || npc, text); return wait(); },
     async choose(labels, prompt = 'Elige una opción') {
       if (me.closed) return -1;
       const box = ensureEl();
@@ -139,6 +149,8 @@ function ensureCss() {
     .dlg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
     .dlg-name { font-family: 'Cinzel', serif; font-weight: 700; color: #7a1a0a; font-size: 15px; }
     .dlg-me .dlg-name { color: #1a4a1a; }
+    .dlg-narr .dlg-text { font-style: italic; color: #4a3418; }
+    .dlg-narr .dlg-name { display: none; }
     .dlg-name small { font-family: 'IM Fell English', serif; font-weight: 400; color: #6a5030; font-size: 12px; }
     .dlg-text { font-size: 15px; line-height: 1.3; min-height: 38px; }
     .dlg-hint { font-size: 11px; color: #1a3a8a; text-align: center; animation: dlgBlink 1.2s infinite; }

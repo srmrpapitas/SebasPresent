@@ -534,3 +534,391 @@ export function checkReqs(id, levels = {}, done = new Set()) {
   for (const q of R.quests || []) out.push({ label: `Misión: ${QUESTS[q]?.name || q}`, ok: done.has(q) });
   return out;
 }
+
+// ============================================================
+// Sesión 52 — HISTORIA PRINCIPAL: «El Sello de Achamán»
+// ============================================================
+// Seis capítulos encadenados (q.next). Al terminar uno empieza el siguiente
+// si cumples sus requisitos; si no, te lo ofrece su personaje más adelante.
+//
+// Formato extra de los pasos (ver server/lib/quests.js y client/src/story.js):
+//   scene:   [línea, …] que se ve al hacer el paso. Una línea es un texto (habla
+//            el NPC del paso) o { who: 'player'|'narr'|npcId|'guayota'|'voz', text }.
+//   sceneBy: { flag, values: { valor: [líneas] } } → escena según una decisión.
+//   sceneAfter: [líneas] → después de la variante. Orden: scene, variante, sceneAfter.
+//   visit:   { event: 'visit', at: { x, z, r }, night?: true } → ir a un sitio.
+//   choice:  { event: 'choice', flag, npc?, prompt, options: [{ id, label, reply, reward }] }
+//   if:      { flag: valor | [valores] } → el paso solo existe si elegiste eso.
+// offerScene sustituye a `offer` (diálogo con varios personajes y narrador).
+// ============================================================
+const N = (text) => ({ who: 'narr', text });
+const P = (text) => ({ who: 'player', text });
+const S = (who, text) => ({ who, text });
+
+export const SAGA = {
+  id: 'sello',
+  name: 'El Sello de Achamán',
+  summary: 'La historia principal de Achinech: el sello que encierra a Guayota bajo el Teide se agrieta.',
+  chapters: ['saga_temblor', 'saga_sotano', 'saga_llaves', 'saga_traicion', 'saga_corona', 'saga_despertar'],
+};
+// Lugares de la historia (también se dibujan en el mundo: client/src/story.js)
+export const STORY_PLACES = {
+  grieta:  { x: 420, z: -1560, r: 9,  name: 'Grieta de Las Cañadas' },
+  reja:    { x: -52, z: -12,   r: 4,  name: 'Reja del sótano del Cabildo' },
+  campamento: { x: 560, z: -1555, r: 6, name: 'Campamento de Tibiabin' },
+  boca:    { x: 640, z: -1620, r: 14, name: 'Boca del Teide' },
+};
+
+Object.assign(QUESTS, {
+  // -------------------------------------------------------------- Capítulo 1
+  saga_temblor: {
+    id: 'saga_temblor', saga: 'sello', chapter: 1, name: 'La tierra tiembla', giver: 'eldric_mago', next: 'saga_sotano',
+    summary: 'El sismógrafo del Observatorio no para de moverse. Algo despierta bajo el Teide. (Historia principal · capítulo 1)',
+    offerScene: [
+      '¡Forastero! Ven, ven, mira esto.',
+      N('Sobre la mesa del observatorio, una aguja tiembla sin parar y dibuja picos sobre un rollo de papel.'),
+      'Es un sismógrafo. Lleva tres noches así. El Teide no temblaba de esta manera desde que Achamán lo selló.',
+      'Y hay algo peor: anoche vi humo saliendo de una grieta nueva en Las Cañadas. Olía a azufre… y a perro mojado.',
+      P('¿A perro?'),
+      'Ve y mírala tú. Coge una muestra del azufre y tráemela. Y lleva con qué defenderte, que no me gusta nada ese olor.',
+    ],
+    accept: 'Iré a la grieta.',
+    doing: 'La grieta humea entre Las Cañadas y el Teide. Coge una muestra y vuelve.',
+    thanks: 'Ten cuidado ahí fuera. Los tibicenas no salen solos: algo los llama.',
+    steps: [
+      { id: 'grieta', event: 'visit', at: { x: 420, z: -1560, r: 9 }, hint: { x: 420, z: -1560 }, count: 1,
+        text: 'Inspecciona la grieta humeante de Las Cañadas.', tip: 'Entre Las Cañadas y el Teide. Sigue el haz dorado.',
+        scene: [
+          N('El suelo quema a través de las botas. De la grieta sale un vapor amarillo que pica en los ojos.'),
+          N('Entre el azufre hay huellas: patas enormes, de perro… con las uñas marcadas a fuego en la roca.'),
+          N('Te agachas a coger una piedra de azufre. Está tibia, y late como si tuviera pulso.'),
+          N('Entonces oyes un gruñido detrás de ti.'),
+        ],
+        reward: { items: [['muestra_azufre', 1]] } },
+      { id: 'tibicenas', event: 'kill', match: 'tibicena', count: 3, hint: { npc: 'tibicena' },
+        text: 'Defiéndete de los tibicenas (3).', tip: 'Perros negros con los ojos como brasas. Muerden fuerte: lleva comida.' },
+      { id: 'informe', event: 'talk', match: 'eldric_mago', count: 1, hint: { talk: 'eldric_mago' },
+        text: 'Vuelve con Eldric al Observatorio de Izaña.',
+        scene: [
+          P('Había perros negros en la grieta. Con los ojos como brasas.'),
+          'Tibicenas… los perros de Guayota. Mi abuela decía que bajaban a robar ganado cuando el volcán se enfadaba.',
+          N('Eldric frota la piedra de azufre entre los dedos. Se le pone la piel de gallina.'),
+          'Esto no es azufre. Está tibio, late… Es sangre de Guayota, forastero. El sello de Achamán se está agrietando.',
+        ] },
+      { id: 'aviso', event: 'choice', flag: 'aviso', npc: 'eldric_mago', count: 1, hint: { talk: 'eldric_mago' },
+        text: 'Decide con Eldric a quién avisar.',
+        prompt: '¿A quién avisamos?',
+        scene: ['Alguien tiene que saberlo. El Cabildo tiene soldados y dinero; Alma, la sacerdotisa, conoce los ritos antiguos.'],
+        options: [
+          { id: 'cabildo', label: '🏛️ Al Cabildo: tienen soldados y poder.',
+            reply: ['Sensato. El consejero Benítez atiende a la gente junto a la plaza de La Laguna. Llévale la muestra.'] },
+          { id: 'alma', label: '🕯️ A Alma: ella conoce los ritos de Achamán.',
+            reply: ['Mmm… Alma no se fía del Cabildo. Y a veces pienso que con razón. Búscala junto al altar de La Laguna.'] },
+        ] },
+    ],
+    reward: { coins: 400, xp: { magic: 900, defence: 900, hitpoints: 600 }, text: '400 monedas · XP de Magia, Defensa y Vitalidad' },
+  },
+
+  // -------------------------------------------------------------- Capítulo 2
+  saga_sotano: {
+    id: 'saga_sotano', saga: 'sello', chapter: 2, name: 'Voces bajo el Cabildo', giver: 'alma_sacerdotisa', next: 'saga_llaves',
+    summary: 'Alguien en La Laguna sabe más de lo que dice. (Historia principal · capítulo 2)',
+    offer: ['El agua del altar hierve sola desde hace días… ¿Vienes por eso, verdad?'],
+    accept: 'Cuéntamelo todo.',
+    doing: 'Hay una reja del sótano del Cabildo junto a la plaza. De noche se oye lo que hablan abajo.',
+    thanks: 'Las tres llaves… Que Achamán nos ampare. Esto no ha hecho más que empezar.',
+    steps: [
+      { id: 'benitez', event: 'talk', match: 'consejero_benitez', count: 1, if: { aviso: 'cabildo' }, hint: { talk: 'consejero_benitez' },
+        text: 'Lleva la muestra al consejero Benítez (La Laguna).',
+        scene: [
+          '¡Bienvenido, bienvenido! Siéntese. ¿Un cafecito? ¿Un barraquito?',
+          P('Vengo del Observatorio. El Teide tiembla y de una grieta salen tibicenas.'),
+          N('Le enseñas la piedra de azufre. Los ojos del consejero brillan un instante, rojos como brasas.'),
+          'Fascinante… Digo: preocupante. ¡Muy preocupante! Déjemela, que la estudien nuestros expertos.',
+          'Y no se preocupe por nada. El Cabildo lo tiene todo bajo control. Todo.',
+          N('Al salir, oyes cómo cierra la puerta con llave. Y su voz, al otro lado: «Magister… ha encontrado la grieta».'),
+          N('Por la noche, por la reja del sótano, se oirá lo que hablen.'),
+        ] },
+      { id: 'alma', event: 'talk', match: 'alma_sacerdotisa', count: 1, if: { aviso: 'alma' }, hint: { talk: 'alma_sacerdotisa' },
+        text: 'Cuéntale a Alma lo de la grieta.',
+        scene: [
+          'Te esperaba. Esta mañana el agua bendita del altar hervía sola.',
+          P('Eldric dice que el sello de Achamán se agrieta. Y he visto tibicenas.'),
+          'Entonces es verdad… Escúchame bien: el Cabildo no es lo que parece. Por las noches se oyen cánticos bajo la plaza.',
+          'Junto a la casa del Cabildo hay una reja del sótano. Ve de noche y escucha. Que no te vean.',
+        ] },
+      { id: 'reja', event: 'visit', night: true, at: { x: -52, z: -12, r: 4 }, hint: { x: -52, z: -12 }, count: 1,
+        text: 'De noche, escucha por la reja del sótano del Cabildo (junto a la plaza).',
+        tip: 'Solo de noche. La noche dura 12 minutos de cada 40: mira el cielo.',
+        scene: [
+          N('Por la reja del sótano sale una luz roja y un canto en una lengua muy antigua.'),
+          S('consejero_benitez', '«…el forastero nos ha traído justo lo que buscábamos. La grieta de Las Cañadas es la primera herida del sello.»'),
+          S('voz', '«No basta una herida, Benítez. Achamán cerró el Teide con tres llaves: la Lágrima, la Piedra y el Añepa. Con las tres, el sello no se arregla… se abre.»'),
+          S('consejero_benitez', '«Se hará, Magister. Por el Señor del Fuego.»'),
+          N('Alguien apaga las velas. Te alejas de la reja antes de que te vean.'),
+        ] },
+      { id: 'contar', event: 'talk', match: 'alma_sacerdotisa', count: 1, hint: { talk: 'alma_sacerdotisa' },
+        text: 'Cuéntale a Alma lo que oíste.',
+        sceneBy: { flag: 'aviso', values: {
+          cabildo: [
+            P('El consejero Benítez es uno de ellos. Y yo… le di la muestra de la grieta.'),
+            'No es culpa tuya, forastero. Nadie sabía nada. Pero ahora ellos saben dónde sangra el sello.',
+          ],
+          alma: [
+            P('El consejero Benítez habla con un tal Magister. Quieren abrir el sello.'),
+            'Benítez… El que bendice las fiestas y reparte gofio a los pobres. Qué bien se esconde el diablo.',
+          ],
+        } },
+        sceneAfter: [
+          'Las tres llaves… Cuando Achamán venció a Guayota, cerró el Teide con tres regalos:',
+          'la Lágrima de Chaxiraxi, la Piedra de Echeyde y el Añepa de Tinerfe, el bastón del primer mencey.',
+          'Las llaves sellan… pero también abren. Si el Cabildo las reúne, Guayota saldrá. Tenemos que encontrarlas antes.',
+        ] },
+    ],
+    reward: { coins: 600, xp: { prayer: 1500, magic: 800 }, text: '600 monedas · 1.500 XP Plegaria · 800 XP Magia' },
+  },
+
+  // -------------------------------------------------------------- Capítulo 3
+  saga_llaves: {
+    id: 'saga_llaves', saga: 'sello', chapter: 3, name: 'Las tres llaves', giver: 'alma_sacerdotisa', next: 'saga_traicion',
+    summary: 'Encuentra la Lágrima, la Piedra y el Añepa antes que el Cabildo. (Historia principal · capítulo 3)',
+    offer: ['La Lágrima la guardan los ermitaños de Candelaria. La Piedra duerme en la Mina de Guajara. Y el Añepa… lo tiene el Mencey de Chinamada.'],
+    accept: 'Traeré las tres llaves.',
+    doing: 'Candelaria, la Mina de Guajara y Chinamada. Date prisa: el Cabildo también las busca.',
+    thanks: 'Las tres… ¡las tres! Guárdalas bien. En cuanto puedas, haremos el rito para reforzar el sello.',
+    steps: [
+      { id: 'marcial', event: 'talk', match: 'ermitano_candelaria', count: 1, hint: { talk: 'ermitano_candelaria' },
+        text: 'Pregunta por la Lágrima al Hermano Marcial (Candelaria).',
+        scene: [
+          '¿La Lágrima de Chaxiraxi? Los ermitaños la guardamos desde hace quinientos años, sin saber muy bien para qué.',
+          'Dicen que es una gota del mar que lloró la Virgen cuando llegó a la playa de Chimisay.',
+          'Si de verdad Achamán te envía, reza ante el altar de la basílica. La Lágrima solo se entrega a quien tiene fe.',
+        ] },
+      { id: 'rezar', event: 'altar', match: 'altar_templo', count: 1, hint: { x: 0, z: -1182 },
+        text: 'Reza en el altar de la Basílica de Candelaria.', tip: 'Toca el altar de la basílica.' },
+      { id: 'lagrima', event: 'talk', match: 'ermitano_candelaria', count: 1, hint: { talk: 'ermitano_candelaria' },
+        text: 'Vuelve con el Hermano Marcial.',
+        scene: [
+          N('Mientras rezabas, todas las velas de la basílica se encendieron a la vez.'),
+          'Lo he visto. Chaxiraxi te ha escuchado. Toma… pesa más de lo que parece.',
+          N('Te da una gota de cristal azul. Dentro, el agua se mueve como el mar.'),
+        ],
+        reward: { items: [['lagrima_chaxiraxi', 1]] } },
+      { id: 'ramiro', event: 'talk', match: 'ramiro_capataz', count: 1, hint: { talk: 'ramiro_capataz' },
+        text: 'Pregunta por la Piedra a Ramiro (Mina de Guajara).',
+        scene: [
+          '¿Una piedra que late? Sí… En lo más hondo hay una veta que da calor. Los mineros dicen que de noche suena como un corazón.',
+          'Pero los gólems no dejan pasar a nadie. Si acabas con dos, te bajo yo mismo con la lámpara.',
+        ] },
+      { id: 'golems', event: 'kill', match: 'golem', count: 2, hint: { npc: 'golem' },
+        text: 'Derrota a 2 gólems de la cantera de Guajara.', tip: 'Golpean muy fuerte: lleva comida y tu mejor armadura.' },
+      { id: 'piedra', event: 'talk', match: 'ramiro_capataz', count: 1, hint: { talk: 'ramiro_capataz' },
+        text: 'Vuelve con Ramiro.',
+        scene: [
+          N('Ramiro te guía por una galería que nadie usa. Al fondo, una piedra negra brilla como un ascua.'),
+          'Nunca la había visto tan roja. Cógela y vámonos, que no me gusta este calor.',
+        ],
+        reward: { items: [['piedra_echeyde', 1]] } },
+      { id: 'guayre', event: 'talk', match: 'abuelo_guayre', count: 1, hint: { talk: 'abuelo_guayre' },
+        text: 'Pregunta por el Añepa al Abuelo Guayre (junto a Chinamada).',
+        scene: [
+          'El Añepa de Tinerfe… el bastón del primer mencey de toda la isla. Lo tiene el Mencey de Chinamada, en el tagoror.',
+          'No se lo dará a un forastero. A no ser que le ganes en su propio tagoror… o que le lleves un presente digno de un rey.',
+        ] },
+      { id: 'como', event: 'choice', flag: 'chinamada', npc: 'abuelo_guayre', count: 1, hint: { talk: 'abuelo_guayre' },
+        text: 'Decide cómo conseguir el Añepa.', prompt: '¿Cómo conseguirás el Añepa?',
+        scene: ['¿Qué vas a hacer, forastero?'],
+        options: [
+          { id: 'lucha', label: '⚔️ Retar al mencey en el tagoror.', reply: ['Valiente… o loco. Los guanches respetan la fuerza, pero no olvidan una derrota.'] },
+          { id: 'presente', label: '🎁 Llevarle un presente: 10 gofios y 3 pieles de vaca.', reply: ['Eso es saber estar. Tráemelos y yo mismo se los llevaré al mencey.'] },
+        ] },
+      { id: 'mencey', event: 'kill', match: 'guanche_mencey', count: 1, if: { chinamada: 'lucha' }, hint: { x: -619, z: 144 },
+        text: 'Vence al Mencey en el tagoror de Chinamada.', tip: 'Pega fuerte. Lleva comida y pociones.' },
+      { id: 'presente', event: 'deliver', npc: 'abuelo_guayre', items: [['gofio', 10], ['cowhide', 3]], count: 1, if: { chinamada: 'presente' }, hint: { talk: 'abuelo_guayre' },
+        text: 'Lleva 10 gofios y 3 pieles de vaca al Abuelo Guayre.', tip: 'El gofio se compra en la plaza; las pieles, de las vacas o en la peletería.' },
+      { id: 'anepa', event: 'talk', match: 'abuelo_guayre', count: 1, hint: { talk: 'abuelo_guayre' },
+        text: 'Habla con el Abuelo Guayre.',
+        sceneBy: { flag: 'chinamada', values: {
+          lucha: [
+            'Le has vencido en su propio tagoror… Mis gentes no lo olvidarán, para bien o para mal.',
+            N('El abuelo te da un bastón de sabina con una piedra roja engastada. Tiene las manos frías.'),
+          ],
+          presente: [
+            'El mencey aceptó tu presente. Dice que hace cien años que un forastero no respetaba el tagoror.',
+            N('El abuelo te da un bastón de sabina con una piedra roja engastada. Sonríe por primera vez.'),
+            'Los de Chinamada no olvidan a quien los respeta. Cuando haga falta, estarán ahí.',
+          ],
+        } },
+        reward: { items: [['anepa_tinerfe', 1]] } },
+      { id: 'volver', event: 'talk', match: 'alma_sacerdotisa', count: 1, hint: { talk: 'alma_sacerdotisa' },
+        text: 'Vuelve con Alma con las tres llaves.' },
+    ],
+    reward: { coins: 2500, xp: { prayer: 3000, attack: 2000, strength: 2000, defence: 2000 }, text: '2.500 monedas · XP de Plegaria, Ataque, Fuerza y Defensa' },
+  },
+
+  // -------------------------------------------------------------- Capítulo 4
+  saga_traicion: {
+    id: 'saga_traicion', saga: 'sello', chapter: 4, name: 'La traición', giver: 'alma_sacerdotisa', next: 'saga_corona',
+    summary: 'El rito para reforzar el sello… y la noche en que el Cabildo dejó de esconderse. (Historia principal · capítulo 4)',
+    offer: ['Con las tres llaves en el altar, puedo cantar el sello de Achamán y cerrar la grieta. ¿Estás preparado?'],
+    accept: 'Hagamos el rito.',
+    doing: 'Detén al Cabildo en el monte de Las Mercedes, al norte de La Laguna.',
+    thanks: 'La última harimaguada… Tibiabin. Si alguien sabe cómo entrar en el Teide, es ella.',
+    steps: [
+      { id: 'llaves', event: 'deliver', npc: 'alma_sacerdotisa', items: [['lagrima_chaxiraxi', 1], ['piedra_echeyde', 1], ['anepa_tinerfe', 1]], count: 1, hint: { talk: 'alma_sacerdotisa' },
+        text: 'Entrega las tres llaves a Alma.', tip: 'La Lágrima, la Piedra de Echeyde y el Añepa.' },
+      { id: 'rito', event: 'talk', match: 'alma_sacerdotisa', count: 1, hint: { talk: 'alma_sacerdotisa' },
+        text: 'Acompaña a Alma en el rito.',
+        scene: [
+          N('Alma coloca las tres llaves sobre el altar y empieza a cantar en la lengua de los antiguos.'),
+          N('La Lágrima brilla, la Piedra late, el Añepa se ilumina… y entonces se abren las puertas de golpe.'),
+          N('Entra el consejero Benítez, sonriente, con seis acólitos de capucha roja.'),
+          S('consejero_benitez', 'Buenas noches, hermana Alma. Y buenas noches a ti, forastero.'),
+        ],
+        sceneBy: { flag: 'aviso', values: {
+          cabildo: [S('consejero_benitez', 'Te debo una, de verdad: sin tu muestra de azufre nunca habríamos encontrado la grieta. Y ahora nos traes las llaves en bandeja.')],
+          alma: [S('consejero_benitez', '¿Creíais que no os oíamos por la reja? El Cabildo lo oye todo, querida.')],
+        } },
+        sceneAfter: [
+          S('consejero_benitez', 'Por orden del Cabildo, estas reliquias quedan confiscadas.'),
+          N('Un acólito golpea a Alma, que cae al suelo. Benítez guarda las llaves bajo la túnica y desaparece en una nube de humo rojo.'),
+          '(tosiendo) Van al monte de Las Mercedes… El Magister hará allí su rito antes de subir al Teide. ¡Detenlos!',
+        ] },
+      { id: 'acolitos', event: 'kill', match: 'acolito_cabildo', count: 5, hint: { x: -40, z: -560 },
+        text: 'Derrota a 5 acólitos del Cabildo (monte de Las Mercedes).', tip: 'Atacan con magia: Protección contra magia.' },
+      { id: 'magister', event: 'kill', match: 'magister_cabildo', count: 1, hint: { x: -40, z: -600 },
+        text: 'Derrota al Magister Perdomo.', tip: 'Sal de los círculos rojos y bebe plegaria cuando te la robe.' },
+      { id: 'informe', event: 'talk', match: 'alma_sacerdotisa', count: 1, hint: { talk: 'alma_sacerdotisa' },
+        text: 'Vuelve con Alma.',
+        scene: [
+          P('Perdomo ha caído. Pero no tenía las llaves.'),
+          P('Antes de morir se rió: «Necios… Benítez ya va camino del Teide».'),
+          N('Esa misma noche, el Teide se ilumina por dentro como un farol. Todo Achinech lo ve.'),
+          'Entonces el sello ya está abierto… Solo queda una persona que pueda ayudarte: Tibiabin, la última harimaguada.',
+          'Vive en las faldas del Teide, al este de Las Cañadas. Dicen que habla con los muertos. Ve, y que Magec te alumbre.',
+        ] },
+    ],
+    reward: { coins: 8000, items: [['pocion_plegaria_3', 4]], xp: { prayer: 5000, magic: 5000, hitpoints: 3000 }, text: '8.000 monedas · 4 pociones de plegaria · XP de Plegaria, Magia y Vitalidad' },
+  },
+
+  // -------------------------------------------------------------- Capítulo 5
+  saga_corona: {
+    id: 'saga_corona', saga: 'sello', chapter: 5, name: 'La corona de Varkhul', giver: 'tibiabin_vidente', next: 'saga_despertar',
+    summary: 'Para entrar en el fuego de Guayota hace falta la corona del mencey que pactó con él. (Historia principal · capítulo 5)',
+    offerScene: [
+      N('Junto a una hoguera de retama, una mujer muy anciana teje sin mirar el telar. Tiene los ojos blancos.'),
+      'Te oí llegar desde Las Cañadas, forastero. Pisas fuerte, como los que ya han visto el fuego.',
+      'El consejero subió anoche con las tres llaves y abrió la Boca del Teide. Pero no puede entrar: el fuego de Guayota quema a todo el que no le pertenece.',
+      'Solo hubo un hombre que caminó por ese fuego: Varkhul, el mencey traidor, que vendió a su pueblo a cambio de no morir nunca.',
+      'Su corona está hecha con el pacto. Quien la lleve podrá entrar en el cráter. Búscalo en las Ruinas de Teno.',
+    ],
+    accept: 'Traeré la corona de Varkhul.',
+    doing: 'Varkhul vive en las Ruinas de Teno, en el Malpaís. Allí otros jugadores pueden atacarte.',
+    thanks: 'Ahora descansa. Cuando estés listo, subiremos al cráter.',
+    steps: [
+      { id: 'varkhul', event: 'kill', match: 'rey_esqueleto', count: 1, hint: { x: -1500, z: -440 },
+        text: 'Derrota a Varkhul en las Ruinas de Teno (¡Malpaís!).', tip: 'Drena tu plegaria: lleva pociones. Guarda lo valioso en el banco antes.' },
+      { id: 'corona', event: 'talk', match: 'tibiabin_vidente', count: 1, hint: { talk: 'tibiabin_vidente' },
+        text: 'Lleva la corona de Varkhul a Tibiabin.',
+        scene: [
+          N('La corona de Varkhul es de hueso negro. Al tocarla oyes una voz dentro de tu cabeza:'),
+          S('voz', '«Póntela… y serás eterno, como él.»'),
+          '¿La oyes? Es Guayota. Te habla a través de ella. Así compró a Varkhul.',
+        ],
+        reward: { items: [['corona_varkhul', 1]] } },
+      { id: 'tamarco', event: 'choice', flag: 'corona', npc: 'tibiabin_vidente', count: 1, hint: { talk: 'tibiabin_vidente' },
+        text: 'Decide qué hacer con la corona.', prompt: '¿Qué haces con la corona?',
+        options: [
+          { id: 'envolver', label: '🧶 Envolverla en el tamarco de Tibiabin y no escucharla.',
+            reply: ['Bien hecho. El tamarco apaga su voz. Te protegerá del fuego sin hacerte su siervo.'] },
+          { id: 'escuchar', label: '👂 Escuchar lo que dice la voz.',
+            reply: [N('La voz te promete fuego, fuerza, una isla entera a tus pies…'), 'Has escuchado demasiado, forastero. Cuando estés frente a él, recuérdalo: Guayota no da nada gratis.'] },
+        ] },
+    ],
+    reward: { coins: 12000, items: [['shark', 10]], xp: { attack: 6000, strength: 6000, defence: 6000, prayer: 4000 }, text: '12.000 monedas · 10 tiburones · XP de combate y Plegaria' },
+  },
+
+  // -------------------------------------------------------------- Capítulo 6
+  saga_despertar: {
+    id: 'saga_despertar', saga: 'sello', chapter: 6, name: 'El despertar de Guayota', giver: 'tibiabin_vidente',
+    summary: 'La Boca del Teide está abierta. El final de la historia. (Historia principal · capítulo 6)',
+    offer: ['Esta noche Magec se esconderá: es la noche que Guayota esperaba. ¿Subirás conmigo al cráter?'],
+    accept: 'Subamos al cráter.',
+    doing: 'La Boca del Teide está al norte de mi campamento. Cuando el sol se apague, busca la luz.',
+    thanks: 'Se acabó, hijo de ninguna parte. Su cuerpo de fuego se rehará con el tiempo: quien quiera probarse, que baje al cráter.',
+    steps: [
+      { id: 'preparar', event: 'talk', match: 'tibiabin_vidente', count: 1, hint: { talk: 'tibiabin_vidente' },
+        text: 'Escucha a Tibiabin antes de subir.',
+        scene: [
+          'En el cráter verás círculos de luz dorada: son los últimos rayos de Magec atrapados en la roca.',
+          'Cuando Guayota se coma el sol, métete en uno o arderás. Y cuando aúlle, vendrán sus tibicenas: acaba con ellos primero.',
+        ],
+        sceneBy: { flag: 'chinamada', values: {
+          presente: ['Los guerreros de Chinamada vigilan el camino. No olvidan a quien respetó su tagoror.'],
+          lucha: ['Los de Chinamada no subirán: aún te recuerdan en el tagoror. Irás solo.'],
+        } } },
+      { id: 'guardianes', event: 'kill', match: 'acolito_cabildo', count: 4, hint: { x: 612, z: -1588 },
+        text: 'Derrota a 4 acólitos que guardan la subida al cráter.', tip: 'Están en el camino a la Boca del Teide.' },
+      { id: 'boca', event: 'visit', at: { x: 640, z: -1620, r: 18 }, hint: { x: 640, z: -1620 }, count: 1,
+        text: 'Entra en la Boca del Teide.',
+        scene: [
+          N('En el centro del cráter, el consejero Benítez levanta las tres llaves sobre la lava.'),
+          S('consejero_benitez', '¡Señor del Fuego! ¡Tu siervo te ha liberado! ¡Dame tu poder, como me prometiste!'),
+          N('La lava se alza como una ola. Una mano enorme, de roca y fuego, sale del cráter… y aplasta al consejero.'),
+          S('guayota', 'NO TENGO SIERVOS. TENGO CENIZA.'),
+          N('Dos ojos como soles se clavan en ti. Las tres llaves caen a la lava, al rojo vivo.'),
+          S('guayota', 'Y TÚ, PEQUEÑO… ¿VIENES A SELLARME… O A SERVIRME?'),
+        ],
+        sceneBy: { flag: 'corona', values: {
+          escuchar: [S('guayota', 'TE OÍ ESCUCHARME A TRAVÉS DE LA CORONA. SÉ LO QUE DESEAS.')],
+          envolver: [S('guayota', 'ESE TRAPO DE VIEJA NO TE SALVARÁ.')],
+        } } },
+      { id: 'guayota', event: 'kill', match: 'guayota', count: 1, hint: { x: 640, z: -1620 },
+        text: 'Derrota a Guayota.', tip: 'Protección contra magia. Fase 2: mata a los tibicenas. Fase 3: en el ECLIPSE, métete en un círculo de luz.' },
+      { id: 'final', event: 'choice', flag: 'final', count: 1, hint: { x: 640, z: -1620 },
+        text: 'Decide el destino del corazón de Guayota.', prompt: 'El corazón de Guayota',
+        scene: [
+          N('Guayota se derrumba sobre la lava. Su corazón, una piedra que late como un tambor, rueda hasta tus pies.'),
+          N('Desde el borde del cráter, Tibiabin grita:'),
+          S('tibiabin_vidente', '¡Rápido, antes de que se rehaga! Las llaves están en la lava: con su corazón puedes sellar el Teide otra vez… o quedarte con su poder.'),
+        ],
+        options: [
+          { id: 'sello', label: '🌞 Arrojar el corazón a la lava y cantar el sello de Achamán.',
+            reply: [N('Lanzas el corazón a la lava. Las tres llaves se funden con él y la roca se cierra como una boca.'),
+                    N('Amanece. Magec vuelve a salir sobre Achinech, y en el cráter queda una capa de luz dorada.'),
+                    S('tibiabin_vidente', 'Achamán te lo agradece, hijo de ninguna parte. La isla dormirá tranquila otros mil años.')],
+            reward: { items: [['cape_sello', 1]] } },
+          { id: 'pacto', label: '🔥 Quedarte el corazón de Guayota y su poder.',
+            reply: [N('Aprietas el corazón contra el pecho. El fuego no te quema: te obedece.'),
+                    N('El cráter se cierra de todos modos… pero en tu espalda arde una capa de magma vivo.'),
+                    S('guayota', 'AHORA SOMOS UNO, PEQUEÑO. YA HABLAREMOS.'),
+                    S('tibiabin_vidente', 'Lo que has hecho no tiene vuelta atrás. Que Achamán se apiade de ti.')],
+            reward: { items: [['cape_guayota', 1]] } },
+        ] },
+      { id: 'epilogo', event: 'talk', match: 'alma_sacerdotisa', count: 1, hint: { talk: 'alma_sacerdotisa' },
+        text: 'Vuelve con Alma a La Laguna.',
+        sceneBy: { flag: 'final', values: {
+          sello: [
+            '¡Lo sentí en el altar! El agua dejó de hervir de golpe. ¡Lo has conseguido!',
+            'La isla nunca sabrá lo que hiciste por ella. Pero yo sí. Y Achamán también.',
+          ],
+          pacto: [
+            'El agua del altar sigue tibia… ¿Qué llevas ahí, en el pecho? Late como un tambor.',
+            'No, no me lo digas. Has cerrado el Teide, y eso te lo agradezco. Pero vete en paz… si puedes.',
+          ],
+        } } },
+    ],
+    reward: { coins: 30000, items: [['super_bones', 3]], xp: { attack: 15000, strength: 15000, defence: 15000, ranged: 10000, magic: 10000, prayer: 8000, hitpoints: 10000 },
+      text: '30.000 monedas · 3 súper huesos · mucha XP · y la capa que elegiste' },
+  },
+});
+
+QUEST_ORDER.push(...SAGA.chapters);
+Object.assign(QUEST_REQS, {
+  saga_temblor:   { combat: 15 },
+  saga_sotano:    { combat: 15, quests: ['saga_temblor'] },
+  saga_llaves:    { combat: 35, quests: ['saga_sotano'] },
+  saga_traicion:  { combat: 55, levels: { prayer: 37 }, quests: ['saga_llaves'] },
+  saga_corona:    { combat: 65, quests: ['saga_traicion'] },
+  saga_despertar: { combat: 70, levels: { prayer: 43 }, quests: ['saga_corona'] },
+});

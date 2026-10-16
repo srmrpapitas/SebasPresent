@@ -18,8 +18,8 @@
  */
 import * as THREE from 'three';
 
-export const CYCLE_MS = 40 * 60 * 1000;
-const DAY_FRAC = 0.7;            // 28 min de día, 12 de noche
+import { CYCLE_MS, DAY_FRAC, phaseAt, lightAt } from './shared/daytime.js';   // misma hora que el servidor
+export { CYCLE_MS };
 
 let scene = null, camera = null, sun = null, ambient = null;
 let getServerNow = () => null, isIndoors = () => false, isCave = () => false, onChange = () => {};
@@ -85,17 +85,13 @@ function currentPhase() {
     clockOffset = haveOffset ? clockOffset + (off - clockOffset) * 0.05 : off;
     haveOffset = true;
   }
-  const t = Date.now() + clockOffset;
-  return ((t % CYCLE_MS) / CYCLE_MS + 1) % 1;
+  return phaseAt(Date.now() + clockOffset);
 }
 
 export function update() {
   if (!started || !scene) return;
   const p = currentPhase();
-  const day = p < DAY_FRAC;
-  const ang = day ? (p / DAY_FRAC) * Math.PI : ((p - DAY_FRAC) / (1 - DAY_FRAC)) * Math.PI;
-  const elev = day ? Math.sin(ang) : -0.6 * Math.sin(ang);
-  const light = smooth(-0.12, 0.32, elev);            // 0 noche cerrada · 1 pleno día
+  const { day, ang, elev, light } = lightAt(p);       // light: 0 noche cerrada · 1 pleno día
   const night = 1 - light;
   const twilight = Math.max(0, 1 - Math.abs(elev) / 0.32) * (elev > -0.2 ? 1 : 0);   // naranja cerca del horizonte
   state = { phase: p, light, night };

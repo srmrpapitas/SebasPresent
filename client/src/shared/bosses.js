@@ -153,6 +153,37 @@ export const BOSSES = {
     rocks: [{ x: -1586, z: -1526, r: 2.6 }, { x: -1614, z: -1554, r: 2.6 }, { x: -1612, z: -1524, r: 2.2 }],
     tip: 'Trábalo en una roca para evitar sus garras; entonces solo te alcanzará el fuego (Protección contra magia).',
   },
+  // Sesión 52 — FINAL de la historia "El Sello de Achamán": Guayota en la Boca del Teide.
+  // Tres fases: 1) lava; 2) (≤ 66 %) llama a sus tibicenas y barre con fuego;
+  // 3) (≤ 33 %) ECLIPSE: devora el sol y solo los círculos de luz de Magec salvan.
+  guayota: {
+    name: 'Guayota', title: 'el Señor del Fuego', x: 640, z: -1620, lairR: 30, bodyR: 2.6,
+    color: '#ff6a1a', drop: 'gs_guayota', dropName: 'Espadón de Guayota',
+    stats: { hp: 700, att: 80, str: 76, def: 70, speed: 5, range: 4.4 },
+    attacks: [{ style: 'melee', range: 4.6, max: 26, every: 3200 }, { style: 'magic', range: 13, max: 24, every: 3600, breath: true }],
+    specialEvery: 8000,
+    specials: [
+      { kind: 'aoe_target', count: 3, spread: 4, r: 2.6, delay: 2100, dmg: 20, name: '¡Guayota escupe lava! Muévete.' },
+      { kind: 'pool', count: 2, spread: 3, r: 2.4, delay: 900, dmg: 6, duration: 10000, name: 'El suelo se abre: charcos de magma.' },
+    ],
+    phases: [
+      { below: 0.66, name: '🔥 ¡Guayota aúlla y llama a sus tibicenas!', attackMult: 0.9, specialEvery: 7000,
+        summon: { def: 'tibicena_guayota', count: 3 },
+        specials: [
+          { kind: 'aoe_self', r: 7.5, delay: 1800, dmg: 24, name: '¡Guayota barre el cráter con fuego! (aléjate)' },
+          { kind: 'aoe_target', count: 4, spread: 4.5, r: 2.6, delay: 2000, dmg: 20, name: 'Llueve lava del Teide.' },
+          { kind: 'pool', count: 3, spread: 3.5, r: 2.4, delay: 900, dmg: 7, duration: 10000, name: 'Ríos de magma bajo tus pies.' },
+        ] },
+      { below: 0.33, name: '🌑 ¡Guayota devora el sol! Busca la luz de Magec.', attackMult: 0.8, specialEvery: 7500,
+        specials: [
+          { kind: 'eclipse', count: 2, r: 3.4, delay: 4500, dmg: 34, name: '🌑 ¡ECLIPSE! Métete en un círculo de luz de Magec.' },
+          { kind: 'aoe_target', count: 4, spread: 4.5, r: 2.6, delay: 1900, dmg: 22, name: 'Llueve lava del Teide.' },
+          { kind: 'aoe_self', r: 7.5, delay: 1700, dmg: 26, name: '¡Guayota barre el cráter con fuego! (aléjate)' },
+        ] },
+    ],
+    rocks: [{ x: 626, z: -1606, r: 2.4 }, { x: 656, z: -1636, r: 2.4 }, { x: 624, z: -1638, r: 2.0 }],
+    tip: 'Protección contra magia para su fuego. Fase 2: acaba con los tibicenas. Fase 3: en cada ECLIPSE corre a un círculo de luz dorada.',
+  },
 };
 
 export const BOSS_IDS = Object.keys(BOSSES);

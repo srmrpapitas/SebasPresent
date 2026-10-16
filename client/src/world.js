@@ -71,7 +71,8 @@ import { STAFF_MANA_EXTRA, robeMagicBonus } from './shared/equip_reqs.js';   // 
 import * as onboarding from './onboarding.js';
 import * as daynight from './daynight.js';   // Sesión 52 — día y noche
 import * as ambience from './ambience.js';   // Sesión 52 — sonidos de ambiente
-import * as birds from './birds.js';         // Sesión 52 — gaviotas, pajarillos y murciélagos   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
+import * as birds from './birds.js';         // Sesión 52 — gaviotas, pajarillos y murciélagos
+import * as story from './story.js';         // Sesión 52 — lugares de la historia   // Sesión 52 — guía de inicio  // Sesión 50 — cofres de banco por el mapa
 import * as townNpcs from './town_npcs.js';      // Sesión 50 — habitantes y diálogos
 import * as tablets from './teleport_tablets.js'; // Sesión 50 — tabletas de teletransporte
 import * as smithing from './skills/smithing.js';   // Sesión 50 — horno + yunque
@@ -302,6 +303,7 @@ export async function startWorld(loggedInUser, token) {
         isCave: () => !!caves.isActive?.(),
       });
     } catch (e) { console.warn('[world] birds:', e); }
+    try { story.start({ scene, isNight: () => daynight.isNight() }); } catch (e) { console.warn('[world] story:', e); }
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
@@ -1127,6 +1129,7 @@ export async function startWorld(loggedInUser, token) {
         getPlayer:   () => player,
         getSnapshot: () => worldSnapshot.getSnapshot(),
         feedLog:     (type, msg) => combat.feedLog?.(type, msg),
+        getServerNow: () => worldSnapshot.getServerNow?.(),   // Sesión 52 — pasos "de noche"
       })).then(() => {
         // Sesión 52 — guía de inicio para jugadores nuevos, cuando ya se ve el mundo
         const tryOnboard = (tries = 0) => {
@@ -1182,6 +1185,7 @@ export function stopWorld() {
   try { daynight.stop(); } catch {}   // Sesión 52
   try { ambience.stop(); } catch {}
   try { birds.stop(); } catch {}
+  try { story.stop(); } catch {}
 
   // Sesión 27 Bloque 1 — world_snapshot cleanup
   try { worldSnapshot.stop(); } catch {}
@@ -3384,6 +3388,7 @@ function animate() {
   try { daynight.update(dt); } catch (e) { if (!window.__dnErr) { window.__dnErr = e; console.warn('[daynight]', e); } }   // Sesión 52
   try { ambience.update(dt); } catch (e) { if (!window.__amErr) { window.__amErr = e; console.warn('[ambience]', e); } }   // Sesión 52
   try { birds.update(dt); } catch (e) { if (!window.__bdErr) { window.__bdErr = e; console.warn('[birds]', e); } }   // Sesión 52
+  try { story.update(dt); } catch {}   // Sesión 52
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   renderer.render(scene, camera);

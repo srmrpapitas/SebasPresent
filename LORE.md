@@ -20,7 +20,6 @@ El sello de Achamán se agrieta: la tierra tiembla y el Teide humea.
   - **Rey Yeti Grom**: Las Cañadas.
   - **Coloso de Obsidiana**: Mina de Guajara.
   - **Reina Sekhet**: malpaís de Güímar.
-  - **Morgath**: Charcas de Erjos.
   - **Leviatán**: costa de Los Cristianos.
   - **Varkhul**: un mencey antiguo que pactó con Guayota. Vive en las Ruinas de Teno.
 - **El Cabildo**: en apariencia gobierna desde **La Laguna** (Aguere). En secreto es una **orden de magos malignos** que adora a Guayota y quiere romper el sello para quedarse con su poder.

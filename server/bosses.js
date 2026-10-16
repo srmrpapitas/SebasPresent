@@ -31,6 +31,43 @@ const VIEW_R = 140;   // el snapshot incluye jefes a esta distancia
 function dist(ax, az, bx, bz) { return Math.hypot(ax - bx, az - bz); }
 function parse(s, d) { try { return s ? JSON.parse(s) : d; } catch { return d; } }
 
+// ------------------------------------------------------------
+// Sesión 52 — FASES (Guayota). B.phases = [{ below: 0.66, name, specials,
+// specialEvery, attackMult, summon: { def, count } }, …] ordenadas de mayor
+// a menor `below`. La fase actual se guarda en boss_state.phase (mig. 023).
+// ------------------------------------------------------------
+function phaseIndexFor(B, hp, maxHp) {
+  if (!B.phases?.length || !maxHp) return 0;
+  const f = hp / maxHp;
+  let idx = 0;
+  B.phases.forEach((ph, i) => { if (f <= ph.below) idx = i + 1; });
+  return idx;
+}
+function phaseDef(B, idx) { return idx > 0 ? B.phases[idx - 1] : null; }
+
+/** Despierta `count` esbirros dormidos (status = 1, sin reaparición) junto al jefe. */
+async function wakeMinions(env, defId, count, bx, bz, targetId, rng) {
+  const rows = (await env.DB.prepare('SELECT id FROM npc_instances WHERE def_id = ? AND status = 1 LIMIT ?').bind(defId, count).all()).results || [];
+  for (const r of rows) {
+    const a = rng() * Math.PI * 2, d = 4 + rng() * 4;
+    const x = +(bx + Math.cos(a) * d).toFixed(2), z = +(bz + Math.sin(a) * d).toFixed(2);
+    await env.DB.prepare(
+      `UPDATE npc_instances SET status = 0, hp_current = (SELECT max_hp FROM npc_defs WHERE id = npc_instances.def_id),
+              x = ?, z = ?, spawn_x = ?, spawn_z = ?, died_at = NULL, in_combat_with = ?, last_attack_at = NULL
+        WHERE id = ? AND status = 1`
+    ).bind(x, z, x, z, targetId || null, r.id).run();
+  }
+  return rows.length;
+}
+/** Vuelve a dormir a los esbirros (al morir o reiniciarse el jefe). */
+async function sleepMinions(env, B, now) {
+  for (const ph of B.phases || []) {
+    if (!ph.summon) continue;
+    await env.DB.prepare('UPDATE npc_instances SET status = 1, died_at = ?, in_combat_with = NULL WHERE def_id = ? AND status = 0')
+      .bind(now, ph.summon.def).run();
+  }
+}
+
 /** Jefes cuya guarida está cerca de (x,z). */
 function bossesNear(x, z, r) {
   const out = [];
@@ -76,6 +113,7 @@ async function tickBoss(env, bossId, now, rng) {
   const view = () => ({
     id: bossId, npc_id: npc.id, alive: npc.status === 0,
     style: state?.style || null,
+    phase: state?.phase || 0,   // Sesión 52
     hz: parse(state?.hazards, []).filter(h => (h.until || h.at) > now - 600),
     atk: parse(state?.last_attack, null),
     spec: state?.last_special ? parse(state.last_special, null) : null,
@@ -96,9 +134,10 @@ async function tickBoss(env, bossId, now, rng) {
   // Muerto → limpiar peligros
   if (npc.status !== 0) {
     await env.DB.prepare(
-      "UPDATE boss_state SET prev_tick = ?, hazards = '[]', next_special_at = 0, empty_since = 0 WHERE boss_id = ?"
+      "UPDATE boss_state SET prev_tick = ?, hazards = '[]', next_special_at = 0, empty_since = 0, phase = 0 WHERE boss_id = ?"
     ).bind(now, bossId).run();
-    state.hazards = '[]';
+    if (B.phases && state.phase) { try { await sleepMinions(env, B, now); } catch {} }   // Sesión 52
+    state.hazards = '[]'; state.phase = 0;
     return view();
   }
 
@@ -126,6 +165,12 @@ async function tickBoss(env, bossId, now, rng) {
       bx += (B.x - bx) / dh * step; bz += (B.z - bz) / dh * step;
     }
     if (now - emptySince > BOSS_EMPTY_RESET_MS && hp < npc.max_hp) hp = npc.max_hp;
+    // Sesión 52 — jefe con fases: al curarse vuelve a la fase 1 y sus esbirros se duermen
+    if (B.phases && state.phase && hp >= npc.max_hp) {
+      try { await sleepMinions(env, B, now); } catch {}
+      await env.DB.prepare('UPDATE boss_state SET phase = 0 WHERE boss_id = ?').bind(bossId).run();
+      state.phase = 0;
+    }
     hazards = hazards.filter(h => (h.until || h.at) > now);
     await env.DB.prepare('UPDATE npc_instances SET x = ?, z = ?, hp_current = ?, in_combat_with = NULL, last_moved_at = ? WHERE id = ? AND status = 0')
       .bind(bx, bz, hp, now, npc.id).run();
@@ -137,6 +182,21 @@ async function tickBoss(env, bossId, now, rng) {
     return view();
   }
   emptySince = 0;
+
+  // Sesión 52 — cambio de fase según la vida
+  let phase = state.phase || 0;
+  const wantPhase = phaseIndexFor(B, hp, npc.max_hp);
+  if (wantPhase > phase) {
+    phase = wantPhase;
+    const P = phaseDef(B, phase);
+    lastSpecial = { k: 'phase', n: P.name, at: now, ph: phase };
+    nextSpecial = now + 2500;          // un respiro para leer el aviso
+    if (P.summon) { try { await wakeMinions(env, P.summon.def, P.summon.count, bx, bz, target.user_id, rng); } catch (e) { console.warn('[boss] summon', e?.message); } }
+  }
+  const PH = phaseDef(B, phase);
+  const atkMult = PH?.attackMult || 1;
+  const specials = PH?.specials || B.specials;
+  const specialEvery = PH?.specialEvery || B.specialEvery;
 
   // 2) Movimiento (bloqueado por rocas)
   const dT = dist(bx, bz, target.x, target.z);
@@ -181,15 +241,15 @@ async function tickBoss(env, bossId, now, rng) {
         const hit = await damagePlayerFromMonster(env, target.user_id, dmg, now + (atk.style === 'melee' ? 0 : 450), npc.id, target, rng);
         lastAttack = { s: atk.style, b: !!atk.breath, t: target.user_id, at: now, d: hit.dmg ?? dmg, blk: blocked ? 1 : 0, c: style };
       }
-      nextAttack = now + atk.every;
+      nextAttack = now + Math.round(atk.every * atkMult);
     }
   }
 
   // 4) Especiales por turnos
-  if (now >= nextSpecial && B.specials?.length) {
-    const sp = B.specials[specialIdx % B.specials.length];
+  if (now >= nextSpecial && specials?.length) {
+    const sp = specials[specialIdx % specials.length];
     specialIdx++;
-    nextSpecial = now + B.specialEvery;
+    nextSpecial = now + specialEvery;
     lastSpecial = { k: sp.kind, n: sp.name, at: now };
     if (sp.kind === 'aoe_target' || sp.kind === 'pool') {
       const tgts = players.length ? players : [target];
@@ -234,6 +294,19 @@ async function tickBoss(env, bossId, now, rng) {
             .bind(half, now, half > 0 ? cur.active.join(',') : '', p.user_id).run();
         } catch (err) { console.warn('[boss] drain:', err?.message); }
       }
+    } else if (sp.kind === 'eclipse') {
+      // Sesión 52 — ECLIPSE: se apaga el sol y solo quedan unos círculos de luz
+      // de Magec. Al caer, quien NO esté dentro de uno recibe el golpe.
+      const g = now;
+      for (let k = 0; k < (sp.count || 2); k++) {
+        for (let tries = 0; tries < 10; tries++) {
+          const a = rng() * Math.PI * 2, rr = (0.25 + rng() * 0.55) * B.lairR;
+          const tx = B.x + Math.cos(a) * rr, tz = B.z + Math.sin(a) * rr;
+          if (hitsRock(B, tx, tz, sp.r)) continue;
+          hazards.push({ k: 'safe', g, x: +tx.toFixed(2), z: +tz.toFixed(2), r: sp.r, t0: now, at: now + sp.delay, dmg: sp.dmg, until: 0 });
+          break;
+        }
+      }
     } else if (sp.kind === 'switch') {
       style = style === 'magic' ? 'ranged' : 'magic';
       lastSpecial.c = style;
@@ -241,8 +314,25 @@ async function tickBoss(env, bossId, now, rng) {
   }
 
   // 5) Peligros que caen / charcos activos
+  // Sesión 52 — eclipse: por grupo, daña a quien no esté en ningún círculo de luz
+  const safeGroups = new Map();
+  for (const h of hazards) if (h.k === 'safe' && !h.done && h.at <= now) {
+    if (!safeGroups.has(h.g)) safeGroups.set(h.g, []);
+    safeGroups.get(h.g).push(h);
+  }
+  for (const [, circles] of safeGroups) {
+    for (const p of players) {
+      const safe = circles.some(c => dist(p.x, p.z, c.x, c.z) <= c.r);
+      if (!safe) {
+        const dmg = Math.max(1, Math.round(circles[0].dmg * (0.85 + rng() * 0.3)));
+        await damagePlayerFromMonster(env, p.user_id, dmg, now, npc.id, p, rng);
+      }
+    }
+    for (const c of circles) c.done = 1;
+  }
   const keep = [];
   for (const h of hazards) {
+    if (h.k === 'safe') { if (!h.done || h.at > now - 800) keep.push(h); continue; }
     if (h.until && h.until < now) continue;               // charco terminado
     if (!h.until && h.done) { if (h.at > now - 800) keep.push(h); continue; }
     if (h.at <= now) {
@@ -277,10 +367,12 @@ async function tickBoss(env, bossId, now, rng) {
   ).bind(bx, bz, target.user_id, now, lastAttack?.at === now ? now : null, npc.id).run();
   await env.DB.prepare(
     `UPDATE boss_state SET prev_tick = ?, hazards = ?, style = ?, next_attack_at = ?, next_special_at = ?,
-            special_idx = ?, empty_since = 0, last_attack = ?, last_special = ?
+            special_idx = ?, empty_since = 0, last_attack = ?, last_special = ?${B.phases ? ', phase = ?' : ''}
       WHERE boss_id = ?`
   ).bind(now, JSON.stringify(hazards), style, nextAttack, nextSpecial, specialIdx,
-    lastAttack ? JSON.stringify(lastAttack) : null, lastSpecial ? JSON.stringify(lastSpecial) : null, bossId).run();
+    lastAttack ? JSON.stringify(lastAttack) : null, lastSpecial ? JSON.stringify(lastSpecial) : null,
+    ...(B.phases ? [phase] : []), bossId).run();
+  if (B.phases) state.phase = phase;
 
   npc.x = bx; npc.z = bz;
   Object.assign(state, {

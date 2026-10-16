@@ -642,6 +642,13 @@ export async function questsStart(questId) {
 export async function npcTalk(npcId) {
   return apiFetch('/api/npc/talk', { method: 'POST', auth: true, body: { npc_id: npcId } });
 }
+// Sesión 52 — historia: "ve a tal sitio" y decisiones
+export async function questsVisit(questId) {
+  return apiFetch('/api/quests/visit', { method: 'POST', auth: true, body: { quest_id: questId } });
+}
+export async function questsChoose(questId, option) {
+  return apiFetch('/api/quests/choose', { method: 'POST', auth: true, body: { quest_id: questId, option } });
+}
 export async function npcDeliver(npcId) {
   return apiFetch('/api/npc/deliver', { method: 'POST', auth: true, body: { npc_id: npcId } });
 }

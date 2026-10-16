@@ -24,6 +24,8 @@ export const PROC_NPC_HEIGHTS = {
   guardia_ciudad: 1.9, guanche_guerrero: 1.8, guanche_hondero: 1.75, guanche_faycan: 1.8, guanche_mencey: 2.1, cabra: 0.9,
   // Sesión 50 — Fosa de Guayota
   fosa_diablillo: 1.2, fosa_escupefuego: 1.3, fosa_espiritu: 1.9, fosa_bruto: 2.6, fosa_ignaroth: 5.2,
+  // Sesión 52 — historia
+  tibicena: 1.3, tibicena_guayota: 1.55, guayota: 6.8,
 };
 
 function mat(color, extra = {}) {
@@ -700,8 +702,30 @@ Object.assign(BUILDERS, {
   fosa_espiritu: fireSpirit,
   fosa_bruto: () => variant('golem', 1.1, lavaRecolor),
   fosa_ignaroth: ignaroth,
+  // Sesión 52 — Historia «El Sello de Achamán»
+  tibicena: () => tibicena(1.0),
+  tibicena_guayota: () => tibicena(1.2),
+  guayota: () => { const g = ignaroth(); g.root.scale.multiplyScalar(1.3); return g; },
   dragon_negro: () => dragon({ s: 1.2, c1: 0x1a1620, c2: 0x4a3a5a, c3: 0x0a080c, wing: 0x4a2a6a, eye: 0xc060ff }),
 });
+
+/** Sesión 52 — Tibicena: perro negro de Guayota, ojos como brasas y lomo de ascuas. */
+function tibicena(scale = 1) {
+  const m = mat(0x141012), eyeM = mat(0xff2a00, { emissive: 0xff2000 });
+  const ember = mat(0xff5a10, { emissive: 0xc02800 });
+  const g = quadruped({ m, eyeM, snoutM: mat(0x0a0808), bw: 0.5, bh: 0.5, bl: 1.25, hs: 0.42, legLen: 0.56, lt: 0.12,
+    ears: true, tailLen: 0.7, gait: 12 });
+  const body = g.root.children[0];
+  // cresta de ascuas a lo largo del lomo
+  for (let i = 0; i < 6; i++) {
+    const c = cone(0.07, 0.22 + (i % 2) * 0.08, ember, 4);
+    c.position.set(0, 0.56 + 0.5 + 0.08, 0.5 - i * 0.2);
+    c.rotation.x = -0.4;
+    body.add(c);
+  }
+  g.root.scale.setScalar(scale);
+  return g;
+}
 
 /** Construye el NPC. Devuelve { root, materials, animate } o null. */
 export function buildProceduralNpc(typeId) {

@@ -25,6 +25,7 @@ const lastSpec = new Map();
 const lastStyle = new Map();
 const npcAtk = new Map();       // npcId → last_attack_at visto
 let hud = null, banner = null, bannerTimer = 0;
+let eclipseEl = null;   // Sesión 52
 let clockOffset = 0;           // serverNow - Date.now()
 let lastSnapNow = 0;
 const ROCKS = allBossRocks();
@@ -50,6 +51,7 @@ export function stop() {
   for (const b of bursts) scene?.remove(b.g);
   bursts.length = 0;
   hud?.remove(); hud = null; banner?.remove(); banner = null;
+  eclipseEl?.remove(); eclipseEl = null;
   started = false;
 }
 
@@ -108,7 +110,7 @@ export function applyCollision(x0, z0, x1, z1) {
 // ------------------------------------------------------------
 function makeHazardMesh(h, color) {
   const g = new THREE.Group();
-  const col = new THREE.Color(h.k === 'pool' ? 0x50e040 : color);
+  const col = new THREE.Color(h.k === 'pool' ? 0x50e040 : h.k === 'safe' ? 0xffe070 : color);
   const edge = new THREE.Mesh(new THREE.RingGeometry(h.r - 0.12, h.r, 40),
     new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
   const fill = new THREE.Mesh(new THREE.CircleGeometry(h.r, 40),
@@ -124,6 +126,13 @@ function makeHazardMesh(h, color) {
       g.add(b); bub.push(b);
     }
     g.userData.bub = bub;
+  } else if (h.k === 'safe') {
+    // Sesión 52 — luz de Magec: columna dorada (aquí estás a salvo del eclipse)
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(h.r, h.r, 16, 32, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    pillar.position.y = 8;
+    g.add(pillar);
+    g.userData.pillar = pillar;
   } else if (h.k === 'aoe') {
     // Algo cae del cielo sobre el círculo (roca, bola de fuego…)
     const drop = new THREE.Mesh(new THREE.DodecahedronGeometry(Math.max(0.35, h.r * 0.28), 0),
@@ -303,6 +312,14 @@ export function update(dt) {
       if (sNow > end) { scene.remove(e.mesh); hazards.delete(key); }
       continue;
     }
+    if (h.k === 'safe' && !e.landed) {
+      ud.fill.scale.setScalar(1);
+      ud.fill.material.opacity = 0.35 + Math.sin(sNow / 120) * 0.12;
+      ud.edge.material.opacity = 0.9;
+      if (ud.pillar) ud.pillar.material.opacity = 0.18 + prog * 0.25;
+      if (sNow >= h.at) { e.landed = true; spawnBurst(e.mesh.position.x, e.mesh.position.z, h.r, new THREE.Color(0xfff0a0)); scene.remove(e.mesh); }
+      continue;
+    }
     if (!e.landed) {
       ud.fill.scale.setScalar(Math.max(0.02, prog));
       ud.fill.material.opacity = 0.2 + prog * 0.35;
@@ -339,6 +356,18 @@ export function update(dt) {
     ring.material.opacity = d < B.lairR + 15 ? 0.35 + Math.sin(performance.now() / 400) * 0.1 : 0.12;
   }
 
+  // Sesión 52 — ECLIPSE: la pantalla se oscurece mientras haya círculos de luz pendientes
+  {
+    let pending = false;
+    for (const e of hazards.values()) if (e.h.k === 'safe' && !e.landed && sNow < e.h.at) { pending = true; break; }
+    if (!eclipseEl && pending) {
+      eclipseEl = document.createElement('div');
+      eclipseEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:15;background:radial-gradient(circle at 50% 45%, rgba(40,0,0,0.15), rgba(0,0,0,0.6));opacity:0;transition:opacity .6s';
+      document.body.appendChild(eclipseEl);
+    }
+    if (eclipseEl) eclipseEl.style.opacity = pending ? '1' : '0';
+  }
+
   // HUD del jefe
   const lair = pl ? bossLairAt(pl.position.x, pl.position.z) : null;
   const bInfo = lair ? list.find(b => b.id === lair) : null;
@@ -347,10 +376,11 @@ export function update(dt) {
     if (bInfo && npc && bInfo.alive) {
       const B = BOSSES[lair];
       hud.style.display = 'block';
-      const key = `${lair}|${npc.hp_current}|${npc.max_hp}|${bInfo.style || ''}`;
+      const key = `${lair}|${npc.hp_current}|${npc.max_hp}|${bInfo.style || ''}|${bInfo.phase || 0}`;
       if (hud.dataset.k !== key) {
         hud.dataset.k = key;
-        const styleTxt = bInfo.style ? (bInfo.style === 'magic' ? ' · 🔵 MAGIA' : ' · 🟢 PROYECTILES') : '';
+        const styleTxt = (bInfo.style ? (bInfo.style === 'magic' ? ' · 🔵 MAGIA' : ' · 🟢 PROYECTILES') : '')
+          + (B.phases ? ` · Fase ${(bInfo.phase || 0) + 1}/${B.phases.length + 1}` : '');   // Sesión 52
         hud.querySelector('.bn').innerHTML = `${B.name} <small>${B.title}${styleTxt}</small>`;
         hud.querySelector('.fill').style.width = `${Math.max(0, Math.min(100, (npc.hp_current / (npc.max_hp || 1)) * 100))}%`;
         hud.querySelector('.hpt').textContent = `${npc.hp_current} / ${npc.max_hp}`;

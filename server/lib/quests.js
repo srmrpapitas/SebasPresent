@@ -11,7 +11,8 @@
  */
 
 import { guardConds, slotCond, atomicBatch } from './atomic.js';   // Sesión 51
-import { QUESTS, QUEST_ORDER } from '../../client/src/shared/quests.js';
+import { QUESTS, QUEST_ORDER, QUEST_REQS, checkReqs } from '../../client/src/shared/quests.js';
+import { combatLevelFrom } from '../../client/src/shared/mounts.js';   // Sesión 52 — requisitos al encadenar capítulos
 import { xpToLevel, MAX_XP } from './skills_engine.js';
 
 const INVENTORY_SLOTS = 20;
@@ -119,21 +120,113 @@ async function giveReward(env, userId, reward) {
   }
 }
 
+// ============================================================
+// Sesión 52 — Decisiones del jugador (user_quest_flags, migración 023)
+// Un paso puede llevar `if: { flag: valor | [valores] }`: solo se hace si
+// el jugador eligió eso antes. Así una misión tiene caminos distintos.
+// ============================================================
+export async function getFlags(env, userId) {
+  try {
+    const r = await env.DB.prepare('SELECT flag, value FROM user_quest_flags WHERE user_id = ?').bind(userId).all();
+    const out = {};
+    for (const f of r.results || []) out[f.flag] = f.value;
+    return out;
+  } catch { return {}; }
+}
+export function stepApplies(step, flags) {
+  if (!step?.if) return true;
+  for (const [k, v] of Object.entries(step.if)) {
+    const ok = Array.isArray(v) ? v.includes(flags[k]) : flags[k] === v;
+    if (!ok) return false;
+  }
+  return true;
+}
+function branching(q) { return q.steps.some(s => s.if); }
+/** Primer paso desde `from` que le toca hacer al jugador (-1 = no queda ninguno). */
+export function nextStepIndex(q, from, flags) {
+  for (let i = from; i < q.steps.length; i++) if (stepApplies(q.steps[i], flags)) return i;
+  return -1;
+}
+
 /** Avanza (o termina) el paso `row.step` si nadie lo ha hecho ya. */
 async function advanceStep(env, userId, row, q, step, now) {
-  const isLast = row.step + 1 >= q.steps.length;
+  const next = branching(q) ? nextStepIndex(q, row.step + 1, await getFlags(env, userId))
+    : (row.step + 1 < q.steps.length ? row.step + 1 : -1);
+  const isLast = next < 0;
   const adv = await env.DB.prepare(
     `UPDATE user_quests SET step = ?, progress = 0, status = ?, updated_at = ?
       WHERE user_id = ? AND quest_id = ? AND step = ? AND status = 0 AND progress >= ?`
-  ).bind(isLast ? row.step : row.step + 1, isLast ? 1 : 0, now, userId, row.quest_id, row.step, step.count || 1).run();
+  ).bind(isLast ? row.step : next, isLast ? 1 : 0, now, userId, row.quest_id, row.step, step.count || 1).run();
   if (!adv?.meta?.changes) return null;
   await giveReward(env, userId, step.reward);
   if (isLast) {
     await giveReward(env, userId, q.reward);
-    return { quest_id: row.quest_id, step_done: step.id, quest_done: true };
+    // Sesión 52 — historia: el siguiente capítulo empieza solo si ya cumples sus requisitos
+    let next_quest = null;
+    if (q.next && QUESTS[q.next]) {
+      try { if (await canStart(env, userId, q.next)) { if (await startQuest(env, userId, q.next)) next_quest = q.next; } } catch {}
+    }
+    return { quest_id: row.quest_id, step_done: step.id, quest_done: true, next_quest };
   }
-  await giveStepTools(env, userId, q.steps[row.step + 1]);
+  await giveStepTools(env, userId, q.steps[next]);
   return { quest_id: row.quest_id, step_done: step.id };
+}
+
+/** Sesión 52 — ¿cumple los requisitos de una misión? (niveles y misiones previas) */
+export async function canStart(env, userId, questId) {
+  if (!QUEST_REQS[questId]) return true;
+  const rows = (await env.DB.prepare('SELECT skill_id, xp FROM user_skills WHERE user_id = ?').bind(userId).all()).results || [];
+  const lv = {};
+  for (const r of rows) lv[r.skill_id] = xpToLevel(r.xp || 0);
+  lv.combat = combatLevelFrom(lv.attack || 1, lv.strength || 1, lv.defence || 1, lv.hitpoints || 10);
+  const done = new Set(((await env.DB.prepare('SELECT quest_id FROM user_quests WHERE user_id = ? AND status = 1').bind(userId).all()).results || []).map(r => r.quest_id));
+  return checkReqs(questId, lv, done).every(r => r.ok);
+}
+
+/** Paso activo de una misión (o null). */
+async function activeRow(env, userId, questId) {
+  return env.DB.prepare('SELECT quest_id, step, progress FROM user_quests WHERE user_id = ? AND quest_id = ? AND status = 0')
+    .bind(userId, questId).first();
+}
+/** Marca el paso como hecho (solo una petición lo consigue) y avanza. */
+async function completeSingleStep(env, userId, row, q, step) {
+  const now = Date.now();
+  const mark = await env.DB.prepare(
+    'UPDATE user_quests SET progress = 1, updated_at = ? WHERE user_id = ? AND quest_id = ? AND step = ? AND status = 0 AND progress = 0'
+  ).bind(now, userId, row.quest_id, row.step).run();
+  if (!mark?.meta?.changes) return null;
+  return { now };
+}
+
+/** Sesión 52 — paso "ve a tal sitio" (el handler ya comprobó posición/noche). */
+export async function visitStep(env, userId, questId) {
+  const q = QUESTS[questId];
+  const row = q ? await activeRow(env, userId, questId) : null;
+  const step = row ? q.steps[row.step] : null;
+  if (!step || step.event !== 'visit') return { error: 'not_now' };
+  const m = await completeSingleStep(env, userId, row, q, step);
+  if (!m) return { error: 'not_now' };
+  const res = await advanceStep(env, userId, { ...row, progress: 1 }, q, step, m.now);
+  return { ok: true, results: res ? [res] : [] };
+}
+
+/** Sesión 52 — paso de decisión: guarda la elección y avanza. */
+export async function chooseStep(env, userId, questId, optionId) {
+  const q = QUESTS[questId];
+  const row = q ? await activeRow(env, userId, questId) : null;
+  const step = row ? q.steps[row.step] : null;
+  if (!step || step.event !== 'choice') return { error: 'not_now' };
+  const opt = (step.options || []).find(o => o.id === optionId);
+  if (!opt) return { error: 'invalid_option' };
+  const m = await completeSingleStep(env, userId, row, q, step);
+  if (!m) return { error: 'not_now' };
+  await env.DB.prepare(
+    `INSERT INTO user_quest_flags (user_id, flag, value, set_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, flag) DO UPDATE SET value = excluded.value, set_at = excluded.set_at`
+  ).bind(userId, step.flag, opt.id, m.now).run();
+  await giveReward(env, userId, opt.reward);
+  const res = await advanceStep(env, userId, { ...row, progress: 1 }, q, step, m.now);
+  return { ok: true, results: res ? [res] : [] };
 }
 
 /** Sesión 50 — empezar una misión que ofrece un NPC. */
@@ -141,11 +234,13 @@ export async function startQuest(env, userId, questId) {
   const q = QUESTS[questId];
   if (!q || !(await tableReady(env))) return false;
   const now = Date.now();
+  // Sesión 52 — el primer paso puede depender de una decisión anterior
+  const first = branching(q) ? Math.max(0, nextStepIndex(q, 0, await getFlags(env, userId))) : 0;
   const r = await env.DB.prepare(
     `INSERT OR IGNORE INTO user_quests (user_id, quest_id, step, progress, status, started_at, updated_at)
-     VALUES (?, ?, 0, 0, 0, ?, ?)`
-  ).bind(userId, questId, now, now).run();
-  if (r?.meta?.changes) await giveStepTools(env, userId, q.steps[0]);
+     VALUES (?, ?, ?, 0, 0, ?, ?)`
+  ).bind(userId, questId, first, now, now).run();
+  if (r?.meta?.changes) await giveStepTools(env, userId, q.steps[first]);
   return !!r?.meta?.changes;
 }
 

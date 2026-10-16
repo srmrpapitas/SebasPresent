@@ -392,6 +392,10 @@ async function handleFetch(request, env, budget) {
         response = await quests.handleQuestsGet(request, env);
       } else if (path === '/api/quests/start' && method === 'POST') {   // Sesión 50
         response = await quests.handleQuestStart(request, env);
+      } else if (path === '/api/quests/visit' && method === 'POST') {   // Sesión 52 — historia
+        response = await quests.handleQuestVisit(request, env);
+      } else if (path === '/api/quests/choose' && method === 'POST') {   // Sesión 52 — decisiones
+        response = await quests.handleQuestChoose(request, env);
       } else if (path === '/api/npc/talk' && method === 'POST') {
         response = await quests.handleNpcTalk(request, env);
       } else if (path === '/api/npc/deliver' && method === 'POST') {

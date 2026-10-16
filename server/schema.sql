@@ -323,7 +323,17 @@ CREATE TABLE IF NOT EXISTS boss_state (
   special_idx INTEGER DEFAULT 0,
   empty_since INTEGER DEFAULT 0,
   last_attack TEXT,
-  last_special TEXT
+  last_special TEXT,
+  phase INTEGER NOT NULL DEFAULT 0     -- S52 (migración 023): jefes con fases
+);
+
+-- Sesión 52 — decisiones del jugador en la historia (migración 023)
+CREATE TABLE IF NOT EXISTS user_quest_flags (
+  user_id INTEGER NOT NULL,
+  flag TEXT NOT NULL,
+  value TEXT NOT NULL,
+  set_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, flag)
 );
 -- Sesión 50 — La Fosa de Fuego (minijuego de oleadas)
 ALTER TABLE npc_instances ADD COLUMN owner_user_id INTEGER;

@@ -23,6 +23,7 @@ import * as inventory from './inventory.js';
 import * as quests from './quests.js';
 import * as audio from './audio.js';
 import * as dialogue from './dialogue.js';
+import * as story from './story.js';   // Sesión 52 — escenas y decisiones de la historia
 import { TOWN_NPCS, TOWN_NPCS_BY_ID, TALK_DIST_M, wanderPos } from './shared/town_npcs.js';
 import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — personajes Mixamo
 import { lookFor } from './town_npc_looks.js';
@@ -318,6 +319,7 @@ function npcQuestInfo(npcId) {
     const step = q.steps[s.step];
     if (!step) continue;
     if (step.event === 'talk' && step.match === npcId) turnIn.push({ q, step });
+    else if (step.event === 'choice' && step.npc === npcId) turnIn.push({ q, step, choice: true });   // Sesión 52
     else if (step.event === 'deliver' && step.npc === npcId) {
       const ok = step.items.every(([it, k]) => invCount(it) >= k);
       (ok ? turnIn : doing).push({ q, step, deliver: true, ok });
@@ -373,37 +375,8 @@ async function talkTo(o) {
   const d = dialogue.begin(n);
   const info0 = npcQuestInfo(n.id);
 
-  // 1) Lo más urgente primero: terminar / entregar
-  for (const t of info0.turnIn) {
-    if (d.closed) break;
-    if (t.deliver) {
-      await d.npc(`¿Me traes lo que te pedí?`);
-      const pick = await d.choose([`Entregar: ${t.step.items.map(([i, k]) => `${k} ${itemName(i)}`).join(', ')}`, 'Todavía no.']);
-      if (pick !== 0) continue;
-      try {
-        const r = await api.npcDeliver(n.id);
-        quests.applyServerRows(r?.quests);
-        // Sesión 52 — los items entregados salen de la mochila: refrescarla ya.
-        try { window.inventory?.refresh?.(); } catch {}
-        await afterProgress(d, t.q);
-      } catch (err) {
-        await d.npc(err?.code === 'missing_items' ? 'Te falta algo… revisa tu mochila.' : 'Acércate un poco más.');
-      }
-    } else {
-      // Sesión 50 — pasos de "escucha a…": primero te cuenta su capítulo entero
-      if (t.step?.lore && LORE[n.id]) {
-        for (const page of LORE[n.id].pages) { await d.npc(page); if (d.closed) break; }
-        if (d.closed) break;
-      }
-      try {
-        const r = await api.npcTalk(n.id);
-        quests.applyServerRows(r?.quests);
-        await afterProgress(d, t.q);
-      } catch {
-        await d.npc('Acércate un poco más, que no te oigo.');
-      }
-    }
-  }
+  // 1) Lo más urgente primero: terminar / entregar / decidir (Sesión 52: en cadena)
+  await doTurnIns(d, n);
   if (d.closed) { talking = null; return; }
 
   // 2) Menú de temas
@@ -457,6 +430,62 @@ async function talkTo(o) {
   }
   talking = null;
   for (const obj of objs.values()) updateMark(obj);
+}
+
+
+// Sesión 52 — pasos pendientes con este NPC, uno tras otro (p. ej. hablar →
+// decidir con el mismo personaje), con sus escenas de la historia.
+async function doTurnIns(d, n) {
+  for (let guard = 0; guard < 6 && !d.closed; guard++) {
+    const info0 = npcQuestInfo(n.id);
+    if (!info0.turnIn.length) return;
+    let progressed = false;
+    for (const t of info0.turnIn) {
+      if (d.closed) return;
+      if (t.choice) {
+        if (await story.runChoice(t.q, t.step, quests.storyContext(), d, n)) { progressed = true; await afterProgress(d, t.q); }
+        else return;
+        break;
+      }
+      if (t.deliver) {
+        await d.npc(`¿Me traes lo que te pedí?`);
+        const pick = await d.choose([`Entregar: ${t.step.items.map(([i, k]) => `${k} ${itemName(i)}`).join(', ')}`, 'Todavía no.']);
+        if (pick !== 0) continue;
+        try {
+          const r = await api.npcDeliver(n.id);
+          quests.applyServerRows(r?.quests, r?.flags);
+          // Sesión 52 — los items entregados salen de la mochila: refrescarla ya.
+          try { window.inventory?.refresh?.(); } catch {}
+          await afterProgress(d, t.q);
+          progressed = true;
+        } catch (err) {
+          await d.npc(err?.code === 'missing_items' ? 'Te falta algo… revisa tu mochila.' : 'Acércate un poco más.');
+          return;
+        }
+        break;
+      }
+      // Sesión 50 — pasos de "escucha a…": primero te cuenta su capítulo entero
+      if (t.step?.lore && LORE[n.id]) {
+        for (const page of LORE[n.id].pages) { await d.npc(page); if (d.closed) break; }
+        if (d.closed) return;
+      }
+      // Sesión 52 — escena de la historia (varios personajes, narrador, variantes)
+      const lines = story.stepLines(t.step, quests.getFlags());
+      if (lines.length && !(await story.play(d, lines, n))) return;
+      try {
+        const r = await api.npcTalk(n.id);
+        quests.applyServerRows(r?.quests, r?.flags);
+        if (t.q.saga) quests.track(t.q.id);   // Sesión 52 — la historia pasa al rastreador
+        await afterProgress(d, t.q, !!lines.length);
+        progressed = true;
+      } catch {
+        await d.npc('Acércate un poco más, que no te oigo.');
+        return;
+      }
+      break;
+    }
+    if (!progressed) return;
+  }
 }
 
 // Sesión 50 — Tanausú vende monturas
@@ -579,7 +608,8 @@ async function asoDoor(d) {
 }
 
 async function offerQuest(d, n, q) {
-  for (const line of q.offer || []) { await d.npc(line); if (d.closed) return; }
+  if (q.offerScene) { if (!(await story.play(d, q.offerScene, n))) return; }   // Sesión 52
+  else for (const line of q.offer || []) { await d.npc(line); if (d.closed) return; }
   // Sesión 50 — requisitos (como en OSRS)
   const lv = {}; try { Object.assign(lv, skills.getAllLevels()); } catch {}
   lv.combat = combatLevelFrom(lv.attack || 1, lv.strength || 1, lv.defence || 1, lv.hitpoints || 10);
@@ -597,8 +627,11 @@ async function offerQuest(d, n, q) {
     quests.applyServerRows(r?.quests);
     quests.track(q.id);
     try { audio.synth?.('craft_done', { volume: 0.6 }); } catch {}
-    feedLog('info', `📜 Nueva misión: ${q.name}. ${q.steps[0]?.text || ''}`);
-    await d.npc(q.steps[0]?.text ? `Perfecto. ${q.steps[0].text}` : '¡Perfecto!');
+    const st0 = q.steps[quests.getQuestState(q.id)?.step || 0];
+    feedLog('info', `${q.saga ? `📖 Capítulo ${q.chapter}` : '📜 Nueva misión'}: ${q.name}. ${st0?.text || ''}`);
+    // Sesión 52 — si el primer paso es con este mismo personaje, se hace ya
+    if ((st0?.event === 'talk' && st0.match === n.id) || (st0?.event === 'choice' && st0.npc === n.id)) await doTurnIns(d, n);
+    else await d.npc(st0?.text ? `Perfecto. ${st0.text}` : '¡Perfecto!');
   } catch (err) {
     await d.npc(err?.code === 'too_far' ? 'Acércate, que no te oigo bien.' : 'Mmm… ahora mismo no puedo. Vuelve luego.');
   }
@@ -613,14 +646,17 @@ async function aboutQuest(d, t) {
   }
 }
 
-async function afterProgress(d, q) {
+async function afterProgress(d, q, hadScene = false) {
   const s = quests.getQuestState(q.id);
   if (s?.status === 1) {
     await d.npc(q.thanks || '¡Gracias!');
-    if (!d.closed && q.reward?.text) await d.npc(`(Recibes: ${q.reward.text})`);
+    if (!d.closed && q.reward?.text) await (d.narr ? d.narr(`Recibes: ${q.reward.text}`) : d.npc(`(Recibes: ${q.reward.text})`));
   } else if (s) {
     const step = q.steps[s.step];
-    if (step) await d.npc(step.text);
+    // Sesión 52 — si el siguiente paso es con este mismo NPC, doTurnIns lo hará ya
+    if (step && !(step.event === 'talk' && step.match === d.npcId) && !(step.event === 'choice' && step.npc === d.npcId)) {
+      if (hadScene && d.narr) await d.narr(`📜 ${step.text}`); else await d.npc(step.text);
+    }
   }
 }
 
@@ -650,6 +686,10 @@ export function start(opts) {
   started = true;
   syncTimer = 99;
   if (typeof window !== 'undefined') window.__townNpcs = () => [...objs.values()].map(o => ({ id: o.n.id, mark: o.mark }));
+  // Solo en pruebas locales: hablar con un NPC sin ir hasta él
+  if (typeof location !== 'undefined' && location.hostname === 'localhost') {
+    window.__talkNpc = (id) => { const o = [...objs.values()].find(x => x.n.id === id); if (o) talkTo(o); return !!o; };
+  }
 }
 
 export function stop() {
