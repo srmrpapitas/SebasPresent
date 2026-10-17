@@ -26,6 +26,7 @@ export const PROC_NPC_HEIGHTS = {
   fosa_diablillo: 1.2, fosa_escupefuego: 1.3, fosa_espiritu: 1.9, fosa_bruto: 2.6, fosa_ignaroth: 5.2,
   // Sesión 52 — historia
   tibicena: 1.3, tibicena_guayota: 1.55, guayota: 6.8,
+  tibicena_mayor: 3.9,   // Sesión 53 — evento de la isla
 };
 
 function mat(color, extra = {}) {
@@ -705,6 +706,7 @@ Object.assign(BUILDERS, {
   // Sesión 52 — Historia «El Sello de Achamán»
   tibicena: () => tibicena(1.0),
   tibicena_guayota: () => tibicena(1.2),
+  tibicena_mayor: () => tibicena(3.0),   // Sesión 53 — «¡El Teide ruge!»
   guayota: () => { const g = ignaroth(); g.root.scale.multiplyScalar(1.3); return g; },
   dragon_negro: () => dragon({ s: 1.2, c1: 0x1a1620, c2: 0x4a3a5a, c3: 0x0a080c, wing: 0x4a2a6a, eye: 0xc060ff }),
 });

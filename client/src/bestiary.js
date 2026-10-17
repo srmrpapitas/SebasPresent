@@ -41,7 +41,7 @@ const ICON = {
   zombi_igneo: '🔥', zombi_igneo_jefe: '🔥', bruto_echeyde: '🌋', bandido: '🗡️', bandido_jefe: '🗡️',
   guanche_guerrero: '🛡️', guanche_hondero: '🪨', guanche_faycan: '🪶', guanche_mencey: '👑', acolito_cabildo: '🧙',
   magister_cabildo: '🧙', bruja_pantano: '🧙‍♀️', coloso_obsidiana: '🗿', reina_escorpion: '🦂', rey_yeti: '❄️',
-  rey_esqueleto: '☠️', leviatan: '🐙', dragon_rojo: '🐉', dragon_negro: '🐲', fosa_ignaroth: '🔥',
+  rey_esqueleto: '☠️', leviatan: '🐙', dragon_rojo: '🐉', dragon_negro: '🐲', fosa_ignaroth: '🔥', tibicena_mayor: '🌋',
 };
 const STYLE = { melee: 'Cuerpo a cuerpo', ranged: 'A distancia', magic: 'Magia' };
 

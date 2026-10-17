@@ -52,6 +52,7 @@ import * as audio from './audio.js';
 import * as skills from './skills.js';
 import * as highscores from './highscores.js';   // Sesión 42 — ranking / highscore
 import * as progress from './progress.js';   // Sesión 53 — logros, colección, contador de jefes
+import * as worldEvent from './world_event.js';   // Sesión 53 — evento de la isla «¡El Teide ruge!»
 import * as equipment from './equipment.js';
 import * as inventory from './inventory.js';
 import * as shop from './shop.js';
@@ -1133,6 +1134,13 @@ export async function startWorld(loggedInUser, token) {
         getServerNow: () => worldSnapshot.getServerNow?.(),   // Sesión 52 — pasos "de noche"
       })).then(() => {
         // Sesión 53 — logros: se miran al entrar y tras subir de nivel / misión o diaria hecha
+        try {   // Sesión 53 — evento de la isla
+          worldEvent.start({
+            getPlayer: () => player, getSnapshot: () => worldSnapshot.getSnapshot(),
+            getServerNow: () => worldSnapshot.getServerNow?.(), getMyId: () => realtime.getMyId?.(),
+            feedLog: (type, msg) => combat.feedLog?.(type, msg),
+          });
+        } catch (e) { console.warn('[world] evento:', e); }
         try {
           progress.init({ feedLog: (type, msg) => combat.feedLog?.(type, msg) });
           quests.onProgress?.((why) => progress.poke(why));
@@ -1210,6 +1218,7 @@ export function stopWorld() {
   try { crafting.stop(); } catch {}
   try { smithing.stop(); } catch {}
   try { quests.stop(); } catch {}
+  try { worldEvent.stop(); } catch {}   // Sesión 53
   try { prayer.stop(); } catch {}
   try { skull.stop(); } catch {}
   try { firemaking.stop(); } catch {}
@@ -1586,6 +1595,22 @@ function drawMinimap() {
       ctx.beginPath();
       ctx.moveTo(hx, hy - 5); ctx.lineTo(hx + 4, hy); ctx.lineTo(hx, hy + 5); ctx.lineTo(hx - 4, hy); ctx.closePath();
       ctx.fill(); ctx.stroke();
+    }
+  } catch {}
+
+  // Sesión 53 — evento de la isla: círculo de fuego (pegado al borde si está lejos)
+  try {
+    const e = worldEvent.markerPos();
+    if (e) {
+      let dx = (e.x - px) * scale, dz = (e.z - pz) * scale;
+      const lim = Math.min(W, H) / 2 - 7;
+      const d = Math.hypot(dx, dz);
+      if (d > lim) { dx = dx / d * lim; dz = dz / d * lim; }
+      const ex = cx + dx, ey = cy + dz;
+      const pulse = 4.5 + Math.sin(performance.now() / 180) * 1.2;
+      ctx.beginPath(); ctx.arc(ex, ey, pulse, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff4a10'; ctx.fill();
+      ctx.lineWidth = 1.4; ctx.strokeStyle = '#ffe080'; ctx.stroke();
     }
   } catch {}
 
@@ -3396,6 +3421,7 @@ function animate() {
   try { ambience.update(dt); } catch (e) { if (!window.__amErr) { window.__amErr = e; console.warn('[ambience]', e); } }   // Sesión 52
   try { birds.update(dt); } catch (e) { if (!window.__bdErr) { window.__bdErr = e; console.warn('[birds]', e); } }   // Sesión 52
   try { story.update(dt); } catch {}   // Sesión 52
+  try { worldEvent.update(dt); } catch {}   // Sesión 53
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   renderer.render(scene, camera);

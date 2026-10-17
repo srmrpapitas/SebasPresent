@@ -97,6 +97,7 @@ export const BEAST_EXTRA_PLACES = {
   fosa_ignaroth: 'La última oleada de la Fosa de Guayota.',
   guayota: 'La Boca del Teide, al este de Las Cañadas (final de la historia «El Sello de Achamán»).',   // Sesión 52
   tibicena_guayota: 'Solo aparecen cuando Guayota los llama, en la Boca del Teide.',
+  tibicena_mayor: 'Evento de la isla «¡El Teide ruge!»: despierta 15 minutos cada 2 horas junto al Observatorio de Izaña (se avisa 5 minutos antes). Todos los que le pegan se llevan premio.',   // Sesión 53
 };
 
 /** Cuevas: además de su zona, estas criaturas viven aquí. */
@@ -113,7 +114,7 @@ export const BEAST_GROUPS = [
   { id: 'criaturas', name: 'Criaturas', ids: ['goblin', 'goblin_jefe', 'golem', 'golem_jefe', 'yeti', 'yeti_jefe', 'ogro_anaga', 'ogro_anaga_jefe', 'tibicena', 'tibicena_guayota'] },
   { id: 'malditos', name: 'No-muertos', ids: ['skeleton', 'skeleton_jefe', 'zombi', 'zombi_jefe', 'zombi_igneo', 'zombi_igneo_jefe', 'bruto_echeyde'] },
   { id: 'gente', name: 'Gente', ids: ['bandido', 'bandido_jefe', 'guanche_guerrero', 'guanche_hondero', 'guanche_faycan', 'guanche_mencey', 'acolito_cabildo'] },
-  { id: 'jefes', name: 'Jefes', ids: ['magister_cabildo', 'bruja_pantano', 'coloso_obsidiana', 'reina_escorpion', 'rey_yeti', 'rey_esqueleto', 'leviatan', 'dragon_rojo', 'dragon_negro', 'fosa_ignaroth', 'guayota'] },
+  { id: 'jefes', name: 'Jefes', ids: ['magister_cabildo', 'bruja_pantano', 'coloso_obsidiana', 'reina_escorpion', 'rey_yeti', 'rey_esqueleto', 'leviatan', 'dragon_rojo', 'dragon_negro', 'fosa_ignaroth', 'guayota', 'tibicena_mayor'] },
 ];
 
 /** Nivel de combate de un monstruo (misma fórmula que el de los jugadores). */

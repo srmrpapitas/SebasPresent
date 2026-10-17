@@ -39,6 +39,7 @@ import { tickBossesNear } from '../bosses.js';   // Sesión 50 — jefes
 import { wanderPos, isWanderer } from '../../client/src/shared/wander.js';   // Sesión 51 — sin escrituras
 import { tickFosa } from '../minigame.js';        // Sesión 50 — Fosa de Guayota
 import { insideFosa } from '../../client/src/shared/fosa.js';   // Sesión 51
+import { WORLD_EVENT, eventWindow } from '../../client/src/shared/world_events.js';   // Sesión 53
 import { currentPrayerState, overheadPrayer } from '../../client/src/shared/prayer.js';   // Sesión 50
 
 // Radio de visibilidad. 500m cubre el NPC_MINIMAP_RADIUS del cliente.
@@ -468,6 +469,13 @@ export async function handleWorldSnapshot(request, env) {
         if (myParty?.party_id != null) me.party_id = myParty.party_id;
       } catch {
         // tabla no existe → me.party_id queda null
+      }
+      // Sesión 53 — evento de la isla: ¿sigue viva la Tibicena Mayor? (solo durante el evento)
+      if (eventWindow(now).active) {
+        try {
+          const ev = await env.DB.prepare('SELECT status, hp_current FROM npc_instances WHERE def_id = ? LIMIT 1').bind(WORLD_EVENT.boss).first();
+          me.wev = ev ? { alive: ev.status === 0, hp: ev.hp_current } : null;
+        } catch {}
       }
       // Sesión 50 — progreso de misiones (solo lectura; se crean en GET /api/quests)
       try {

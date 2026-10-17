@@ -964,6 +964,7 @@ function onRealtime(m, myId) {
     }
   } else if (m.t === 'ann') {
     // Sesión 50 — anuncios de la isla (jefes y piezas de dragón)
+    if (typeof m.k === 'string' && m.k.startsWith('ev_')) { try { window.__worldEvent?.onAnn?.(m); } catch {} return; }   // Sesión 53 — evento
     try {
       if (m.k === 'drop') window.__feedLog?.('levelup', `🐉 ¡${m.u} ha conseguido ${m.item} de ${m.boss}!`);
       else window.__feedLog?.('info', `⚔ ${m.u} ha derrotado a ${m.boss}.`);

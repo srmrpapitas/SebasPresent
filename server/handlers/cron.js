@@ -16,6 +16,7 @@ import { makeDbAdapter } from '../lib/db.js';
 import { runMatcher, reseedGhostOrders } from '../ge_engine.js';
 import { reviveExpiredNpcs } from '../combat_engine.js';
 import { restockShops } from './shop.js';
+import { tickWorldEvent } from '../world_event.js';   // Sesión 53 — «¡El Teide ruge!»
 
 // Estado en memoria del worker — se resetea si el worker se reinicia, lo
 // cual es OK porque el restock simplemente se ejecuta antes una vez. Si
@@ -45,6 +46,14 @@ export async function scheduledHandler(event, env, ctx) {
     } catch (err) {
       console.error('[ge-cron] error:', err);
     }
+  }
+
+  // Sesión 53 — evento de la isla: aviso / despertar / dormir a la Tibicena Mayor
+  try {
+    const ev = await tickWorldEvent(env, event?.scheduledTime || Date.now());
+    if (ev) console.log(`[evento] ${ev}`);
+  } catch (err) {
+    console.error('[evento] error:', err?.message);
   }
 
   // 2) Combat: revive NPCs muertos cuyo respawn time pasó

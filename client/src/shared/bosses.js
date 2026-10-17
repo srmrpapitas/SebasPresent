@@ -184,6 +184,29 @@ export const BOSSES = {
     rocks: [{ x: 626, z: -1606, r: 2.4 }, { x: 656, z: -1636, r: 2.4 }, { x: 624, z: -1638, r: 2.0 }],
     tip: 'Protección contra magia para su fuego. Fase 2: acaba con los tibicenas. Fase 3: en cada ECLIPSE corre a un círculo de luz dorada.',
   },
+  // Sesión 53 — EVENTO DE LA ISLA «¡El Teide ruge!» (shared/world_events.js):
+  // solo despierta 15 min cada 2 h. Mucha vida y golpes moderados para que
+  // pueda unirse gente de cualquier nivel; cada uno se lleva su premio.
+  tibicena_mayor: {
+    name: 'Tibicena Mayor', title: 'el Perro del Teide', x: 465, z: -835, lairR: 32, bodyR: 2.2,
+    color: '#ff3a20', drop: null, dropName: null, event: true,
+    stats: { hp: 1600, att: 45, str: 40, def: 30, speed: 5, range: 3.6 },
+    attacks: [{ style: 'melee', range: 3.8, max: 12, every: 3000 }],
+    specialEvery: 8500,
+    specials: [
+      { kind: 'aoe_target', count: 3, spread: 4, r: 2.6, delay: 2300, dmg: 12, name: '¡La Tibicena Mayor escarba y lanza piedras ardientes! Muévete.' },
+      { kind: 'aoe_self', r: 7, delay: 2200, dmg: 12, name: '¡La Tibicena Mayor aúlla y la tierra tiembla! (aléjate)' },
+    ],
+    phases: [
+      { below: 0.4, name: '🔥 ¡La Tibicena Mayor se enfurece!', attackMult: 1.25, specialEvery: 6500,
+        specials: [
+          { kind: 'aoe_target', count: 5, spread: 5, r: 2.6, delay: 2100, dmg: 13, name: 'Llueven piedras ardientes del Teide.' },
+          { kind: 'aoe_self', r: 7.5, delay: 2000, dmg: 14, name: '¡Aullido de fuego! (aléjate)' },
+        ] },
+    ],
+    rocks: [{ x: 453, z: -823, r: 2.4 }, { x: 479, z: -847, r: 2.4 }],
+    tip: 'Evento de la isla (recomendado combate 30+): cualquiera puede unirse. Pégale al menos una vez y llévate tu premio cuando caiga. Sal de los círculos y aléjate cuando aúlle.',
+  },
 };
 
 export const BOSS_IDS = Object.keys(BOSSES);

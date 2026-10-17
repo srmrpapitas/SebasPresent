@@ -22,6 +22,8 @@ import {
 import { questEvent } from '../lib/quests.js';   // Sesión 50
 import { pushRealtime } from '../lib/realtime.js';   // Sesión 50
 import { BOSSES } from '../../client/src/shared/bosses.js';   // Sesión 50 — anuncios
+import { WORLD_EVENT } from '../../client/src/shared/world_events.js';   // Sesión 53
+import { recordEventHit, rewardEvent } from '../world_event.js';
 export async function handleCombatState(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
@@ -79,9 +81,16 @@ export async function handleCombatAttack(request, env) {
         sp: result.special ? result.special.fx : null,  // Sesión 51 — tipo de especial
       });
     }
+    // Sesión 53 — evento de la isla: quien le pega entra en el reparto; al morir, premio para todos
+    if (!result?.error && result?.npc_def_id === WORLD_EVENT.boss) {
+      try {
+        if (result.npc_killed) await rewardEvent(env, session.user_id);
+        else await recordEventHit(env, session.user_id);
+      } catch (err) { console.warn('[evento]', err?.message); }
+    }
     if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
     // Sesión 50 — ¡pieza de dragón! Se anuncia a toda la isla.
-    if (result?.npc_killed && BOSSES[result.npc_def_id]) {
+    if (result?.npc_killed && BOSSES[result.npc_def_id] && !BOSSES[result.npc_def_id].event) {
       try {
         const drop = await env.DB.prepare(
           `SELECT g.item_id, i.name FROM ground_items g JOIN items i ON i.id = g.item_id

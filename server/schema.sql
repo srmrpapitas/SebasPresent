@@ -464,3 +464,11 @@ CREATE TABLE IF NOT EXISTS user_achievements (
   PRIMARY KEY (user_id, ach_id)
 );
 CREATE INDEX IF NOT EXISTS idx_fosa_best ON user_fosa(best_wave);
+
+-- Sesión 53 — evento de la isla (migración 025)
+CREATE TABLE IF NOT EXISTS event_hits (
+  event_start INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (event_start, user_id)
+);
