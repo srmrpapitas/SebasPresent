@@ -77,6 +77,7 @@ import * as smithing from './handlers/skills/smithing.js';        // Sesión 50 
 import * as quests from './handlers/quests.js';                  // Sesión 50 — misiones
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
 import { handleBestiary } from './handlers/bestiary.js';         // Sesión 51 — Bestiario
+import { handleProgress, handleRecords } from './handlers/progress.js';   // Sesión 53 — logros, colección, récords
 import { scheduledHandler } from './handlers/cron.js';
 import { withBudget, budgetStatus, secondsToReset } from './lib/budget.js';   // Sesión 51 — tope diario
 
@@ -392,6 +393,10 @@ async function handleFetch(request, env, budget) {
         response = await quests.handleQuestsGet(request, env);
       } else if (path === '/api/quests/start' && method === 'POST') {   // Sesión 50
         response = await quests.handleQuestStart(request, env);
+      } else if (path === '/api/progress' && method === 'GET') {   // Sesión 53
+        response = await handleProgress(request, env);
+      } else if (path === '/api/progress/records' && method === 'GET') {   // Sesión 53
+        response = await handleRecords(request, env);
       } else if (path === '/api/quests/visit' && method === 'POST') {   // Sesión 52 — historia
         response = await quests.handleQuestVisit(request, env);
       } else if (path === '/api/quests/choose' && method === 'POST') {   // Sesión 52 — decisiones

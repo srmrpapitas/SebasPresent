@@ -384,7 +384,7 @@ function onKeyDown(e) {
  * @returns {string} id de la instancia (para debugging).
  */
 export function openBookModal(opts = {}) {
-  const { title = '', pages = [], onClose } = opts;
+  const { title = '', pages = [], onClose, startPage = 0 } = opts;   // S53 — startPage
   if (!Array.isArray(pages) || pages.length === 0) {
     console.warn('[book_modal] openBookModal sin páginas — ignorando');
     return null;
@@ -404,7 +404,7 @@ export function openBookModal(opts = {}) {
   const instance = {
     id,
     pages,
-    currentPage: 0,
+    currentPage: Math.max(0, Math.min(pages.length - 1, startPage | 0)),
     onClose: typeof onClose === 'function' ? onClose : null,
     els,
   };

@@ -65,6 +65,10 @@ async function load() {
   return loading;
 }
 
+/** Sesión 53 — fichas y botín (lo usa también el registro de colección). */
+export function loadData() { return load(); }
+let kcMap = null;   // Sesión 53 — cuántos has derrotado (de /api/progress)
+
 function fmtChance(c, always) {
   if (always) return 'Siempre';
   if (!(c > 0)) return '—';
@@ -133,6 +137,7 @@ function rowHtml(id) {
         <div><b>${respawn}</b><span>Reaparece</span></div>
         <div><b>${aggro ? (d.aggro_radius ? `${Math.round(d.aggro_radius)} m` : 'Sí') : 'No'}</b><span>Te ve a</span></div>
       </div>
+      ${kcMap ? `<div class="bst-kc">⚔️ Has derrotado: <b>${(kcMap[id] || 0).toLocaleString('es-ES')}</b></div>` : ''}
       <div class="bst-k">Dónde encontrarlo</div>${whereHtml(id)}
       <div class="bst-k">Botín</div>${lootHtml(id)}
     </div>`;
@@ -207,6 +212,8 @@ function ensureDom() {
     #bestiaryOverlay .bst-ag.pa { background: #2e5a24; color: #d8ffcc; }
     #bestiaryOverlay .bst-ag.boss { background: #5a1a6a; color: #f0d0ff; }
     #bestiaryOverlay .bst-body { padding: 4px 10px 10px; border-top: 1px dashed #5a4a2a; }
+    #bestiaryOverlay .bst-kc { font-size: 12.5px; color: #e8d6a8; margin: -2px 0 8px; }
+    #bestiaryOverlay .bst-kc b { color: #ffd77a; }
     #bestiaryOverlay .bst-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; }
     #bestiaryOverlay .bst-stats div { background: #241e15; border-radius: 6px; padding: 5px 4px; text-align: center; display: flex; flex-direction: column; }
     #bestiaryOverlay .bst-stats b { font-size: 14px; color: #fff3cf; }
@@ -265,6 +272,8 @@ export async function open(defId = null) {
     if (g) tab = g.id;
   }
   render();
+  // Sesión 53 — "Has derrotado: N" (sin bloquear la apertura)
+  try { window.__progress?.fetchNow?.().then(p => { if (p?.kc) { kcMap = p.kc; render(); } }).catch(() => {}); } catch {}
   try {
     await load();
     render();

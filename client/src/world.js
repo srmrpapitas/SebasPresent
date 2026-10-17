@@ -51,6 +51,7 @@ import * as ge from './ge.js';
 import * as audio from './audio.js';
 import * as skills from './skills.js';
 import * as highscores from './highscores.js';   // Sesión 42 — ranking / highscore
+import * as progress from './progress.js';   // Sesión 53 — logros, colección, contador de jefes
 import * as equipment from './equipment.js';
 import * as inventory from './inventory.js';
 import * as shop from './shop.js';
@@ -1131,6 +1132,12 @@ export async function startWorld(loggedInUser, token) {
         feedLog:     (type, msg) => combat.feedLog?.(type, msg),
         getServerNow: () => worldSnapshot.getServerNow?.(),   // Sesión 52 — pasos "de noche"
       })).then(() => {
+        // Sesión 53 — logros: se miran al entrar y tras subir de nivel / misión o diaria hecha
+        try {
+          progress.init({ feedLog: (type, msg) => combat.feedLog?.(type, msg) });
+          quests.onProgress?.((why) => progress.poke(why));
+          skills.onLevelUp?.(() => progress.poke('level'));
+        } catch (e) { console.warn('[world] progress:', e); }
         // Sesión 52 — guía de inicio para jugadores nuevos, cuando ya se ve el mundo
         const tryOnboard = (tries = 0) => {
           if (!running) return;

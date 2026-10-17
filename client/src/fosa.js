@@ -175,6 +175,7 @@ export function update(dt) {
     lastResultAt = f.result.at;
     if (!first && clock - f.result.at < 15000) {
       const r = f.result;
+      if (r.k !== 'left') { try { window.__progressPoke?.('fosa'); } catch {} }   // Sesión 53 — logros de la Fosa
       if (r.k === 'reward') feedLog('info', `🏅 ¡Ronda ${r.wave} superada! Recibes ${r.coins?.toLocaleString?.('es-ES') || r.coins} monedas.`);
       else if (r.k === 'won') {
         feedLog('warning', `🔥🏆 ¡HAS VENCIDO A GUAYOTA! Recibes la CAPA DE FUEGO y ${r.coins} monedas.`);

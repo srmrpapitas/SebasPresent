@@ -696,6 +696,7 @@ async function doAttackTickNpc(gen = attackGen) {
 
   if (result.npc_killed) {
     feedLog('kill', `¡Has matado a ${npcName}!`);
+    try { window.__progressPoke?.('kill', result.npc_def_id); } catch {}   // Sesión 53 — logros/contador
     disengage();
     await refresh();
     return;

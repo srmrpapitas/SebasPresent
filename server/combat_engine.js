@@ -1378,10 +1378,18 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
 
   if (npcKilled) {
     try {
-      await rollAndDropLoot(db, npc.def_id, npc.x, npc.z, userId, now, rng);
+      await rollAndDropLoot(db, npc.def_id, npc.x, npc.z, userId, now, rng, npc.behavior);
     } catch (err) {
       console.error('[combat/loot]', npc.def_id, err);
     }
+    // Sesión 53 — contador de muertes (bestiario, jefes, logros). Nunca rompe el golpe.
+    try {
+      await db.run(
+        `INSERT INTO user_kc (user_id, npc_def_id, kills, first_at) VALUES (?, ?, 1, ?)
+         ON CONFLICT(user_id, npc_def_id) DO UPDATE SET kills = kills + 1`,
+        [userId, npc.def_id, now]
+      );
+    } catch (err) { console.warn('[combat] kc (¿falta la migración 024?):', err?.message); }
   }
 
   stats.last_attack_at = now;
@@ -2280,7 +2288,10 @@ async function respawnUser(db, userId, opts = {}) {
 // ============================================================
 // LOOT DROPS
 // ============================================================
-async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng) {
+// Sesión 53 — registro de colección: lo que sale de jefes/minijuego y lo raro
+// (≤ 1/20) de cualquier monstruo. Ni monedas ni lo que cae siempre.
+const COLLECTION_RARE = 0.05;
+async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng, behavior = null) {
   const rows = await db.all(
     `SELECT item_id, qty_min, qty_max, weight, is_always
      FROM npc_loot_table
@@ -2307,7 +2318,8 @@ async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng) {
         pick -= r.weight;
         if (pick <= 0) {
           const qty = rollQty(rng, r.qty_min, r.qty_max);
-          if (qty > 0) drops.push({ item_id: r.item_id, qty });
+          const log = r.item_id !== 'coins' && (behavior === 'boss' || behavior === 'minigame' || (r.weight | 0) / totalWeight <= COLLECTION_RARE);
+          if (qty > 0) drops.push({ item_id: r.item_id, qty, log });
           break;
         }
       }
@@ -2325,6 +2337,15 @@ async function rollAndDropLoot(db, npcDefId, npcX, npcZ, userId, now, rng) {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [d.item_id, d.qty, npcX + ox, npcZ + oz, now, userId, despawnAt]
     );
+    if (d.log && userId) {
+      try {
+        await db.run(
+          `INSERT INTO user_collection (user_id, item_id, qty, first_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id, item_id) DO UPDATE SET qty = qty + excluded.qty`,
+          [userId, d.item_id, d.qty, now]
+        );
+      } catch (err) { console.warn('[combat] colección:', err?.message); }
+    }
   }
 }
 

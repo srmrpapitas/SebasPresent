@@ -440,3 +440,27 @@ CREATE INDEX IF NOT EXISTS idx_npc_cell ON npc_instances(status, cell);
 CREATE INDEX IF NOT EXISTS idx_ge_open_player ON ge_orders(item_id) WHERE status = 0 AND user_id != 0;
 
 CREATE TABLE IF NOT EXISTS usage_daily (day TEXT PRIMARY KEY, reads INTEGER NOT NULL DEFAULT 0, writes INTEGER NOT NULL DEFAULT 0);
+
+-- Sesión 53 — contador, colección y logros (migración 024)
+CREATE TABLE IF NOT EXISTS user_kc (
+  user_id INTEGER NOT NULL,
+  npc_def_id TEXT NOT NULL,
+  kills INTEGER NOT NULL DEFAULT 0,
+  first_at INTEGER,
+  PRIMARY KEY (user_id, npc_def_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kc_def ON user_kc(npc_def_id, kills);
+CREATE TABLE IF NOT EXISTS user_collection (
+  user_id INTEGER NOT NULL,
+  item_id TEXT NOT NULL,
+  qty INTEGER NOT NULL DEFAULT 0,
+  first_at INTEGER,
+  PRIMARY KEY (user_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS user_achievements (
+  user_id INTEGER NOT NULL,
+  ach_id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, ach_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fosa_best ON user_fosa(best_wave);

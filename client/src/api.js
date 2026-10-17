@@ -649,6 +649,13 @@ export async function questsVisit(questId) {
 export async function questsChoose(questId, option) {
   return apiFetch('/api/quests/choose', { method: 'POST', auth: true, body: { quest_id: questId, option } });
 }
+// Sesión 53 — logros, colección, contador de muertes y récords
+export async function progressGet() {
+  return apiFetch('/api/progress', { auth: true });
+}
+export async function progressRecords() {
+  return apiFetch('/api/progress/records', { auth: true });
+}
 export async function npcDeliver(npcId) {
   return apiFetch('/api/npc/deliver', { method: 'POST', auth: true, body: { npc_id: npcId } });
 }

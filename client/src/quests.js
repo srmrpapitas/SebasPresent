@@ -224,7 +224,7 @@ function renderTab() {
   const lv = myLevels();
   const done = new Set(QUEST_ORDER.filter(id => state[id]?.status === 1));
   const nDone = done.size;
-  let html = `<div class="quest-tab"><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button>${dailies.cardHtml(nowMs(), lv)}<div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
+  let html = `<div class="quest-tab"><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button>${dailies.cardHtml(nowMs(), lv)}<div class="qtab-prog"><button type="button" class="qtab-pbtn" data-prog="ach">🏅 Logros</button><button type="button" class="qtab-pbtn" data-prog="col">📒 Colección</button></div><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
     <div class="qtab-legend"><span class="c-new">■</span> sin empezar <span class="c-cur">■</span> en curso <span class="c-done">■</span> hecha</div>`;
   // Sesión 52 — la historia principal arriba, con sus capítulos
   const order = [...SAGA.chapters, ...QUEST_ORDER.filter(id => !QUESTS[id]?.saga)];
@@ -289,6 +289,8 @@ function renderTab() {
     pane.addEventListener('pointerup', async (ev) => {
       const bk = ev.target.closest('[data-beast]');   // Sesión 51 — Bestiario
       if (bk) { ev.stopPropagation(); import('./bestiary.js').then(m => m.open()).catch(e => console.warn('[bestiary]', e)); return; }
+      const pb = ev.target.closest('[data-prog]');   // Sesión 53 — Logros / Colección
+      if (pb) { ev.stopPropagation(); import('./progress.js').then(m => pb.dataset.prog === 'ach' ? m.openAchievements() : m.openCollection()).catch(e => console.warn('[progress]', e)); return; }
       const tg = ev.target.closest('[data-toggle]');
       if (tg) { const id = tg.dataset.toggle; if (openIds.has(id)) openIds.delete(id); else openIds.add(id); renderTab(); return; }
       const tr = ev.target.closest('[data-track]');
