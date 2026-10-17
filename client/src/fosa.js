@@ -20,6 +20,8 @@ let group = null, lavaMats = [];
 let hud = null;
 let lastResultAt = 0, lastAtkAt = 0, lastWave = -1, lastTeleAt = 0, busy = false;
 let timeAcc = 0;
+let islandRec = null, recAsked = false;   // Sesión 53 — récord de la isla
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function start(opts) {
   if (started) stop();
@@ -108,6 +110,7 @@ function ensureHud() {
         display: none; align-items: center; gap: 8px; padding: 4px 10px; background: rgba(40,10,4,0.85); border: 2px solid #ff7a1a;
         border-radius: 6px; font-family: 'Cinzel', serif; color: #ffd8a0; font-size: 13px; box-shadow: 0 0 12px rgba(255,90,0,.5); }
       .fosa-hud b { color: #fff0c0; }
+      .fosa-hud .rec { display: block; font-size: 10.5px; color: #ffcf90; opacity: .9; }
       .fosa-hud button { font: inherit; font-size: 11px; padding: 3px 8px; color: #fff; background: #7a1a0a; border: 1px solid #ffb070; border-radius: 4px; }
       .fosa-hud .tele { font-weight: 700; padding: 1px 6px; border-radius: 3px; }
       .fosa-hud .tele.ranged { background: #1f8a2a; } .fosa-hud .tele.magic { background: #2a4ac0; }
@@ -191,13 +194,19 @@ export function update(dt) {
   }
 
   if (!hud) return;
-  if (!f.active) { hud.style.display = 'none'; lastWave = -1; return; }
+  if (!f.active) { hud.style.display = 'none'; lastWave = -1; islandRec = null; recAsked = false; return; }
   hud.style.display = 'flex';
   const w = hud.querySelector('.w');
+  // Sesión 53 — récord tuyo y de la isla
+  if (!islandRec && !recAsked) {
+    recAsked = true;
+    api.progressRecords?.().then(r => { const t = r?.fosa?.[0]; islandRec = t ? `${t.best} (${t.name})` : '—'; }).catch(() => { recAsked = false; });
+  }
+  const recTxt = `<span class="rec">Tu récord: ${f.best || 0}${islandRec ? ` · Isla: ${esc(islandRec)}` : ''}</span>`;
   if (f.next_wave_at && f.next_wave_at > clock) {
-    w.innerHTML = `🔥 Ronda <b>${f.wave + 1}</b> / ${f.waves} en ${Math.ceil((f.next_wave_at - clock) / 1000)} s`;
+    w.innerHTML = `🔥 Ronda <b>${f.wave + 1}</b> / ${f.waves} en ${Math.ceil((f.next_wave_at - clock) / 1000)} s${recTxt}`;
   } else {
-    w.innerHTML = `🔥 Ronda <b>${f.wave}</b> / ${f.waves}`;
+    w.innerHTML = `🔥 Ronda <b>${f.wave}</b> / ${f.waves}${recTxt}`;
   }
   if (f.wave !== lastWave) {
     if (lastWave >= 0 && f.wave > 0) {

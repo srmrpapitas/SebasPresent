@@ -18,7 +18,8 @@
  * que se cachea 24h por _headers) y ya maneja el pasaje de páginas + sfx.
  */
 
-import { getHighscores } from './api.js';
+import { getHighscores, progressRecords } from './api.js';
+import { BOSSES } from './shared/bosses.js';   // Sesión 53 — récords de jefes
 import { xpToLevel, SKILL_DEFS } from './skills.js';
 import { openBookModal } from './ui/book_modal.js';
 
@@ -116,8 +117,32 @@ function skillPage(def, players) {
   );
 }
 
-function buildPages(players) {
+// Sesión 53 — récords de la Fosa y de jefes (GET /api/progress/records)
+function fosaPage(rec) {
+  const list = rec?.fosa || [];
+  let rows = '';
+  list.forEach((r, i) => {
+    rows += `<tr><td ${TDC}>${i + 1}</td><td ${TD}>${esc(r.name)}</td><td ${TDR}>${r.best >= 12 ? '🏆 12 (completa)' : r.best}</td></tr>`;
+  });
+  if (!rows) rows = `<tr><td ${TD} colspan="3"><em>Nadie ha bajado todavía. ¡Habla con Kargath!</em></td></tr>`;
+  return `<h2>🔥 La Fosa de Fuego</h2><p style="font-size:13px;color:#d9c79a;margin:0 0 8px;">Mejor oleada superada (de 12).</p>` +
+    `<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th ${TH} style="text-align:center;">#</th><th ${TH}>Jugador</th><th ${TH} style="text-align:right;">Oleada</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function bossesPage(rec) {
+  let h = `<h2>👑 Cazadores de jefes</h2><p style="font-size:13px;color:#d9c79a;margin:0 0 8px;">Quién ha vencido más veces a cada jefe.</p>`;
+  for (const [id, b] of Object.entries(BOSSES)) {
+    const list = rec?.bosses?.[id] || [];
+    h += `<div style="margin:8px 0 2px;color:#e8c560;font-weight:700;">${esc(b.name)}</div>`;
+    h += list.length
+      ? `<table style="width:100%;border-collapse:collapse;font-size:13px;"><tbody>${list.map((r, i) => `<tr><td ${TDC} width="28">${i + 1}</td><td ${TD}>${esc(r.name)}</td><td ${TDR}>${fmtXp(r.kills)}</td></tr>`).join('')}</tbody></table>`
+      : `<div style="font-size:12px;color:#8a7d5e;padding:2px 6px;"><em>Sin vencer todavía.</em></div>`;
+  }
+  return h;
+}
+
+function buildPages(players, rec = null) {
   const pages = [{ content: generalPage(players) }];
+  if (rec) { pages.push({ content: fosaPage(rec) }); pages.push({ content: bossesPage(rec) }); }
   for (const def of SKILL_DEFS) {
     pages.push({ content: skillPage(def, players) });
   }
@@ -127,6 +152,7 @@ function buildPages(players) {
 // Abre el libro de highscores. Llamado por world.js (slot Ranking).
 export async function open() {
   let players = [];
+  const recP = progressRecords().catch(() => null);   // Sesión 53 — en paralelo
   try {
     const res = await getHighscores();
     players = (res && Array.isArray(res.players)) ? res.players : [];
@@ -138,7 +164,7 @@ export async function open() {
     });
     return;
   }
-  openBookModal({ title: 'Highscores', pages: buildPages(players) });
+  openBookModal({ title: 'Highscores', pages: buildPages(players, await recP) });
 }
 
 // Alias por compatibilidad con cableado previo.

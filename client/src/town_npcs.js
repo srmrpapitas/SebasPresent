@@ -412,6 +412,21 @@ async function talkTo(o) {
         d.end();
         try { window.__fosa?.enter?.(); } catch (e) { console.warn(e); }
       } });
+      opts.push({ label: '🏆 Récords de la Fosa', run: async () => {   // Sesión 53
+        let rec = null;
+        try { rec = await api.progressRecords(); } catch {}
+        const top = rec?.fosa || [];
+        if (!top.length) { await d.npc('Nadie ha salido de ahí abajo con nada que contar. ¿Serás tú el primero?'); return; }
+        const r1 = top[0];
+        await d.npc(r1.best >= 12
+          ? `${r1.name} bajó hasta el fondo y venció al mismísimo Guayota. Pocos pueden decir eso.`
+          : `El récord lo tiene ${r1.name}: aguantó ${r1.best} ${r1.best === 1 ? 'oleada' : 'oleadas'}.`);
+        if (d.closed) return;
+        if (top.length > 1) await d.npc('Detrás van: ' + top.slice(1, 5).map((r, i) => `${i + 2}. ${r.name} (${r.best})`).join(' · ') + '.');
+        if (d.closed) return;
+        const me = window.__progress?.get?.()?.fosa_best || 0;
+        await d.npc(me ? `Lo tuyo: ${me} ${me === 1 ? 'oleada' : 'oleadas'}. ${me >= 12 ? 'Respeto.' : 'Puedes hacerlo mejor.'}` : 'Tú aún no has bajado. El fuego te espera.');
+      } });
       opts.push({ label: '❓ ¿Cómo funciona la Fosa?', run: async () => { for (const l of n.lines.slice(1)) { await d.npc(l); if (d.closed) return; } } });
     }
     for (const a of n.actions || []) {
