@@ -36,11 +36,16 @@ import * as afk from './core/afk.js';   // Sesión 51 — nada de peticiones si 
 import * as THREE from 'three';
 import * as api from './api.js';
 import * as multiplayer from './multiplayer.js';
+import * as realtime from './realtime.js';   // Sesión 53 — mensajes al instante
+import * as party from './party.js';         // Sesión 53 — chat de grupo
 
 // ============================================================
 // Constantes
 // ============================================================
 const POLL_INTERVAL_MS         = 4_000;   // S50: 2500 → 4000 (ahorro de peticiones)
+// Sesión 53 — con el WebSocket conectado los mensajes llegan solos: el sondeo
+// queda de respaldo cada 30 s (de ~15 peticiones/min a 2).
+const POLL_LIVE_MS             = 30_000;
 const OVERHEAD_DURATION_MS     = 7_000;     // OSRS-like
 const OVERHEAD_FADE_MS         = 600;       // últimos N ms de fade-out
 const MAX_MESSAGES_IN_VIEW     = 30;
@@ -66,6 +71,11 @@ let sendInFlight   = false;
 let lastServerNow  = 0;
 let cssInjected    = false;
 let chatDisabled   = false;
+let lastPollAt     = 0;        // Sesión 53
+let channel        = 'global'; // Sesión 53 — canal de envío ('global' | 'party')
+let partySeen      = null;     // grupo del que ya cargamos el historial
+let lastPartyPollAt = 0;
+let offRealtime    = null;
 
 // UI elements (creados en renderRoot)
 let rootEl         = null;
@@ -137,14 +147,24 @@ export async function start({
   // Fetch inicial (sin since → últimos 30, sin overhead).
   fetchInitial();
 
-  // Polling cada 2.5s.
-  pollTimer = setInterval(() => { if (!afk.isPaused()) poll(); }, POLL_INTERVAL_MS);   // Sesión 51
+  // Sesión 53 — mensajes al instante por el WebSocket
+  try { offRealtime = realtime.onMessage((m) => { if (m?.t === 'chat') ingest(m, m.ch === 'party' ? 'party' : 'global', true); }); } catch {}
+
+  // Polling cada 4 s; con el WebSocket conectado, cada 30 s (respaldo).
+  pollTimer = setInterval(() => {
+    if (afk.isPaused()) return;
+    syncPartyChannel();
+    const live = realtime.isConnected?.();
+    if (!live || Date.now() - lastPollAt >= POLL_LIVE_MS) poll();
+  }, POLL_INTERVAL_MS);   // Sesión 51
 
   started = true;
 }
 
 export function stop() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  try { offRealtime?.(); } catch {} offRealtime = null;   // Sesión 53
+  channel = 'global'; partySeen = null;
   if (rootEl)    { rootEl.remove(); rootEl = null; }
   // Sesión 52 — limpiar el offset/clase que usa el rastreador de misiones.
   try { document.documentElement.style.removeProperty('--chat-tab-bottom'); document.body.classList.remove('chat-open'); } catch {}
@@ -203,8 +223,36 @@ async function fetchInitial() {
   }
 }
 
+/** Sesión 53 — un mensaje (del WebSocket, del sondeo o del historial del grupo). */
+function ingest(msg, ch = 'global', live = false) {
+  if (!msg || msg.id == null || seenIds.has(msg.id)) return false;
+  rememberId(msg.id);
+  messages.push({ id: msg.id, user_id: msg.user_id, username: msg.username, message: msg.message, sent_at: msg.sent_at, ch });
+  messages.sort((a, b) => (a.sent_at || 0) - (b.sent_at || 0));
+  if (live || ch === 'party') showOverhead(msg.user_id, msg.message);
+  if (minimized && msg.user_id !== myUserId) unreadCount++;
+  trimMessages(); renderMessages(); renderUnreadBadge();
+  return true;
+}
+
+/** Sesión 53 — al entrar en un grupo: historial del grupo; al salir, canal global. */
+async function syncPartyChannel() {
+  let pid = null;
+  try { pid = party.getMyPartyId?.() || null; } catch {}
+  renderChannelBtn(pid);
+  if (!pid) { if (channel === 'party') channel = 'global'; partySeen = null; return; }
+  const live = realtime.isConnected?.();
+  if (pid === partySeen && (live || Date.now() - lastPartyPollAt < POLL_INTERVAL_MS)) return;
+  partySeen = pid; lastPartyPollAt = Date.now();
+  try {
+    const r = await api.chatRecent(undefined, 'party');
+    for (const m of r?.messages || []) ingest(m, 'party');
+  } catch {}
+}
+
 async function poll() {
   if (!started || chatDisabled) return;
+  lastPollAt = Date.now();   // Sesión 53
   try {
     // Sesión 52 — pedimos con solape (since - 5s) para no perder mensajes que
     // el server guardó con sent_at algo anterior a nuestro cursor; seenIds deduplica.
@@ -266,10 +314,14 @@ async function trySend() {
     _feedLogFn('warning', `Mensaje demasiado largo (máx ${MAX_MESSAGE_LENGTH}).`);
     return;
   }
+  // Sesión 53 — "/g texto" (o el botón 👥) → al grupo
+  let ch = channel, body = text;
+  if (/^\/(g|p|grupo)\s+/i.test(text)) { ch = 'party'; body = text.replace(/^\/(g|p|grupo)\s+/i, ''); }
+  if (ch === 'party' && !party.getMyPartyId?.()) { _feedLogFn('warning', 'No estás en ningún grupo.'); return; }
   sendInFlight = true;
   if (inputEl) inputEl.disabled = true;
   try {
-    const r = await api.chatSend(text);
+    const r = await api.chatSend(body, ch);
     if (r?.ok) {
       if (inputEl) inputEl.value = '';
       // Pintar local inmediato (UX). Si el poll lo trae luego, seenIds evita dup.
@@ -277,8 +329,9 @@ async function trySend() {
         id:       r.id,
         user_id:  myUserId,
         username: r.username || myUsername || 'tú',
-        message:  r.message  || text,
+        message:  r.message  || body,
         sent_at:  r.sent_at  || Date.now(),
+        ch,
       };
       if (localMsg.id != null && !seenIds.has(localMsg.id)) {
         rememberId(localMsg.id);   // Sesión 52
@@ -313,6 +366,7 @@ function mapSendError(code) {
     case 'empty_message':      return 'Mensaje vacío.';
     case 'invalid_message':    return 'Mensaje inválido.';
     case 'invalid_channel':    return 'Canal inválido.';
+    case 'no_party':           return 'No estás en ningún grupo.';   // Sesión 53
     case 'chat_disabled':      return 'Chat no disponible.';
     case 'unauthorized':       return 'Sesión expirada. Vuelve a entrar.';
     case 'network_error':      return 'Sin conexión con el servidor.';
@@ -341,6 +395,7 @@ function renderRoot() {
       </div>
       <div class="chat-messages" id="chatMessages"></div>
       <div class="chat-input-row">
+        <button class="chat-ch" type="button" aria-label="Canal" style="display:none;">🌐</button>
         <input type="text" class="chat-input"
                maxlength="${MAX_MESSAGE_LENGTH}"
                placeholder="Escribe…"
@@ -360,6 +415,12 @@ function renderRoot() {
   unreadEl   = rootEl.querySelector('.chat-unread');
   const closeBtn = rootEl.querySelector('.chat-close');
   const sendBtn  = rootEl.querySelector('.chat-send');
+  const chBtn    = rootEl.querySelector('.chat-ch');   // Sesión 53 — Global / Grupo
+  chBtn.addEventListener('pointerup', (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    channel = channel === 'party' ? 'global' : 'party';
+    renderChannelBtn(party.getMyPartyId?.() || null);
+  });
 
   toggleEl.addEventListener('pointerup', (ev) => {
     if (ev.button !== undefined && ev.button !== 0) return;
@@ -443,12 +504,28 @@ function minimize() {
   if (inputEl) inputEl.blur();   // cierra teclado virtual iOS
 }
 
+/** Sesión 53 — botón de canal (solo si estás en un grupo). */
+function renderChannelBtn(pid) {
+  const b = rootEl?.querySelector('.chat-ch');
+  if (!b) return;
+  if (!pid) { b.style.display = 'none'; channel = 'global'; }
+  else b.style.display = '';
+  const party = channel === 'party';
+  b.textContent = party ? '👥' : '🌐';
+  b.classList.toggle('party', party);
+  b.title = party ? 'Hablando al grupo (toca para el chat global)' : 'Chat global (toca para hablar al grupo)';
+  if (inputEl) inputEl.placeholder = party ? 'Al grupo…' : 'Escribe… (/g para el grupo)';
+  const tt = rootEl?.querySelector('.chat-title');
+  if (tt) tt.textContent = party ? 'Chat de grupo' : 'Chat global';
+}
+
 function renderMessages() {
   if (!messagesEl) return;
   const html = messages.map(m => {
     const ts     = formatTs(m.sent_at);
     const isSelf = m.user_id === myUserId;
-    return `<div class="chat-line">` +
+    return `<div class="chat-line${m.ch === 'party' ? ' party' : ''}">` +
+             (m.ch === 'party' ? `<span class="chat-ptag">[Grupo]</span> ` : '') +
              `<span class="chat-ts">[${escapeHtml(ts)}]</span> ` +
              `<span class="chat-user ${isSelf ? 'self' : 'other'}">${escapeHtml(m.username)}:</span> ` +
              `<span class="chat-msg">${escapeHtml(m.message)}</span>` +
@@ -787,6 +864,12 @@ function ensureCss() {
       flex-shrink: 0;
     }
     .chat-send:active { background: linear-gradient(180deg, #1a4a1a, #133013); }
+    /* Sesión 53 — canal de grupo */
+    .chat-ch { background: linear-gradient(180deg, #3a3020, #241c10); border: 1.5px solid #c8a043; border-radius: 3px;
+      padding: 0 8px; font-size: 14px; cursor: pointer; flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
+    .chat-ch.party { background: linear-gradient(180deg, #1f4a3a, #12301f); border-color: #6fe0b0; }
+    .chat-line.party .chat-msg { color: #8ff0c8; }
+    .chat-ptag { color: #6fe0b0; font-weight: 700; font-size: 0.9em; }
 
     /* === Overhead bubble (texto sobre la cabeza OSRS-style) === */
     .chat-bubble {

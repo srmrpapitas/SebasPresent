@@ -27,11 +27,13 @@
  */
 import { json, readJson, makeDbAdapter } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
+import { pushRealtime } from '../lib/realtime.js';   // Sesión 53 — mensajes al instante por WebSocket
+import { getPartyIdOfUser } from './party.js';
 
 const MAX_MESSAGE_LENGTH    = 200;
 const RATE_LIMIT_WINDOW_MS  = 10_000;
 const RATE_LIMIT_MAX        = 5;
-const ALLOWED_CHANNELS      = new Set(['global']);
+const ALLOWED_CHANNELS      = new Set(['global', 'party']);   // Sesión 53 — chat de grupo
 const RECENT_DEFAULT_LIMIT  = 30;   // sin ?since → últimos N
 const RECENT_SINCE_LIMIT    = 50;   // con ?since → tope por request
 
@@ -85,6 +87,14 @@ export async function handleChatSend(request, env) {
 
   const now = Date.now();
 
+  // Sesión 53 — grupo: se guarda como 'party:<id>' y solo lo reciben sus miembros
+  let partyId = null, store = channel;
+  if (channel === 'party') {
+    partyId = await getPartyIdOfUser(db, session.user_id);
+    if (!partyId) return json({ error: 'no_party' }, 400);
+    store = `party:${partyId}`;
+  }
+
   // ----- Rate limit (5 msg / 10s por user) -----
   const rateCutoff = now - RATE_LIMIT_WINDOW_MS;
   const rateRow = await db.first(
@@ -111,8 +121,17 @@ export async function handleChatSend(request, env) {
   const result = await db.run(
     `INSERT INTO chat_messages (user_id, username, channel, message, sent_at)
      VALUES (?, ?, ?, ?, ?)`,
-    [session.user_id, userRow.username, channel, message, now]
+    [session.user_id, userRow.username, store, message, now]
   );
+
+  // Sesión 53 — al instante por el canal en tiempo real (el sondeo queda de respaldo)
+  const live = { t: 'chat', ch: channel, id: result?.meta?.last_row_id ?? null, user_id: session.user_id, username: userRow.username, message, sent_at: now };
+  try {
+    if (partyId) {
+      const mem = await db.all('SELECT user_id FROM party_members WHERE party_id = ?', [partyId]);
+      await pushRealtime(env, live, mem.map(r => r.user_id));
+    } else await pushRealtime(env, live);
+  } catch {}
 
   return json({
     ok: true,
@@ -145,6 +164,12 @@ export async function handleChatRecent(request, env) {
   let channel = url.searchParams.get('channel') || 'global';
   if (!ALLOWED_CHANNELS.has(channel)) {
     return json({ error: 'invalid_channel' }, 400);
+  }
+  // Sesión 53 — grupo: tu grupo actual
+  if (channel === 'party') {
+    const pid = await getPartyIdOfUser(db, session.user_id);
+    if (!pid) return json({ messages: [], server_now: now, no_party: true });
+    channel = `party:${pid}`;
   }
   const sinceParam = url.searchParams.get('since');
   const since = sinceParam != null ? Number(sinceParam) : NaN;

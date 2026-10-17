@@ -65,7 +65,12 @@ export class Realm {
     if (url.pathname === '/event' && request.method === 'POST') {
       let body = null;
       try { body = await request.json(); } catch {}
-      if (body?.msg) this.broadcast(JSON.stringify(body.msg), null);
+      if (body?.msg) {
+        if (Array.isArray(body.to)) {   // Sesión 53 — solo a esos jugadores (chat de grupo, premios…)
+          const str = JSON.stringify(body.msg);
+          for (const uid of body.to.slice(0, 16)) for (const w of this.ctx.getWebSockets(String(uid))) { try { w.send(str); } catch {} }
+        } else this.broadcast(JSON.stringify(body.msg), null);
+      }
       return new Response('ok');
     }
 
