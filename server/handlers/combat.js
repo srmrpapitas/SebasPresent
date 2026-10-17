@@ -24,6 +24,7 @@ import { pushRealtime } from '../lib/realtime.js';   // Sesión 50
 import { BOSSES } from '../../client/src/shared/bosses.js';   // Sesión 50 — anuncios
 import { WORLD_EVENT } from '../../client/src/shared/world_events.js';   // Sesión 53
 import { recordEventHit, rewardEvent } from '../world_event.js';
+const PARTY_SHARE_M = 30;   // Sesión 53 — distancia para compartir la muerte con el grupo
 export async function handleCombatState(request, env) {
   const session = await requireSession(request, env);
   if (!session) return json({ error: 'unauthorized' }, 401);
@@ -89,6 +90,25 @@ export async function handleCombatAttack(request, env) {
       } catch (err) { console.warn('[evento]', err?.message); }
     }
     if (result?.npc_killed) await questEvent(env, session.user_id, 'kill', result.npc_def_id);   // Sesión 50
+    // Sesión 53 — jugar en grupo: los del grupo que estén cerca (≤ 30 m) también cuentan la
+    // muerte para sus misiones y tareas diarias ("mata 3 tibicenas" se hace juntos).
+    if (result?.npc_killed) {
+      try {
+        const near = await env.DB.prepare(
+          `SELECT o.user_id, o.x, o.z FROM party_members me
+             JOIN party_members pm ON pm.party_id = me.party_id AND pm.user_id != me.user_id
+             JOIN online_users o ON o.user_id = pm.user_id
+            WHERE me.user_id = ? AND o.last_seen > ?`
+        ).bind(session.user_id, Date.now() - 15_000).all();
+        const kx = Number(body.x), kz = Number(body.z);
+        const me = await env.DB.prepare('SELECT x, z FROM online_users WHERE user_id = ?').bind(session.user_id).first();
+        const cx = Number.isFinite(me?.x) ? me.x : kx, cz = Number.isFinite(me?.z) ? me.z : kz;
+        for (const m of near.results || []) {
+          if (Number.isFinite(cx) && Math.hypot(m.x - cx, m.z - cz) > PARTY_SHARE_M) continue;
+          await questEvent(env, m.user_id, 'kill', result.npc_def_id);
+        }
+      } catch (err) { console.warn('[combat] grupo:', err?.message); }
+    }
     // Sesión 50 — ¡pieza de dragón! Se anuncia a toda la isla.
     if (result?.npc_killed && BOSSES[result.npc_def_id] && !BOSSES[result.npc_def_id].event) {
       try {
