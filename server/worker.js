@@ -78,6 +78,7 @@ import * as quests from './handlers/quests.js';                  // Sesión 50 �
 import * as prayer from './handlers/prayer.js';                  // Sesión 50 — plegaria
 import { handleBestiary } from './handlers/bestiary.js';         // Sesión 51 — Bestiario
 import { handleProgress, handleRecords } from './handlers/progress.js';   // Sesión 53 — logros, colección, récords
+import { handleTreasureOpen } from './handlers/treasures.js';   // Sesión 53 — tesoros escondidos
 import { scheduledHandler } from './handlers/cron.js';
 import { withBudget, budgetStatus, secondsToReset } from './lib/budget.js';   // Sesión 51 — tope diario
 
@@ -395,6 +396,8 @@ async function handleFetch(request, env, budget) {
         response = await quests.handleQuestStart(request, env);
       } else if (path === '/api/progress' && method === 'GET') {   // Sesión 53
         response = await handleProgress(request, env);
+      } else if (path === '/api/treasure/open' && method === 'POST') {   // Sesión 53
+        response = await handleTreasureOpen(request, env);
       } else if (path === '/api/progress/records' && method === 'GET') {   // Sesión 53
         response = await handleRecords(request, env);
       } else if (path === '/api/quests/visit' && method === 'POST') {   // Sesión 52 — historia

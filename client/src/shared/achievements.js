@@ -25,6 +25,7 @@ export const ACH_CATS = [
   { id: 'misiones', name: 'Misiones',  icon: '📜' },
   { id: 'coleccion', name: 'Colección', icon: '📒' },
   { id: 'diarias',  name: 'Diarias',   icon: '📅' },
+  { id: 'exploracion', name: 'Exploración', icon: '🧭' },   // Sesión 53 — tesoros
 ];
 
 const SKILL_NAMES = {
@@ -104,6 +105,11 @@ add('racha_1',  'diarias', 1, '📅', 'Buen día', 'Haz las 3 tareas diarias de 
 add('racha_3',  'diarias', 1, '📅', 'Constante', 'Racha de 3 días con las tareas diarias.', c => P(c.streak, 3));
 add('racha_7',  'diarias', 2, '🔥', 'Una semana entera', 'Racha de 7 días.', c => P(c.streak, 7));
 add('racha_30', 'diarias', 4, '🔥', 'Fiel a la isla', 'Racha de 30 días.', c => P(c.streak, 30));
+
+// --- Exploración (tesoros escondidos) ---
+add('tesoro_1',  'exploracion', 1, '🧭', 'Buscatesoros', 'Encuentra tu primer cofre escondido.', c => P(c.treasures || 0, 1));
+add('tesoro_8',  'exploracion', 2, '🗺️', 'Explorador', 'Encuentra 8 cofres escondidos distintos.', c => P(c.treasures || 0, 8));
+add('tesoro_16', 'exploracion', 4, '🏴‍☠️', 'Conozco cada rincón', 'Encuentra los 16 cofres escondidos de la isla.', c => P(c.treasures || 0, 16));
 
 export const ACHIEVEMENTS = A;
 export const ACH_BY_ID = Object.fromEntries(A.map(a => [a.id, a]));

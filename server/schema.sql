@@ -472,3 +472,13 @@ CREATE TABLE IF NOT EXISTS event_hits (
   at INTEGER NOT NULL,
   PRIMARY KEY (event_start, user_id)
 );
+
+-- Sesión 53 — tesoros escondidos (migración 026)
+CREATE TABLE IF NOT EXISTS user_treasures (
+  user_id INTEGER NOT NULL,
+  treasure_id TEXT NOT NULL,
+  first_at INTEGER NOT NULL,
+  last_day INTEGER NOT NULL,
+  opens INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (user_id, treasure_id)
+);

@@ -25,7 +25,7 @@ async function all(env, sql, ...b) {
 }
 
 export async function buildContext(env, uid, now = Date.now()) {
-  const [skills, quests, kcRows, colRows, fosa, flagRows, achRows] = await Promise.all([
+  const [skills, quests, kcRows, colRows, fosa, flagRows, achRows, trRows] = await Promise.all([
     all(env, 'SELECT skill_id, xp FROM user_skills WHERE user_id = ?', uid),
     all(env, 'SELECT quest_id, step, progress, status FROM user_quests WHERE user_id = ?', uid),
     all(env, 'SELECT npc_def_id, kills FROM user_kc WHERE user_id = ?', uid),
@@ -33,6 +33,7 @@ export async function buildContext(env, uid, now = Date.now()) {
     all(env, 'SELECT best_wave FROM user_fosa WHERE user_id = ?', uid),
     all(env, 'SELECT flag, value FROM user_quest_flags WHERE user_id = ?', uid),
     all(env, 'SELECT ach_id, at FROM user_achievements WHERE user_id = ?', uid),
+    all(env, 'SELECT treasure_id, last_day FROM user_treasures WHERE user_id = ?', uid),   // Sesión 53 — tesoros
   ]);
   const lv = {};
   for (const r of skills) lv[r.skill_id] = levelFromXp(r.xp || 0);
@@ -56,9 +57,11 @@ export async function buildContext(env, uid, now = Date.now()) {
   for (const f of flagRows) flags[f.flag] = f.value;
   const have = {};
   for (const r of achRows) have[r.ach_id] = r.at;
+  const treasures = {};
+  for (const r of trRows) treasures[r.treasure_id] = r.last_day;
   return {
-    ctx: { lv, total, combat, done, kc, kills, bossKills, bossesKilled, fosaBest: fosa[0]?.best_wave || 0, col: colRows.length, streak, flags },
-    collection, have,
+    ctx: { lv, total, combat, done, kc, kills, bossKills, bossesKilled, fosaBest: fosa[0]?.best_wave || 0, col: colRows.length, streak, flags, treasures: trRows.length },
+    collection, have, treasures,
   };
 }
 
@@ -69,7 +72,7 @@ export async function handleProgress(request, env) {
   const cached = _me.get(uid);
   if (cached && now - cached.at < ME_CACHE_MS) return json({ ...cached.body, new: [] });
 
-  const { ctx, collection, have } = await buildContext(env, uid, now);
+  const { ctx, collection, have, treasures } = await buildContext(env, uid, now);
   // Logros nuevos: se guardan y se pagan una sola vez (INSERT OR IGNORE decide quién paga).
   const fresh = ACHIEVEMENTS.filter(a => !have[a.id] && achMet(a, ctx));
   const won = [];
@@ -87,7 +90,7 @@ export async function handleProgress(request, env) {
     return s + (a ? TIERS[a.tier].pts : 0);
   }, 0);
   const body = {
-    have, points, kc: ctx.kc, kills: ctx.kills, collection, fosa_best: ctx.fosaBest, streak: ctx.streak,
+    have, points, kc: ctx.kc, kills: ctx.kills, collection, fosa_best: ctx.fosaBest, streak: ctx.streak, treasures,
     ctx: { total: ctx.total, combat: ctx.combat, lv: ctx.lv, done: [...ctx.done], bossKills: ctx.bossKills, bossesKilled: ctx.bossesKilled, flags: ctx.flags },
   };
   _me.set(uid, { at: now, body });
