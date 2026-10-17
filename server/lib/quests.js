@@ -14,6 +14,8 @@ import { guardConds, slotCond, atomicBatch } from './atomic.js';   // Sesión 51
 import { QUESTS, QUEST_ORDER, QUEST_REQS, checkReqs } from '../../client/src/shared/quests.js';
 import { combatLevelFrom } from '../../client/src/shared/mounts.js';   // Sesión 52 — requisitos al encadenar capítulos
 import { xpToLevel, MAX_XP } from './skills_engine.js';
+import { ensureDailies, dailyRowEvent } from './dailies.js';   // Sesión 53 — tareas diarias
+import { isDailyId, dayNumber } from '../../client/src/shared/dailies.js';
 
 const INVENTORY_SLOTS = 20;
 
@@ -310,6 +312,7 @@ export async function deliverToNpc(env, userId, npcId) {
 export async function ensureQuests(env, userId) {
   if (!(await tableReady(env))) return false;
   const now = Date.now();
+  await ensureDailies(env, userId, now);   // Sesión 53
   for (const qid of QUEST_ORDER) {
     if (QUESTS[qid].giver) continue;   // Sesión 50 — esas se empiezan hablando con su NPC
     const r = await env.DB.prepare(
@@ -335,10 +338,19 @@ export async function getUserQuests(env, userId) {
 export async function questEvent(env, userId, event, match = null) {
   const out = [];
   try {
+    // Sesión 53 — también las diarias de días anteriores (aunque estén hechas) para ponerlas a cero.
     const rows = await env.DB.prepare(
-      'SELECT quest_id, step, progress FROM user_quests WHERE user_id = ? AND status = 0'
-    ).bind(userId).all();
+      `SELECT quest_id, step, progress, status FROM user_quests
+        WHERE user_id = ? AND (status = 0 OR (quest_id IN ('daily_1','daily_2','daily_3') AND step < ?))`
+    ).bind(userId, dayNumber()).all();
     for (const row of rows.results || []) {
+      if (isDailyId(row.quest_id)) {
+        try {
+          const d = await dailyRowEvent(env, userId, row, event, match, Date.now(), { grantItem, grantXp });
+          if (d) out.push(d);
+        } catch (err) { console.warn('[dailies] event:', err?.message); }
+        continue;
+      }
       const q = QUESTS[row.quest_id];
       const step = q?.steps?.[row.step];
       if (!step || step.event !== event) continue;

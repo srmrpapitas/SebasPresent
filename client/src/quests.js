@@ -23,6 +23,7 @@ import { getRegionInfo } from './terrain.js';
 import * as skills from './skills.js';
 import { nearestBankChest } from './shared/banks.js';   // Sesión 50
 import { TOWN_NPCS_BY_ID } from './shared/town_npcs.js';  // Sesión 50
+import * as dailies from './dailies.js';   // Sesión 53 — tareas diarias
 
 let scene = null, getSnapshot = () => null, getPlayer = () => null, feedLog = () => {};
 let started = false;
@@ -103,11 +104,20 @@ export function applyServerRows(rows, newFlags) {
 export function getFlags() { return { ...flags }; }
 const storyCtx = { applyRows: (rows, f) => applyServerRows(rows, f), flags: () => flags, serverNow: () => getServerNow(), track: (id) => track(id) };
 export function storyContext() { return storyCtx; }
+/** Sesión 53 — avisos de progreso (misión/diaria hecha) para comprobar logros. */
+const onProgressFns = [];
+export function onProgress(fn) { onProgressFns.push(fn); }
 /** Sesión 50 — fijar misión en el rastreador. */
 export function track(id) { trackedId = id; render(); }
 
+const nowMs = () => getServerNow?.() || Date.now();
 function applyRows(rows, announce) {
   let rewarded = false;   // Sesión 52 — ¿hubo paso/misión completada? (recompensas a la mochila)
+  // Sesión 53 — tareas diarias (viajan en las mismas filas)
+  dailies.applyRows(rows, announce, {
+    feedLog, celebrate,
+    onDone: () => { rewarded = true; onProgressFns.forEach(f => { try { f('daily'); } catch {} }); },
+  }, nowMs());
   for (const r of rows) {
     const q = QUESTS[r.quest_id];
     if (!q) continue;
@@ -128,6 +138,7 @@ function applyRows(rows, announce) {
       audio.synth?.('mine_ore', { volume: 0.8 });
       setTimeout(() => audio.synth?.('craft_done', { volume: 0.8 }), 250);
       celebrate(`¡${q.name} completada!`);
+      onProgressFns.forEach(f => { try { f('quest'); } catch {} });   // Sesión 53 — logros
     } else if (r.step > prev.step) {
       rewarded = true;
       const done = q.steps[prev.step];
@@ -213,7 +224,7 @@ function renderTab() {
   const lv = myLevels();
   const done = new Set(QUEST_ORDER.filter(id => state[id]?.status === 1));
   const nDone = done.size;
-  let html = `<div class="quest-tab"><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
+  let html = `<div class="quest-tab"><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button>${dailies.cardHtml(nowMs(), lv)}<div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
     <div class="qtab-legend"><span class="c-new">■</span> sin empezar <span class="c-cur">■</span> en curso <span class="c-done">■</span> hecha</div>`;
   // Sesión 52 — la historia principal arriba, con sus capítulos
   const order = [...SAGA.chapters, ...QUEST_ORDER.filter(id => !QUESTS[id]?.saga)];
@@ -381,10 +392,15 @@ export function update(dt) {
     const rows = getSnapshot?.()?.me?.quests;
     if (Array.isArray(rows) && rows.length) {
       const changed = rows.some(r => {
+        if (!QUESTS[r.quest_id]) return false;   // Sesión 53 — diarias aparte (no repintar cada 0,5 s)
         const s = state[r.quest_id];
         return !s || s.step !== r.step || s.progress !== r.progress || s.status !== r.status;
       });
-      if (changed) applyRows(rows, true);
+      if (changed || dailies.differs(rows)) applyRows(rows, true);
+    }
+    // Sesión 53 — cambio de día: pedir las diarias nuevas (una vez)
+    if (dailies.dayChanged(nowMs())) {
+      api.questsGet().then(r => applyRows(r?.quests || [], false)).catch(() => {});
     }
     hintPos = computeHint();
   }
@@ -450,6 +466,9 @@ function ensureCss() {
     .qtab-saga.qtab-side { background: rgba(0,0,0,0.2); font-weight: bold; margin-top: 12px; }
     .qrow-ch { color: #ffb050; }
     .qtab-beast { display: block; width: 100%; margin: 0 0 8px; padding: 7px 8px; font: inherit; font-size: 12px; font-weight: 700; color: #fff3cf; background: linear-gradient(#6a4a1c, #4a3214); border: 1px solid #c8a043; border-radius: 6px; cursor: pointer; }
+    .qtab-prog { display: flex; gap: 6px; margin: 0 0 8px; }
+    .qtab-pbtn { flex: 1; padding: 6px 4px; font: inherit; font-size: 12px; font-weight: 700; color: #fff3cf; background: linear-gradient(#4a3a5c, #2e2440); border: 1px solid #a88fd0; border-radius: 6px; cursor: pointer; }
+    ${dailies.CSS}
     .qtab-name { font-family: 'Cinzel', serif; font-weight: 700; color: #e8c560; font-size: 14px; }
     .qtab-sum { font-size: 12px; color: #bba878; margin: 4px 0 6px; }
     .qtab-steps { list-style: none; padding: 0; margin: 0; font-size: 12.5px; }

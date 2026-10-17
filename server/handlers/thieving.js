@@ -13,7 +13,7 @@ import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { pushRealtime } from '../lib/realtime.js';
 import { placeStmts, giveRobust } from '../lib/give.js';
-import { grantXp } from '../lib/quests.js';
+import { grantXp, questEvent } from '../lib/quests.js';   // Sesión 53 — questEvent (diarias)
 import { levelFromXp } from '../combat_engine.js';
 import { TOWN_NPCS_BY_ID, npcDist } from '../../client/src/shared/town_npcs.js';
 import {
@@ -88,6 +88,7 @@ export async function handleStealNpc(request, env) {
   catch { return json({ error: 'changed', message: 'Tu mochila cambió mientras tanto. Inténtalo otra vez.' }, 409); }
   await grantXp(env, uid, THIEF_SKILL, P.xp);
   const meta = await env.DB.prepare('SELECT name, icon FROM items WHERE id = ?').bind(item).first();
+  try { await questEvent(env, uid, 'steal', npc.id); } catch {}   // Sesión 53 — diarias
   return json({ ok: true, caught: false, item, qty, name: meta?.name || item, icon: meta?.icon, xp: P.xp, chance });
 }
 
