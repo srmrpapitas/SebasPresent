@@ -57,16 +57,34 @@
 - Nombres viejos: Morgath → Chona. El id interno `fosa_ignaroth` se queda (su nombre visible ya es "Guayota";
   cambiar el id rompería registros guardados). La Fosa del este sigue teniendo su propio "eco" de Guayota.
 
+## Hecho el 17 oct (tarea programada de las 05:00)
+- **Tareas diarias** (`client/src/shared/dailies.js`, `server/lib/dailies.js`, `client/src/dailies.js`):
+  3 al día iguales para todos (combate, recoger, oficio), cambian a medianoche de Canarias. Monedas + XP
+  según nivel; las 3 → premio que crece con la racha (cada 7 días, pociones). Viven en `user_quests`
+  ('daily_1..3' con step = día, 'daily_racha'): cero lecturas extra. Evento nuevo 'steal' (robo con éxito).
+- **Logros, colección y contador** (migración 024: `user_kc`, `user_collection`, `user_achievements`):
+  60 logros en 7 categorías (`client/src/shared/achievements.js`), pagan monedas una vez (todos: 445.500).
+  Registro de colección = botín de jefes/minijuego + lo raro (≤ 1/20) de cualquier monstruo.
+  `GET /api/progress` (8 s caché) y `GET /api/progress/records` (60 s). Libros desde la pestaña de misiones;
+  el bestiario enseña "Has derrotado: N". El contador empieza en 0 para todos (no había datos antes).
+- **Récords visibles**: páginas "La Fosa de Fuego" y "Cazadores de jefes" en el libro de Ranking; Kargath
+  tiene "🏆 Récords de la Fosa"; el marcador de la Fosa enseña tu récord y el de la isla.
+- **Evento «¡El Teide ruge!»** (`client/src/shared/world_events.js`, `server/world_event.js`, migración y
+  seed 025): la Tibicena Mayor despierta 15 min cada 2 h (horas impares UTC) junto al Observatorio de Izaña;
+  el cron la despierta/duerme; todos los que le pegan se llevan su premio. Recomendado combate 30+.
+- **Chat al instante + chat de grupo**: mensajes por WebSocket (sondeo de respaldo cada 30 s en vez de 4 s);
+  canal de grupo con 🌐/👥 o "/g mensaje" (Realm acepta `to: [uids]` en /event).
+- **Grupo**: las muertes cuentan para los del grupo a ≤ 30 m (misiones y diarias).
+
 ## Pendiente — "el juego se siente vacío" (orden acordado)
-1. ~~Ambiente~~ ✔ · 2. ~~Historia de Guayota~~ ✔
-3. **Motivos para volver**: tareas diarias, logros + registro de colección, contador de jefes, récord de la Fosa visible.
-4. **Jugar juntos**: eventos del mundo ("¡el Teide ruge!": jefe para todos, botín repartido), chat de grupo,
-   XP/botín compartido en grupo.
+1. ~~Ambiente~~ ✔ · 2. ~~Historia de Guayota~~ ✔ · 3. ~~Motivos para volver~~ ✔ · 4. ~~Jugar juntos~~ ✔
+   (falta, si se quiere: XP compartida en grupo; botín repartido en grupo fuera del evento)
 5. **Rellenar el mapa**: 30 de 64 celdas de 512 m sin contenido (sur/sureste, noroeste, este Güímar–Santa Cruz);
    pueblos fuera de La Laguna con 1–4 NPC.
 6. Habilidades que se acaban pronto (Plegaria 43, Artesanía/Flechería 30): más contenido de nivel alto.
 7. Probar en el juego: armaduras nuevas puestas en el personaje real (solo se vieron en el maniquí Xbot),
-   la historia completa con un personaje real y la pelea de Guayota con 2–3 jugadores.
+   la historia completa con un personaje real, la pelea de Guayota con 2–3 jugadores y el primer evento
+   de la Tibicena Mayor en producción.
 
 ## Pruebas
 Scripts locales con D1 simulada (node:sqlite): `d1shim.mjs` + `worker.fetch(new Request(...), env)`.
