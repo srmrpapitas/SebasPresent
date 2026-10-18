@@ -3421,6 +3421,8 @@ function drawPortrait(kind, npc, canvas) {
 function animate() {
   if (!running) return;
   requestAnimationFrame(animate);
+  // Sesión 53 — en el modo Sebas (pantalla aparte) el mundo no se dibuja ni se mueve
+  if (typeof window !== 'undefined' && window.__sebasModeOn) { clock.getDelta(); return; }
   const dt = Math.min(clock.getDelta(), 0.1);
   updatePlayer(dt);
   terrain.update(dt, player.position.x, player.position.z);

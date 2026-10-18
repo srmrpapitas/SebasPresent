@@ -93,6 +93,8 @@ function pause(why, text) {
  * aviso. "Reintentar" vuelve a probar (si sigue cortado, vuelve a salir).
  */
 export function serverRest(text) { pause('cap', text); }
+/** Sesión 53 — pausa sin aviso (p. ej. el modo Sebas, que no habla con el servidor). */
+export function pauseFor(why) { pause(why); }
 
 /**
  * Sesión 51 — has abierto el juego con esta cuenta en otra pestaña o en otro

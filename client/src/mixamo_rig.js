@@ -425,7 +425,7 @@ export function create(id, opts = {}) {
   }
 
   update(0, {});
-  return { root, inner, bones: B, materials, update, dispose, id, hasClips: !!mixer };
+  return { root, inner, bones: B, materials, update, dispose, id, hasClips: !!mixer, mixer, actions };   // S53 — el modo Sebas maneja los clips a mano
 }
 
 if (typeof window !== 'undefined') window.__mixamoRig = { preload, preloadAnims, create, RIG_MODELS, fireTime };

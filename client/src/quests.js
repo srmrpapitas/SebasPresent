@@ -238,7 +238,7 @@ function renderTab() {
   const lv = myLevels();
   const done = new Set(QUEST_ORDER.filter(id => state[id]?.status === 1));
   const nDone = done.size;
-  let html = `<div class="quest-tab"><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button>${dailies.cardHtml(nowMs(), lv)}<div class="qtab-prog"><button type="button" class="qtab-pbtn" data-prog="ach">🏅 Logros</button><button type="button" class="qtab-pbtn" data-prog="col">📒 Colección</button></div><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
+  let html = `<div class="quest-tab"><button type="button" class="qtab-sebas" data-sebas="1"><b>🎬 SEBAS PRESENT · La Cruzada</b><span>Modo historia de acción · 7 capítulos</span></button><button type="button" class="qtab-beast" data-beast="1">📖 Bestiario · dónde vive cada criatura</button>${dailies.cardHtml(nowMs(), lv)}<div class="qtab-prog"><button type="button" class="qtab-pbtn" data-prog="ach">🏅 Logros</button><button type="button" class="qtab-pbtn" data-prog="col">📒 Colección</button></div><div class="qtab-count">Misiones: <b>${nDone}/${QUEST_ORDER.length}</b> completadas</div>
     <div class="qtab-legend"><span class="c-new">■</span> sin empezar <span class="c-cur">■</span> en curso <span class="c-done">■</span> hecha</div>`;
   // Sesión 52 — la historia principal arriba, con sus capítulos
   const order = [...SAGA.chapters, ...QUEST_ORDER.filter(id => !QUESTS[id]?.saga)];
@@ -302,6 +302,8 @@ function renderTab() {
   if (!pane.dataset.qbound) {
     pane.dataset.qbound = '1';
     pane.addEventListener('pointerup', async (ev) => {
+      const sb = ev.target.closest('[data-sebas]');   // Sesión 53 — modo Sebas
+      if (sb) { ev.stopPropagation(); import('./sebas/mode.js').then(m => m.open()).catch(e => console.warn('[sebas]', e)); return; }
       const bk = ev.target.closest('[data-beast]');   // Sesión 51 — Bestiario
       if (bk) { ev.stopPropagation(); import('./bestiary.js').then(m => m.open()).catch(e => console.warn('[bestiary]', e)); return; }
       const pb = ev.target.closest('[data-prog]');   // Sesión 53 — Logros / Colección
@@ -502,6 +504,8 @@ function ensureCss() {
     .qtab-saga span { float: right; color: #ffe8a0; font-weight: bold; }
     .qtab-saga.qtab-side { background: rgba(0,0,0,0.2); font-weight: bold; margin-top: 12px; }
     .qrow-ch { color: #ffb050; }
+    .qtab-sebas { display: flex; flex-direction: column; width: 100%; margin: 0 0 8px; padding: 9px 8px; font: inherit; color: #fff; text-align: center; background: linear-gradient(#8a1022, #3a0610); border: 1px solid #ff6070; border-radius: 6px; cursor: pointer; box-shadow: 0 0 10px rgba(255,60,80,.35); }
+    .qtab-sebas b { font-size: 13px; letter-spacing: .04em; } .qtab-sebas span { font-size: 10px; color: #f4d0a0; margin-top: 2px; }
     .qtab-beast { display: block; width: 100%; margin: 0 0 8px; padding: 7px 8px; font: inherit; font-size: 12px; font-weight: 700; color: #fff3cf; background: linear-gradient(#6a4a1c, #4a3214); border: 1px solid #c8a043; border-radius: 6px; cursor: pointer; }
     .qtab-prog { display: flex; gap: 6px; margin: 0 0 8px; }
     .qtab-pbtn { flex: 1; padding: 6px 4px; font: inherit; font-size: 12px; font-weight: 700; color: #fff3cf; background: linear-gradient(#4a3a5c, #2e2440); border: 1px solid #a88fd0; border-radius: 6px; cursor: pointer; }

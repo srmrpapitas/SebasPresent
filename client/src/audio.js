@@ -668,3 +668,10 @@ function applyMusicVolume() {
   const newVol = prefs.music * prefs.master;
   musicAudio.volume = newVol;
 }
+
+/** S53 — el modo Sebas silencia la música del mundo mientras está abierto. */
+export function setMusicPaused(on) {
+  if (!musicAudio) return;
+  if (on) { try { musicAudio.pause(); } catch {} }
+  else if (musicAudio.src && musicAudio.paused && !prefs.muted) musicAudio.play().catch(() => {});
+}
