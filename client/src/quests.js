@@ -108,7 +108,7 @@ export function storyContext() { return storyCtx; }
 const onProgressFns = [];
 export function onProgress(fn) { onProgressFns.push(fn); }
 /** Sesión 50 — fijar misión en el rastreador. */
-export function track(id) { trackedId = id; render(); }
+export function track(id) { trackedId = id; guide = null; render(); }
 
 const nowMs = () => getServerNow?.() || Date.now();
 function applyRows(rows, announce) {
@@ -166,6 +166,11 @@ function render() {
   renderTab();
 }
 
+// Sesión 53 — el rastreador se puede plegar a un botón pequeño (📜) para que no
+// tape el juego; se recuerda. Plegado por defecto.
+let trackerMin = (() => { try { return localStorage.getItem('sp_tracker_min') !== '0'; } catch { return true; } })();
+function setTrackerMin(v) { trackerMin = v; try { localStorage.setItem('sp_tracker_min', v ? '1' : '0'); } catch {} renderTracker(); }
+
 function renderTracker() {
   const a = activeQuest();
   if (!a) { trackerEl?.remove(); trackerEl = null; return; }
@@ -176,6 +181,8 @@ function renderTracker() {
     trackerEl.className = 'quest-tracker';
     trackerEl.addEventListener('pointerup', (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      if (ev.target.closest('[data-qt-min]')) { setTrackerMin(true); return; }   // Sesión 53 — plegar
+      if (trackerMin) { setTrackerMin(false); return; }                           // Sesión 53 — desplegar
       if (reopenChoice()) return;   // Sesión 52
       expanded = !expanded; renderTracker();
     });
@@ -183,10 +190,17 @@ function renderTracker() {
     document.body.appendChild(trackerEl);
   }
   const prog = step.count > 1 ? ` <span class="qt-prog">${a.s.progress}/${step.count}</span>` : '';
-  trackerEl.innerHTML = `
+  trackerEl.classList.toggle('qt-min', trackerMin);
+  if (trackerMin) {
+    trackerEl.innerHTML = `<span class="qt-mini">📜</span>${step.count > 1 ? `<span class="qt-mini-p">${a.s.progress}/${step.count}</span>` : ''}`;
+    trackerEl.title = `${a.q.name}: ${step.text}`;
+    return;
+  }
+  trackerEl.innerHTML = `<button type="button" class="qt-minbtn" data-qt-min aria-label="Plegar">−</button>`;
+  trackerEl.insertAdjacentHTML('beforeend', `
     <div class="qt-title">${a.q.saga ? `📖 Cap. ${a.q.chapter} · ` : '📜 '}${esc(a.q.name)} <span class="qt-step">${a.s.step + 1}/${a.q.steps.length}</span></div>
     <div class="qt-text">${esc(step.text)}${prog}</div>
-    ${expanded && step.tip ? `<div class="qt-tip">💡 ${esc(step.tip)}</div>` : ''}`;
+    ${expanded && step.tip ? `<div class="qt-tip">💡 ${esc(step.tip)}</div>` : ''}`);
 }
 
 function pulse() {
@@ -276,6 +290,7 @@ function renderTab() {
       }
       html += `<div class="qtab-rew">🎁 ${esc(q.reward?.text || '')}</div>`;
       if (isCur && !isTracked) html += `<button class="qrow-btn" data-track="${id}">📍 Seguir esta misión</button>`;
+      if (!s && giver && canStart) html += `<button class="qrow-btn" data-guide="${id}">📍 Llévame hasta ${esc(giver.name)}</button>`;   // Sesión 53
       if (isCur && id === 'tutorial') html += `<button class="qtab-skip" data-skip="${id}">Saltar tutorial</button>`;
       html += '</div>';
     }
@@ -293,6 +308,8 @@ function renderTab() {
       if (pb) { ev.stopPropagation(); import('./progress.js').then(m => pb.dataset.prog === 'ach' ? m.openAchievements() : m.openCollection()).catch(e => console.warn('[progress]', e)); return; }
       const tg = ev.target.closest('[data-toggle]');
       if (tg) { const id = tg.dataset.toggle; if (openIds.has(id)) openIds.delete(id); else openIds.add(id); renderTab(); return; }
+      const gd = ev.target.closest('[data-guide]');   // Sesión 53 — Llévame
+      if (gd) { ev.stopPropagation(); const q = QUESTS[gd.dataset.guide]; const g = q && TOWN_NPCS_BY_ID[q.giver]; if (g) guideTo(g.x, g.z, g.name); return; }
       const tr = ev.target.closest('[data-track]');
       if (tr) { ev.stopPropagation(); track(tr.dataset.track); return; }
       const sk = ev.target.closest('[data-skip]');
@@ -325,7 +342,19 @@ function buildBeam() {
   beam = { group, ring, arrow, col };
 }
 
+// Sesión 53 — "📍 Llévame": guía a un sitio concreto (p. ej. quien da una misión)
+let guide = null;   // { x, z, label }
+export function guideTo(x, z, label = '') {
+  guide = { x, z, label };
+  feedLog('info', `📍 Sigue el haz dorado${label ? ` hasta ${label}` : ''} (también sale en el minimapa).`);
+  hintPos = computeHint();
+}
 function computeHint() {
+  if (guide) {
+    const p = getPlayer?.();
+    if (p && Math.hypot(p.position.x - guide.x, p.position.z - guide.z) < 5) { feedLog('info', `📍 Has llegado${guide.label ? `: ${guide.label}` : ''}.`); guide = null; }
+    else return { x: guide.x, z: guide.z };
+  }
   const a = activeQuest();
   const step = a?.q.steps[a.s.step];
   const h = step?.hint;
@@ -447,6 +476,12 @@ function ensureCss() {
     .quest-tracker .qt-tip { font-size: 12px; color: #d8c89a; margin-top: 4px; border-top: 1px solid rgba(200,160,67,0.3); padding-top: 4px; }
     /* Sesión 52 — con el panel de chat abierto, el rastreador se aparta (si no lo taparía). */
     body.chat-open .quest-tracker { display: none; }
+    /* Sesión 53 — plegado: solo un botón pequeño */
+    .quest-tracker.qt-min { padding: 4px 8px; min-width: 0; max-width: none; display: flex; align-items: center; gap: 4px; border-radius: 16px; }
+    .quest-tracker .qt-mini { font-size: 18px; line-height: 1; }
+    .quest-tracker .qt-mini-p { font-size: 11px; font-weight: 700; color: #9fe07a; text-shadow: 1px 1px 0 #000; }
+    .quest-tracker .qt-minbtn { float: right; margin: -2px -4px 0 6px; width: 22px; height: 22px; padding: 0; border-radius: 4px; font: bold 15px/1 sans-serif;
+      color: #e8c560; background: rgba(0,0,0,.35); border: 1px solid rgba(200,160,67,.5); cursor: pointer; }
     .quest-tracker.qt-pulse { animation: qtPulse .6s ease-out; }
     @keyframes qtPulse { 0% { box-shadow: 0 0 0 0 rgba(255,211,90,0.9); } 100% { box-shadow: 0 0 0 14px rgba(255,211,90,0); } }
     .quest-celebrate { position: fixed; left: 50%; top: 28%; transform: translateX(-50%); z-index: 220; pointer-events: none;

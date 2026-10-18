@@ -13,6 +13,26 @@
 
 let el = null;
 let current = null;   // { closed, resolve, npc }
+// Sesión 53 — caras al estilo OSRS: world.js pinta la cabeza 3D del personaje en un canvas.
+// provider(kind: 'npc'|'player', npc, canvas) → true si ha pintado.
+let portraitProvider = null;
+let portraitTimer = null;
+const faceCanvas = (() => { try { const c = document.createElement('canvas'); c.width = c.height = 160; c.className = 'dlg-face'; return c; } catch { return null; } })();
+export function setPortraitProvider(fn) { portraitProvider = fn; }
+function stopFace() { if (portraitTimer) { clearInterval(portraitTimer); portraitTimer = null; } }
+function tryFace(portrait, kind, npc) {
+  stopFace();
+  if (!portraitProvider || !faceCanvas) return false;
+  let ok = false;
+  try { ok = !!portraitProvider(kind, npc, faceCanvas); } catch { ok = false; }
+  if (!ok) return false;
+  portrait.textContent = '';
+  portrait.appendChild(faceCanvas);
+  portrait.classList.add('has-face');
+  // se mueve un poco mientras habla (6 veces por segundo, solo la cabeza en el encuadre)
+  portraitTimer = setInterval(() => { if (!current || current.closed) { stopFace(); return; } try { portraitProvider(kind, npc, faceCanvas); } catch {} }, 170);
+  return true;
+}
 
 function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 const hex = (n) => '#' + (n >>> 0).toString(16).padStart(6, '0');
@@ -48,6 +68,7 @@ export function close() {
   const r = current.resolve; current.resolve = null;
   if (r) r(current.choosing ? -1 : null);
   current = null;
+  stopFace();
   if (el) el.classList.remove('show');
 }
 
@@ -56,6 +77,8 @@ function show(who, npc, text) {
   box.classList.add('show');
   box.classList.toggle('dlg-narr', who === 'narr');   // Sesión 52 — narrador
   const portrait = box.querySelector('.dlg-portrait');
+  portrait.classList.remove('has-face');
+  stopFace();
   if (who === 'narr') {
     portrait.style.background = 'radial-gradient(circle at 50% 35%, #4a3a20, #1a120a)';
     portrait.textContent = '📜';
@@ -63,12 +86,12 @@ function show(who, npc, text) {
     box.classList.remove('dlg-me');
   } else if (who === 'npc') {
     portrait.style.background = `radial-gradient(circle at 50% 35%, ${hex(npc.look?.shirt ?? 0x6a5a3a)}, #1a120a)`;
-    portrait.textContent = npc.role || '🙂';
+    if (!tryFace(portrait, 'npc', npc)) portrait.textContent = npc.role || '🙂';
     box.querySelector('.dlg-name').innerHTML = `${esc(npc.name)}${npc.title ? ` <small>${esc(npc.title)}</small>` : ''}`;
     box.classList.remove('dlg-me');
   } else {
     portrait.style.background = 'radial-gradient(circle at 50% 35%, #3a6a3a, #0f1a0f)';
-    portrait.textContent = '🧑';
+    if (!tryFace(portrait, 'player', null)) portrait.textContent = '🧑';
     box.querySelector('.dlg-name').textContent = 'Tú';
     box.classList.add('dlg-me');
   }
@@ -117,6 +140,8 @@ export function begin(npc) {
       box.classList.remove('dlg-me');
       me.choosing = true;
       me.typing = false;
+      stopFace();
+      box.querySelector('.dlg-portrait').classList.remove('has-face');
       box.querySelector('.dlg-portrait').textContent = '💬';
       box.querySelector('.dlg-portrait').style.background = 'radial-gradient(circle at 50% 35%, #5a4520, #1a120a)';
       box.querySelector('.dlg-name').textContent = prompt;
@@ -146,6 +171,8 @@ function ensureCss() {
     .dlg.show { display: flex; opacity: 1; transform: translate(-50%, 0); }
     .dlg-portrait { flex: 0 0 60px; height: 60px; border-radius: 50%; border: 2px solid #5a4020; display: flex; align-items: center;
       justify-content: center; font-size: 30px; box-shadow: inset 0 0 8px rgba(0,0,0,0.6); align-self: center; }
+    .dlg-portrait.has-face { flex-basis: 84px; height: 84px; border-radius: 8px; overflow: hidden; background: radial-gradient(circle at 50% 40%, #6a5a3a, #2a1c0c) !important; }
+    .dlg-face { width: 100%; height: 100%; display: block; }
     .dlg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
     .dlg-name { font-family: 'Cinzel', serif; font-weight: 700; color: #7a1a0a; font-size: 15px; }
     .dlg-me .dlg-name { color: #1a4a1a; }

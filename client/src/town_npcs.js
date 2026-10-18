@@ -766,6 +766,9 @@ function goSteal(o) {
 export function cancel() { pending = null; pendingSteal = null; }
 
 /** Para el minimapa: [{ x, z, mark }] */
+/** Sesión 53 — el muñeco 3D de un vecino (para su cara en el diálogo). */
+export function getRoot(id) { return objs.get(id)?.root || null; }
+
 export function getMinimapMarks() {
   return TOWN_NPCS.map(n => ({ x: n.x, z: n.z, mark: objs.get(n.id)?.mark || markFor(n.id) }));
 }

@@ -53,6 +53,7 @@ import * as skills from './skills.js';
 import * as highscores from './highscores.js';   // Sesión 42 — ranking / highscore
 import * as progress from './progress.js';   // Sesión 53 — logros, colección, contador de jefes
 import * as worldEvent from './world_event.js';   // Sesión 53 — evento de la isla «¡El Teide ruge!»
+import * as dialogue from './dialogue.js';   // Sesión 53 — caras en los diálogos
 import * as equipment from './equipment.js';
 import * as inventory from './inventory.js';
 import * as shop from './shop.js';
@@ -1134,6 +1135,7 @@ export async function startWorld(loggedInUser, token) {
         getServerNow: () => worldSnapshot.getServerNow?.(),   // Sesión 52 — pasos "de noche"
       })).then(() => {
         // Sesión 53 — logros: se miran al entrar y tras subir de nivel / misión o diaria hecha
+        try { dialogue.setPortraitProvider(drawPortrait); } catch (e) { console.warn('[world] caras:', e); }   // Sesión 53
         try {   // Sesión 53 — evento de la isla
           worldEvent.start({
             getPlayer: () => player, getSnapshot: () => worldSnapshot.getSnapshot(),
@@ -3351,6 +3353,67 @@ if (typeof window !== 'undefined') {
 // ============================================================
 //                       Animation loop
 // ============================================================
+
+// ============================================================
+// Sesión 53 — Caras en los diálogos (estilo OSRS): se pinta la cabeza del
+// personaje 3D (vecino o tú) desde delante, en un render pequeño aparte.
+// ============================================================
+const PORTRAIT_PX = 160;
+let _ptRT = null, _ptCam = null, _ptBuf = null, _ptImg = null;
+const _ptV = new THREE.Vector3(), _ptF = new THREE.Vector3();
+function findHead(root) {
+  if (root.userData._headBone !== undefined && root.userData._headBone?.parent) return root.userData._headBone;
+  let head = null;
+  root.traverse(o => { if (!head && o.isBone && /head$/i.test(o.name) && !/top|end/i.test(o.name)) head = o; });
+  root.userData._headBone = head;
+  return head;
+}
+function drawPortrait(kind, npc, canvas) {
+  if (!renderer || !scene) return false;
+  let root = null;
+  if (kind === 'player') root = player;
+  else if (npc?.id) root = townNpcs.getRoot?.(npc.id);
+  if (!root || !root.visible) return false;
+  const head = findHead(root);
+  if (!head) return false;   // muñeco aún sin cargar → icono
+  if (!_ptRT) {
+    _ptRT = new THREE.WebGLRenderTarget(PORTRAIT_PX, PORTRAIT_PX);
+    _ptRT.texture.colorSpace = THREE.SRGBColorSpace;
+    _ptCam = new THREE.PerspectiveCamera(30, 1, 0.05, 2.6);
+    _ptBuf = new Uint8Array(PORTRAIT_PX * PORTRAIT_PX * 4);
+  }
+  head.getWorldPosition(_ptV);
+  const s = root.getWorldScale(_ptF).y || 1;
+  _ptV.y += 0.07 * s;
+  root.getWorldDirection(_ptF); _ptF.y = 0;
+  if (_ptF.lengthSq() < 1e-6) _ptF.set(0, 0, 1);
+  _ptF.normalize();
+  _ptCam.position.copy(_ptV).addScaledVector(_ptF, 0.95 * s);
+  _ptCam.position.y += 0.03 * s;
+  _ptCam.near = 0.05 * s; _ptCam.far = 2.6 * s; _ptCam.updateProjectionMatrix();
+  _ptCam.lookAt(_ptV);
+  const prevRT = renderer.getRenderTarget();
+  const prevBg = scene.background;
+  const prevClear = renderer.getClearColor(new THREE.Color()), prevAlpha = renderer.getClearAlpha();
+  try {
+    scene.background = null;
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(_ptRT);
+    renderer.clear();
+    renderer.render(scene, _ptCam);
+    renderer.readRenderTargetPixels(_ptRT, 0, 0, PORTRAIT_PX, PORTRAIT_PX, _ptBuf);
+  } finally {
+    renderer.setRenderTarget(prevRT);
+    renderer.setClearColor(prevClear, prevAlpha);
+    scene.background = prevBg;
+  }
+  const ctx = canvas.getContext('2d');
+  if (!_ptImg) _ptImg = ctx.createImageData(PORTRAIT_PX, PORTRAIT_PX);
+  const row = PORTRAIT_PX * 4;
+  for (let y = 0; y < PORTRAIT_PX; y++) _ptImg.data.set(_ptBuf.subarray((PORTRAIT_PX - 1 - y) * row, (PORTRAIT_PX - y) * row), y * row);
+  ctx.putImageData(_ptImg, 0, 0);
+  return true;
+}
 
 function animate() {
   if (!running) return;
