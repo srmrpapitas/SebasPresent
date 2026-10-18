@@ -2265,6 +2265,26 @@ function injectAudioSettingsPanel() {
     const valEl = pane.querySelector(`[data-val="${k}"]`);
     inp.value = String(Math.min(100, toSlider[k](p0)));
     if (valEl) valEl.textContent = inp.value + '%';
+    // Sesión 53 — en el móvil el juego bloquea los gestos táctiles (touch-action: none)
+    // y el deslizador no se movía: lo movemos a mano siguiendo el dedo.
+    const fromX = (cx) => {
+      const r = inp.getBoundingClientRect();
+      const v = Math.round(Math.max(0, Math.min(1, (cx - r.left) / Math.max(1, r.width))) * 100);
+      if (String(v) !== inp.value) { inp.value = String(v); inp.dispatchEvent(new Event('input')); }
+    };
+    let dragId = null;
+    inp.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType === 'mouse') return;   // con ratón funciona solo
+      ev.preventDefault(); ev.stopPropagation();
+      dragId = ev.pointerId;
+      try { inp.setPointerCapture(ev.pointerId); } catch {}
+      fromX(ev.clientX);
+    });
+    inp.addEventListener('pointermove', (ev) => { if (ev.pointerId === dragId) { ev.preventDefault(); fromX(ev.clientX); } });
+    const endDrag = (ev) => { if (ev.pointerId === dragId) { dragId = null; try { inp.releasePointerCapture(ev.pointerId); } catch {} } };
+    inp.addEventListener('pointerup', endDrag);
+    inp.addEventListener('pointercancel', endDrag);
+    inp.style.touchAction = 'none';
     inp.addEventListener('input', () => {
       const v = Number(inp.value);
       try { setters[k]?.(fromSlider[k](v)); } catch {}
