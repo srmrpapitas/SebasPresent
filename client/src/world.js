@@ -469,7 +469,7 @@ export async function startWorld(loggedInUser, token) {
     if (authToken) {
       showWorldLoading('Restaurando tu posición…');
       try {
-        const pos = await fetchPosition();
+        const pos = await withTimeout(fetchPosition(), 10_000, 'posición');
         if (pos && (pos.x !== 0 || pos.z !== 0)) {
           player.position.x = pos.x;
           player.position.z = pos.z;
@@ -649,10 +649,10 @@ export async function startWorld(loggedInUser, token) {
     // IMPORTANTE: se hace ANTES de injectSkillsPanel para que el panel pueda
     // leer datos reales en su primer render.
     try {
-      await skills.start({
+      await withTimeout(skills.start({
         apiBase: API_BASE,
         getToken: () => authToken,
-      });
+      }), 15_000, 'habilidades');
       // Exponer para testing en eruda: window.skills.getLevel('attack')
       window.skills = skills;
       // Sesión 24 — exponer character para tweakWeapon() desde eruda
@@ -661,10 +661,10 @@ export async function startWorld(loggedInUser, token) {
 
     // Sesión 22 — Equipment system: 9 slots (weapon/shield/helm/...)
     try {
-      await equipment.init({
+      await withTimeout(equipment.init({
         apiBase: API_BASE,
         getToken: () => authToken,
-      });
+      }), 15_000, 'equipo');
       window.equipment = equipment;
 
       // Sesión 24 — Cuando cambie el equipment, attach/detach el arma 3D
@@ -1323,9 +1323,9 @@ export function stopWorld() {
 async function setupPlayer() {
   character = new Character();
   try {
-    const characterGroup = await character.load((progress, message) => {
+    const characterGroup = await withTimeout(character.load((progress, message) => {
       showWorldLoading(message || 'Cargando…');
-    });
+    }), 120_000, 'personaje');   // Sesión 53 — si el CDN no responde, entras con el muñeco simple
     characterGroup.position.set(0, 0, 0);
     scene.add(characterGroup);
     player = characterGroup;
@@ -3957,17 +3957,55 @@ function onResize() {
 //                       Loading UI
 // ============================================================
 
+// Sesión 53 — vigilante de carga: si un paso se queda colgado (móvil lento,
+// datos móviles, CDN que no responde…) el jugador ya no ve "Cargando…" para
+// siempre: ve en qué paso está, el error si lo hay y un botón para reintentar.
+let loadStep = '', loadSince = 0, loadWatch = null, loadErr = '';
 function showWorldLoading(text) {
   const el = document.getElementById('worldLoading');
   if (!el) return;
   const t = el.querySelector('.loading-text');
   if (t) t.textContent = text;
   el.classList.remove('hidden');
+  const step = String(text || '').replace(/\s*\d+%$/, '');
+  if (step !== loadStep) { loadStep = step; loadSince = Date.now(); }
+  if (/^Error/.test(text)) showLoadHelp(true);
+  if (!loadWatch) {
+    loadWatch = setInterval(() => {
+      if (el.classList.contains('hidden')) { clearInterval(loadWatch); loadWatch = null; return; }
+      if (Date.now() - loadSince > 25_000) showLoadHelp(false);
+    }, 2000);
+    const onErr = (e) => { if (!el.classList.contains('hidden')) { loadErr = String(e?.reason?.message || e?.message || e?.reason || '').slice(0, 160); } };
+    window.addEventListener('error', onErr); window.addEventListener('unhandledrejection', onErr);
+  }
+}
+function showLoadHelp(isError) {
+  const el = document.getElementById('worldLoading'); if (!el) return;
+  let h = el.querySelector('.loading-help');
+  if (!h) {
+    h = document.createElement('div'); h.className = 'loading-help';
+    h.style.cssText = 'margin-top:14px;max-width:300px;text-align:center;font-size:13px;line-height:1.4;color:#f4e8c8;';
+    el.appendChild(h);
+    h.addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-lh]'); if (!b) return;
+      if (b.dataset.lh === 'clean') { try { caches?.keys?.().then(ks => ks.forEach(k => caches.delete(k))); } catch {} location.href = location.pathname + '?r=' + Date.now(); }
+      else location.reload();
+    });
+  }
+  const secs = Math.round((Date.now() - loadSince) / 1000);
+  h.innerHTML = `${isError ? '' : `Este paso está tardando (${secs} s). La primera vez se descargan los personajes y con datos móviles puede tardar un par de minutos.<br>`}`
+    + `${loadErr ? `<small style="color:#ffb0a0">Detalle: ${loadErr.replace(/[<>&]/g, '')}</small><br>` : ''}`
+    + `<button data-lh="retry" style="margin:8px 4px 0;padding:8px 14px;border-radius:6px;border:1px solid #c8a043;background:#4a3214;color:#fff3cf;font:inherit">↻ Reintentar</button>`
+    + `<button data-lh="clean" style="margin:8px 4px 0;padding:8px 14px;border-radius:6px;border:1px solid #888;background:#222;color:#ddd;font:inherit">Recargar limpio</button>`;
+}
+/** Sesión 53 — que un paso colgado no bloquee la carga entera. */
+function withTimeout(p, ms, label) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${label}: sin respuesta en ${Math.round(ms / 1000)} s`)), ms))]);
 }
 
 function hideWorldLoading() {
   const el = document.getElementById('worldLoading');
-  if (el) el.classList.add('hidden');
+  if (el) { el.classList.add('hidden'); el.querySelector('.loading-help')?.remove(); }
 }
 
 // ============================================================
