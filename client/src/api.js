@@ -37,6 +37,13 @@ export function clearToken() {
   try { localStorage.removeItem(TOKEN_KEY); } catch {}
 }
 // ---------- Fetch wrapper ----------
+/**
+ * Sesión 53 — en España los operadores bloquean IPs de Cloudflare durante los
+ * partidos de LaLiga y el juego (alojado en Cloudflare) cae de rebote. Se explica
+ * al jugador qué hacer en vez de un «sin conexión» a secas.
+ */
+export const NET_HELP = 'Sin conexión con el servidor. Si estás en España y hay partido de fútbol, tu operador puede estar bloqueando la conexión: prueba con datos móviles o activa la app gratuita «1.1.1.1» (WARP) y vuelve a intentarlo.';
+
 async function apiFetch(path, { method = 'GET', body, auth = false } = {}) {
   const headers = { 'Accept': 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -45,18 +52,22 @@ async function apiFetch(path, { method = 'GET', body, auth = false } = {}) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
   let response;
+  // Sesión 53 — si la red se cuelga (bloqueos de operador), no esperar para siempre
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const tmo = ctl ? setTimeout(() => ctl.abort(), 20_000) : null;
   try {
     response = await fetch(`${API_URL}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: ctl?.signal,
     });
   } catch (err) {
-    const wrapped = new Error('Sin conexión con el servidor.');
+    const wrapped = new Error(NET_HELP);
     wrapped.code = 'network_error';
     wrapped.cause = err;
     throw wrapped;
-  }
+  } finally { if (tmo) clearTimeout(tmo); }
   let data = null;
   try { data = await response.json(); } catch { /* might be empty */ }
   if (!response.ok) {

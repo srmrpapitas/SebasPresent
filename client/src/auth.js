@@ -132,7 +132,7 @@ export async function tryResumeSession() {
     } else {
       resumeError = err?.code === 'daily_cap'
         ? 'El servidor descansa hasta las 02:00. Vuelve más tarde.'
-        : 'No se pudo conectar con el servidor. Toca "Entrar" para reintentar.';
+        : 'No se pudo conectar con el servidor. Si estás en España y hay fútbol, tu operador puede bloquearlo: usa datos móviles o la app gratuita «1.1.1.1» (WARP). Luego toca "Entrar".';
     }
     return false;
   } finally {
