@@ -34,6 +34,9 @@ export const NPC_LOOKS = {
   nuria_herrera:       { model: 'f43', armor: ['body_acero', 'gloves_acero'] },
   sven_guardia:        { model: 'guardia2' },                                        // el otro caballero tal cual
   eldric_mago:         { model: 'm45', tint: { hue: 0.6, sat: 1.4 } },
+  astronoma_nayra:     { model: 'f41', tint: { sat: 0.15, val: 1.5 } },   // S53 — bata blanca
+  ayudante_tinguaro:   { model: 'm39', tint: { hue: 0.6 } },
+  vigia_gara:          { model: 'f42', tint: { hue: 0.02, sat: 1.2 } },
   ramiro_capataz:      { model: 'sheriff_n_01', armor: ['helm_bronze'] },
   samir_mercader:      { model: 'm38', tint: { hue: 0.45, sat: 1.3 } },
   explorador_herido:   { model: 'killer_09' },

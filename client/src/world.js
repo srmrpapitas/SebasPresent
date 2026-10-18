@@ -54,6 +54,7 @@ import * as highscores from './highscores.js';   // Sesión 42 — ranking / hig
 import * as progress from './progress.js';   // Sesión 53 — logros, colección, contador de jefes
 import * as worldEvent from './world_event.js';   // Sesión 53 — evento de la isla «¡El Teide ruge!»
 import * as dialogue from './dialogue.js';   // Sesión 53 — caras en los diálogos
+import * as places from './places.js';   // Sesión 53 — lugares de verdad (Observatorio…)
 import * as equipment from './equipment.js';
 import * as inventory from './inventory.js';
 import * as shop from './shop.js';
@@ -307,6 +308,7 @@ export async function startWorld(loggedInUser, token) {
       });
     } catch (e) { console.warn('[world] birds:', e); }
     try { story.start({ scene, isNight: () => daynight.isNight() }); } catch (e) { console.warn('[world] story:', e); }
+    try { places.registerKeepouts(terrain); places.start({ scene, getPlayer: () => player, isNight: () => daynight.isNight() }); } catch (e) { console.warn('[world] places:', e); }   // Sesión 53
     showWorldLoading('Cargando terreno…');
     await terrain.start({ scene });
     // Sesión 50 — que no crezcan árboles encima de las vetas de mineral.
@@ -1221,6 +1223,7 @@ export function stopWorld() {
   try { smithing.stop(); } catch {}
   try { quests.stop(); } catch {}
   try { worldEvent.stop(); } catch {}   // Sesión 53
+  try { places.stop(); } catch {}   // Sesión 53
   try { prayer.stop(); } catch {}
   try { skull.stop(); } catch {}
   try { firemaking.stop(); } catch {}
@@ -3505,6 +3508,7 @@ function animate() {
   try { birds.update(dt); } catch (e) { if (!window.__bdErr) { window.__bdErr = e; console.warn('[birds]', e); } }   // Sesión 52
   try { story.update(dt); } catch {}   // Sesión 52
   try { worldEvent.update(dt); } catch {}   // Sesión 53
+  try { places.update(dt); } catch {}   // Sesión 53
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   renderer.render(scene, camera);
@@ -3557,7 +3561,8 @@ function collideStep(x0, z0, x1, z1) {
   const a6 = houses.applyCollision(x0, z0, a4.x, a4.z);          // urbanizaciones, casonas, Arico
   const a7 = menceyes.applyCollision(x0, z0, a6.x, a6.z);        // estatuas de Candelaria
   const a8 = caves.applyCollision(x0, z0, a7.x, a7.z);           // montañas / paredes de las cuevas
-  return interiors.applyCollision(x0, z0, a8.x, a8.z);
+  const a9 = places.applyCollision(x0, z0, a8.x, a8.z);          // Sesión 53 — lugares (Observatorio…)
+  return interiors.applyCollision(x0, z0, a9.x, a9.z);
 }
 // ¿Se puede estar de pie aquí? (para aterrizar al bajar de la pardela)
 function groundFreeAt(x, z) {
@@ -3568,7 +3573,8 @@ function groundFreeAt(x, z) {
     const a3 = bossFx.applyCollision(x + dx, z + dz, a2.x, a2.z);
     const a4 = guancheVillage.applyCollision(x + dx, z + dz, a3.x, a3.z);
     const a6 = houses.applyCollision(x + dx, z + dz, a4.x, a4.z);
-    return Math.hypot(a6.x - x, a6.z - z) < 0.05;
+    const a9 = places.applyCollision(x + dx, z + dz, a6.x, a6.z);   // Sesión 53
+    return Math.hypot(a9.x - x, a9.z - z) < 0.05;
   });
 }
 function findLandingSpot(x, z) {

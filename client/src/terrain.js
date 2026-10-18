@@ -181,7 +181,7 @@ export const PLACES = [
   { name: 'Arico',        type: 'village', x:  1100, z:   600, color: 0xd8b860, biome: 'desert' },
   { name: 'Chayofa',         type: 'village', x:   700, z:  1450, color: 0x5a8a3a, biome: 'jungle' },
   { name: 'Faro de Punta Rasca',            type: 'village', x:  -800, z:  1400, color: 0xc0d8e8, biome: 'beach' },
-  { name: 'Observatorio de Izaña',  type: 'tower',  x:   400, z:  -900, color: 0x7090d0, biome: 'forest' },
+  { name: 'Observatorio de Izaña',  type: 'tower',  x:   400, z:  -900, color: 0x7090d0, biome: 'forest', noMarker: true },   // S53 — places.js
   { name: 'Mina de Guajara',    type: 'mine',   x:  1200, z: -1500, color: 0x505050, biome: 'snow' },
   { name: 'Basílica de Candelaria', type: 'temple', x:    0, z: -1200, color: 0xfff4d0, biome: 'plains' },
   { name: 'Poblado de Chinamada', type: 'poblado', x: -620, z: 140, color: 0xb89a5a, biome: 'plains' },   // Sesión 50 — guanches
@@ -1281,6 +1281,7 @@ function loadChunk(cx, cz) {
   const placeStructures = [];
   const placesHere = PLACES_BY_CHUNK.get(key) || [];
   for (const p of placesHere) {
+    if (p.noMarker) continue;   // Sesión 53 — lugares hechos de verdad en places.js
     const group = buildPlaceStructure(p);
     scene.add(group);
     placeStructures.push(group);

@@ -175,6 +175,33 @@ export const TOWN_NPCS = [
       'La magia no es más que paciencia con buen gusto.',
       'Con un bastón equipado tu maná se regenera más rápido.',
     ] },
+  // Sesión 53 — gente del Observatorio de Izaña (places.js)
+  { id: 'astronoma_nayra', name: 'Nayra', title: 'Astrónoma', x: 391.6, z: -909.4, rotY: 3.4, role: '🔭',
+    look: { skin: 0xd8a882, shirt: 0xe8e8f0, pants: 0x2a2a3a, hair: 0x2a1a10 },
+    lines: [
+      'Los guanches llamaban Magec al sol y Achamán al cielo. Desde aquí arriba se entiende por qué lo adoraban.',
+      'Los sismógrafos se vuelven locos cada noche. Algo se mueve debajo del Teide… y no es la tierra sola.',
+      'Si miras al norte al anochecer verás «el Perro»: siete estrellas en fila. Los viejos dicen que es un tibicena que Achamán clavó en el cielo.',
+      'Cuando cae la noche abrimos las cúpulas. Ven a verlo: el cielo de Achinech es el más limpio del mundo.',
+      '¿Buscas trabajo? Eldric siempre necesita a alguien que baje a Las Cañadas a por muestras. Ten cuidado con los perros negros.',
+    ] },
+  { id: 'ayudante_tinguaro', name: 'Tinguaro', title: 'Ayudante del observatorio', x: 395, z: -891.5, rotY: 0.3, role: '🧰',
+    look: { skin: 0xb07a52, shirt: 0x3a5a8a, pants: 0x3a3a3a, hair: 0x1a1a1a },
+    wander: { cx: 394, cz: -891, r: 5 },
+    lines: [
+      'Tres cúpulas, una torre, un plato gigante… y un solo ayudante. Adivina quién barre.',
+      'El radiotelescopio escucha el cielo. A veces oye cosas que no deberían estar ahí. Yo no pregunto.',
+      'Si te pierdes de noche, busca la luz roja de la torre. Se ve desde media isla.',
+      'Antes subían turistas en guagua. Ahora con los tibicenas sueltos solo suben valientes… y tú.',
+    ] },
+  { id: 'vigia_gara', name: 'Gara', title: 'Vigía de la torre solar', x: 403.6, z: -905.6, rotY: 0.2, role: '🗼',
+    look: { skin: 0xc89670, shirt: 0x8a3a2a, pants: 0x3a3022, hair: 0x5a3018 },
+    lines: [
+      'Desde lo alto de la torre lo veo todo. Cada dos horas el Teide ruge y la Tibicena Mayor sale de la tierra, ahí mismo, en los llanos de al lado.',
+      'Cuando suene el aviso, ven corriendo: dale aunque sea un golpe y te llevas tu parte. Todos los que pelean cobran.',
+      'La Tibicena Mayor pega fuerte. Si eres nuevo, dale desde lejos y apártate de los círculos.',
+      'Por la noche los perros negros bajan de Las Cañadas. Por eso encendemos todas las farolas.',
+    ] },
   { id: 'ramiro_capataz', name: 'Ramiro', title: 'Capataz de la Mina', x: 1180, z: -1452, rotY: 5.9, role: '⛏',
     look: { skin: 0xc98f62, shirt: 0x8a6a2a, pants: 0x3a3a3a, hair: 0x3a3a3a, acc: 'helm' },
     lines: [
