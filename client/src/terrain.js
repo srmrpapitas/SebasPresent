@@ -169,7 +169,7 @@ const DECORATION_CONFIG = {
 export const PLACES = [
   { name: 'La Laguna',     type: 'city',    x:     0, z:     0, color: 0xe8c560, biome: 'plaza' },
   { name: 'La Orotava',            type: 'city',    x:  -300, z:  -700, color: 0x4a8a30, biome: 'forest' },
-  { name: 'Las Cañadas',          type: 'city',    x:   200, z: -1700, color: 0xc8d8e8, biome: 'snow' },
+  { name: 'Las Cañadas',          type: 'city',    x:   200, z: -1700, color: 0xc8d8e8, biome: 'snow' , noMarker: true },
   { name: 'Güímar',          type: 'city',    x:  1500, z:   100, color: 0xe8a448, biome: 'desert' },
   { name: 'Adeje',              type: 'city',    x:  1000, z:  1200, color: 0x5aaa3a, biome: 'jungle' },
   { name: 'Los Cristianos',       type: 'city',    x:  -300, z:  1700, color: 0x6090c0, biome: 'beach' },
@@ -180,10 +180,10 @@ export const PLACES = [
   { name: 'La Esperanza',   type: 'village', x:   700, z: -1100, color: 0xc0d0e0, biome: 'snow' },
   { name: 'Arico',        type: 'village', x:  1100, z:   600, color: 0xd8b860, biome: 'desert' },
   { name: 'Chayofa',         type: 'village', x:   700, z:  1450, color: 0x5a8a3a, biome: 'jungle' },
-  { name: 'Faro de Punta Rasca',            type: 'village', x:  -800, z:  1400, color: 0xc0d8e8, biome: 'beach' },
+  { name: 'Faro de Punta Rasca',            type: 'village', x:  -800, z:  1400, color: 0xc0d8e8, biome: 'beach' , noMarker: true },
   { name: 'Observatorio de Izaña',  type: 'tower',  x:   400, z:  -900, color: 0x7090d0, biome: 'forest', noMarker: true },   // S53 — places.js
-  { name: 'Mina de Guajara',    type: 'mine',   x:  1200, z: -1500, color: 0x505050, biome: 'snow' },
-  { name: 'Basílica de Candelaria', type: 'temple', x:    0, z: -1200, color: 0xfff4d0, biome: 'plains' },
+  { name: 'Mina de Guajara',    type: 'mine',   x:  1200, z: -1500, color: 0x505050, biome: 'snow' , noMarker: true },
+  { name: 'Basílica de Candelaria', type: 'temple', x:    0, z: -1200, color: 0xfff4d0, biome: 'plains' , noMarker: true },
   { name: 'Poblado de Chinamada', type: 'poblado', x: -620, z: 140, color: 0xb89a5a, biome: 'plains' },   // Sesión 50 — guanches
   { name: 'Monte de Las Mercedes', type: 'ruins', x: -40, z: -600, color: 0x8a1a1a, biome: 'forest' },   // Sesión 50 — guarida del Cabildo
   { name: 'Ruinas de Teno', type: 'ruins', x: -1500, z:  -500, color: 0x6a4030, biome: 'wilderness' },

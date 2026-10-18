@@ -15,6 +15,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { buildCasa } from './houses.js';   // casas canarias (se funden en el kit)
 
 const BUILD_DIST = 420, DROP_DIST = 520;
 
@@ -68,6 +69,21 @@ class Kit {
   disc(r, mat, x, y, z, seg = 32) { return this._push(new THREE.CircleGeometry(r, seg), mat, x, y, z, 0, -Math.PI / 2); }
   plane(w, d, mat, x, y, z, ry = 0) { return this._push(new THREE.PlaneGeometry(w, d), mat, x, y, z, ry, -Math.PI / 2); }
   raw(geom, mat, x, y, z, ry = 0, rx = 0, rz = 0) { return this._push(geom, mat, x, y, z, ry, rx, rz); }
+  /** Funde un grupo ya hecho (p. ej. una casa de houses.js) en (x, z) con giro ry. */
+  group(g, x, z, ry = 0) {
+    const root = new THREE.Group(); root.position.set(x, 0, z); root.rotation.y = ry; root.add(g);
+    root.updateMatrixWorld(true);
+    g.traverse(o => {
+      if (!o.isMesh || Array.isArray(o.material)) return;
+      if (o.material.map) { this.loose = this.loose || []; const c = o.clone(); c.matrix.copy(o.matrixWorld); c.matrixAutoUpdate = false; this.loose.push(c); return; }
+      const geo = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
+      geo.applyMatrix4(o.matrixWorld);
+      for (const kk of Object.keys(geo.attributes)) if (kk !== 'position' && kk !== 'normal') geo.deleteAttribute(kk);
+      if (!this.parts.has(o.material)) this.parts.set(o.material, []);
+      this.parts.get(o.material).push(geo);
+    });
+    return this;
+  }
   /** Funde todo y devuelve un grupo con una malla por material. */
   build() {
     const g = new THREE.Group();
@@ -80,6 +96,7 @@ class Kit {
       mesh.matrixAutoUpdate = false;
       g.add(mesh);
     }
+    for (const c of this.loose || []) g.add(c);   // piezas con textura (carteles): sin fundir
     return g;
   }
 }
@@ -305,14 +322,285 @@ function buildIzana() {
   };
 }
 
-const SETS = [{ id: IZANA.id, x: IZANA.x, z: IZANA.z, build: buildIzana }];
+
+// ------------------------------------------------------------
+// Piezas comunes
+// ------------------------------------------------------------
+function lampPost(k, group, x, z, h = 3.4) {
+  const m = mats();
+  k.cyl(0.08, 0.11, h, m.dark, x, h / 2, z, 6);
+  k.box(0.35, 0.1, 0.35, m.dark, x, h + 0.05, z);
+  k.box(0.28, 0.42, 0.28, m.lamp, x, h + 0.35, z);
+  k.cone(0.3, 0.25, m.dark, x, h + 0.68, z, 4, Math.PI / 4);
+  const s = new THREE.Sprite(haloMat()); s.position.set(x, h + 0.35, z); s.scale.set(2.4, 2.4, 1); group.add(s);
+}
+function palm(k, x, z, h = 7, lean = 0.15, rot = 0) {
+  const m = mats();
+  for (let i = 0; i < 6; i++) {
+    const f = i / 6, y = h * f + h / 12;
+    k.cyl(0.22 - f * 0.06, 0.26 - f * 0.06, h / 6 + 0.05, m.woodD, x + Math.sin(rot) * lean * y, y, z + Math.cos(rot) * lean * y, 7);
+  }
+  const tx = x + Math.sin(rot) * lean * h, tz = z + Math.cos(rot) * lean * h;
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2;
+    k.raw(new THREE.ConeGeometry(0.45, 3.4, 4), i % 2 ? m.leaf : m.leafD, tx + Math.cos(a) * 1.4, h + 0.1, tz + Math.sin(a) * 1.4, -a + Math.PI / 2, 0, -1.25);
+  }
+  k.ico(0.35, m.woodD, tx, h, tz);
+}
+function barrel(k, x, z) { const m = mats(); k.cyl(0.42, 0.42, 1.0, m.wood, x, 0.5, z, 10); k.cyl(0.44, 0.44, 0.08, m.dark, x, 0.75, z, 10); k.cyl(0.44, 0.44, 0.08, m.dark, x, 0.25, z, 10); }
+function crate(k, x, z, s = 0.9, r = 0) { const m = mats(); k.box(s, s, s, m.woodL, x, s / 2, z, r); k.box(s + 0.02, 0.1, s + 0.02, m.woodD, x, s * 0.8, z, r); }
+function fence(k, x0, z0, x1, z1) {
+  const m = mats(); const L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(L / 2.2)), ang = Math.atan2(x1 - x0, z1 - z0);
+  for (let i = 0; i <= n; i++) { const f = i / n; k.box(0.14, 1.1, 0.14, m.woodD, x0 + (x1 - x0) * f, 0.55, z0 + (z1 - z0) * f); }
+  for (const y of [0.45, 0.9]) k.box(0.07, 0.09, L, m.wood, (x0 + x1) / 2, y, (z0 + z1) / 2, ang);
+}
+function boat(k, x, z, r, color) {
+  const m = mats(); const hull = new THREE.MeshLambertMaterial({ color, flatShading: true });
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 4.2), hull); b.position.y = 0.45; g.add(b);
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(0.85, 1.4, 4), hull); bow.rotation.set(Math.PI / 2, Math.PI / 4, 0); bow.scale.set(1, 1, 0.55); bow.position.set(0, 0.45, 2.75); g.add(bow);
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 4.3), m.woodL); rim.position.y = 0.78; g.add(rim);
+  for (const zz of [-0.8, 0.6]) { const sb = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.35), m.wood); sb.position.set(0, 0.62, zz); g.add(sb); }
+  const oar = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 3.2), m.woodL); oar.position.set(0.3, 0.85, 0); oar.rotation.y = 0.2; g.add(oar);
+  g.rotation.z = 0.12;
+  k.group(g, x, z, r);
+}
+
+// ------------------------------------------------------------
+// FARO DE PUNTA RASCA — faro con haz que gira de noche, casa del farero,
+// barcas varadas, secadero de pescado, redes, nasas y una pasarela.
+// ------------------------------------------------------------
+export const FARO = { id: 'faro', x: -800, z: 1400 };
+function buildFaro() {
+  const m = mats(), k = new Kit(), id = FARO.id, group = new THREE.Group(), anim = [];
+  const LX = -824, LZ = 1452;
+  // Faro
+  k.cyl(3.4, 3.6, 1.0, m.stoneD, LX, 0.5, LZ, 8);
+  k.cyl(1.55, 2.3, 16, m.white, LX, 9, LZ, 16);
+  for (const y of [4.5, 9.5, 14.0]) k.cyl(1.55 + (16 - y) / 16 * 0.75 + 0.03, 1.55 + (16 - y + 1.6) / 16 * 0.75 + 0.03, 1.6, m.red, LX, y, LZ, 16);
+  k.cyl(2.4, 2.4, 0.28, m.dark, LX, 17.1, LZ, 16);
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; k.box(0.07, 0.8, 0.07, m.dark, LX + Math.cos(a) * 2.3, 17.6, LZ + Math.sin(a) * 2.3); }
+  k.cyl(2.35, 2.35, 0.07, m.dark, LX, 18.0, LZ, 16);
+  k.cyl(1.25, 1.25, 1.9, m.lamp, LX, 18.2, LZ, 12);
+  k.cone(1.6, 1.4, m.red, LX, 19.85, LZ, 12);
+  k.ico(0.25, m.brass, LX, 20.7, LZ);
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + 0.4; k.box(0.5, 0.9, 0.06, m.window, LX + Math.cos(a) * (1.9 - i * 0.05), 5 + i * 3.2, LZ + Math.sin(a) * (1.9 - i * 0.05), -a + Math.PI / 2); }
+  k.box(1.1, 2.2, 0.2, m.blue, LX, 2.0, LZ - 2.1);
+  colCircle(id, LX, LZ, 3.5);
+  // Haz de luz que gira (de noche)
+  const beamG = new THREE.Group(); beamG.position.set(LX, 18.2, LZ);
+  const beamM = new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  for (const dir of [1, -1]) {
+    const b = new THREE.Mesh(new THREE.ConeGeometry(3.2, 46, 16, 1, true), beamM);
+    b.rotation.z = dir * Math.PI / 2; b.position.x = dir * 23.5; beamG.add(b);
+  }
+  group.add(beamG);
+  anim.push((dt) => { beamG.rotation.y += dt * 0.6; beamM.opacity = isNight() ? 0.16 : 0; beamG.visible = isNight(); });
+  // Casa del farero
+  const casa = buildCasa({ w: 8, d: 6, h: 3.2, trim: 'blue', roof: 'flat', chimney: true });
+  k.group(casa.group, -806, 1468, Math.PI);
+  colBox(id, -806, 1468, 4.2, 3.2);
+  // Pasarela de madera desde la plaza hasta el faro
+  for (let i = 0; i < 16; i++) k.box(2.2, 0.12, 0.5, i % 2 ? m.woodL : m.wood, -806 - i * 0.9, 0.08, 1420 + i * 1.7, 0.5);
+  // Barcas varadas
+  boat(k, -770, 1452, 0.4, 0x2f6aa8); colBox(id, -770, 1452, 0.9, 2.6, 0.4);
+  boat(k, -762, 1440, -0.2, 0xc04030); colBox(id, -762, 1440, 0.9, 2.6, -0.2);
+  boat(k, -778, 1470, 1.2, 0x3a8a4a); colBox(id, -778, 1470, 0.9, 2.6, 1.2);
+  // Secadero de pescado
+  for (const sx of [-1.6, 1.6]) k.box(0.15, 2.2, 0.15, m.woodD, -786 + sx, 1.1, 1430);
+  k.box(3.6, 0.1, 0.1, m.woodD, -786, 2.15, 1430);
+  for (let i = 0; i < 7; i++) k.box(0.12, 0.55, 0.05, m.metal, -787.5 + i * 0.5, 1.8, 1430);
+  colBox(id, -786, 1430, 1.8, 0.3);
+  // Redes (montones) y nasas
+  for (const [nx, nz] of [[-774, 1426], [-768, 1430]]) { k.ico(0.9, m.green, nx, 0.3, nz); k.ico(0.6, m.leafD, nx + 0.6, 0.25, nz + 0.4); }
+  for (const [nx, nz] of [[-781, 1418], [-782.2, 1419], [-780.6, 1420.2]]) { k.cyl(0.4, 0.5, 0.7, m.straw, nx, 0.35, nz, 8); }
+  barrel(k, -792, 1424); barrel(k, -793, 1425.2); crate(k, -790.6, 1425.6, 0.8, 0.3);
+  // Palmeras y farolas
+  palm(k, -760, 1410, 7.5, 0.18, 0.6); palm(k, -836, 1430, 6.5, 0.12, 2.5); palm(k, -818, 1395, 7, 0.2, 4);
+  colCircle(id, -760, 1410, 0.4); colCircle(id, -836, 1430, 0.4); colCircle(id, -818, 1395, 0.4);
+  for (const [lx, lz] of [[-796, 1428], [-812, 1440], [-774, 1408]]) { lampPost(k, group, lx, lz); colCircle(id, lx, lz, 0.2); }
+  addSign(group, 'Faro de', 'Punta Rasca', -812, 1426, 0.7);
+  group.add(k.build());
+  return { group, update: (dt) => { for (const f of anim) f(dt); } };
+}
+
+// ------------------------------------------------------------
+// LAS CAÑADAS — Parador de montaña, refugio, Roques de García (con el Roque
+// Cinchado), poste de caminos, leña, trineo, muñeco de nieve y humo.
+// ------------------------------------------------------------
+export const CANADAS = { id: 'canadas', x: 200, z: -1700 };
+function buildCanadas() {
+  const m = mats(), k = new Kit(), id = CANADAS.id, group = new THREE.Group(), anim = [];
+  // Parador (piedra, dos plantas, balcón)
+  const par = buildCasa({ w: 16, d: 9, h: 3.6, twoFloors: true, balcony: true, color: 0x8c8274, trim: 'green', chimney: false });
+  k.group(par.group, 176, -1730, 0.35);
+  colBox(id, 176, -1730, 8.3, 4.8, 0.35);
+  // chimeneas con humo
+  const smoke = [];
+  const smM = new THREE.MeshBasicMaterial({ color: 0xe8e8e8, transparent: true, opacity: 0.4, depthWrite: false });
+  for (const [cx, cz] of [[171, -1733], [183, -1730]]) {
+    k.box(0.9, 2.2, 0.9, m.stoneD, cx, 9.2, cz);
+    for (let i = 0; i < 5; i++) { const sm = new THREE.Mesh(new THREE.SphereGeometry(0.5, 7, 5), smM.clone()); group.add(sm); smoke.push({ sm, cx, cz, ph: i / 5 }); }
+  }
+  anim.push(() => { for (const p of smoke) { const f = (t * 0.18 + p.ph) % 1; p.sm.position.set(p.cx + Math.sin(f * 4 + p.ph * 7) * 0.6, 10.4 + f * 6, p.cz + f * 1.5); p.sm.scale.setScalar(0.7 + f * 2.4); p.sm.material.opacity = 0.42 * (1 - f); } });
+  addSign(group, 'Parador', 'de Las Cañadas', 188, -1716, 0.35);
+  // Refugio pequeño
+  const ref = buildCasa({ w: 6, d: 5, h: 3, color: 0x6e5a44, roof: 'teja' });
+  k.group(ref.group, 232, -1726, -0.4);
+  colBox(id, 232, -1726, 3.2, 2.8, -0.4);
+  // Roques de García (piedra volcánica), con el Roque Cinchado
+  const ROQ = [[142, -1668, 2.6, 9], [134, -1684, 2.0, 12], [150, -1692, 1.7, 7], [126, -1664, 1.5, 6]];
+  for (const [rx, rz, r, h] of ROQ) {
+    for (let i = 0; i < 4; i++) k.ico(r * (1 - i * 0.12), i % 2 ? m.stoneD : m.lava, rx + (i % 2) * 0.3, r * 0.6 + i * h / 4, rz - (i % 3) * 0.2, 0);
+    colCircle(id, rx, rz, r + 0.2);
+  }
+  // Roque Cinchado: estrecho abajo, ancho arriba
+  k.cyl(0.9, 1.4, 4, m.lava, 160, 2, -1660, 7);
+  k.cyl(2.6, 1.0, 5, m.stoneD, 160, 6.5, -1660, 7);
+  k.ico(2.4, m.stoneD, 160, 9.6, -1660);
+  colCircle(id, 160, -1660, 1.5);
+  // Poste de caminos
+  {
+    const px = 206, pz = -1712;
+    k.box(0.2, 3.4, 0.2, m.woodD, px, 1.7, pz);
+    const arrows = [['El Teide ⟶', 0.5], ['⟵ La Orotava', 2.4], ['Grieta ⟶', 1.4]];
+    arrows.forEach(([txt, ang], i) => {
+      const tex = signTex(txt); const pl = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.5), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+      pl.position.set(px + Math.cos(ang) * 0.75, 2.9 - i * 0.55, pz + Math.sin(ang) * 0.75); pl.rotation.y = -ang; group.add(pl);
+    });
+    colCircle(id, px, pz, 0.25);
+  }
+  // Leña, trineo, muñeco de nieve
+  for (let i = 0; i < 9; i++) k.raw(new THREE.CylinderGeometry(0.16, 0.16, 1.6, 7), m.wood, 190 + (i % 3) * 0.34, 0.2 + Math.floor(i / 3) * 0.3, -1722.5, 0.35, 0, Math.PI / 2);
+  colBox(id, 190.3, -1722.5, 0.9, 0.5, 0.35);
+  k.box(0.9, 0.12, 2.0, m.woodL, 214, 0.35, -1714, 0.8); for (const sx of [-0.4, 0.4]) k.box(0.08, 0.25, 2.2, m.dark, 214 + sx * Math.cos(0.8), 0.15, -1714 - sx * Math.sin(0.8), 0.8);
+  k.ico(0.9, m.white, 196, 0.85, -1706, 1); k.ico(0.65, m.white, 196, 2.2, -1706, 1); k.ico(0.45, m.white, 196, 3.2, -1706, 1);
+  k.cone(0.09, 0.45, m.red, 196, 3.25, -1705.5, 6); k.box(0.7, 0.12, 0.12, m.red, 196, 2.75, -1706);
+  colCircle(id, 196, -1706, 0.9);
+  fence(k, 160, -1745, 200, -1752); fence(k, 200, -1752, 226, -1742);
+  for (const [lx, lz] of [[194, -1716], [218, -1704], [168, -1712]]) { lampPost(k, group, lx, lz); colCircle(id, lx, lz, 0.2); }
+  group.add(k.build());
+  return { group, update: (dt) => { for (const f of anim) f(dt); } };
+}
+
+// ------------------------------------------------------------
+// MINA DE GUAJARA — montaña con bocamina apuntalada, raíles y vagonetas,
+// montones de mineral, caseta, torno y faroles.
+// ------------------------------------------------------------
+export const MINA = { id: 'mina', x: 1200, z: -1500 };
+function buildMina() {
+  const m = mats(), k = new Kit(), id = MINA.id, group = new THREE.Group();
+  const MX = 1208, MZ = -1530;
+  // Montaña de roca
+  const ROCKS = [[0, 0, 11, 0], [-9, 2, 7, 1], [9, 1, 8, 1], [-4, -7, 8, 0], [6, -6, 7, 1], [0, -2, 6, 1]];
+  for (const [rx, rz, r, alt] of ROCKS) k.ico(r, alt ? m.stoneD : m.stone, MX + rx, r * 0.55, MZ + rz, 1);
+  colCircle(id, MX, MZ - 1, 13);
+  // Bocamina apuntalada (mirando al sur, hacia el pueblo)
+  const PX = 1206, PZ = -1516.5;
+  k.box(4.4, 4.6, 1.2, m.dark, PX, 2.3, PZ - 0.4);
+  for (const sx of [-2.1, 2.1]) k.box(0.45, 4.6, 0.45, m.woodD, PX + sx, 2.3, PZ + 0.3);
+  k.box(5.2, 0.5, 0.6, m.woodD, PX, 4.75, PZ + 0.3);
+  k.box(3.6, 0.3, 0.4, m.wood, PX, 3.9, PZ + 0.25);
+  const tex = signTex('Mina de Guajara', '¡Cuidado con la cabeza!');
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.0), new THREE.MeshBasicMaterial({ map: tex }));
+  sign.position.set(PX, 5.6, PZ + 0.65); group.add(sign);
+  // Raíles y traviesas
+  for (let i = 0; i < 34; i++) k.box(1.8, 0.1, 0.35, m.woodD, PX, 0.06, PZ + 1 + i);
+  for (const sx of [-0.55, 0.55]) k.box(0.1, 0.12, 34, m.metal, PX + sx, 0.16, PZ + 18);
+  // Vagonetas (una llena de mineral)
+  const cart = (cz, full) => {
+    k.box(1.4, 0.9, 1.9, m.greyD, PX, 0.85, cz); k.box(1.5, 0.12, 2.0, m.dark, PX, 1.3, cz);
+    for (const sx of [-0.6, 0.6]) for (const sz of [-0.6, 0.6]) k.raw(new THREE.CylinderGeometry(0.28, 0.28, 0.14, 10), m.dark, PX + sx, 0.32, cz + sz, 0, 0, Math.PI / 2);
+    if (full) { k.ico(0.55, m.brass, PX - 0.2, 1.45, cz); k.ico(0.5, m.stoneD, PX + 0.3, 1.4, cz + 0.4); k.ico(0.45, m.red, PX, 1.45, cz - 0.5); }
+    colBox(id, PX, cz, 0.8, 1.1);
+  };
+  cart(-1503, true); cart(-1488, false);
+  // Montones de mineral
+  for (const [ox, oz, mat] of [[1216, -1500, m.brass], [1218.5, -1497, m.red], [1196, -1498, m.stoneD], [1194, -1502, m.greyD]]) {
+    k.ico(1.2, mat, ox, 0.5, oz); k.ico(0.8, mat, ox + 0.9, 0.4, oz + 0.6); colCircle(id, ox, oz, 1.4);
+  }
+  // Caseta de madera
+  k.box(5, 3, 4, m.wood, 1226, 1.5, -1484); k.box(5.6, 0.25, 4.6, m.woodD, 1226, 3.1, -1484);
+  k.box(1.1, 2.1, 0.1, m.woodD, 1226, 1.05, -1481.95); k.box(0.9, 0.8, 0.08, m.window, 1224.2, 1.8, -1481.97);
+  colBox(id, 1226, -1484, 2.6, 2.1);
+  // Torno de madera (pozo de extracción)
+  for (const [ax, az] of [[-1.2, 0], [1.2, 0]]) k.raw(new THREE.BoxGeometry(0.25, 5.2, 0.25), m.woodD, 1186 + ax, 2.4, -1510 + az, 0, 0, ax > 0 ? -0.18 : 0.18);
+  k.raw(new THREE.CylinderGeometry(0.3, 0.3, 2.4, 10), m.wood, 1186, 4.7, -1510, 0, 0, Math.PI / 2);
+  k.cyl(0.03, 0.03, 4.2, m.dark, 1186, 2.6, -1510, 4); k.box(0.6, 0.5, 0.6, m.greyD, 1186, 0.6, -1510);
+  k.box(2.6, 0.2, 2.6, m.dark, 1186, 0.05, -1510);
+  colCircle(id, 1186, -1510, 1.6);
+  barrel(k, 1213, -1508); barrel(k, 1214, -1509.3); crate(k, 1198, -1490, 1.0, 0.3); crate(k, 1199, -1491.2, 0.7, 0.8);
+  for (const [lx, lz] of [[1202.4, -1514.5], [1209.6, -1514.5], [1212, -1488]]) { lampPost(k, group, lx, lz, 2.8); colCircle(id, lx, lz, 0.2); }
+  group.add(k.build());
+  return { group };
+}
+
+// ------------------------------------------------------------
+// BASÍLICA DE CANDELARIA — la basílica blanca con su campanario, mirando a la
+// plaza de los menceyes; escalinata, empedrado, palmeras y farolas.
+// ------------------------------------------------------------
+export const BASILICA = { id: 'basilica', x: 0, z: -1200 };
+function buildBasilica() {
+  const m = mats(), k = new Kit(), id = BASILICA.id, group = new THREE.Group();
+  const BX = 36, BZ = -1200;           // centro de la nave; la fachada mira al oeste (a la plaza)
+  const FX = BX - 14;                   // fachada
+  k.disc(26, m.gravel, 4, 0.03, -1200, 40);   // plaza empedrada
+  // Nave
+  k.box(28.5, 0.6, 14.5, m.stoneD, BX, 0.3, BZ);
+  k.box(28, 11, 14, m.white, BX, 6, BZ);
+  for (const sx of [-14, 14]) for (const sz of [-7, 7]) k.box(0.9, 11.4, 0.9, m.stone, BX + sx, 5.9, BZ + sz);
+  // tejado a dos aguas (prisma)
+  const roof = new THREE.CylinderGeometry(8.4, 8.4, 29, 3, 1); 
+  k.raw(roof, m.red, BX, 13.5, BZ, 0, 0, Math.PI / 2);
+  // ventanales en arco a los lados
+  for (let i = 0; i < 5; i++) for (const sz of [-7.05, 7.05]) { k.box(1.6, 3.2, 0.1, m.window, BX - 10 + i * 5, 6.5, BZ + sz); k.raw(new THREE.CircleGeometry(0.8, 10, 0, Math.PI), m.window, BX - 10 + i * 5, 8.1, BZ + sz * 1.001, sz > 0 ? 0 : Math.PI); }
+  // Fachada: frontón, puerta en arco, rosetón
+  k.box(1.0, 14, 15, m.white, FX, 7, BZ);
+  k.box(1.1, 0.6, 15.4, m.stone, FX, 14.2, BZ);
+  k.raw(new THREE.CylinderGeometry(3.2, 3.2, 1.0, 3, 1), m.white, FX, 15.6, BZ, Math.PI / 2, 0, 0);
+  k.box(0.3, 5.2, 3.4, m.dark, FX - 0.5, 2.9, BZ);
+  k.raw(new THREE.CylinderGeometry(1.7, 1.7, 0.3, 14, 1, false, 0, Math.PI), m.dark, FX - 0.5, 5.5, BZ, 0, 0, Math.PI / 2);
+  k.box(0.4, 6.2, 4.2, m.stone, FX - 0.45, 3.1, BZ);
+  k.raw(new THREE.CylinderGeometry(1.5, 1.5, 0.12, 16), m.window, FX - 0.56, 10.2, BZ, 0, 0, Math.PI / 2);
+  k.raw(new THREE.TorusGeometry(1.55, 0.18, 6, 16), m.stone, FX - 0.58, 10.2, BZ, Math.PI / 2, 0, 0);
+  // Escalinata
+  for (let i = 0; i < 4; i++) k.box(2.2 - i * 0.2, 0.25, 9 - i * 0.6, m.stone, FX - 1.6 - (3 - i) * 0.55, 0.12 + i * 0.25, BZ);
+  colBox(id, BX, BZ, 14.6, 7.4);
+  // Campanario (a la izquierda de la fachada)
+  const TX = FX + 2.4, TZ = BZ - 10.2;
+  k.box(5, 0.6, 5, m.stoneD, TX, 0.3, TZ);
+  k.box(4.4, 18, 4.4, m.white, TX, 9.3, TZ);
+  for (const sx of [-2.2, 2.2]) for (const sz of [-2.2, 2.2]) k.box(0.55, 18.4, 0.55, m.stone, TX + sx, 9.2, TZ + sz);
+  for (const y of [6, 12]) k.box(4.7, 0.35, 4.7, m.stone, TX, y, TZ);
+  for (const [dx, dz, r] of [[0, 2.22, 0], [0, -2.22, 0], [2.22, 0, Math.PI / 2], [-2.22, 0, Math.PI / 2]]) k.box(1.6, 2.6, 0.12, m.dark, TX + dx, 15.2, TZ + dz, r);
+  k.box(4.9, 0.5, 4.9, m.stone, TX, 18.5, TZ);
+  k.cone(3.3, 4, m.red, TX, 20.8, TZ, 4, Math.PI / 4);
+  k.box(0.18, 1.8, 0.18, m.brass, TX, 23.6, TZ); k.box(0.9, 0.18, 0.18, m.brass, TX, 23.9, TZ);
+  colBox(id, TX, TZ, 2.6, 2.6);
+  // Palmeras y farolas alrededor de la plaza
+  for (const [px, pz, r] of [[18, -1222, 0.4], [18, -1178, 2.4], [-18, -1176, 4.0], [-22, -1214, 5.2], [30, -1236, 1.2]]) { palm(k, px, pz, 8, 0.16, r); colCircle(id, px, pz, 0.4); }
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + 0.5; const lx = 4 + Math.cos(a) * 24, lz = -1200 + Math.sin(a) * 24; if (lx > 18 && Math.abs(lz + 1200) < 9) continue; lampPost(k, group, lx, lz); colCircle(id, lx, lz, 0.2); }
+  addSign(group, 'Basílica de', 'Nuestra Señora de Candelaria', 12, -1188, -1.2);
+  group.add(k.build());
+  return { group };
+}
+
+const SETS = [
+  { id: IZANA.id, x: IZANA.x, z: IZANA.z, build: buildIzana },
+  { id: FARO.id, x: FARO.x, z: FARO.z, build: buildFaro, keep: [[-810, 1440, 42]] },
+  { id: CANADAS.id, x: CANADAS.x, z: CANADAS.z, build: buildCanadas, keep: [[185, -1712, 48], [145, -1675, 26]] },
+  { id: MINA.id, x: MINA.x, z: MINA.z, build: buildMina, keep: [[1206, -1508, 32]] },
+  { id: BASILICA.id, x: BASILICA.x, z: BASILICA.z, build: buildBasilica, keep: [[14, -1200, 40]] },
+];
 
 // ------------------------------------------------------------
 // API
 // ------------------------------------------------------------
 export function registerKeepouts(terrain) {
   for (const s of SETS) {
-    try { terrain.addKeepout?.(s.x, s.z, 37); terrain.clearTreesNear?.(s.x, s.z, 37); } catch {}
+    for (const [x, z, r] of s.keep || [[s.x, s.z, 37]]) {
+      try { terrain.addKeepout?.(x, z, r); terrain.clearTreesNear?.(x, z, r); } catch {}
+    }
   }
 }
 
