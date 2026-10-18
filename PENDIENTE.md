@@ -1,7 +1,27 @@
-# SebasPresent — PENDIENTE (17 oct 2026)
+# SebasPresent — PENDIENTE (18 oct 2026)
 
 > Para la próxima IA que tome el repo. Lee también `INVARIANTS.md`.
 > Hecho hoy: 4 commits de seguridad del servidor + 1 del cliente (ver `git log`).
+
+## ⚠️ PRIORIDAD — pedido del usuario (18 oct, 21:43). Hacer en este orden y tachar al terminar
+> El usuario quiere el juego "impecable" y jugable. NADA de minijuegos nuevos (La Cruzada se queda como está;
+> su versión 2 está aparcada en la rama `wip/cruzada-v2`, no fusionar).
+1. [ ] **Objetivo equivocado en grupo**: atacando al yeti con un compañero cerca, el log dice "Atacas a Sebas6".
+       Un toque sobre un monstruo NUNCA debe elegir a un jugador; a compañeros de grupo nunca se les ataca;
+       a jugadores solo en zona PvP / duelo y solo si se toca al jugador explícitamente.
+2. [ ] **Combate lento / no estilo OSRS (PvE y PvP)**: al atacar tarda y no golpea al ritmo. Duelo contra Sebas
+       "horrible". Revisar el bucle de ataque (ticks, cola de acciones, respuesta inmediata en el cliente,
+       animación y daño sincronizados, sin esperar ida y vuelta para empezar a pegar).
+3. [ ] **Retraso de ~5 s al equipar y en acciones** (el padre juega desde Tenerife): respuesta optimista en el
+       cliente (equipar/quitar/comer al instante y corregir si el servidor dice que no), medir qué tarda.
+4. [ ] **Capa + carcaj**: solo se puede llevar uno de los dos; deben poder llevarse a la vez (capa en `cape`,
+       carcaj en `quiver`), también en el modelo 3D.
+5. [ ] **Ropa de arquero completa** (no solo "armadura de cuero"): capucha/cofia, pechera, pierneras, brazales,
+       botas por tiers, igual que la armadura de melee. **Ropa de mago** completa (sombrero, túnica, falda,
+       guantes, botas) por tiers. Que se vea en el modelo, se pueda conseguir (tiendas/drops/crafteo) y tenga bonos.
+6. [ ] **Pueblos vacíos**: lore y cosas que hacer en cada pueblo; edificios en los que entrar con NPC dentro
+       (tabernas, herreros, casas con historia, misiones cortas). Empezar por los pueblos principales.
+7. [ ] Dejarlo todo impecable: probar en móvil y PC antes de cada push, un commit por arreglo.
 
 ## Cómo se trabaja
 - Push directo a `main` (Cloudflare despliega solo). D1 de producción: `bd9c29c7-493d-4ece-ac6e-6f97d49558b9`.
