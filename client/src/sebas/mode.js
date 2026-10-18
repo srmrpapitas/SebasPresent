@@ -16,6 +16,10 @@ import * as afk from '../core/afk.js';
 import * as audio from '../audio.js';
 import { CAST, ALLIES, CHAPTERS } from './chapters.js';
 import { buildArena } from './arena.js';
+import { pick as pickLine, count as lineCount } from './lines.js';
+import { CHOICES, buildEnding, ENDINGS_TOTAL } from './story.js';
+import { CHATS } from './chats.js';
+import { createObjective } from './objectives.js';
 
 const SAVE_KEY = 'sp_sebas_v1';
 const ANIMS = 'mago';
@@ -30,7 +34,7 @@ const ENEMY_MODELS = {
 // ------------------------------------------------------------
 function loadSave() {
   try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && s.done) return s; } catch {}
-  return { done: {}, allies: [], pick: null };
+  return { done: {}, allies: [], pick: null, choices: {}, endings: [] };
 }
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
 let save = loadSave();
@@ -141,7 +145,7 @@ function showMenu() {
   const rankOf = (id) => save.done[id]?.rank || '';
   const crew = Object.entries(ALLIES).map(([id, a]) => {
     const has = save.allies.includes(id);
-    return `<div class="sm-crew${has ? '' : ' off'}" title="${esc(a.desc)}"><div class="i">${has ? a.icon : '🔒'}</div><div class="n">${esc(has ? CAST[id].name : '???')}</div>${has ? `<div class="s">${esc(a.skill)}</div>` : ''}</div>`;
+    return `<div class="sm-crew${has ? '' : ' off'}" data-crew="${has ? id : ''}" title="${esc(a.desc)}"><div class="i">${has ? a.icon : '🔒'}</div><div class="n">${esc(has ? CAST[id].name : '???')}</div>${has ? `<div class="s">${esc(a.skill)}</div>` : ''}</div>`;
   }).join('');
   ui().innerHTML = `
     <div class="sm-menu">
@@ -156,13 +160,50 @@ function showMenu() {
       }).join('')}</div>
       <div class="sm-h">La banda</div>
       <div class="sm-crewrow">${crew}</div>
+      <div class="sm-quote">Toca a alguien de la banda para que hable.</div>
+      <div class="sm-row2">
+        <button class="sm-btn" data-act="talks">💬 La sobremesa <small>(${talksOpen()}/${CHATS.length})</small></button>
+        <div class="sm-btn" style="cursor:default">🏁 Finales: ${(save.endings || []).length}/${ENDINGS_TOTAL}</div>
+      </div>
       <div class="sm-help">PC: WASD · J golpe · K disparo · Espacio esquivar · E compañero · Q tiempo bala</div>
     </div>`;
   ui().onclick = (e) => {
+    const cr = e.target.closest('[data-crew]');
+    if (cr && cr.dataset.crew) { sfx('click'); const id = cr.dataset.crew; ui().querySelector('.sm-quote').innerHTML = `<b>${esc(CAST[id].name)}:</b> «${esc(pickLine(id))}»`; return; }
     const b = e.target.closest('[data-ch],[data-act]'); if (!b) return;
     sfx('click');
     if (b.dataset.act === 'close') { close(); return; }
+    if (b.dataset.act === 'talks') { showTalks(); return; }
     if (b.dataset.ch) pickAllyThen(b.dataset.ch);
+  };
+}
+
+// ------------------------------------------------------------
+// LA SOBREMESA (conversaciones sueltas de la banda)
+// ------------------------------------------------------------
+function talkOk(t) {
+  if (!t.needs.every(a => save.allies.includes(a))) return false;
+  if (t.lines.some(l => l[0] === 'federico') && !save.done.c6) return false;   // Federico aparece en el cap. 6
+  return true;
+}
+function talksOpen() { return CHATS.filter(talkOk).length; }
+function showTalks() {
+  screen = 'menu';
+  ui().innerHTML = `<div class="sm-menu">
+    <div class="sm-h big">💬 La sobremesa</div>
+    <div class="sm-tag">Conversaciones de la banda después del asado. Se abren cuando los que hablan ya están en la banda.</div>
+    <div class="sm-talks">${CHATS.map(t => {
+      const ok = talkOk(t);
+      const who = [...new Set(t.lines.map(l => l[0]).filter(w => w !== 'narr'))].map(w => CAST[w]?.name || w).join(', ');
+      return `<button class="sm-talk${ok ? '' : ' locked'}" data-talk="${t.id}" ${ok ? '' : 'disabled'}><span><b>${esc(ok ? t.title : '???')}</b><br><small>${esc(ok ? who : 'Necesitas más gente en la banda')}</small></span><span>${ok ? '▶' : '🔒'}</span></button>`;
+    }).join('')}</div>
+    <div class="sm-btns"><button class="sm-btn" data-act="back">← Volver</button></div></div>`;
+  ui().onclick = (e) => {
+    const b = e.target.closest('[data-talk],[data-act]'); if (!b) return;
+    sfx('click');
+    if (b.dataset.act === 'back') { showMenu(); return; }
+    const t = CHATS.find(x => x.id === b.dataset.talk);
+    if (t) startChapter({ id: 'talk', n: 0, talk: true, title: t.title, date: 'La sobremesa', place: 'San Isidro', theme: 'sanisidro', intro: t.lines, outro: [], waves: [], boss: null }, null);
   };
 }
 
@@ -269,7 +310,9 @@ function collide(a, r = 0.45) {
 function stopGame() {
   cancelAnimationFrame(raf); raf = 0;
   if (G) {
-    for (const a of [G.p, ...G.enemies, ...G.extras, G.ally?.a].filter(Boolean)) removeActor(a);
+    for (const a of [G.p, ...G.enemies, ...G.extras, ...G.neutrals.map(n => n.a), G.ally?.a].filter(Boolean)) { removeActor(a); a.bubble?.remove(); }
+    for (const m of G.marks) m.el?.remove();
+    root?.querySelectorAll('.sm-mark,.sm-arrow,.sm-brief').forEach(x => x.remove());
     G = null;
   }
   if (scene) { scene.traverse(o => { o.geometry?.dispose?.(); }); scene = null; }
@@ -278,7 +321,7 @@ function stopGame() {
 async function startChapter(ch, ally) {
   stopGame();
   screen = 'loading';
-  ui().innerHTML = `<div class="sm-loading"><div class="t">Capítulo ${ch.n}</div><div class="b">${esc(ch.title)}</div><div class="c">${esc(ch.date)} · ${esc(ch.place)}</div><div class="bar"><i></i></div></div>`;
+  ui().innerHTML = `<div class="sm-loading"><div class="t">${ch.talk ? 'La sobremesa' : `Capítulo ${ch.n}`}</div><div class="b">${esc(ch.title)}</div><div class="c">${esc(ch.date)} · ${esc(ch.place)}</div><div class="bar"><i></i></div></div>`;
   ui().onclick = null;
   ensureRenderer();
   // modelos que hacen falta
@@ -287,6 +330,7 @@ async function startChapter(ch, ally) {
   if (ch.boss) { need.add(CAST[ch.boss.who].model); for (const w of ch.boss.adds || []) need.add(CAST[w].model); }
   if (ally) need.add(CAST[ally].model);
   for (const list of Object.values(ENEMY_MODELS)) for (const m of list.slice(0, 4)) need.add(m);
+  if (!ch.talk) for (const m of ['f36', 'f40', 'm43', 'f43', 'sheriff_n_01']) need.add(m);   // turistas, clientes, patrullas
   const list = [...need];
   let done = 0;
   const bar = ui().querySelector('.bar i');
@@ -313,20 +357,49 @@ async function startChapter(ch, ally) {
     ammo: 12, maxAmmo: 12, reloadT: 0, shootCd: 0, atkT: 0, comboStep: 0, comboWin: 0, dodgeT: 0, dodgeCd: 0, inv: 0,
     allyCd: 0, ally: null, bossSummons: 0, buffered: null,
     camPos: new THREE.Vector3(0, 16, 16),
+    neutrals: [], marks: [], target: null, carry: null, M: null, scoreMul: 1, slide: false, vx: 0, vz: 0,
   };
   G.p = makeActor('sebas', { team: 'player', x: 0, z: 6, hp: 100, yaw: Math.PI });
   G.p.hp = G.p.maxHp = 100;
   buildHud();
   clock = new THREE.Clock();
   loop();
-  runCutscene(ch.intro, () => { G.phase = 'waves'; nextWave(); if (ch.tutorial) tutorial(); });
+  if (ch.talk) { G.phase = 'talk'; runCutscene(ch.intro, () => showTalks()); return; }
+  G.M = createObjective(ch.id, OBJ_API);
+  if (G.M) { G.p.x = G.M.start.x; G.p.z = G.M.start.z; G.camPos.set(G.p.x, 16, G.p.z + 12); G.M.setup(); }
+  runCutscene(ch.intro, () => briefing(() => {
+    if (G.M && !G.M.usesWaves) { G.phase = 'obj'; }
+    else { G.phase = 'waves'; nextWave(); }
+    if (ch.tutorial) tutorial();
+  }));
 }
+
+// Tarjeta de misión antes de jugar (explica la forma de jugar de este capítulo)
+function briefing(go) {
+  if (!G.M) { go(); return; }
+  screen = 'brief';
+  const el = document.createElement('div');
+  el.className = 'sm-brief';
+  el.innerHTML = `<div class="k">Capítulo ${G.ch.n} · ${esc(G.ch.title)}</div><div class="t">🎯 Misión</div><div class="d">${esc(G.M.intro)}</div><button class="sm-btn go">¡Vamos!</button>`;
+  ui().appendChild(el);
+  el.querySelector('button').addEventListener('pointerup', (e) => { e.stopPropagation(); el.remove(); screen = 'play'; clock.getDelta(); sfx('ally'); go(); });
+}
+
+// Lo que los modos de cada capítulo pueden usar del motor
+const OBJ_API = {
+  G: () => G, scene: () => scene,
+  makeActor: (...a) => makeActor(...a), removeActor: (a) => removeActor(a),
+  spawnEnemy: (...a) => spawnEnemy(...a), play: (...a) => play(...a), say: (...a) => say(...a),
+  banner: (...a) => banner(...a), toast: (...a) => toast(...a), sfx: (k) => sfx(k), floatText: (...a) => floatText(...a),
+  collide: (a, r) => collide(a, r), dist: (a, b) => dist(a, b),
+  pickModel: (list) => { const ok = list.filter(m => mixamoRig.isLoaded(m)); return ok.length ? ok[Math.floor(Math.random() * ok.length)] : 'm33'; },
+};
 
 function tutorial() {
   const tips = isTouch()
     ? ['🕹 Muévete con el joystick (izquierda)', '👊 Golpea: tres toques seguidos = combo', '🌀 Esquiva: eres invulnerable mientras ruedas', '⏱ Llena la barra amarilla y activa el tiempo bala']
     : ['🕹 WASD para moverte', '👊 J o clic: combo de tres golpes', '🌀 Espacio: esquivar (invulnerable)', '🔫 K o clic derecho: disparar · ⏱ Q: tiempo bala'];
-  tips.forEach((t, i) => setTimeout(() => toast(t, 3200), 600 + i * 3600));
+  tips.forEach((t, i) => setTimeout(() => G && toast(t, 3000), 400 + i * 3300));
 }
 
 // ------------------------------------------------------------
@@ -354,21 +427,29 @@ function nextWave() {
   const waves = G.ch.waves;
   if (G.wave < waves.length) {
     banner(`Oleada ${G.wave + 1} / ${waves.length}`, '');
+    G.M?.onWave?.(G.wave);
+    if (G.wave === 0) setTimeout(() => G && say(G.p, pickLine('sebas', 'start'), 2200), 600);
     let i = 0;
     for (const [kind, n] of waves[G.wave]) for (let k = 0; k < n; k++) {
       const sp = G.arena.spawns[(i++ * 7 + G.wave * 3) % G.arena.spawns.length];
       setTimeout(() => { if (G && screen !== 'off') spawnEnemy(kind, { x: sp.x + (Math.random() - 0.5) * 3, z: sp.z }); }, k * 260 + Math.random() * 300);
     }
   } else if (G.ch.boss && !G.boss) {
+    spawnBoss();
+  } else {
+    winChapter();
+  }
+}
+function spawnBoss() {
+  {
     const B = G.ch.boss, c = CAST[B.who];
-    G.phase = 'boss';
-    const kind = B.kind === 'tank' || B.kind === 'tankboss' ? 'tank' : B.kind === 'final' ? 'gunner' : 'gunner';
-    G.boss = spawnEnemy(kind, { x: 0, z: -G.arena.hd + 2 }, { who: B.who, model: c.model, tint: c.tint ?? null, hp: B.hp, boss: true, bossKind: B.kind, scale: (c.scale || 1) * 1.12 });
+    G.phase = 'boss'; G.target = null;
+    const kind = B.kind === 'tank' || B.kind === 'tankboss' ? 'tank' : 'gunner';
+    const at = G.M?.bossAt || { x: 0, z: -G.arena.hd + 2 };
+    G.boss = spawnEnemy(kind, { x: at.x, z: at.z }, { who: B.who, model: c.model, tint: c.tint ?? null, hp: B.hp, boss: true, bossKind: B.who === 'federico' ? 'flee' : B.kind, scale: (c.scale || 1) * 1.12 });
     G.boss.name = c.name;
     banner(c.name.toUpperCase(), c.title, true);
     sfx('bt');
-  } else {
-    winChapter();
   }
 }
 
@@ -391,12 +472,17 @@ function loop() {
     updateProjectiles(edt);
     updatePickups(dt);
     updateAlly(dt, edt);
+    if (G.M && G.phase !== 'won') {
+      G.M.update(dt);
+      if (G.M.fail && !G.failShown) { G.failShown = true; showFail(G.M.fail); }
+      if (G.phase === 'obj' && G.M.done && !G.boss) { G.phase = 'pre'; setTimeout(() => G && G.phase === 'pre' && spawnBoss(), 1500); }
+    }
     if (G.phase === 'waves' && !G.enemies.some(e => !e.dead) && G.waveDelay <= 0 && G.wave >= 0) { G.waveDelay = 1.6; }
     if (G.waveDelay > 0) { G.waveDelay -= dt; if (G.waveDelay <= 0 && !G.enemies.some(e => !e.dead)) nextWave(); }
     if (G.comboT > 0) { G.comboT -= dt; if (G.comboT <= 0) G.combo = 0; }
   }
   // animaciones y transformaciones
-  for (const a of [G.p, ...G.enemies, ...G.extras, G.ally?.a].filter(Boolean)) {
+  for (const a of [G.p, ...G.enemies, ...G.extras, ...G.neutrals.map(n => n.a), G.ally?.a].filter(Boolean)) {
     const adt = a.team === 'enemy' ? edt : dt;
     a.rig?.mixer?.update(adt);
     if (a.rig && !a.rig.hasClips) a.rig.update(adt, { moving: a.moving, speed: a.speed, attack: a._atkFlag, hurt: a._hurtFlag, dead: a.dead });
@@ -462,8 +548,11 @@ function updatePlayer(dt) {
   } else if (G.atkT > 0) {
     p.x += p.kx * dt; p.z += p.kz * dt; p.kx *= 0.85; p.kz *= 0.85;
   } else {
-    const sp = 6.2;
-    p.x += v.x * sp * dt; p.z += v.z * sp * dt;
+    const sp = 6.2 * (G.M?.speed?.() ?? 1);
+    if (G.slide) {   // suelo de confeti: inercia
+      G.vx += (v.x * sp - G.vx) * Math.min(1, dt * 1.6); G.vz += (v.z * sp - G.vz) * Math.min(1, dt * 1.6);
+      p.x += G.vx * dt; p.z += G.vz * dt;
+    } else { G.vx = v.x * sp; G.vz = v.z * sp; p.x += v.x * sp * dt; p.z += v.z * sp * dt; }
     p.moving = Math.hypot(v.x, v.z) > 0.1;
     if (p.moving) { p.yaw = Math.atan2(v.x, v.z); if (p.onceT <= 0) play(p, 'run', { ts: 1.1 }); }
     else if (p.onceT <= 0) play(p, 'idle');
@@ -505,6 +594,8 @@ function doPunch() {
 function doShoot() {
   if (screen !== 'play' || G.p.dead || G.dodgeT > 0) return;
   if (G.reloadT > 0 || G.shootCd > 0) return;
+  if (G.M?.noShoot?.()) { if (!G.noShootT || G.time - G.noShootT > 2) { G.noShootT = G.time; toast('Con las manos ocupadas no puedes disparar', 1200); } return; }
+  G.M?.onShoot?.();
   if (G.ammo <= 0) { G.reloadT = 1.2; sfx('reload'); toast('🔫 Recargando…', 1000); return; }
   const p = G.p;
   const t = nearestEnemy(17);
@@ -541,18 +632,22 @@ function doBulletTime() {
   canvas.classList.add('bt');
   sfx('bt');
   banner('TIEMPO BALA', '', false, 1200);
+  say(G.p, pickLine('sebas', 'bt'), 2000);
 }
 
 function hurtPlayer(dmg, kx = 0, kz = 0) {
   const p = G.p;
   if (p.dead || G.inv > 0 || screen !== 'play') return;
   p.hp -= dmg; G.dmgTaken += dmg; G.inv = 0.35;
+  G.M?.onHurt?.(dmg);
   p.kx = kx; p.kz = kz; p.x += kx * 0.15; p.z += kz * 0.15;
   G.combo = 0; G.comboT = 0;
   sfx('hurt'); G.shake = 0.3;
   play(p, dmg >= 15 ? 'react_big' : 'react', { once: true, ts: 1.8, fade: 0.05 });
   root.querySelector('.sm-hurt')?.classList.remove('on'); void root.querySelector('.sm-hurt')?.offsetWidth; root.querySelector('.sm-hurt')?.classList.add('on');
   floatText(p.x, 2.2, p.z, `-${dmg}`, '#ff5a4a');
+  if (p.hp > 0 && p.hp < 30 && !G.saidLow) { G.saidLow = true; say(p, pickLine('sebas', 'low'), 2200); }
+  else if (Math.random() < 0.18) say(p, pickLine('sebas', 'hurt'), 1700);
   if (p.hp <= 0) { p.hp = 0; p.dead = true; play(p, 'death', { once: true, fade: 0.1 }); G.deaths++; setTimeout(() => G && showDead(), 1400); }
 }
 
@@ -562,6 +657,8 @@ function hurtPlayer(dmg, kx = 0, kz = 0) {
 function damageEnemy(e, dmg, kx, kz, heavy = false, shot = false) {
   if (e.dead) return;
   if (e.status === 'fear') dmg *= 2;
+  const mul = G.M?.dmgMul?.(e) ?? 1;
+  if (mul !== 1 && !shot) { dmg *= mul; if (mul >= 2) floatText(G.p.x, 2.8, G.p.z, '🥁 ¡SAMBA!', '#ffd040'); }
   dmg = Math.round(Math.min(dmg, e.hp + 30));   // sin puntos inflados por remates enormes
   e.hp -= dmg;
   e.kx += kx; e.kz += kz;
@@ -571,7 +668,7 @@ function damageEnemy(e, dmg, kx, kz, heavy = false, shot = false) {
   e._hurtFlag = true;
   G.combo++; G.comboT = 2.6; G.maxCombo = Math.max(G.maxCombo, G.combo);
   G.meter = Math.min(100, G.meter + (heavy ? 6 : 3));
-  G.score += Math.round(dmg * (1 + G.combo * 0.1));
+  G.score += Math.round(dmg * (1 + G.combo * 0.1) * (G.scoreMul || 1));
   floatText(e.x, 2.3 * e.scale, e.z, String(dmg), heavy ? '#ffd040' : shot ? '#ffffff' : '#ffe6b0', heavy);
   spark(e.x, 1.2 * e.scale, e.z, shot ? 0xfff0c0 : 0xffb040);
   if (e.hp <= 0) killEnemy(e);
@@ -583,6 +680,10 @@ function killEnemy(e) {
   play(e, Math.random() < 0.5 ? 'death' : 'death_fwd', { once: true, fade: 0.06 });
   sfx('kill');
   G.meter = Math.min(100, G.meter + 18);
+  G.kills = (G.kills || 0) + 1;
+  G.M?.onKill?.(e);
+  if (e.cone) e.cone.visible = false;
+  if (!e.boss && (G.kills % 4 === 0 || (G.combo >= 8 && Math.random() < 0.3))) say(G.p, pickLine('sebas', 'kill'), 1900);
   G.score += e.boss ? 1500 : 100 + G.combo * 10;
   const lines = ['¡IMPECABLE!', '¡QUÉ PIÑA!', '¡BOLUDO!', '¡LIMPIO!', '¡DE UNA!', '¡AFUERA!', '¡TOMÁ!'];
   if (G.combo >= 5 && Math.random() < 0.5) stylish(lines[Math.floor(Math.random() * lines.length)]);
@@ -641,6 +742,27 @@ function updateEnemies(dt) {
     }
     if (e.st === 'stagger') { if (e.stT <= 0) e.st = 'chase'; collide(e); continue; }
     if (p.dead) { if (e.onceT <= 0) play(e, 'idle'); continue; }
+    if (e.who === 'federico') { e.tauntT = (e.tauntT ?? 2) - dt; if (e.tauntT <= 0) { e.tauntT = 5 + Math.random() * 3; say(e, pickLine('federico'), 2600); } }
+    // Objetivo propio del capítulo (turistas, la casa, la ronda de la patrulla…)
+    if (e.st !== 'charge' && e.st !== 'wind') {
+      const T = G.M?.target?.(e);
+      if (T) {
+        const dx = T.x - e.x, dz = T.z - e.z, dT = Math.hypot(dx, dz);
+        if (dT > 1.1) {
+          const sp = e.speed * (T.walk ? 0.55 : 1);
+          let mx = dx / dT, mz = dz / dT;
+          for (const o of G.enemies) { if (o === e || o.dead) continue; const ox = e.x - o.x, oz = e.z - o.z, dd = Math.hypot(ox, oz); if (dd < 1.1 && dd > 0.01) { mx += ox / dd * 0.8; mz += oz / dd * 0.8; } }
+          const l = Math.hypot(mx, mz) || 1;
+          e.x += mx / l * sp * dt; e.z += mz / l * sp * dt; e.moving = true; e.yaw = Math.atan2(mx, mz);
+          if (e.onceT <= 0) play(e, T.walk ? 'walk' : sp > 3 ? 'run' : 'walk');
+        } else if (T.hit) {
+          faceTo(e, T.x, T.z);
+          if (e.cd <= 0) { play(e, 'atk1h_2', { once: true, ts: 1.4 }); T.hit(e, e.dmg); e.cd = 1.2 + Math.random() * 0.6; }
+          else if (e.onceT <= 0) play(e, 'idle');
+        } else if (e.onceT <= 0) play(e, 'idle');
+        collide(e, isTank ? 0.6 : 0.45); continue;
+      }
+    }
 
     if (e.st === 'charge') {
       e.x += e.cx * 14 * dt; e.z += e.cz * 14 * dt; e.stT -= 0;
@@ -660,8 +782,8 @@ function updateEnemies(dt) {
           e.st = 'recover'; e.stT = 0.5; e.cd = 1.1 + Math.random() * 0.8;
         } else if (e.attackType === 'shot') {
           play(e, 'cast1h', { once: true, ts: 2.2, fade: 0.05 });
-          const n = bk === 'final' ? 5 : (bk === 'gunboss' ? 3 : 1);
-          for (let i = 0; i < n; i++) fireProjectile(e, (i - (n - 1) / 2) * 0.22, bk === 'final' ? 0xffe040 : 0xff8a30);
+          const n = bk === 'final' ? 5 : (bk === 'gunboss' || bk === 'flee' ? 3 : 1);
+          for (let i = 0; i < n; i++) fireProjectile(e, (i - (n - 1) / 2) * 0.22, bk === 'final' ? 0xffe040 : bk === 'flee' ? 0x50d070 : 0xff8a30);
           sfx('eshot');
           e.st = 'recover'; e.stT = 0.4; e.cd = (e.boss ? 1.4 : 2.2) + Math.random();
         } else if (e.attackType === 'charge') {
@@ -678,7 +800,12 @@ function updateEnemies(dt) {
     // perseguir / mantener distancia
     let want = isGun ? 8 : 1.3 * e.scale;
     let mx = 0, mz = 0;
-    if (isGun) {
+    if (bk === 'flee') {   // Federico: huye con la caja y te tira billetes
+      const A = G.arena, wall = Math.abs(e.x) > A.hw - 3 || Math.abs(e.z) > A.hd - 3;
+      if (d < 8 && !wall) { mx = e.x - p.x; mz = e.z - p.z; }
+      else { const s = Math.sin(G.time * 0.5) > 0 ? 1 : -1; mx = (p.z - e.z) * s - e.x * 0.15; mz = -(p.x - e.x) * s - e.z * 0.15; }
+      e.speed = d < 5 ? 4.6 : 3.4;
+    } else if (isGun) {
       if (d > want + 2) { mx = p.x - e.x; mz = p.z - e.z; }
       else if (d < want - 2.5) { mx = e.x - p.x; mz = e.z - p.z; }
       else { const s = Math.sin(G.time * 0.7 + e.x) > 0 ? 1 : -1; mx = (p.z - e.z) * s; mz = -(p.x - e.x) * s; }
@@ -822,7 +949,7 @@ function doAlly() {
   faceTo(a, p.x + Math.sin(p.yaw) * 5, p.z + Math.cos(p.yaw) * 5);
   G.ally = { id, a, t: id === 'miguel' ? 4.2 : 3.2, hitT: 0 };
   sfx('ally');
-  say(a, A.lines[Math.floor(Math.random() * A.lines.length)], 3000);
+  say(a, pickLine(id) || A.lines[0], 3200);
   if (id === 'choro') {
     play(a, 'cast2h', { once: true, ts: 1 });
     for (const e of G.enemies) if (!e.dead && dist(e, p) < 10 && !e.boss) { setStatus(e, 'laugh', 4.5, '😂'); }
@@ -889,13 +1016,14 @@ function setStatus(e, kind, t, icon) {
 // ------------------------------------------------------------
 // ESCENAS (cutscenes) con caras
 // ------------------------------------------------------------
-function runCutscene(lines, done) {
+function runCutscene(srcLines, done) {
   screen = 'cutscene';
   root.classList.add('cine');
+  const lines = srcLines.slice();   // se le añaden las respuestas de las decisiones
   const actors = {};
   let i = 0;
   const place = (who) => {
-    if (who === 'narr' || who === 'sebas' || actors[who]) return actors[who] || (who === 'sebas' ? G.p : null);
+    if (who === 'narr' || who === 'choice' || who === 'sebas' || actors[who]) return actors[who] || (who === 'sebas' ? G.p : null);
     const n = Object.keys(actors).length;
     const a = makeActor(who, { team: 'npc', x: G.p.x + (n % 2 ? 2.4 : -2.4) * (1 + Math.floor(n / 2) * 0.6), z: G.p.z - 3.2 - Math.floor(n / 2) * 0.8, hp: 999 });
     faceTo(a, G.p.x, G.p.z);
@@ -906,36 +1034,81 @@ function runCutscene(lines, done) {
   for (const [who] of lines) place(who);   // todos en escena desde el principio
   const box = document.createElement('div');
   box.className = 'sm-dlg';
-  box.innerHTML = `<canvas class="face" width="128" height="128"></canvas><div class="m"><div class="n"></div><div class="t"></div><div class="h">Toca para seguir ▸</div></div><button class="skip">Saltar ⏭</button>`;
+  box.innerHTML = `<canvas class="face" width="128" height="128"></canvas><div class="m"><div class="n"></div><div class="t"></div><div class="opts"></div><div class="h">Toca para seguir ▸</div></div><button class="skip">Saltar ⏭</button>`;
   ui().appendChild(box);
   const finish = () => {
     box.remove(); root.classList.remove('cine');
-    for (const a of Object.values(actors)) { removeActor(a); const k = G?.extras.indexOf(a); if (k >= 0) G.extras.splice(k, 1); }
+    for (const a of Object.values(actors)) { removeActor(a); a.bubble?.remove(); const k = G?.extras.indexOf(a); if (k >= 0) G.extras.splice(k, 1); }
     G && (G.cutTarget = null);
     screen = 'play';
     done?.();
   };
-  let typing = null;
-  const show = () => {
-    if (i >= lines.length) { finish(); return; }
-    const [who, text] = lines[i];
-    const c = CAST[who] || {};
-    const a = place(who);
-    G.cutTarget = a && a !== G.p ? a : null;
-    if (a && a !== G.p) { faceTo(G.p, a.x, a.z); faceTo(a, G.p.x, G.p.z); play(a, 'idle3'); }
-    box.classList.toggle('narr', who === 'narr');
-    box.querySelector('.n').innerHTML = who === 'narr' ? '' : `${esc(c.name)} <small>${esc(c.title || '')}</small>`;
-    const face = box.querySelector('.face');
-    face.style.display = who === 'narr' ? 'none' : '';
-    if (a) setTimeout(() => drawFace(a, face), 30);
+  let typing = null, choosing = false;
+  const type = (text) => {
     const tEl = box.querySelector('.t');
     let k = 0; clearInterval(typing);
     typing = setInterval(() => { k += 2; tEl.textContent = text.slice(0, k); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16);
     box.dataset.full = text;
   };
+  const speaker = (who) => {
+    const c = CAST[who] || {};
+    const a = place(who);
+    G.cutTarget = a && a !== G.p ? a : null;
+    if (a && a !== G.p) { faceTo(G.p, a.x, a.z); faceTo(a, G.p.x, G.p.z); play(a, Math.random() < 0.5 ? 'idle3' : 'idle2'); }
+    box.classList.toggle('narr', who === 'narr');
+    box.querySelector('.n').innerHTML = who === 'narr' ? '' : `${esc(c.name)} <small>${esc(c.title || '')}</small>`;
+    const face = box.querySelector('.face');
+    face.style.display = who === 'narr' ? 'none' : '';
+    if (a) setTimeout(() => drawFace(a, face), 30);
+  };
+  // Decisión: botones; cada opción mete su respuesta (y en el cap. 7, el final)
+  const showChoice = (chId) => {
+    const C = CHOICES[chId]; if (!C) { i++; show(); return; }
+    choosing = true;
+    speaker(C.who);
+    type(C.prompt);
+    box.classList.add('choosing');
+    const o = box.querySelector('.opts');
+    o.innerHTML = C.options.map((op, k) => `<button class="opt" data-k="${k}">${esc(op.t)}</button>`).join('');
+    o.onclick = (e) => {
+      const btn = e.target.closest('.opt'); if (!btn) return;
+      e.stopPropagation();
+      const k = +btn.dataset.k;
+      save.choices = save.choices || {}; save.choices[chId] = k; writeSave();
+      const add = [...C.options[k].reply];
+      if (chId === 'c7') {
+        const E = buildEnding(save.choices);
+        save.endings = save.endings || [];
+        G.ending = { ...E, isNew: !save.endings.includes(E.n) };
+        if (!save.endings.includes(E.n)) save.endings.push(E.n);
+        writeSave();
+        add.push(...E.lines);
+      }
+      for (const [w] of add) place(w);
+      lines.splice(i + 1, 0, ...add);
+      o.innerHTML = ''; box.classList.remove('choosing'); choosing = false;
+      sfx('ally'); i++; show();
+    };
+  };
+  const show = () => {
+    if (i >= lines.length) { finish(); return; }
+    const [who, text] = lines[i];
+    if (who === 'choice') { showChoice(text); return; }
+    speaker(who);
+    type(text);
+  };
   box.addEventListener('pointerup', (e) => {
     e.stopPropagation();
-    if (e.target.closest('.skip')) { clearInterval(typing); finish(); return; }
+    if (e.target.closest('.opts')) return;
+    if (e.target.closest('.skip')) {
+      clearInterval(typing); typing = null;
+      if (choosing) return;
+      // saltar hasta la próxima decisión (las decisiones no se saltan)
+      const nx = lines.findIndex((l, k) => k > i && l[0] === 'choice');
+      if (nx >= 0) { i = nx; show(); } else finish();
+      return;
+    }
+    if (choosing) { if (typing) { clearInterval(typing); typing = null; box.querySelector('.t').textContent = box.dataset.full; } return; }
     if (typing) { clearInterval(typing); typing = null; box.querySelector('.t').textContent = box.dataset.full; return; }
     i++; sfx('click'); show();
   });
@@ -975,7 +1148,7 @@ function winChapter() {
     if (!G) return;
     for (const e of G.enemies) { removeActor(e); e.over?.remove(); } G.enemies = []; G.boss = null;
     G.p.hp = G.p.maxHp;
-    runCutscene(G.ch.outro, () => showResult());
+    runCutscene(CHOICES[G.ch.id] ? [...G.ch.outro, ['choice', G.ch.id]] : G.ch.outro, () => showResult());
   }, 900);
 }
 function rankFor() {
@@ -998,6 +1171,7 @@ function showResult() {
     <div class="rank r${rank}">${rank}</div>
     <div class="stats"><div>Puntos <b>${G.score.toLocaleString('es-ES')}</b></div><div>Combo máx. <b>×${G.maxCombo}</b></div>
     <div>Daño recibido <b>${G.dmgTaken}</b></div><div>Tiempo <b>${fmtT(G.time)}</b></div></div>
+    ${G.ending ? `<div class="ending"><div class="en">FINAL ${G.ending.n} de ${ENDINGS_TOTAL}${G.ending.isNew ? ' · ¡NUEVO!' : ''}</div><div class="et">«${esc(G.ending.title)}»</div><div class="ec">Finales descubiertos: ${(save.endings || []).length}/${ENDINGS_TOTAL} · cambia tus decisiones en cualquier capítulo para ver otros</div></div>` : ''}
     ${newAllies.length ? `<div class="new">⭐ Nuevo en la banda: ${newAllies.map(a => `${ALLIES[a].icon} ${esc(CAST[a].name)}`).join(' · ')}</div>` : ''}
     ${best && prev ? '<div class="new">🏆 ¡Nuevo récord!</div>' : ''}
     <div class="sm-btns"><button class="sm-btn" data-act="menu">Menú</button><button class="sm-btn" data-act="retry">Repetir</button>${next ? '<button class="sm-btn go" data-act="next">Siguiente ▶</button>' : ''}</div></div>`);
@@ -1013,21 +1187,35 @@ function showDead() {
   screen = 'dead';
   ui().insertAdjacentHTML('beforeend', `<div class="sm-result dead"><div class="h">HAS CAÍDO</div>
     <div class="tt">${esc(['«Mañana a las 6 en punto me levanto», dijo Sebas.', 'Hasta John Wick pierde alguna.', 'El Choro ya está contando un chiste en tu funeral.'][Math.floor(Math.random() * 3)])}</div>
-    <div class="sm-btns"><button class="sm-btn" data-act="menu">Menú</button><button class="sm-btn go" data-act="wave">Reintentar la oleada</button></div></div>`);
+    <div class="sm-btns"><button class="sm-btn" data-act="menu">Menú</button><button class="sm-btn go" data-act="wave">${G.M && !G.M.usesWaves ? 'Levantarse y seguir' : 'Reintentar la oleada'}</button></div></div>`);
   ui().onclick = (e) => {
     const b = e.target.closest('[data-act]'); if (!b) return; sfx('click');
     if (b.dataset.act === 'menu') { showMenu(); return; }
     // revivir en la misma oleada
     ui().querySelector('.sm-result')?.remove();
-    for (const en of G.enemies) { removeActor(en); en.over?.remove(); en.laser && scene.remove(en.laser); }
-    G.enemies = []; G.boss = null; G.bossSummons = 0;
+    const keep = (en) => en.role === 'patrol' && !en.dead;   // las patrullas del cap. 3 siguen su ronda
+    for (const en of G.enemies) if (!keep(en)) { removeActor(en); en.over?.remove(); en.bubble?.remove(); en.laser && scene.remove(en.laser); en.cone && scene.remove(en.cone); }
+    G.enemies = G.enemies.filter(keep); G.boss = null; G.bossSummons = 0;
     for (const b2 of G.projectiles) scene.remove(b2.m); G.projectiles.length = 0;
-    const p = G.p; p.dead = false; p.hp = p.maxHp; p.x = 0; p.z = 6; play(p, 'idle');
-    G.ammo = G.maxAmmo; G.reloadT = 0; G.meter = 50;
+    const p = G.p; p.dead = false; p.hp = p.maxHp; G.saidLow = false; play(p, 'idle');
+    if (!G.M) { p.x = 0; p.z = 6; }
+    G.ammo = G.maxAmmo; G.reloadT = 0; G.meter = 50; G.inv = 2;
     screen = 'play';
+    if (G.M && !G.M.usesWaves) { if (G.phase === 'boss' || G.phase === 'pre') spawnBoss(); return; }
     if (G.phase === 'boss') { G.wave = G.ch.waves.length - 1; G.phase = 'waves'; }
     else G.wave = Math.max(-1, G.wave - 1);
     nextWave();
+  };
+}
+function showFail(msg) {
+  if (!G) return;
+  screen = 'dead';
+  ui().insertAdjacentHTML('beforeend', `<div class="sm-result dead"><div class="h">MISIÓN FALLIDA</div>
+    <div class="tt">${esc(msg)}</div>
+    <div class="sm-btns"><button class="sm-btn" data-act="menu">Menú</button><button class="sm-btn go" data-act="again">Repetir capítulo</button></div></div>`);
+  ui().onclick = (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return; sfx('click');
+    if (b.dataset.act === 'menu') showMenu(); else startChapter(G.ch, G.allyId);
   };
 }
 const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -1081,7 +1269,7 @@ function buildHud() {
     joy.x = dx / R; joy.y = dy / R;
     jEl.querySelector('.knob').style.transform = `translate(${dx}px, ${dy}px)`;
   });
-  const end = (e) => { if (e.pointerId !== joy.id) return; joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 }; jEl.classList.remove('on'); jEl.querySelector('.knob').style.transform = ''; };
+  const end = (e) => { if (e.pointerId !== joy.id) return; joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 }; jEl.classList.remove('on'); jEl.style.left = ''; jEl.style.top = ''; jEl.querySelector('.knob').style.transform = ''; };
   hud.addEventListener('pointerup', end); hud.addEventListener('pointercancel', end);
 }
 function togglePause() {
@@ -1109,7 +1297,37 @@ function updateHud() {
   if (cdEl) cdEl.textContent = G.allyId ? (G.allyCd > 0 ? Math.ceil(G.allyCd) : '') : '';
   h.querySelector('.ally').classList.toggle('ready', !!G.allyId && G.allyCd <= 0 && !G.ally);
   h.querySelector('.bt').classList.toggle('ready', G.meter >= 100 && G.bt <= 0);
-  h.querySelector('.obj').textContent = screen === 'cutscene' ? '' : G.phase === 'boss' ? '' : G.wave >= 0 && G.wave < G.ch.waves.length ? `Oleada ${G.wave + 1}/${G.ch.waves.length} · Enemigos: ${G.enemies.filter(e => !e.dead).length}` : '';
+  const waveTxt = G.wave >= 0 && G.wave < G.ch.waves.length ? `Oleada ${G.wave + 1}/${G.ch.waves.length} · Enemigos: ${G.enemies.filter(e => !e.dead).length}` : '';
+  const mTxt = G.M?.text?.() || '';
+  h.querySelector('.obj').textContent = screen === 'cutscene' ? '' : G.phase === 'boss' ? (G.M?.usesWaves ? mTxt : '') : [mTxt, G.M?.usesWaves ? waveTxt : ''].filter(Boolean).join('  ·  ') || waveTxt;
+  // Marcadores en el mundo (🧳 maleta, 🍹 bar…) y flecha hacia el objetivo
+  const W = window.innerWidth, Hh = window.innerHeight, pv = new THREE.Vector3();
+  for (const m of G.marks) {
+    if (!m.el) { m.el = document.createElement('div'); m.el.className = 'sm-mark'; h.appendChild(m.el); }
+    pv.set(m.x, m.y ?? 2.6, m.z).project(camera);
+    const on = pv.z < 1 && screen !== 'cutscene';
+    m.el.style.display = on ? '' : 'none';
+    m.el.style.transform = `translate(${(pv.x * 0.5 + 0.5) * W}px, ${(-pv.y * 0.5 + 0.5) * Hh}px) translate(-50%, -100%)`;
+    const html = esc(m.text) + (m.bar ? `<i><b style="width:${Math.round(m.bar() * 100)}%"></b></i>` : '');
+    if (m._h !== html) { m.el.innerHTML = html; m._h = html; }
+  }
+  for (const el of h.querySelectorAll('.sm-mark')) if (!G.marks.some(m => m.el === el)) el.remove();
+  let ar = h.querySelector('.sm-arrow');
+  if (!ar) { ar = document.createElement('div'); ar.className = 'sm-arrow'; ar.textContent = '➤'; h.appendChild(ar); }
+  if (G.target && screen === 'play') {
+    pv.set(G.target.x, 1, G.target.z).project(camera);
+    let sx = (pv.x * 0.5 + 0.5) * W, sy = (-pv.y * 0.5 + 0.5) * Hh;
+    const inside = pv.z < 1 && sx > 30 && sx < W - 30 && sy > 70 && sy < Hh - 30;
+    if (inside) ar.style.display = 'none';
+    else {
+      pv.set(p.x, 1, p.z).project(camera);
+      const cx = (pv.x * 0.5 + 0.5) * W, cy = (-pv.y * 0.5 + 0.5) * Hh;
+      const ang = Math.atan2(sy - cy, sx - cx);
+      const r = Math.min(W, Hh) * 0.36;
+      ar.style.display = 'block';
+      ar.style.transform = `translate(${cx + Math.cos(ang) * r}px, ${cy + Math.sin(ang) * r}px) translate(-50%, -50%) rotate(${ang}rad)`;
+    }
+  } else ar.style.display = 'none';
   const bosses = G.enemies.filter(e => e.boss && !e.dead);
   const bb = h.querySelector('.bossbar');
   if (bosses.length) {
@@ -1228,19 +1446,27 @@ function ensureCss() {
   .sm-loading .t { color: #e8c560; letter-spacing: .3em; } .sm-loading .b { font-size: clamp(28px, 7vw, 46px); font-weight: 900; margin: 6px 0; text-shadow: 0 0 18px #d0102a; }
   .sm-loading .c { font-family: Georgia, serif; font-style: italic; color: #c8b8a0; } .sm-loading .bar { width: 220px; height: 6px; background: #2a1014; border-radius: 3px; margin-top: 18px; overflow: hidden; } .sm-loading .bar i { display: block; height: 100%; width: 0; background: #e8c560; transition: width .2s; }
   /* HUD */
-  .sm-hud.hidden .sm-top, .sm-hud.hidden .sm-pad { opacity: 0; pointer-events: none; }
+  .sm-hud { position: absolute; inset: 0; touch-action: none; }
+  .sm-hud.hidden .sm-top, .sm-hud.hidden .sm-pad, .sm-hud.hidden .sm-joy, .sm-hud.hidden .sm-mark, .sm-hud.hidden .sm-arrow { opacity: 0; pointer-events: none; }
+  .sm-mark { position: absolute; left: 0; top: 0; padding: 3px 8px; border-radius: 10px; background: rgba(0,0,0,.65); border: 1px solid #ffd04088; color: #fff; font: 700 12px/1.2 Georgia, serif; white-space: nowrap; pointer-events: none; text-align: center; }
+  .sm-mark i { display: block; width: 70px; height: 5px; margin: 3px auto 0; background: #3a1010; border-radius: 3px; overflow: hidden; } .sm-mark i b { display: block; height: 100%; background: #6ad06a; }
+  .sm-arrow { position: absolute; left: 0; top: 0; font-size: 30px; color: #ffd040; text-shadow: 0 0 8px #000, 0 0 3px #000; pointer-events: none; display: none; animation: smArr .6s infinite alternate; }
+  @keyframes smArr { to { filter: brightness(1.6); } }
+  .sm-brief { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 28px)); box-sizing: border-box; padding: 18px; border-radius: 10px; background: rgba(14,4,8,.94); border: 2px solid #e8c560; text-align: center; z-index: 9; }
+  .sm-brief .k { font: italic 12px Georgia, serif; color: #c8b8a0; } .sm-brief .t { font-size: 22px; font-weight: 900; color: #ffd040; margin: 4px 0 8px; } .sm-brief .d { font: 15px/1.45 Georgia, serif; color: #f4e8c8; margin-bottom: 14px; }
   .sm-top { position: absolute; top: calc(env(safe-area-inset-top,0px) + 8px); left: 8px; right: 8px; display: flex; align-items: flex-start; gap: 8px; pointer-events: none; }
   .sm-top .hp { width: min(40vw, 220px); } .sm-top .who { font-size: 12px; font-weight: 900; letter-spacing: .15em; text-shadow: 0 2px 2px #000; }
   .sm-top .bar { height: 12px; background: rgba(0,0,0,.6); border: 1px solid #5a2a2a; border-radius: 3px; overflow: hidden; margin-top: 3px; } .sm-top .bar.m { height: 6px; border-color: #5a4a1a; }
   .sm-top .hpb { display: block; height: 100%; background: linear-gradient(#e83a3a, #a01a1a); transition: width .15s; } .sm-top .hpb.low { animation: smLow .5s infinite alternate; }
   @keyframes smLow { to { filter: brightness(1.8); } }
   .sm-top .mb { display: block; height: 100%; background: linear-gradient(#ffe060, #c89a20); } .sm-top .mb.full { animation: smLow .35s infinite alternate; }
-  .sm-top .mid { flex: 1; text-align: center; } .sm-top .obj { font-size: 12px; text-shadow: 0 2px 2px #000; color: #f4e8c8; }
+  .sm-top .mid { flex: 1; text-align: center; } .sm-top .obj { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); max-width: calc(100vw - 24px); padding: 4px 12px; border-radius: 14px; background: rgba(0,0,0,.62); border: 1px solid #e8c56066; font: 700 13px/1.3 Georgia, serif; color: #fff3cf; text-align: center; } .sm-top .obj:empty { display: none; }
   .sm-top .bossbar { margin: 2px auto 0; width: min(60vw, 380px); } .sm-top .bossbar .bn { font-size: 13px; font-weight: 900; color: #ffb0b0; text-shadow: 0 2px 2px #000; }
   .sm-top .bossbar .bar { height: 10px; } .sm-top .bossbar i { display: block; height: 100%; background: linear-gradient(#ff7a2a, #b02a0a); }
   .sm-top .sc { text-align: right; min-width: 70px; } .sm-top .score { font-size: 18px; font-weight: 900; text-shadow: 0 2px 2px #000; } .sm-top .combo { font-size: 13px; color: #ffd040; font-weight: 900; text-shadow: 0 0 8px #ff8000; }
   .sm-top .pause { pointer-events: auto; width: 36px; height: 36px; border-radius: 50%; border: 1px solid #fff4; background: rgba(0,0,0,.45); color: #fff; font-size: 14px; }
-  .sm-joy { position: absolute; width: 0; height: 0; display: none; } .sm-joy.on { display: block; }
+  .sm-joy { position: absolute; width: 0; height: 0; left: 90px; top: calc(100% - 120px); opacity: .45; pointer-events: none; } .sm-joy.on { opacity: 1; }
+  @media (pointer: fine) { .sm-joy { display: none; } }
   .sm-joy .base { position: absolute; left: -55px; top: -55px; width: 110px; height: 110px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(0,0,0,.2); }
   .sm-joy .knob { position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,.55); }
   .sm-pad { position: absolute; right: calc(env(safe-area-inset-right,0px) + 10px); bottom: calc(env(safe-area-inset-bottom,0px) + 14px); width: 210px; height: 200px; }
@@ -1271,6 +1497,15 @@ function ensureCss() {
   .sm-dlg .face { width: 88px; height: 88px; border-radius: 6px; background: radial-gradient(circle at 50% 40%, #5a2a2a, #1a0608); flex: 0 0 88px; }
   .sm-dlg .m { flex: 1; min-width: 0; } .sm-dlg .n { font-weight: 900; color: #ff9aa8; font-size: 16px; } .sm-dlg .n small { font-family: Georgia, serif; font-weight: 400; color: #c8b8a0; font-size: 12px; margin-left: 6px; }
   .sm-dlg .t { font-family: Georgia, serif; font-size: 16px; line-height: 1.35; min-height: 44px; margin-top: 2px; } .sm-dlg.narr .t { font-style: italic; color: #e8d8b8; text-align: center; }
+  .sm-dlg .opts { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; } .sm-dlg .opts:empty { display: none; }
+  .sm-dlg .opt { text-align: left; padding: 9px 11px; border-radius: 6px; border: 1px solid #c8a043; background: linear-gradient(#3a2410, #241406); color: #fff3cf; font: 700 14px/1.25 Georgia, serif; }
+  .sm-dlg .opt:active { background: #6a1a2a; } .sm-dlg.choosing .h { display: none; } .sm-dlg.choosing .skip { display: none; }
+  .sm-dlg.choosing { bottom: calc(9vh + 4px); }
+  .sm-menu .sm-row2 { display: flex; gap: 8px; justify-content: center; max-width: 560px; margin: 14px auto 0; flex-wrap: wrap; }
+  .sm-menu .sm-quote { min-height: 36px; max-width: 520px; margin: 8px auto 0; text-align: center; font: italic 14px/1.35 Georgia, serif; color: #f4e8c8; }
+  .sm-talks { display: flex; flex-direction: column; gap: 6px; max-width: 560px; margin: 0 auto; }
+  .sm-talk { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid #6a2030; background: #1a0a0e; color: #fff; text-align: left; font-size: 14px; }
+  .sm-talk small { color: #c8b8a0; font-family: Georgia, serif; } .sm-talk.locked { opacity: .45; }
   .sm-dlg .h { font-size: 11px; color: #e8c560; text-align: right; } .sm-dlg .skip { position: absolute; top: -34px; right: 0; padding: 5px 10px; border-radius: 6px; border: 1px solid #fff4; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; }
   /* Resultado */
   .sm-result { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(8,2,4,.82); z-index: 8; padding: 20px; text-align: center; }
@@ -1279,6 +1514,8 @@ function ensureCss() {
   .sm-result .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; font-family: Georgia, serif; font-size: 15px; } .sm-result .stats b { color: #ffd040; margin-left: 6px; }
   .sm-result .new { margin-top: 12px; color: #ffd040; font-weight: 700; }
   .sm-result.dead .h { color: #ff6a6a; }
+  .sm-result .ending { margin-top: 12px; padding: 10px 14px; border: 1px solid #e8c560; border-radius: 8px; background: rgba(40,20,4,.7); max-width: 460px; }
+  .sm-result .ending .en { font-weight: 900; color: #ffd040; letter-spacing: .08em; } .sm-result .ending .et { font: italic 15px/1.35 Georgia, serif; margin: 4px 0; } .sm-result .ending .ec { font: 12px Georgia, serif; color: #c8b8a0; }
   `;
   document.head.appendChild(s);
 }
