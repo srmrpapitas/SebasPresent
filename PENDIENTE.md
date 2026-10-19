@@ -22,6 +22,13 @@
 6. [ ] **Pueblos vacíos**: lore y cosas que hacer en cada pueblo; edificios en los que entrar con NPC dentro
        (tabernas, herreros, casas con historia, misiones cortas). Empezar por los pueblos principales.
 7. [ ] Dejarlo todo impecable: probar en móvil y PC antes de cada push, un commit por arreglo.
+8. [ ] **Jugabilidad (pedido 19 oct, 09:02 — lo primero ahora)**: partida de prueba completa en móvil y PC como
+       jugador nuevo y como nivel alto; apuntar y arreglar todo lo que se sienta lento, confuso o roto
+       (andar, tocar objetivos, combate, botín, mochila, banco, diálogos, cámara). Probar PvP/duelo con 2 clientes.
+9. [ ] **Aventureros (bots que parecen jugadores)** (pedido 19 oct): cuando hay alguien conectado, que se vean
+       «jugadores» con nombre haciendo cosas (andar entre pueblos, talar, pescar, pelear con monstruos, hablar con
+       NPC, chatear poco). Simulados en el CLIENTE (cero coste de servidor), deterministas por hora para que dos
+       jugadores en el mismo sitio vean lo mismo, cerca del jugador, sin bloquear ni robar monstruos ni botín.
 
    - [x] (19 oct) La Laguna: **Taberna La Vieja Aguere** (Fefo vende comida, Don Pancho cuenta la historia de La Laguna,
      Chago el del timple) + misión «El vino que no llegó». Santa Cruz: **Herrería del Muelle** (Maestro Chano cuenta la
