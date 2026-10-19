@@ -57,6 +57,14 @@ server/handlers/
 - `character.js`: `ATTACK_TICK_MS = 600` — escala los Sword_Attack para que duren ese tiempo.
 - **Si cambias uno, cambia los tres.**
 
+### 1.1b Ritmo del combate (19 oct)
+- Cliente (`combat.js`): el golpe se ANIMA al enviarlo (`optimisticSwing`) y el siguiente se programa
+  desde el envío del anterior (`nextTickDelay`), no desde la respuesta.
+- Servidor (`combat_engine.js`): `ATTACK_GRACE_MS = 150` — acepta el golpe hasta 150 ms antes, pero lo
+  apunta en `anterior + cooldown` (`attackStamp`, `GATE_SQL`). Nunca se pega más rápido de media.
+- `attackNpc`/`attackPlayer` hacen las lecturas independientes con `Promise.all` (mismas consultas,
+  menos viajes a la D1). Si añades una lectura, métela en ese `Promise.all` si no depende de otra.
+
 ### 1.2 Threshold de tap táctil (INTOCABLES)
 - `input.js`: `TAP_DRAG_THRESHOLD = 8px`, `LONG_PRESS_MS = 320ms`.
 - **NO los toques sin verificar primero con `console.log` que `doCanvasTap` se llama o no.**

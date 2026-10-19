@@ -515,6 +515,26 @@ function defMultOf(eq, stanceKey) {
   return ((64 + (eq?.def || 0)) / 64) * (1 + (st.defense_bonus || 0));
 }
 
+// 19 oct — RITMO DEL COMBATE. El cliente manda el siguiente golpe justo al
+// acabar el cooldown contado desde que ENVIÓ el anterior (no desde que le
+// llegó la respuesta). Por la red, a veces llega unos ms antes de tiempo:
+// se acepta hasta ATTACK_GRACE_MS antes, pero el golpe queda apuntado en
+// "anterior + cooldown" (no en "ahora"), así nadie pega más rápido de media.
+const ATTACK_GRACE_MS = 150;
+function attackStamp(last, now, cooldownMs) {
+  return (last && now - last < cooldownMs) ? last + cooldownMs : now;
+}
+function onCooldown(last, now, cooldownMs) {
+  return !!last && (now - last) < cooldownMs - ATTACK_GRACE_MS;
+}
+// Cerrojo atómico (una sola petición gana cada golpe): params en el mismo orden
+const GATE_SQL = `UPDATE combat_stats
+   SET last_attack_at = CASE WHEN last_attack_at IS NOT NULL AND last_attack_at > ? THEN last_attack_at + ? ELSE ? END
+ WHERE user_id = ? AND hp_current > 0 AND (last_attack_at IS NULL OR last_attack_at <= ?)`;
+function gateParams(userId, now, cooldownMs) {
+  return [now - cooldownMs, cooldownMs, now, userId, now - cooldownMs + ATTACK_GRACE_MS];
+}
+
 function dist(ax, az, bx, bz) {
   const dx = ax - bx, dz = az - bz;
   return Math.sqrt(dx * dx + dz * dz);
@@ -842,10 +862,11 @@ async function mirrorCombatXpToUserSkills(db, userId, stats, now, gained = null,
     cols = Object.entries(gained).filter(([, v]) => v > 0).map(([k]) => GAIN_TO_COL[k]).filter(c => c && COMBAT_SKILL_MAP[c]);
     if (!cols.length) return;
   }
-  for (const combatCol of cols) {
+  // 19 oct — una escritura por habilidad, todas a la vez (antes en fila)
+  await Promise.all(cols.map(async (combatCol) => {
     const skillId = COMBAT_SKILL_MAP[combatCol];
     const xp = stats[combatCol];
-    if (typeof xp !== 'number' || xp < 0) continue;
+    if (typeof xp !== 'number' || xp < 0) return;
     // Si user_skills ya tiene XP >= xp, no se escribe nada (preserva XP de
     // otras fuentes como /api/skills/grant). Si tiene menos, se sube.
     await db.run(
@@ -857,7 +878,7 @@ async function mirrorCombatXpToUserSkills(db, userId, stats, now, gained = null,
        WHERE excluded.xp > user_skills.xp`,
       [userId, skillId, xp, now]
     );
-  }
+  }));
 }
 
 // ============================================================
@@ -1049,17 +1070,21 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const rng = opts.rng || Math.random;
   const now = opts.now || Date.now();
 
-  const stats = await dbGetUserStats(db, userId);
+  // 19 oct — las lecturas independientes van A LA VEZ (antes, una detrás de
+  // otra: ~8 viajes a la D1 por golpe → el golpe tardaba en llegar). Mismas
+  // consultas, mismo gasto; solo cambia el orden.
+  const userEqP = getEquipBonuses(db, userId);   // se usa más abajo (no lanza)
+  const [stats, npc, posT, style, weaponType, weaponItemId] = await Promise.all([
+    dbGetUserStats(db, userId),
+    dbGetNpcInstance(db, npcInstanceId),
+    // Sesión 27/51 — posición del cliente si está cerca de la del servidor
+    trustedAttackerPos(db, userId, opts.userPos),
+    dbGetUserCombatStyle(db, userId),
+    getUserWeaponType(db, userId),
+    getUserWeaponItemId(db, userId),   // Sesión 50
+  ]);
   const stats0 = { ...stats };   // Sesión 51 — para escribir DIFERENCIAS (no valores absolutos)
-  const npc = await dbGetNpcInstance(db, npcInstanceId);
-  // Sesión 27 — Si el cliente envía su posición actual en el request
-  // (opts.userPos), la usamos directamente. Esto elimina el bug "fuera
-  // de alcance" causado por el desfase entre heartbeat (500ms) y el
-  // movimiento real del player (hasta 5.6m en ese intervalo a velocidad
-  // de run boost). Fallback a la pos persistida si el cliente no la
-  // manda (compatibilidad con clientes antiguos).
-  const userPos = (await trustedAttackerPos(db, userId, opts.userPos))?.pos || null;   // Sesión 51
-  const style = await dbGetUserCombatStyle(db, userId);
+  const userPos = posT?.pos || null;
 
   if (!npc) return { error: 'npc_not_found' };
   if (npc.status !== 0) return { error: 'npc_dead' };
@@ -1069,7 +1094,6 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   //   cooldownMs = ATTACK_SPEEDS[weapon] × STANCE_MODIFIERS[stance].speed_mult
   // El staff y 2H son lentos; bow y 1H son rápidos. Smash es +5% lento,
   // slash es -10% rápido. Estos compounean multiplicativamente.
-  const weaponType = await getUserWeaponType(db, userId);
   // Sesión 41 — MAGIA solo si el cliente manda un hechizo (opts.spellId). Como
   // en OSRS: el staff puede pegar a melee (golpe con el palo → XP Ataque/Fuerza)
   // O lanzar un hechizo (→ XP de Magia, a distancia). Hasta que exista el
@@ -1077,9 +1101,10 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // magia aunque tengas staff.
   const isMagic = (weaponType === 'staff') && !!opts.spellId;
   const spell = isMagic ? magic.getSpell(opts.spellId) : null;
-  const weaponItemId = await getUserWeaponItemId(db, userId);   // Sesión 50
-  const robe = isMagic ? await getUserRobeBonus(db, userId) : { hit: 0, mana: 0 };   // Sesión 52 — túnicas
-  const staffMagicBonus = (STAFF_MAGIC_BONUS[weaponItemId] || 0) + (isMagic ? CAPE_MAGIC_BONUS[await getUserCapeId(db, userId)] || 0 : 0) + robe.hit;   // Sesión 51 — capas de mago
+  const [robe, capeId] = isMagic
+    ? await Promise.all([getUserRobeBonus(db, userId), getUserCapeId(db, userId)])   // Sesión 52 — túnicas
+    : [{ hit: 0, mana: 0 }, null];
+  const staffMagicBonus = (STAFF_MAGIC_BONUS[weaponItemId] || 0) + (isMagic ? CAPE_MAGIC_BONUS[capeId] || 0 : 0) + robe.hit;   // Sesión 51 — capas de mago
   const staffManaBonus = STAFF_MANA_BONUS + (STAFF_MANA_EXTRA[weaponItemId] || 0) + robe.mana;
   if (isMagic && !spell) return { error: 'invalid_spell', weapon_type: weaponType };
   if (isMagic && spell.kind) return { error: 'self_spell', weapon_type: weaponType };   // Sesión 50 — se lanzan aparte
@@ -1088,7 +1113,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
   const cooldownMs = Math.round(baseSpeed * stanceMods.speed_mult);
 
-  if (stats.last_attack_at && (now - stats.last_attack_at) < cooldownMs) {
+  if (onCooldown(stats.last_attack_at, now, cooldownMs)) {
     return {
       error: 'on_cooldown',
       cooldown_remaining_ms: cooldownMs - (now - stats.last_attack_at),
@@ -1147,16 +1172,13 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // Sesión 51 — CERROJO del cooldown: solo UNA petición gana cada golpe.
   // Antes, 8 ataques enviados a la vez pasaban todos (8 golpes, 8 muertes,
   // 8 botines). Ahora el primero marca last_attack_at y el resto no pasa.
-  const gate = await db.run(
-    `UPDATE combat_stats SET last_attack_at = ?
-      WHERE user_id = ? AND hp_current > 0 AND (last_attack_at IS NULL OR last_attack_at <= ?)`,
-    [now, userId, now - cooldownMs]
-  );
+  const stamp = attackStamp(stats0.last_attack_at, now, cooldownMs);   // 19 oct
+  const gate = await db.run(GATE_SQL, gateParams(userId, now, cooldownMs));
   if (!gate?.meta?.changes) {
     return { error: 'on_cooldown', cooldown_remaining_ms: cooldownMs, cooldown_ms: cooldownMs, weapon_type: weaponType };
   }
   const releaseGate = async () => {   // si al final no se ataca (sin flechas…), devolver el turno
-    try { await db.run('UPDATE combat_stats SET last_attack_at = ? WHERE user_id = ? AND last_attack_at = ?', [stats0.last_attack_at ?? null, userId, now]); } catch {}
+    try { await db.run('UPDATE combat_stats SET last_attack_at = ? WHERE user_id = ? AND last_attack_at = ?', [stats0.last_attack_at ?? null, userId, stamp]); } catch {}
   };
 
   let totalRangedBonus = 0;
@@ -1197,7 +1219,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   // ---- User hit ----
   const userFx = prayerFx(stats, now);                  // Sesión 50 — plegarias
   const userLvls = boostLvls(levelsOf(stats), userFx);
-  const userEq = await getEquipBonuses(db, userId);   // Sesión 50
+  const userEq = await userEqP;   // Sesión 50 (pedido arriba, a la vez que lo demás)
   // Sesion 46 — restaurado el SPECIAL ATTACK en attackNpc (se habia perdido
   // al regenerar el engine para el quiver). Mismo patron que attackPlayer:
   // valida energia, hace DOS rolls independientes, descuenta la barra.
@@ -1392,7 +1414,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     } catch (err) { console.warn('[combat] kc (¿falta la migración 024?):', err?.message); }
   }
 
-  stats.last_attack_at = now;
+  stats.last_attack_at = stamp;   // 19 oct — ver attackStamp
 
   // ---- NPC counter-attack ----
   let npcCounterHit = null;
@@ -1478,7 +1500,8 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   const dxp = (k) => Math.max(0, (stats[k] || 0) - (stats0[k] || 0));
   const hpMaxNow = levelFromXp(stats.hp_xp || 0);
   const hpDelta = (stats.hp_current | 0) - (stats0.hp_current | 0);
-  try {
+  // 19 oct — las tres escrituras finales son independientes: van a la vez.
+  const persistUser = async () => { try {
     await db.run(
       `UPDATE combat_stats
        SET attack_xp = attack_xp + ?, strength_xp = strength_xp + ?, defence_xp = defence_xp + ?, hp_xp = hp_xp + ?,
@@ -1518,28 +1541,24 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
     } else {
       throw err;
     }
-  }
+  } };
 
   // Sesión 16 — Mirror al user_skills tras cada attackNpc. Si hubo XP,
   // se replica; si no hubo (miss total), igual mirroreamos por seguridad
   // (es idempotente y barato).
-  try {
-    await mirrorCombatXpToUserSkills(db, userId, stats, now, xpGained);
-  } catch (err) {
-    console.error('[combat/attack] mirror failed:', err);
-  }
+  const mirror = mirrorCombatXpToUserSkills(db, userId, stats, now, xpGained)
+    .catch(err => console.error('[combat/attack] mirror failed:', err));
 
   // ---- Log ----
   // Sesión 51 — los golpes jugador→monstruo ya no se registran: nadie los
   // lee y costaban 2 escrituras D1 por golpe (fila + índice). El registro
   // monstruo→jugador sí (lo usa el auto-contraataque del snapshot).
-  if (npcCounterHit) {
-    await db.run(
+  const logHit = !npcCounterHit ? null : db.run(
       `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
        VALUES (?, 1, ?, 0, ?, ?, ?, ?)`,
       [now, npc.id, userId, dmgToUser, npcCounterHit.hit ? 1 : 0, userKilled ? 1 : 0]
     );
-  }
+  await Promise.all([persistUser(), mirror, logHit]);
 
   return {
     your_hit: userHit.hit,
@@ -1628,8 +1647,22 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // Sesión 51 — que el objetivo exista (si no, se creaba su fila de stats y
   // fallaba la clave externa → error 500)
   if (!(await db.first('SELECT 1 AS ok FROM users WHERE id = ?', [targetId]))) return { error: 'target_not_found' };
-  const attackerStats = await dbGetUserStats(db, attackerId);
-  const targetStats   = await dbGetUserStats(db, targetId);
+  // 19 oct — lecturas independientes a la vez (antes ~12 viajes seguidos a la D1)
+  const pvpPartyP = Promise.all([
+    db.first(`SELECT party_id FROM party_members WHERE user_id = ?`, [attackerId]),
+    db.first(`SELECT party_id FROM party_members WHERE user_id = ?`, [targetId]),
+  ]).catch(() => [null, null]);   // tabla sin crear → PvP libre
+  const pvpEqP = Promise.all([getEquipBonuses(db, attackerId), getEquipBonuses(db, targetId)]);
+  const [attackerStats, targetStats, attackerTrusted, targetPosServer, weaponType, attackerStyle, weaponItemIdPvp, targetStyleRead] = await Promise.all([
+    dbGetUserStats(db, attackerId),
+    dbGetUserStats(db, targetId),
+    trustedAttackerPos(db, attackerId, opts.userPos),   // Sesión 51
+    dbGetUserPosition(db, targetId),
+    getUserWeaponType(db, attackerId),
+    dbGetUserCombatStyle(db, attackerId),
+    getUserWeaponItemId(db, attackerId),   // Sesión 50
+    dbGetUserCombatStyle(db, targetId),
+  ]);
   if (!attackerStats) return { error: 'attacker_not_found' };
   if (!targetStats)   return { error: 'target_not_found' };
   const attacker0 = { ...attackerStats }, target0 = { ...targetStats };   // Sesión 51 — para escribir diferencias
@@ -1641,29 +1674,17 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // Lectura defensiva: si party_members no existe (migración no corrida),
   // la query falla silenciosamente y se permite el attack (comportamiento
   // pre-Party).
-  try {
-    const attackerParty = await db.first(
-      `SELECT party_id FROM party_members WHERE user_id = ?`, [attackerId]
-    );
-    if (attackerParty?.party_id != null) {
-      const targetParty = await db.first(
-        `SELECT party_id FROM party_members WHERE user_id = ?`, [targetId]
-      );
-      if (targetParty?.party_id === attackerParty.party_id) {
-        return { error: 'same_party' };
-      }
+  {
+    const [attackerParty, targetParty] = await pvpPartyP;
+    if (attackerParty?.party_id != null && targetParty?.party_id === attackerParty.party_id) {
+      return { error: 'same_party' };
     }
-  } catch {
-    // tabla no existe → ignorar, PVP libre
   }
 
   // -------- Posiciones --------
   // Atacante: usar pos del cliente (fresca). Fallback a persistida.
-  const attackerTrusted = await trustedAttackerPos(db, attackerId, opts.userPos);   // Sesión 51
   const attackerPos = attackerTrusted?.pos || null;
-
-  // Target: pos PERSISTIDA en el server (la "verdad").
-  const targetPosServer = await dbGetUserPosition(db, targetId);
+  // Target: pos PERSISTIDA en el server (la "verdad") → targetPosServer (leída arriba).
 
   if (!attackerPos)      return { error: 'user_no_position' };
   if (!targetPosServer)  return { error: 'target_no_position' };
@@ -1745,14 +1766,12 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   }
 
   // -------- Cooldown attacker --------
-  const weaponType = await getUserWeaponType(db, attackerId);
-  const attackerStyle = await dbGetUserCombatStyle(db, attackerId);
   const stanceKey = STYLE_TO_STANCE[attackerStyle] || 'smash';
   const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
   const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
   const cooldownMs = Math.round(baseSpeed * stanceMods.speed_mult);
 
-  if (attackerStats.last_attack_at && (now - attackerStats.last_attack_at) < cooldownMs) {
+  if (onCooldown(attackerStats.last_attack_at, now, cooldownMs)) {
     return {
       error: 'on_cooldown',
       cooldown_remaining_ms: cooldownMs - (now - attackerStats.last_attack_at),
@@ -1786,22 +1805,18 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   // Sesión 51 — CERROJO del cooldown (igual que contra monstruos): varias
   // peticiones a la vez ya no dan varios golpes en el mismo turno.
-  const gatePvp = await db.run(
-    `UPDATE combat_stats SET last_attack_at = ?
-      WHERE user_id = ? AND hp_current > 0 AND (last_attack_at IS NULL OR last_attack_at <= ?)`,
-    [now, attackerId, now - cooldownMs]
-  );
+  const stampPvp = attackStamp(attacker0.last_attack_at, now, cooldownMs);   // 19 oct
+  const gatePvp = await db.run(GATE_SQL, gateParams(attackerId, now, cooldownMs));
   if (!gatePvp?.meta?.changes) {
     return { error: 'on_cooldown', cooldown_remaining_ms: cooldownMs, cooldown_ms: cooldownMs, weapon_type: weaponType };
   }
   // si al final no se ataca (sin energía, flechas o maná), devolver el turno
   const releasePvp = async (res) => {
-    try { await db.run('UPDATE combat_stats SET last_attack_at = ? WHERE user_id = ? AND last_attack_at = ?', [attacker0.last_attack_at ?? null, attackerId, now]); } catch {}
+    try { await db.run('UPDATE combat_stats SET last_attack_at = ? WHERE user_id = ? AND last_attack_at = ?', [attacker0.last_attack_at ?? null, attackerId, stampPvp]); } catch {}
     return res;
   };
 
   // -------- Spec: validar energia ANTES de consumir flechas --------
-  const weaponItemIdPvp = await getUserWeaponItemId(db, attackerId);   // Sesión 50
   const specDefPvp = specialOf(weaponItemIdPvp);                      // Sesión 51
   const specCostPvp = specDefPvp ? specDefPvp.cost : null;
   let specActivePvp = false;
@@ -1861,9 +1876,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const attackerLvls = boostLvls(levelsOf(attackerStats), attackerFx);
   const targetLvls   = boostLvls(levelsOf(targetStats), targetFx);
   // Sesión 50 — bonus de equipo de ambos + estilo defensivo del target.
-  const attackerEq = await getEquipBonuses(db, attackerId);
-  const targetEq   = await getEquipBonuses(db, targetId);
-  const targetStanceKey = STYLE_TO_STANCE[await dbGetUserCombatStyle(db, targetId)] || 'smash';
+  const [attackerEq, targetEq] = await pvpEqP;   // 19 oct — pedidas arriba
+  const targetStanceKey = STYLE_TO_STANCE[targetStyleRead] || 'smash';
   const targetDefMult   = defMultOf(targetEq, targetStanceKey);
   const attackerDefMult = defMultOf(attackerEq, stanceKey);
 
@@ -2038,7 +2052,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         attackerStats.hp_current = attackerHpAfter;
       }
       // Target gana XP de defensa por el contraataque (usa su style si lo tiene)
-      const targetStyle = await dbGetUserCombatStyle(db, targetId);
+      const targetStyle = targetStyleRead;   // 19 oct — ya leído arriba
       awardXp(targetStats, dmgToAttacker, targetStyle);
       targetStats.last_attack_at = now;
 
@@ -2072,7 +2086,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     } catch {}
   }
 
-  attackerStats.last_attack_at = now;
+  attackerStats.last_attack_at = stampPvp;   // 19 oct — ver attackStamp
 
   // -------- Persist attacker --------
   const specAfterPvp    = specActivePvp ? (specEnergyNowPvp - specCostPvp) : null;
@@ -2179,27 +2193,24 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   }
 
   // Mirror XP a user_skills (para que stats tab muestre niveles actualizados)
-  try {
-    await mirrorCombatXpToUserSkills(db, attackerId, attackerStats, now);
-    await mirrorCombatXpToUserSkills(db, targetId, targetStats, now);
-  } catch (err) {
-    console.error('[combat/pvp] mirror failed:', err);
-  }
-
-  // -------- Combat log --------
-  // attacker_type = 0 (player), target_type = 0 (player)
-  await db.run(
-    `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
-     VALUES (?, 0, ?, 0, ?, ?, ?, ?)`,
-    [now, attackerId, targetId, dmgToTarget, userHit.hit ? 1 : 0, targetKilled ? 1 : 0]
-  );
-  if (targetCounterHit) {
-    await db.run(
+  // 19 oct — espejo de XP y registro: independientes, a la vez
+  await Promise.all([
+    Promise.all([
+      mirrorCombatXpToUserSkills(db, attackerId, attackerStats, now),
+      mirrorCombatXpToUserSkills(db, targetId, targetStats, now),
+    ]).catch(err => console.error('[combat/pvp] mirror failed:', err)),
+    // -------- Combat log -------- attacker_type = 0 (player), target_type = 0 (player)
+    db.run(
+      `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
+       VALUES (?, 0, ?, 0, ?, ?, ?, ?)`,
+      [now, attackerId, targetId, dmgToTarget, userHit.hit ? 1 : 0, targetKilled ? 1 : 0]
+    ),
+    targetCounterHit ? db.run(
       `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
        VALUES (?, 0, ?, 0, ?, ?, ?, ?)`,
       [now, targetId, attackerId, dmgToAttacker, targetCounterHit.hit ? 1 : 0, attackerKilled ? 1 : 0]
-    );
-  }
+    ) : null,
+  ]);
 
   return {
     at:            now,   // Sesión 50 — = last_hit_at del objetivo (evento en tiempo real)

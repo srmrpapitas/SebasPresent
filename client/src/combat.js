@@ -339,6 +339,33 @@ export function disengage() {
   if (isTabOpen) render();
 }
 
+// 19 oct — RITMO OSRS. (1) El golpe se anima al ENVIARLO, no al recibir la
+// respuesta (la ida y vuelta desde Canarias + la D1 se notaba como "tarda en
+// pegar"); el número sale al llegar la respuesta, como un golpe que conecta.
+// (2) El siguiente golpe se programa desde que se ENVIÓ el anterior (antes:
+// cooldown + ida y vuelta → cada golpe ~0,3–0,6 s más lento de la cuenta).
+// El servidor acepta hasta 150 ms antes por las diferencias de la red.
+let lastSwingSentAt = 0;
+let lastCooldownMs = 0;
+function optimisticSwing() {
+  if (specArmed) return false;   // el especial tiene su propia coreografía
+  const now = performance.now();
+  if (lastCooldownMs && now - lastSwingSentAt < lastCooldownMs - 150) return false;
+  try {
+    if (typeof window === 'undefined' || typeof window.__playerPlayAttack !== 'function') return false;
+    const wt = equipment.getWeaponType?.() || 'unarmed';
+    const spellId = wt === 'staff' ? (spellbook.getSelectedSpellId?.() || null) : null;
+    window.__playerPlayAttack(uiSelectedStance, wt, lastCooldownMs || TICK_MS, spellId);
+    return true;
+  } catch { return false; }
+}
+function nextTickDelay(result, sentAt) {
+  const cd = (result && typeof result.cooldown_ms === 'number') ? result.cooldown_ms : TICK_MS;
+  lastCooldownMs = cd;
+  lastSwingSentAt = sentAt;
+  return Math.max(0, cd - (performance.now() - sentAt));
+}
+
 async function doAttackTick(gen = attackGen) {
   // Sesión 39 — si la generación cambió (otro engage/disengage ocurrió),
   // este tick es de un target viejo: abortar sin atacar ni reprogramar.
@@ -370,12 +397,16 @@ async function doAttackTickNpc(gen = attackGen) {
 
   const npcId = currentTargetNpcId;
   let result;
+  let sentAt = performance.now(), swung = false;
+  const led = (ms) => swung ? Math.max(0, ms - (performance.now() - sentAt)) : ms;   // 19 oct
   try {
     let pos = null;
     try {
       const p = window.__getPlayerPosition?.();
       if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pos = p;
     } catch {}
+    sentAt = performance.now();
+    swung = optimisticSwing();
     result = await api.attackNpc(npcId, pos, spellbook.getSelectedSpellId?.(), specArmed);
     try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en combate
   } catch (err) {
@@ -458,7 +489,7 @@ async function doAttackTickNpc(gen = attackGen) {
   let specDelay = 0;
   if (result.special) {
     try { specDelay = runSpecialVisuals(result, npc ? { x: npc.x, y: 0, z: npc.z } : null, () => window.__getNpcPosition?.(npcId)); } catch (e) { console.warn('[combat] spec fx', e); }
-  } else if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
+  } else if (!swung && typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {   // 19 oct — si no se animó ya al enviar
     try {
       const animResult = window.__playerPlayAttack(
         uiSelectedStance,
@@ -488,7 +519,7 @@ async function doAttackTickNpc(gen = attackGen) {
           window.__worldFireProjectile(
             { x: playerPos.x, y: 0, z: playerPos.z },
             { x: npc.x, y: 0, z: npc.z },
-            { type: 'spell', color: spellCast.color, spellId: spellCast.spell_id, targetNpcId: npcId, windupMs: 250 }
+            { type: 'spell', color: spellCast.color, spellId: spellCast.spell_id, targetNpcId: npcId, windupMs: led(250) }
           );
           // Sesión 50 — hechizo de área: la explosión salta a los de alrededor
           for (const [i, h] of (spellCast.area || []).entries()) {
@@ -522,13 +553,13 @@ async function doAttackTickNpc(gen = attackGen) {
         const from = { x: playerPos.x, y: 0, z: playerPos.z }, to = { x: npc.x, y: 0, z: npc.z };
         if (result.special?.dragon) {
           // Sesión 50 — Aliento del dragón: dos cabezas de dragón en llamas
-          window.__worldFireProjectile(from, to, { type: 'dragonhead', targetNpcId: npcId, windupMs: 200 });
-          window.__worldFireProjectile(from, to, { type: 'dragonhead', targetNpcId: npcId, windupMs: 430, arcHeight: 0.9 });
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', targetNpcId: npcId, windupMs: led(200) });
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', targetNpcId: npcId, windupMs: led(430), arcHeight: 0.9 });
           try { audio.synth?.('altar', { volume: 0.9, pitch: 0.55 }); } catch {}
         } else {
-          window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 });
+          window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: led(200) });
           if (result.special?.fx === 'snapshot')   // Sesión 51 — Disparo rápido: 2ª flecha
-            window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 330, arcHeight: 0.35 });
+            window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: led(330), arcHeight: 0.35 });
         }
       }
     } catch {}
@@ -556,7 +587,7 @@ async function doAttackTickNpc(gen = attackGen) {
         window.__worldFireProjectile(
           { x: playerPos2.x, y: 0, z: playerPos2.z },
           { x: npc.x, y: 0, z: npc.z },
-          { type: 'arrow', arrowItemId: result.special.second_arrow.item_id, windupMs: 380 }
+          { type: 'arrow', arrowItemId: result.special.second_arrow.item_id, windupMs: led(380) }
         );
       }
     } catch {}
@@ -712,9 +743,7 @@ async function doAttackTickNpc(gen = attackGen) {
     return;
   }
 
-  const nextTickMs = (result && typeof result.cooldown_ms === 'number')
-    ? result.cooldown_ms
-    : TICK_MS;
+  const nextTickMs = nextTickDelay(result, sentAt);   // 19 oct — desde el envío
   if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), nextTickMs);
 }
 
@@ -737,6 +766,8 @@ async function doAttackTickPlayer(gen = attackGen) {
 
   const targetId = currentTargetPlayerId;
   let result;
+  let sentAt = performance.now(), swung = false;
+  const led = (ms) => swung ? Math.max(0, ms - (performance.now() - sentAt)) : ms;   // 19 oct
   try {
     let pos = null;
     try {
@@ -750,6 +781,8 @@ async function doAttackTickPlayer(gen = attackGen) {
     try {
       targetVisualPos = multiplayer.getPeerVisualPosition?.(targetId);
     } catch {}
+    sentAt = performance.now();
+    swung = optimisticSwing();
     result = await api.attackPlayer(targetId, pos, targetVisualPos,
       spellbook.getSelectedSpellId?.(), specArmed);
     try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en PvP
@@ -839,7 +872,7 @@ async function doAttackTickPlayer(gen = attackGen) {
       const pp = multiplayer.getPeerVisualPosition?.(targetId);
       specDelayPvp = runSpecialVisuals(result, pp ? { x: pp.x, y: 0, z: pp.z } : null, () => multiplayer.getPeerVisualPosition?.(targetId));
     } catch (e) { console.warn('[combat] spec fx pvp', e); }
-  } else if (typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {
+  } else if (!swung && typeof window !== 'undefined' && typeof window.__playerPlayAttack === 'function') {   // 19 oct
     try {
       const animResult = window.__playerPlayAttack(
         uiSelectedStance,
@@ -873,7 +906,7 @@ async function doAttackTickPlayer(gen = attackGen) {
           window.__worldFireProjectile(
             { x: playerPos.x, y: 0, z: playerPos.z },
             { x: peerPos.x, y: 0, z: peerPos.z },
-            { type: 'spell', color: spellCastPvp.color, spellId: spellCastPvp.spell_id, windupMs: 250 }
+            { type: 'spell', color: spellCastPvp.color, spellId: spellCastPvp.spell_id, windupMs: led(250) }
           );
         }
       } catch {}
@@ -888,12 +921,12 @@ async function doAttackTickPlayer(gen = attackGen) {
       if (playerPos && peerPos) {
         const from = { x: playerPos.x, y: 0, z: playerPos.z }, to = { x: peerPos.x, y: 0, z: peerPos.z };
         if (result.special?.dragon) {
-          window.__worldFireProjectile(from, to, { type: 'dragonhead', windupMs: 200 });
-          window.__worldFireProjectile(from, to, { type: 'dragonhead', windupMs: 430, arcHeight: 0.9 });
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', windupMs: led(200) });
+          window.__worldFireProjectile(from, to, { type: 'dragonhead', windupMs: led(430), arcHeight: 0.9 });
         } else {
-          window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 200 });
+          window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: led(200) });
           if (result.special?.fx === 'snapshot')
-            window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: 330, arcHeight: 0.35 });
+            window.__worldFireProjectile(from, to, { type: 'arrow', arrowItemId: result.arrow_consumed.item_id, windupMs: led(330), arcHeight: 0.35 });
         }
       }
     } catch {}
@@ -1020,9 +1053,7 @@ async function doAttackTickPlayer(gen = attackGen) {
   }
 
   // Siguiente tick
-  const nextTickMs = (result && typeof result.cooldown_ms === 'number')
-    ? result.cooldown_ms
-    : TICK_MS;
+  const nextTickMs = nextTickDelay(result, sentAt);   // 19 oct — desde el envío
   if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), nextTickMs);
 }
 
