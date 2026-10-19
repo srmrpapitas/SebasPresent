@@ -15,6 +15,9 @@ let el = null, acc = 0, started = false;
 let wonAt = 0;          // la vencieron en este evento
 let goneAt = 0;
 let lastStartSeen = 0;
+// 19 oct — el aviso ya no tapa la pantalla: se ve entero unos segundos y se
+// recoge en una pastilla pequeña (🌋 12 min) junto al minimapa. Tocándola se abre/cierra.
+let expandedUntil = 0, userOpen = false, lastKind = '';
 
 const now = () => (globalThis.__wevShift || 0) + (getServerNow?.() || Date.now());   // __wevShift: solo pruebas
 function fmtMin(ms) { const m = Math.max(0, Math.ceil(ms / 60_000)); return m <= 1 ? 'menos de 1 min' : `${m} min`; }
@@ -97,10 +100,17 @@ function render() {
   } else if (w.warning) {
     html = `🌋 El Teide retumba… ${cap(WORLD_EVENT.name)} despierta en <b>${fmtMin(w.msToNext)}</b> en ${WORLD_EVENT.place}`;
   }
+  const kind = w.active && isAlive() ? 'live' : w.warning ? 'warn' : '';
+  if (kind && kind !== lastKind) expandedUntil = Date.now() + 7000;   // cambia el estado → se enseña entero un momento
+  lastKind = kind;
   if (html) {
-    if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; }
+    const open = userOpen || Date.now() < expandedUntil;
+    const mins = kind === 'live' ? fmtMin(w.end - t) : fmtMin(w.msToNext);
+    const show = open ? html : `🌋 ${mins.replace('menos de 1 min', '<1 min')}`;
+    if (el.dataset.h !== show) { el.innerHTML = show; el.dataset.h = show; }
+    el.classList.toggle('mini', !open);
     el.style.display = '';
-  } else el.style.display = 'none';
+  } else { el.style.display = 'none'; userOpen = false; }
 }
 
 function bigTitle(title, sub) {
@@ -121,7 +131,7 @@ function ensureDom() {
     st.textContent = `
       .wev-banner { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
         z-index: 24; max-width: min(92vw, 520px); padding: 6px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.3;
-        color: #ffe9c0; text-align: center; pointer-events: none;
+        color: #ffe9c0; text-align: center; pointer-events: auto; cursor: pointer;
         background: linear-gradient(180deg, rgba(110,28,6,.92), rgba(60,14,4,.92)); border: 1px solid #ff8a40;
         box-shadow: 0 0 18px rgba(255,90,20,.45); animation: wevPulse 2.4s ease-in-out infinite; }
       .wev-banner b { color: #fff3c0; }
@@ -133,12 +143,18 @@ function ensureDom() {
       .wev-title .b { font-size: clamp(13px, 3.4vw, 18px); color: #ffe9c0; text-shadow: 0 2px 3px #000; margin-top: 4px; }
       @keyframes wevIn { from { opacity: 0; transform: translate(-50%, -50%) scale(1.4); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
       @keyframes wevPulse { 0%,100% { box-shadow: 0 0 12px rgba(255,90,20,.35); } 50% { box-shadow: 0 0 24px rgba(255,120,30,.7); } }
-      @media (max-width: 700px) { .wev-banner { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 230px); font-size: 11.5px; } }
+      .wev-banner.mini { padding: 4px 9px; border-radius: 14px; font-size: 12px; font-weight: 700; animation: none; box-shadow: 0 0 8px rgba(255,90,20,.4); }
+      @media (max-width: 700px) {
+        .wev-banner { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 196px); font-size: 11.5px; }
+        .wev-banner:not(.mini) { left: 8px; right: 8px; transform: none; max-width: none; }
+        .wev-banner.mini { left: auto; right: 8px; transform: none; }
+      }
     `;
     document.head.appendChild(st);
   }
   el = document.createElement('div');
   el.className = 'wev-banner';
   el.style.display = 'none';
+  el.addEventListener('pointerup', (e) => { e.stopPropagation(); userOpen = !(userOpen || Date.now() < expandedUntil); expandedUntil = 0; render(); });
   document.body.appendChild(el);
 }
