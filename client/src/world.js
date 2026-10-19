@@ -2228,7 +2228,18 @@ function injectAudioSettingsPanel() {
         flex: 1 1 auto;
         min-width: 0;
         accent-color: #c8a043;
+        height: 28px;   /* 19 oct — más fácil de tocar con el dedo */
       }
+      /* 19 oct — input.js pone touch-action:auto !important a los deslizadores
+         del panel; con eso el navegador se quedaba el gesto (pointercancel) y el
+         deslizador no seguía al dedo. Estos los movemos a mano (ver abajo). */
+      .osrs-sidebar .audio-row input[type="range"],
+      .audio-settings .audio-row input[type="range"] {
+        touch-action: none !important;
+        /* 19 oct — el deslizador salía de 24 px (solo la bolita): ahora ocupa toda la fila, debajo del nombre */
+        order: 3; flex: 1 1 100% !important; width: 100% !important; min-width: 0; margin: 2px 0 0;
+      }
+      .audio-settings .audio-row { flex-wrap: wrap; row-gap: 0; margin: 8px 0 10px; }
       .audio-row .audio-val {
         flex: 0 0 36px;
         text-align: right;
