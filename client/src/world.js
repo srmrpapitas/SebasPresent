@@ -162,7 +162,10 @@ let canvas = null;
 // Sesión 31 — cameraDist/Yaw/Pitch + savedDist/Pitch movidos a core/camera.js.
 // Se accede via cameraOrbital.getYaw() / .onDrag() / .pushInteriorOverrides() etc.
 
+const SPAWN_POINT = { x: 0, z: 9 };   // 19 oct — igual que SPAWN_X/Z del servidor
 let playerTarget = null;
+let lastMovedAt = 0;   // 19 oct
+if (typeof window !== 'undefined') window.__playerMovedRecently = (ms = 700) => performance.now() - lastMovedAt < ms;
 let joyState = { active: false, x: 0, y: 0 };
 
 let listeners = [];
@@ -483,6 +486,10 @@ export async function startWorld(loggedInUser, token) {
           player.position.z = pos.z;
           lastSavedX = pos.x;
           lastSavedZ = pos.z;
+        } else {
+          // 19 oct — jugador nuevo (o posición 0,0 vieja): delante de la torre, no dentro
+          player.position.x = SPAWN_POINT.x;
+          player.position.z = SPAWN_POINT.z;
         }
       } catch (err) {
         console.warn('Could not restore position:', err);
@@ -736,11 +743,13 @@ export async function startWorld(loggedInUser, token) {
       },
       onRespawn: () => {
         if (!player) return;
-        player.position.x = 0;
-        player.position.z = 0;
+        // 19 oct — (0, 9): delante de la torre de La Laguna. En (0, 0) aparecías
+        // DENTRO de la torre y la cámara solo enseñaba piedra.
+        player.position.x = SPAWN_POINT.x;
+        player.position.z = SPAWN_POINT.z;
         playerTarget = null;
         if (marker) marker.visible = false;
-        try { terrain.primeChunks(0, 0); } catch {}
+        try { terrain.primeChunks(SPAWN_POINT.x, SPAWN_POINT.z); } catch {}
       },
     });
 
@@ -3745,6 +3754,7 @@ function updatePlayer(dt) {
       }
     }
   }
+  if (isMoving) lastMovedAt = performance.now();   // 19 oct — para «devolver golpes» (no si vas huyendo)
   // Si no estamos lockeados al NPC y nos movemos, rotar a donde vamos
   if (!facingLockedToNpc && isMoving && (moveWx !== 0 || moveWz !== 0)) {
     player.rotation.y = Math.atan2(moveWx, moveWz);

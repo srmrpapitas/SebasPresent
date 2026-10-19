@@ -524,8 +524,11 @@ function handleIncomingHit(me) {
   try {
     if (typeof window.__feedLog === 'function' && damage > 0) {
       const fromId = me.last_hit_from_user_id;
-      const peer = lastSnapshot?.players?.find?.(p => p.user_id === fromId);
-      const attackerName = peer?.username || 'Otro jugador';
+      const peer = fromId != null ? lastSnapshot?.players?.find?.(p => p.user_id === fromId) : null;
+      // 19 oct — si te pega un monstruo (from = null) decir cuál, no «Otro jugador»
+      const la = me.last_attacker;
+      const npc = (fromId == null && la?.type === 1) ? lastSnapshot?.npcs?.find?.(n => n.id === la.id) : null;
+      const attackerName = peer?.username || npc?.name || (fromId == null ? 'Un monstruo' : 'Otro jugador');
       const isCrit = me.last_hit_is_crit === 1;
       const msg = isCrit
         ? `⚡ ¡${attackerName} te hace un CRÍTICO! ${damage} HP.`

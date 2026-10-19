@@ -182,7 +182,7 @@ const LOOT_TOTAL_LIFETIME_MS = 120_000;
 const DEATH_KEEP_TOP_N_SLOTS = 3;        // conserva los 3 slots más valiosos
 const DEATH_LOOT_LIFETIME_MS = 120_000;  // 2 minutos visible en el suelo
 const SPAWN_X = 0;                        // respawn point
-const SPAWN_Z = 0;
+const SPAWN_Z = 9;   // 19 oct — delante de la torre de La Laguna (en 0,0 aparecías dentro)
 
 // Sesión 27 Bloque 3 — Death drop PVP (más duro que PVE):
 //   - Conserva las TOP_N "unidades" más valiosas por unit_value (no slots).
@@ -2758,7 +2758,7 @@ const NPC_MOVE_SPEED_MPS = 2.55;  // m/s de persecución (Nico pidió subirlo un
 // El re-aggro por aggro_radius es absoluto y NUNCA se auto-cancela.
 const NPC_AGGRO_GIVEUP_M = 25.0; // si el JUGADOR se aleja > esto del NPC, se rinde
 const NPC_HOME_SNAP_M = 0.4;     // si está a menos de esto del spawn, ya está "en casa"
-const NPC_AI_MAX_STEP_MS = 400;   // cap del dt por tick (evita saltos si un poll tardó)
+const NPC_AI_MAX_STEP_MS = 1200;  // cap del dt por tick (evita saltos si un poll tardó). 19 oct: 400→1200 — con el WebSocket el snapshot en combate llega cada 1 s (3 s quieto) y el monstruo perseguía al 40 % de su velocidad
 // Sesión 39 — Wander (deambular) de NPCs pasivos (pollos/vacas).
 const WANDER_SPEED_MPS = 0.8;     // lento, tipo pastoreo
 const WANDER_RADIUS_M = 6.0;      // qué tan lejos del spawn deambula

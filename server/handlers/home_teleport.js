@@ -24,7 +24,7 @@ import { requireSession } from '../lib/auth.js';
 
 const HOME_TELE_COOLDOWN_MS = 15 * 60 * 1000;
 const HOME_TELE_CAST_MS = 10_000;
-const HOME_TELE_SPAWN = { x: 0, z: 0 };
+const HOME_TELE_SPAWN = { x: 0, z: 9 };   // 19 oct — delante de la torre (no dentro)
 const IN_COMBAT_MS = 8000;
 
 // Sesión 51 — mismas reglas que las tabletas y los hechizos de teletransporte:

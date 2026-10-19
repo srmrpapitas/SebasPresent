@@ -151,6 +151,11 @@ export function init() {
   } catch (e) { console.warn('[combat] death overlay hook:', e); }
 
   isInitialized = true;
+  // 19 oct — «Devolver golpes» SIEMPRE activo (no solo con la pestaña Combate
+  // abierta). Antes el bucle arrancaba en onOpen() y paraba en onClose(): con
+  // la mochila abierta (lo normal) tu personaje no respondía a los monstruos.
+  // No hace peticiones: solo mira el último snapshot.
+  startAutoRetaliateLoop();
 }
 
 export async function onOpen() {
@@ -274,7 +279,7 @@ function startPolling() {
 
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  stopAutoRetaliateLoop();
+  // 19 oct — el bucle de «devolver golpes» ya no se para al cerrar la pestaña
 }
 
 // ============================================================
@@ -1259,7 +1264,9 @@ function detectEquippedWeapon() {
 
 // Estado local de UI: stance seleccionada y auto-retaliate.
 let uiSelectedStance = null;
-let autoRetaliate = false;  // TODO: persistir cuando server lo soporte
+// 19 oct — encendido por defecto (como en OSRS) y recordado en este dispositivo.
+// Antes venía apagado: si un goblin te atacaba estando quieto, no le respondías.
+let autoRetaliate = (() => { try { return localStorage.getItem('sp_auto_retaliate') !== '0'; } catch { return true; } })();
 // Sesion 44 — special attack "armado": el proximo tick de ataque lo manda con
 // use_special=true. Se desarma al ejecutarse (o si el server rechaza por
 // energia). Estado local del cliente; el server es quien valida y descuenta.
@@ -1431,6 +1438,8 @@ function tryAutoRetaliate() {
   if (currentTargetNpcId !== null || currentTargetPlayerId !== null) return;
   // Estoy muerto → no atacar
   if (state?.stats?.hp_current === 0) return;
+  // 19 oct — como en OSRS: si vas andando (p. ej. huyendo) no te das la vuelta a pelear
+  try { if (window.__playerMovedRecently?.(700)) return; } catch {}
 
   const me = worldSnapshot.getMe?.();
   const atk = me?.last_attacker;
@@ -1664,6 +1673,8 @@ function attachHandlers() {
         // Sesión 18 — Auto Retaliate (local-only por ahora; cuando el server
         // soporte el flag, mandar POST /api/combat/retaliate).
         autoRetaliate = !autoRetaliate;
+        try { localStorage.setItem('sp_auto_retaliate', autoRetaliate ? '1' : '0'); } catch {}
+        feedLog('info', autoRetaliate ? '🛡 Devolver golpes: activado.' : 'Devolver golpes: desactivado.');
         clog('toggle-retaliate → autoRetaliate =', autoRetaliate);
         render();
       } else if (action === 'toggle-autocast') {
