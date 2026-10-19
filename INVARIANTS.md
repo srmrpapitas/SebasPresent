@@ -772,7 +772,7 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Dentro, los toques van a `room.onTap` (town_buildings): primero vecinos (`townNpcs.tryHandleTap`), luego muebles (salir / examinar).
 - Taberna La Vieja Aguere (La Laguna, tienda `taberna_laguna`, seed 029 EJECUTADO) y Herrería del Muelle (Santa Cruz). Misiones: `vino_tacoronte`, `el_tigre`.
 - Casa de los Balcones (La Orotava, `kind: 'casa'`, Doña Mencía + Bentor, misión `balcon_tea`) y Bodega El Drago (Icod, `kind: 'bodega'`, Goyo + Nieves, misión `sangre_drago`). Sin seeds.
-- Molino de gofio La Majada (Güímar, `kind: 'molino'`, Tía Benita + Ancor, misión `gofio_romeria`) y Casa Fuerte de Adeje (`kind: 'casafuerte'`, Don Tomé + Nayra, misión `cochinos_barranco`). Sin seeds.
+- Molino de gofio La Majada (Güímar, `kind: 'molino'`, Tía Benita + Mauro, misión `gofio_romeria`) y Casa Fuerte de Adeje (`kind: 'casafuerte'`, Don Tomé + Iraya, misión `cochinos_barranco`). Sin seeds.
 - Datos opcionales de fachada: `roof` ('teja'|'flat'), `trim` ('green'|'blue'), `base` ('stone'|'lava'), `chimney`, `clear` (radio sin árboles, por defecto max(w,d)/2+5).
 - Salas usadas: x = 14000, 14100, 14200, 14300, 14400, 14500 (z 14000). La siguiente, 14600. Luz 0 parpadea salvo `ctx.flicker = false`.
 - Para añadir otro: entrada en TOWN_BUILDINGS (room sin solaparse), un `buildX` en town_buildings.js para su `kind`, y sus vecinos con `inRoom`.

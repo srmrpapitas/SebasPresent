@@ -1049,16 +1049,16 @@ Object.assign(QUESTS, {
   cochinos_barranco: {
     id: 'cochinos_barranco', name: 'Cochinos en el barranco', giver: 'guarda_tome',
     summary: 'Los jabalíes bajan de las lomas y destrozan los huertos de Adeje. Don Tomé, el guarda de la Casa Fuerte, busca a alguien con buen brazo. Para empezar.',
-    offer: ['Los cochinos salvajes bajan de las lomas del barranco y se comen las papas, las coles y hasta las flores del cura.', 'Nayra sabe por dónde bajan: lo tiene todo en su mapa. Pregúntale y luego ve a espantarlos.'],
-    accept: 'Hablaré con Nayra.', doing: 'Nayra está en la mesa de mapas, aquí mismo, en la Casa Fuerte.',
+    offer: ['Los cochinos salvajes bajan de las lomas del barranco y se comen las papas, las coles y hasta las flores del cura.', 'Iraya sabe por dónde bajan: lo tiene todo en su mapa. Pregúntale y luego ve a espantarlos.'],
+    accept: 'Hablaré con Iraya.', doing: 'Iraya está en la mesa de mapas, aquí mismo, en la Casa Fuerte.',
     thanks: '¡Ni un cochino en los huertos! Esta noche se cena tranquilo en Adeje. Toma tu paga, que te la has ganado.',
     steps: [
-      { id: 'dacil', event: 'talk', match: 'cartografa_nayra', count: 1, hint: { talk: 'cartografa_nayra' },
-        text: 'Pregunta a Nayra, en la Casa Fuerte de Adeje, por dónde bajan los jabalíes.', tip: 'Junto a la mesa de mapas, dentro de la Casa Fuerte.',
+      { id: 'dacil', event: 'talk', match: 'cartografa_iraya', count: 1, hint: { talk: 'cartografa_iraya' },
+        text: 'Pregunta a Iraya, en la Casa Fuerte de Adeje, por dónde bajan los jabalíes.', tip: 'Junto a la mesa de mapas, dentro de la Casa Fuerte.',
         scene: [
           P('Don Tomé dice que sabes por dónde bajan los jabalíes.'),
           'Claro. Mira el mapa: salen del Cerro de los jabalíes, en las lomas del barranco, entre Vilaflor y Adeje. Bajan siempre por el mismo sendero.',
-          N('Nayra marca el cerro con una cruz de carbón y te da una copia pequeña del mapa.'),
+          N('Iraya marca el cerro con una cruz de carbón y te da una copia pequeña del mapa.'),
           'Son pequeños, pero muerden. Y cuidado con el grande, el que tiene un colmillo roto: ese no huye.',
         ] },
       { id: 'jabalies', event: 'kill', match: 'boar', count: 6, hint: { npc: 'boar' },

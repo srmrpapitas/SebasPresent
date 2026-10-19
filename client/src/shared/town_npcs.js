@@ -612,7 +612,7 @@ export const TOWN_NPCS = [
       'Las muelas son de piedra del malpaís. La lava que bajó de la montaña lo quemó todo, pero nos dejó la mejor piedra de la isla.',
       'En agosto media isla pasa por aquí caminando hacia Candelaria. Y todos paran a por gofio. ¡Todos!',
     ] },
-  { id: 'cabrero_ancor', name: 'Ancor', title: 'Cabrero del malpaís', ...inRoom('molino_guimar', 3.8, -1.2), rotY: Math.PI * 1.2, role: '🐐',
+  { id: 'cabrero_mauro', name: 'Mauro', title: 'Cabrero del malpaís', ...inRoom('molino_guimar', 3.8, -1.2), rotY: Math.PI * 1.2, role: '🐐',
     look: { skin: 0xb07a52, shirt: 0x8a6a3a, pants: 0x3a3020, hair: 0x1a1008, acc: 'hat' },
     lines: [
       'Mis cabras comen tabaiba y cardón en el malpaís. Por eso su leche sabe a monte.',
@@ -628,7 +628,7 @@ export const TOWN_NPCS = [
       'No subas a las almenas, que hay viento. Siempre hay viento. Bueno, casi siempre.',
       'Si tienes buen brazo, tengo un trabajo para ti. Los cochinos del barranco nos tienen fritos.',
     ] },
-  { id: 'cartografa_nayra', name: 'Nayra', title: 'Aprendiz de cartógrafa', ...inRoom('casafuerte_adeje', 3.6, 1.4), rotY: Math.PI, role: '🗺️',
+  { id: 'cartografa_iraya', name: 'Iraya', title: 'Aprendiz de cartógrafa', ...inRoom('casafuerte_adeje', 3.6, 1.4), rotY: Math.PI, role: '🗺️',
     look: { skin: 0xc8946a, shirt: 0x3a6a6a, pants: 0x2a2a3a, hair: 0x1a0a04, acc: 'glasses' },
     lines: [
       'Estoy dibujando el Barranco del Infierno, sendero a sendero. Al fondo hay una cascada que no se seca nunca.',

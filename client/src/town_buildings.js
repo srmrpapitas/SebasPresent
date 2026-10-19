@@ -492,8 +492,8 @@ function buildMolino(b, ctx) {
   const pir = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.0), new THREE.MeshBasicMaterial({ map: boardTexture(['PIRÁMIDES', '▲  ▲  ▲', 'de Güímar'], '#e8dcc0', '#5a3a1a') }));
   pir.position.set(W / 2 - 0.22, 1.75, -1.6); pir.rotation.y = -Math.PI / 2; g.add(pir);
   items.push({ kind: 'examinar', x: W / 2 - 0.9, z: -1.6, r: 3.0, mesh: pir,
-    text: '🔺 Un dibujo de las pirámides de Güímar: escalones de piedra negra sin argamasa. Ancor ha escrito debajo: «¿Quién las hizo?». Y alguien ha contestado: «Yo no».' });
-  // Cayado y cencerros de Ancor junto a la entrada
+    text: '🔺 Un dibujo de las pirámides de Güímar: escalones de piedra negra sin argamasa. Mauro ha escrito debajo: «¿Quién las hizo?». Y alguien ha contestado: «Yo no».' });
+  // Cayado y cencerros de Mauro junto a la entrada
   const cy = box(0.07, 1.7, 0.07, M.woodD, 4.6, 0.85, -3.9); cy.rotation.z = 0.15; g.add(cy);
   for (let k = 0; k < 3; k++) g.add(cyl(0.08, 0.1, 0.14, M.bronze, W / 2 - 0.3, 1.5, -3.6 + k * 0.25, 6));
   // Luz de día que entra por la puerta
@@ -518,7 +518,7 @@ function buildCasaFuerte(b, ctx) {
   const pb = barrel(g, cx - 1.4, cz + 0.4); cols.push({ x: cx - 1.4, z: cz + 0.4, hx: 0.45, hz: 0.45 });
   for (let k = 0; k < 6; k++) { const ball = new THREE.Mesh(new THREE.SphereGeometry(0.13, 6, 5), M.iron); ball.position.set(cx + 1.2 + (k % 3) * 0.27, 0.13 + (k > 2 ? 0.22 : 0), cz + 0.5 + (k > 2 ? 0.12 : 0)); g.add(ball); }
   items.push({ kind: 'examinar', x: cx - 1.4, z: cz - 0.6, r: 2.4, mesh: pb, text: '🛢️ Un barril con letras rojas: «PÓLVORA». Está vacío. Don Tomé dice que mejor así.' });
-  // Mesa de mapas (Nayra detrás)
+  // Mesa de mapas (Iraya detrás)
   const mx = 3.6, mz = 0.0;
   const mt = new THREE.Group(); mt.position.set(mx, 0, mz);
   mt.add(box(1.9, 0.08, 1.1, M.woodL, 0, 0.82, 0));
@@ -528,7 +528,7 @@ function buildCasaFuerte(b, ctx) {
   mt.add(cyl(0.04, 0.04, 0.5, M.bronze, 0.7, 0.9, 0.3, 6).rotateZ(Math.PI / 2));   // catalejo
   g.add(mt); cols.push({ x: mx, z: mz, hx: 1.0, hz: 0.6 });
   items.push({ kind: 'examinar', x: mx, z: mz - 1.0, r: 3.0, mesh: mt,
-    text: '🗺️ Un mapa de la costa sur, de Los Cristianos a La Caleta. Las calaveras marcan dónde desembarcaban los piratas. Nayra está añadiendo los senderos del Barranco del Infierno.' });
+    text: '🗺️ Un mapa de la costa sur, de Los Cristianos a La Caleta. Las calaveras marcan dónde desembarcaban los piratas. Iraya está añadiendo los senderos del Barranco del Infierno.' });
   // Armero con arcabuces y picas (pared oeste)
   const rk = new THREE.Group(); rk.position.set(-W / 2 + 0.45, 0, -0.4);
   rk.add(box(0.3, 1.9, 2.8, M.woodD, 0, 0.95, 0));

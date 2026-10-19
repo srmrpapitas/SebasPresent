@@ -38,8 +38,8 @@
      Bentor) + misión «El balcón de tea» (Tala 15, 5 troncos de roble). Icod: **Bodega El Drago** (Goyo, bodeguero: historia
      de Icod y Garachico; Nieves, vendimiadora) + misión «Sangre de drago» (combate 25, 4 tibicenas).
    - [x] (19 oct, noche) Güímar: **Molino de gofio La Majada** (Tía Benita, molinera: historia de Güímar, el malpaís y las
-     pirámides; Ancor, cabrero) + misión «Gofio para la romería» (Pesca 5, pasa por Ayoze, 5 sardinas). Adeje: **Casa Fuerte**
-     (Don Tomé, guarda: Tinerfe, el azúcar y los piratas; Nayra, cartógrafa) + misión «Cochinos en el barranco» (6 jabalíes, para empezar).
+     pirámides; Mauro, cabrero) + misión «Gofio para la romería» (Pesca 5, pasa por Ayoze, 5 sardinas). Adeje: **Casa Fuerte**
+     (Don Tomé, guarda: Tinerfe, el azúcar y los piratas; Iraya, cartógrafa) + misión «Cochinos en el barranco» (6 jabalíes, para empezar).
    - [ ] Siguen: Los Cristianos y Vilaflor (1 edificio + lore + misión corta cada uno). Luego el punto 6 queda hecho.
 
 ### Notas del 19 oct (tarea programada)
