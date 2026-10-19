@@ -6,22 +6,30 @@
 ## ⚠️ PRIORIDAD — pedido del usuario (18 oct, 21:43). Hacer en este orden y tachar al terminar
 > El usuario quiere el juego "impecable" y jugable. NADA de minijuegos nuevos (La Cruzada se queda como está;
 > su versión 2 está aparcada en la rama `wip/cruzada-v2`, no fusionar).
-1. [ ] **Objetivo equivocado en grupo**: atacando al yeti con un compañero cerca, el log dice "Atacas a Sebas6".
+1. [x] **Objetivo equivocado en grupo** (19 oct, 6080343): atacando al yeti con un compañero cerca, el log dice "Atacas a Sebas6".
        Un toque sobre un monstruo NUNCA debe elegir a un jugador; a compañeros de grupo nunca se les ataca;
        a jugadores solo en zona PvP / duelo y solo si se toca al jugador explícitamente.
-2. [ ] **Combate lento / no estilo OSRS (PvE y PvP)**: al atacar tarda y no golpea al ritmo. Duelo contra Sebas
+2. [x] **Combate lento / no estilo OSRS (PvE y PvP)** (19 oct, 716e0f3 — falta probarlo con 2 jugadores reales en producción): al atacar tarda y no golpea al ritmo. Duelo contra Sebas
        "horrible". Revisar el bucle de ataque (ticks, cola de acciones, respuesta inmediata en el cliente,
        animación y daño sincronizados, sin esperar ida y vuelta para empezar a pegar).
-3. [ ] **Retraso de ~5 s al equipar y en acciones** (el padre juega desde Tenerife): respuesta optimista en el
+3. [x] **Retraso de ~5 s al equipar y en acciones** (19 oct, 269f682 — equipar/quitar/comer al instante) (el padre juega desde Tenerife): respuesta optimista en el
        cliente (equipar/quitar/comer al instante y corregir si el servidor dice que no), medir qué tarda.
-4. [ ] **Capa + carcaj**: solo se puede llevar uno de los dos; deben poder llevarse a la vez (capa en `cape`,
+4. [x] **Capa + carcaj** (19 oct, 720bdd6 — el carcaj va a la cadera, procedural, lo ven todos): solo se puede llevar uno de los dos; deben poder llevarse a la vez (capa en `cape`,
        carcaj en `quiver`), también en el modelo 3D.
-5. [ ] **Ropa de arquero completa** (no solo "armadura de cuero"): capucha/cofia, pechera, pierneras, brazales,
+5. [x] **Ropa de arquero completa** (19 oct, fe6b35b — piezas propias de arquero; mago ya tenía sombrero/túnica/falda; guantes y botas de mago siguen con la forma genérica, quedan tapados por la túnica) (no solo "armadura de cuero"): capucha/cofia, pechera, pierneras, brazales,
        botas por tiers, igual que la armadura de melee. **Ropa de mago** completa (sombrero, túnica, falda,
        guantes, botas) por tiers. Que se vea en el modelo, se pueda conseguir (tiendas/drops/crafteo) y tenga bonos.
 6. [ ] **Pueblos vacíos**: lore y cosas que hacer en cada pueblo; edificios en los que entrar con NPC dentro
        (tabernas, herreros, casas con historia, misiones cortas). Empezar por los pueblos principales.
 7. [ ] Dejarlo todo impecable: probar en móvil y PC antes de cada push, un commit por arreglo.
+
+### Notas del 19 oct (tarea programada)
+- Siguiente: punto 6 (pueblos). Empezar por La Laguna y Santa Cruz: lore + 1 edificio con NPC dentro + 1 misión corta cada uno.
+- Pruebas locales: `scripts/local/server.mjs` (API + cliente con SQLite; three.js se clona de GitHub r160 porque
+  no hay CDN ni npm en el entorno) y `scripts/local/armor_shots.mjs` (fotos de armaduras sin R2).
+  Los modelos de R2 no cargan en local: el personaje sale como cápsula.
+- Combate: el golpe se anima al enviarlo y el ritmo cuenta desde el envío; el servidor acepta 150 ms antes
+  (`ATTACK_GRACE_MS`). Equipo/mochila: cola de peticiones + sincronización al vaciarse (`equipment.isBusy()`).
 
 ## Cómo se trabaja
 - Push directo a `main` (Cloudflare despliega solo). D1 de producción: `bd9c29c7-493d-4ece-ac6e-6f97d49558b9`.
