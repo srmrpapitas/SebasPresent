@@ -135,7 +135,9 @@ const PLAYER_RUN_BOOST = 1.6;
 const POSITION_SAVE_INTERVAL = 10_000;
 const POSITION_SAVE_MIN_DELTA = 5.0;
 
-const API_BASE = 'https://sebaspresent.srmrpapitas.workers.dev';
+// 19 oct — en local (localhost) usa el servidor local, igual que api.js
+const API_BASE = (typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1'))
+  ? 'http://localhost:8787' : 'https://sebaspresent.srmrpapitas.workers.dev';
 
 const CAMERA_DIST_MIN = 6;
 const CAMERA_DIST_MAX = 30;
@@ -3513,6 +3515,7 @@ function animate() {
   try { places.update(dt); } catch {}   // Sesión 53
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
+  window.__mainCamera = camera;   // 19 oct — pruebas (proyectar a pantalla); ver INVARIANTS §5.3
   renderer.render(scene, camera);
 }
 

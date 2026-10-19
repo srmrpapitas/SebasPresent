@@ -229,6 +229,7 @@ server/handlers/
 | `__diag.forceCallApi(path, body?)` | promise | Test endpoint |
 | `__diag.forceChop(treeType, x, z)` | delega a __wcDebug | Forzar tala |
 | `__diag.testError()` | — | Probar error capture |
+| `__mainCamera` | cámara principal | Pruebas con Playwright: proyectar NPC/jugadores a pantalla |
 
 ### 5.4 Skill-specific debug
 
