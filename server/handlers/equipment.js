@@ -142,9 +142,31 @@ export async function handleEquip(request, env) {
 
   // Sesión 50 — requisito de nivel (Ataque para espadas, Defensa para armadura)
   const req = equipRequirement(invItem);
+  const targetSlot = invItem.equip_slot;
+  // 19 oct — las lecturas que no dependen unas de otras, a la vez
+  const reqCol = req ? { attack: 'attack_xp', defence: 'defence_xp', ranged: 'ranged_xp', magic: 'magic_xp' }[req.skill] : null;
+  const isEquipping2H = (targetSlot === 'weapon' && (TWO_HANDED_WEAPON_TYPES.has(invItem.weapon_type) || TWO_HANDED_ITEM_IDS.has(invItem.item_id)));
+  const isEquippingShield = (targetSlot === 'shield');
+  const twoHandedList = Array.from(TWO_HANDED_WEAPON_TYPES);
+  const [reqStat, equippedItem, conflictRow] = await Promise.all([
+    reqCol ? env.DB.prepare(`SELECT ${reqCol} AS xp FROM combat_stats WHERE user_id = ?`).bind(session.user_id).first() : null,
+    // 2. ¿Hay algo equipado en el target slot? Si sí, lo desequipamos al inventario.
+    env.DB.prepare(`SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = ?`).bind(session.user_id, targetSlot).first(),
+    // Sesión 26/35 — conflicto 2H ↔ escudo (ver abajo)
+    isEquipping2H
+      ? env.DB.prepare(`SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = 'shield'`).bind(session.user_id).first()
+      : isEquippingShield
+        ? env.DB.prepare(
+            `SELECT eq.item_id
+             FROM user_equipment eq
+             JOIN items i ON i.id = eq.item_id
+             WHERE eq.user_id = ? AND eq.slot_id = 'weapon'
+               AND (i.weapon_type IN (${twoHandedList.map(() => '?').join(',')}) OR eq.item_id IN (${[...TWO_HANDED_ITEM_IDS].map(() => '?').join(',')}))`
+          ).bind(session.user_id, ...twoHandedList, ...TWO_HANDED_ITEM_IDS).first()
+        : null,
+  ]);
   if (req) {
-    const col = { attack: 'attack_xp', defence: 'defence_xp', ranged: 'ranged_xp', magic: 'magic_xp' }[req.skill];
-    const st = col ? await env.DB.prepare(`SELECT ${col} AS xp FROM combat_stats WHERE user_id = ?`).bind(session.user_id).first() : null;
+    const st = reqStat;
     const have = xpToLevel(st?.xp || 0);
     if (have < req.level) {
       return json({
@@ -155,47 +177,13 @@ export async function handleEquip(request, env) {
     }
   }
 
-  const targetSlot = invItem.equip_slot;
   const now = Date.now();
 
-  // 2. ¿Hay algo equipado en el target slot? Si sí, lo desequipamos al inventario.
-  const equippedItem = await env.DB.prepare(
-    `SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = ?`
-  ).bind(session.user_id, targetSlot).first();
-
-  // ============================================================
-  // SESIÓN 26 — Detectar conflicto 2H ↔ Shield
-  // ============================================================
-  // Si lo que estoy equipando es una 2H, y tengo escudo equipado →
-  //   conflictItem = el escudo, va al inventario.
-  // Si lo que estoy equipando es un escudo, y tengo 2H equipada →
-  //   conflictItem = el arma 2H, va al inventario.
-  // Sesión 35 — Set TWO_HANDED_WEAPON_TYPES en vez de igualdad a '2h_sword'
-  // para que `bow` (y futuros tipos) entren en el chequeo.
-  const isEquipping2H = (targetSlot === 'weapon' && (TWO_HANDED_WEAPON_TYPES.has(invItem.weapon_type) || TWO_HANDED_ITEM_IDS.has(invItem.item_id)));
-  const isEquippingShield = (targetSlot === 'shield');
-
+  // SESIÓN 26 — conflicto 2H ↔ escudo (leído arriba): equipar una 2H con escudo
+  // puesto manda el escudo a la mochila, y al revés. Sesión 35 — TWO_HANDED_WEAPON_TYPES
+  // incluye el arco.
   let conflictItem = null;   // { slot_id, item_id } del item a desequipar por conflicto
-  if (isEquipping2H) {
-    const sh = await env.DB.prepare(
-      `SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = 'shield'`
-    ).bind(session.user_id).first();
-    if (sh) conflictItem = { slot_id: 'shield', item_id: sh.item_id };
-  } else if (isEquippingShield) {
-    // Sesión 35 — Antes filtraba por `i.weapon_type = '2h_sword'`. Ahora
-    // usa IN (...) construido desde TWO_HANDED_WEAPON_TYPES para detectar
-    // también `bow` (y cualquier 2H futuro registrado en el set).
-    const twoHandedList = Array.from(TWO_HANDED_WEAPON_TYPES);
-    const placeholders = twoHandedList.map(() => '?').join(',');
-    const w = await env.DB.prepare(
-      `SELECT eq.item_id
-       FROM user_equipment eq
-       JOIN items i ON i.id = eq.item_id
-       WHERE eq.user_id = ? AND eq.slot_id = 'weapon'
-         AND (i.weapon_type IN (${placeholders}) OR eq.item_id IN (${[...TWO_HANDED_ITEM_IDS].map(() => '?').join(',')}))`
-    ).bind(session.user_id, ...twoHandedList, ...TWO_HANDED_ITEM_IDS).first();
-    if (w) conflictItem = { slot_id: 'weapon', item_id: w.item_id };
-  }
+  if (conflictRow) conflictItem = { slot_id: isEquipping2H ? 'shield' : 'weapon', item_id: conflictRow.item_id };
 
   // ============================================================
   // SESIÓN 26 — Si hay conflicto, asegurar que cabe en mochila
@@ -279,9 +267,11 @@ export async function handleEquip(request, env) {
   }
 
   if (!(await atomicBatch(env, ops))) return changed('Tu equipo cambió mientras tanto. Inténtalo otra vez.');
-  await questEvent(env, session.user_id, 'equip', invItem.item_id);   // Sesión 50 — misiones
-
-  await pushEquipState(env, session.user_id);
+  // 19 oct — misiones y aviso a los demás a la vez (antes uno detrás de otro)
+  await Promise.all([
+    questEvent(env, session.user_id, 'equip', invItem.item_id),   // Sesión 50 — misiones
+    pushEquipState(env, session.user_id),
+  ]);
   return json({
     ok: true,
     equipped: { slot_id: targetSlot, item_id: invItem.item_id },
@@ -311,15 +301,12 @@ export async function handleUnequip(request, env) {
   }
 
   // 1. ¿Tiene algo equipado en ese slot?
-  const equipped = await env.DB.prepare(
-    `SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = ?`
-  ).bind(session.user_id, slotId).first();
+  // 2. Inventario actual para calcular espacio disponible (19 oct: a la vez)
+  const [equipped, invRows] = await Promise.all([
+    env.DB.prepare(`SELECT item_id FROM user_equipment WHERE user_id = ? AND slot_id = ?`).bind(session.user_id, slotId).first(),
+    env.DB.prepare(`SELECT slot_index, item_id, quantity FROM user_inventory WHERE user_id = ?`).bind(session.user_id).all(),
+  ]);
   if (!equipped) return json({ error: 'slot_empty' }, 400);
-
-  // 2. Inventario actual para calcular espacio disponible
-  const invRows = await env.DB.prepare(
-    `SELECT slot_index, item_id, quantity FROM user_inventory WHERE user_id = ?`
-  ).bind(session.user_id).all();
   const occupied = invRows.results || [];
   const taken = new Set(occupied.map(r => r.slot_index));
 

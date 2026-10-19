@@ -153,6 +153,7 @@ let started = false;
 // Último snapshot recibido. Estructura:
 // { now, players: [...], npcs: [...], me: {...}, _receivedAt, _serverLagMs }
 let lastSnapshot = null;
+let lastHpSeen = null;   // 19 oct
 let lastError = null;
 
 // Sesión 32 — tracking del último hit recibido procesado. Usado por
@@ -390,6 +391,12 @@ async function fetchSnapshot() {
     } catch (err) {
       console.warn('[world_snapshot] handleIncomingHit error:', err?.message);
     }
+    // 19 oct — la vida del HUD sigue al snapshot aunque no se haya abierto la
+    // pestaña de combate (antes el orbe se quedaba en "10" hasta pelear).
+    try {
+      const hpNow = lastSnapshot.me.hp_current;
+      if (typeof hpNow === 'number' && hpNow !== lastHpSeen) { lastHpSeen = hpNow; window.__setHpInstant?.(hpNow); }
+    } catch {}
 
     // Sesión 37 — Detectar muerte server-driven. Si el snapshot dice
     // you_died_recently=true (server marcó last_died_at y hp_current<=0),

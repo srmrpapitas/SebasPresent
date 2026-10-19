@@ -128,8 +128,17 @@ export function init() {
       // Sesión 49 — setter de HP instantáneo (comer en PVP). Actualiza el
       // estado interno ADEMÁS del DOM para que el próximo render/poll no
       // revierta el valor visualmente.
+      // 19 oct — vida conocida aunque no se haya abierto la pestaña de combate
+      // (la trae el snapshot): para comer al instante y para el HUD.
+      window.__getHpInstant = () => {
+        if (state && state.stats && Number.isFinite(state.stats.hp_current)) return { hp: state.stats.hp_current, max: state.stats.hp_max };
+        if (Number.isFinite(hudHp)) return { hp: hudHp, max: Number.isFinite(hudHpMax) ? hudHpMax : Math.max(10, skills.getLevel?.('hitpoints') || 10) };
+        return null;
+      };
       window.__setHpInstant = (hp, hpMax) => {
         try {
+          if (Number.isFinite(hp)) hudHp = hp;
+          if (Number.isFinite(hpMax)) hudHpMax = hpMax;
           if (state && state.stats) {
             state.stats.hp_current = hp;
             if (Number.isFinite(hpMax)) state.stats.hp_max = hpMax;
@@ -230,13 +239,16 @@ function notify() {
   }
 }
 
+let hudHp = null, hudHpMax = null;   // 19 oct — vida del snapshot si aún no hay estado de combate
 function updateHpHud() {
-  if (!state) return;
+  const cur = state ? state.stats.hp_current : hudHp;
+  if (!Number.isFinite(cur)) return;
+  const max = state ? state.stats.hp_max : (Number.isFinite(hudHpMax) ? hudHpMax : Math.max(10, skills.getLevel?.('hitpoints') || 10));
   const hpEl = document.getElementById('hudHpValue');
-  if (hpEl) hpEl.textContent = String(state.stats.hp_current);
+  if (hpEl) hpEl.textContent = String(cur);
   const card = document.getElementById('hudStatHp');
   if (card) {
-    const ratio = state.stats.hp_current / Math.max(1, state.stats.hp_max);
+    const ratio = cur / Math.max(1, max);
     if (ratio <= 0.3) card.classList.add('hp-low');
     else card.classList.remove('hp-low');
   }

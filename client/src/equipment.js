@@ -99,7 +99,7 @@ export async function init(opts) {
  *
  * @returns {Promise<void>}
  */
-export async function refresh() {
+export async function refresh(opts = {}) {
   const token = getToken?.();
   if (!token) return;
   try {
@@ -111,6 +111,7 @@ export async function refresh() {
       return;
     }
     const data = await res.json();
+    if (opts.onlyIfIdle && equipPending > 0) return;   // 19 oct — llegará otra al vaciarse la cola
     equipped = data.slots || {};
     renderPanel();
     notifyChange();
@@ -288,9 +289,6 @@ export function onChange(cb) {
  *   const res = await equipment.equipFromInventory(3);
  *   if (res.error === 'level_too_low') reportEquipError(res);   // Sesión 52 — sin alert
  */
-// Sesión 52 — guardia anti doble toque: mientras haya un equipar/quitar en
-// vuelo, los toques repetidos se ignoran (devuelven { busy: true }, sin error).
-let equipInFlight = false;
 
 /**
  * Sesión 52 — mensaje amigable en español para un resultado con error.
@@ -334,12 +332,65 @@ export function reportEquipError(result, prefix = '') {
   }
 }
 
-export async function equipFromInventory(slotIndex) {
+// 19 oct — RESPUESTA AL INSTANTE. Equipar/quitar se ve en el momento (panel,
+// mochila y personaje) y las peticiones van EN COLA, una detrás de otra (antes
+// el segundo toque rápido se ignoraba y cada cambio esperaba 3 viajes al
+// servidor: ~5 s desde Canarias). Cuando la cola se vacía se piden equipo y
+// mochila al servidor (las mismas 2 lecturas de antes) y eso corrige cualquier
+// cosa que el servidor no aceptara.
+let equipChain = Promise.resolve();
+let equipPending = 0;
+export function isBusy() { return equipPending > 0; }
+function enqueueEquipOp(fn) {
+  equipPending++;
+  const run = async () => {
+    try { return await fn(); }
+    catch (err) { console.error('[equipment] op err:', err); return { error: 'network' }; }
+    finally {
+      equipPending--;
+      if (equipPending === 0) syncAfterOps();
+    }
+  };
+  const p = equipChain.then(run);
+  equipChain = p.catch(() => {});
+  return p;
+}
+function syncAfterOps() {
+  refresh({ onlyIfIdle: true }).catch(() => {});
+  try { (window.__inventoryRefreshIfIdle || window.__inventoryRefresh)?.(); } catch {}
+}
+
+const TWO_HANDED_TYPES = new Set(['2h_sword', 'bow']);   // espejo de server/handlers/equipment.js
+const TWO_HANDED_IDS = new Set(['claws_dragon']);
+const isTwoHanded = (it) => !!it && (TWO_HANDED_TYPES.has(it.weapon_type) || TWO_HANDED_IDS.has(it.item_id));
+
+/**
+ * 19 oct — Pone el objeto en el equipo LOCAL al momento (mismas reglas que el
+ * servidor: lo que había vuelve a la mochila; arma a dos manos ↔ escudo).
+ * Devuelve { target, prev, conflict } para que la mochila haga lo suyo, o null.
+ */
+export function applyLocalEquip(item) {
+  const target = item?.equip_slot;
+  if (!target) return null;
+  const prev = equipped[target] || null;
+  let conflict = null;
+  if (target === 'weapon' && isTwoHanded(item) && equipped.shield) conflict = { slot: 'shield', item: equipped.shield };
+  if (target === 'shield' && isTwoHanded(equipped.weapon)) conflict = { slot: 'weapon', item: equipped.weapon };
+  const next = { ...equipped, [target]: {
+    item_id: item.item_id, name: item.name, icon: item.icon, equip_slot: target,
+    weapon_type: item.weapon_type || null, attack_bonus: 0, defence_bonus: 0, ranged_bonus: 0, strength_bonus: 0,
+  } };
+  if (conflict) delete next[conflict.slot];
+  equipped = next;
+  renderPanel();
+  notifyChange();
+  return { target, prev, conflict };
+}
+
+export function equipFromInventory(slotIndex, opts = {}) {
   const token = getToken?.();
-  if (!token) return { error: 'no_token' };
-  if (equipInFlight) return { busy: true };   // Sesión 52
-  equipInFlight = true;
-  try {
+  if (!token) return Promise.resolve({ error: 'no_token' });
+  return enqueueEquipOp(async () => {
     const res = await fetch(`${apiBase}/api/equipment/equip`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -347,51 +398,44 @@ export async function equipFromInventory(slotIndex) {
     });
     const data = await res.json();
     if (!res.ok) return data;
-    await refresh();
-    // Sesión 32 — SFX al equipar (post-refresh para que ya esté en su slot
-    // visualmente). Misma lógica para weapon/armor/cualquier item.
-    try {
-      if (typeof window.__playSfx === 'function') {
-        window.__playSfx('equip_weapon');
-      }
-    } catch {}
+    // Sesión 32 — SFX al equipar (si no sonó ya al tocar)
+    if (!opts.optimistic) { try { window.__playSfx?.('equip_weapon'); } catch {} }
     return data;
-  } catch (err) {
-    console.error('[equipment] equip err:', err);
-    return { error: 'network' };
-  } finally {
-    equipInFlight = false;   // Sesión 52
-  }
+  });
 }
 
 /**
  * Desequipa el item del slot indicado. Vuelve al inventario en un slot libre.
  * Si el inv está lleno, el server devuelve `{ error: 'inventory_full' }`.
+ * 19 oct — se quita al instante en local si hay hueco en la mochila.
  *
  * @param {'helm'|'cape'|'amulet'|'weapon'|'body'|'shield'|'legs'|'ring'|'boots'} slotId
  * @returns {Promise<{ok?: boolean, error?: string}>}
  */
-export async function unequip(slotId) {
+export function unequip(slotId) {
   const token = getToken?.();
-  if (!token) return { error: 'no_token' };
-  if (equipInFlight) return { busy: true };   // Sesión 52
-  equipInFlight = true;
-  try {
+  if (!token) return Promise.resolve({ error: 'no_token' });
+  const item = equipped[slotId];
+  // El carcaj saca también sus flechas: eso lo decide el servidor (sin adivinar)
+  if (item && slotId !== 'quiver') {
+    let placed = false;
+    try { placed = !!window.__invLocal?.place?.({ ...item, equip_slot: item.equip_slot || slotId }); } catch {}
+    if (placed) {
+      const next = { ...equipped }; delete next[slotId];
+      equipped = next;
+      renderPanel();
+      notifyChange();
+    }
+  }
+  return enqueueEquipOp(async () => {
     const res = await fetch(`${apiBase}/api/equipment/unequip`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ slot_id: slotId }),
     });
     const data = await res.json();
-    if (!res.ok) return data;
-    await refresh();
     return data;
-  } catch (err) {
-    console.error('[equipment] unequip err:', err);
-    return { error: 'network' };
-  } finally {
-    equipInFlight = false;   // Sesión 52
-  }
+  });
 }
 
 function notifyChange() {
@@ -789,16 +833,9 @@ function showSlotTooltip(slotId, clientX, clientY) {
         // Sesión 52 — doble toque sobre "Quitar": ignorar mientras está en vuelo.
         if (btn.dataset.busy === '1') return;
         btn.dataset.busy = '1';
+        el.remove();   // 19 oct — se quita al instante; la cola sincroniza equipo y mochila
         const result = await unequip(slotId);
-        if (result.busy) { /* otro quitar/equipar en vuelo: ignorar */ }
-        else if (result.error) {
-          reportEquipError(result);   // Sesión 52 — antes alert('slot_empty')
-        } else {
-          // Sesion 45 — refrescar inventario: el item vuelve a la mochila
-          // pero sin esto el slot no aparece hasta el proximo poll.
-          try { window.__inventoryRefresh?.(); } catch {}
-        }
-        el.remove();
+        if (result.error) reportEquipError(result);   // Sesión 52 — antes alert('slot_empty')
       } else if (act === 'withdraw') {
         // Sesion 45 — sacar TODAS las flechas del carcaj al inventario.
         if (btn.dataset.busy === '1') return;   // Sesión 52 — anti doble toque

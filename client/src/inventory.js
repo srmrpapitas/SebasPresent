@@ -22,13 +22,14 @@
  *   getState()     — read-only snapshot of current slots
  */
 
-import { EDIBLE_IDS, COOKABLE_IDS } from './shared/food.js';
+import { EDIBLE, EDIBLE_IDS, COOKABLE_IDS } from './shared/food.js';
 import { equipRequirement, requirementText } from './shared/equip_reqs.js';   // Sesión 50
 import { recipesUsing } from './shared/crafting.js';   // Sesión 50 — Flechería/Artesanía
 import { isTablet, TABLETS } from './shared/teleports.js';   // Sesión 50 — tabletas
 import { parsePotion } from './shared/herblore.js';   // Sesión 50 — pociones
 import * as api from './api.js';
 import * as equipment from './equipment.js';
+import * as skills from './skills.js';   // 19 oct — nivel para equipar al instante
 import { renderItemIcon, getItemIconHtml } from './item_icons.js';
 
 // ---------- Constants ----------
@@ -697,17 +698,35 @@ async function eatInstant(slotIdx) {
     return;
   }
   lastEatAt = now;
+  // 19 oct — al instante: la comida desaparece y la vida sube YA; si el
+  // servidor dice que no, se deshace (y la mochila se vuelve a pedir).
+  const prev = slots[slotIdx];
+  const hp0 = window.__getHpInstant?.();
+  const heal = prev ? (EDIBLE[prev.item_id]?.heal || 0) : 0;
+  if (prev) {
+    slots[slotIdx] = (prev.stackable && prev.quantity > 1) ? { ...prev, quantity: prev.quantity - 1 } : null;
+    renderAll();
+    try { window.__playSfx?.('drink'); } catch {}
+    if (hp0 && heal > 0 && hp0.hp > 0 && hp0.hp < hp0.max) {
+      try { window.__setHpInstant?.(Math.min(hp0.max, hp0.hp + heal), hp0.max); } catch {}
+    }
+  }
+  const undo = () => {
+    if (prev && slots[slotIdx] !== prev) { slots[slotIdx] = prev; renderAll(); }
+    if (hp0) { try { window.__setHpInstant?.(hp0.hp, hp0.max); } catch {} }
+  };
   try {
     const res = await api.eatFood(slotIdx);
+    if (!(res && res.ok)) undo();
     if (res && res.ok) {
       // HP al HUD AL INSTANTE (sin esperar al poll de combate/snapshot).
       try { window.__setHpInstant?.(res.hp_current, res.hp_max); } catch {}
       try { window.__feedLog?.('info', `🍗 +${res.healed} HP (${res.hp_current}/${res.hp_max}).`); } catch {}
-      try { window.__playSfx?.('drink'); } catch {}
       await refresh();
     }
   } catch (err) {
     lastEatAt = 0;   // liberar el cooldown local si el server rechazó
+    undo();   // 19 oct
     if (err.code === 'hp_full') {
       try { window.__feedLog?.('info', 'Ya tienes la vida llena.'); } catch {}
     } else if (err.code === 'eat_cooldown') {
@@ -789,28 +808,63 @@ async function startCookAll(itemId) {
   }
 }
 
-// Sesión 52 — guardia anti doble toque en Equipar (se libera en finally).
-let equipInFlight = false;
-
-async function doEquip(slotIdx) {
-  if (equipInFlight) return;
-  equipInFlight = true;
-  try {
-    const result = await equipment.equipFromInventory(slotIdx);
-    if (result.busy) return;   // Sesión 52 — otro equipar/quitar en vuelo
-    if (result.error) {
-      // Sesión 52 — mensaje amigable (nunca el código en crudo); si fue
-      // 409 'changed', mostrar su mensaje y refrescar.
+// 19 oct — Equipar AL INSTANTE: se mueve en la mochila, el equipo y el
+// personaje en el momento; la petición va en la cola de equipment.js, que al
+// vaciarse pide equipo + mochila al servidor y corrige lo que no se aceptara.
+function doEquip(slotIdx) {
+  const item = slots[slotIdx];
+  if (!item) return;
+  // Requisito de nivel que ya sabemos que no se cumple → sin cambio local
+  // (que no se vea puesto y luego se quite); el servidor da el mensaje.
+  let optimistic = !!item.equip_slot;
+  const req = equipRequirement(item);
+  if (req) {
+    const lv = skills.getLevel?.(req.skill);
+    if (!lv || lv < req.level) optimistic = false;
+  }
+  if (optimistic) {
+    const local = equipment.applyLocalEquip(item);
+    if (local) {
+      const asInv = (it, slotId) => ({ item_id: it.item_id, quantity: 1, name: it.name, icon: it.icon, stackable: false,
+        equip_slot: it.equip_slot || slotId, weapon_type: it.weapon_type || null });
+      slots[slotIdx] = local.prev ? asInv(local.prev, local.target) : null;
+      if (local.conflict) {
+        const free = slots.findIndex(s => !s);
+        if (free >= 0) slots[free] = asInv(local.conflict.item, local.conflict.slot);
+      }
+      renderAll();
+      try { window.__playSfx?.('equip_weapon'); } catch {}
+    } else optimistic = false;
+  }
+  equipment.equipFromInventory(slotIdx, { optimistic }).then((result) => {
+    if (result?.error) {
+      // Sesión 52 — mensaje amigable (nunca el código en crudo)
       const msg = equipment.friendlyEquipError(result);
       showError(result.error === 'changed' ? msg : 'No se pudo equipar: ' + msg);
-      if (result.error === 'changed') await refresh();
-      return;
     }
-    // Refrescar inventario (el item se movió)
-    await refresh();
-  } finally {
-    equipInFlight = false;
-  }
+  });
+}
+
+// 19 oct — para quitar al instante desde el panel de equipo (equipment.js)
+if (typeof window !== 'undefined') {
+  window.__invLocal = {
+    place(it) {
+      const free = slots.findIndex(s => !s);
+      if (free < 0) return false;
+      slots[free] = { item_id: it.item_id, quantity: 1, name: it.name, icon: it.icon, stackable: false,
+        equip_slot: it.equip_slot || null, weapon_type: it.weapon_type || null };
+      renderAll();
+      return true;
+    },
+  };
+  window.__inventoryRefreshIfIdle = async () => {
+    try {
+      const data = await api.getInventory();
+      if (equipment.isBusy?.()) return;   // hay más cambios en cola: ya llegará otra
+      applyServerSlots(data.slots || []);
+      renderAll();
+    } catch (err) { console.warn('[inventory] sync', err); }
+  };
 }
 
 function escapeHtml(s) {
