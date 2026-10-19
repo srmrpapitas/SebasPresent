@@ -363,6 +363,10 @@ export async function partyKick(targetUserId) {
 export async function duelState() {
   return apiFetch('/api/duel/state', { auth: true });
 }
+/** 19 oct — resultado del duelo que acaba de terminar: { last_result: { winner_id, loser_id, winner_name, loser_name } | null } */
+export async function duelLastResult() {
+  return apiFetch('/api/duel/state?last=1', { auth: true });
+}
 
 /**
  * POST /api/duel/challenge { target_user_id }

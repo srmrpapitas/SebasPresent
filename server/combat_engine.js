@@ -2232,7 +2232,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     targetCounterHit ? db.run(
       `INSERT INTO combat_log (ts, attacker_type, attacker_id, target_type, target_id, damage, hit, killed)
        VALUES (?, 0, ?, 0, ?, ?, ?, ?)`,
-      [now, targetId, attackerId, dmgToAttacker, targetCounterHit.hit ? 1 : 0, attackerKilled ? 1 : 0]
+      [now, targetId, attackerId, dmgToAttacker, targetCounterHit.hit ? 1 : 0, (attackerKilled || duelWonBy === targetId) ? 1 : 0]
     ) : null,
   ]);
 

@@ -196,6 +196,31 @@ export async function handleDuelState(request, env) {
 
   const userId = session.user_id;
 
+  // 19 oct — ?last=1: resultado del duelo que acaba de terminar (quién ganó).
+  // El cliente lo pide UNA vez al ver que su duelo se ha cerrado.
+  if (new URL(request.url).searchParams.get('last') === '1') {
+    let lastResult = null;
+    try {
+      const d = await db.first(
+        `SELECT id, user_a_id, user_b_id, ended_at FROM duels
+          WHERE (user_a_id = ? OR user_b_id = ?) AND ended_at IS NOT NULL AND ended_at > ?
+          ORDER BY ended_at DESC LIMIT 1`, [userId, userId, now - 120_000]);
+      if (d) {
+        const k = await db.first(
+          `SELECT attacker_id, target_id FROM combat_log
+            WHERE attacker_type = 0 AND target_type = 0 AND killed = 1 AND ts = ?
+              AND ((attacker_id = ? AND target_id = ?) OR (attacker_id = ? AND target_id = ?)) LIMIT 1`,
+          [d.ended_at, d.user_a_id, d.user_b_id, d.user_b_id, d.user_a_id]);
+        if (k) {
+          const names = await db.all('SELECT id, username FROM users WHERE id IN (?, ?)', [k.attacker_id, k.target_id]);
+          const nm = (id) => names.find(r => r.id === id)?.username || 'jugador';
+          lastResult = { winner_id: k.attacker_id, loser_id: k.target_id, winner_name: nm(k.attacker_id), loser_name: nm(k.target_id) };
+        } else lastResult = { winner_id: null };
+      }
+    } catch {}
+    return json({ last_result: lastResult });
+  }
+
   // ----- Duelo activo -----
   const duel = await getActiveDuelForUser(db, userId);
   let duelOther = null;

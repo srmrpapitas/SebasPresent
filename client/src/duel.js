@@ -90,11 +90,10 @@ export function onSnapshotMe(me) {
     _feedLogFn?.('info', `Duelo iniciado contra ${lastDuel.opponent_username} (lvl ${lastDuel.opponent_combat_lvl}).`);
     showHud();
   } else if (prev && !lastDuel) {
-    // Duelo terminó. 19 oct — si el último golpe que recibiste fue de tu rival
-    // hace nada, has perdido (el que gana ya lo ve en su respuesta de ataque).
-    const lost = me.last_hit_from_user_id === prev.opponent_user_id && me.last_hit_at && (Date.now() - me.last_hit_at) < 15000;
-    _feedLogFn?.(lost ? 'death' : 'info', lost ? `Has perdido el duelo contra ${prev.opponent_username}. Tranquilo: no pierdes nada y recuperas la vida.` : 'Duelo finalizado.');
+    // Duelo terminó. 19 oct — se pregunta al servidor quién ganó (una sola
+    // petición). Si ya lo contó la respuesta del último ataque, no se repite.
     try { window.__combatDisengage?.(); } catch {}
+    if (Date.now() - endShownAt > 8000) announceDuelEnd(prev);
     removeHud();
   }
   if (lastDuel) updateHud();
@@ -116,6 +115,19 @@ export function onSnapshotMe(me) {
 
   // ----- Invite outgoing (info, no UI directa por ahora) -----
   lastInviteOut = me.duel_invite_out || null;
+}
+
+// 19 oct — fin de duelo contado una sola vez
+let endShownAt = 0;
+export function noteEnded() { endShownAt = Date.now(); if (lastDuel) { lastDuel = null; removeHud(); } }
+async function announceDuelEnd(prev) {
+  endShownAt = Date.now();
+  let r = null;
+  try { r = (await api.duelLastResult())?.last_result || null; } catch {}
+  const me = r && prev ? (r.winner_id === prev.opponent_user_id ? 'lost' : r.loser_id === prev.opponent_user_id ? 'won' : null) : null;
+  if (me === 'won') _feedLogFn?.('levelup', `🏆 ¡Has ganado el duelo contra ${prev.opponent_username}!`);
+  else if (me === 'lost') _feedLogFn?.('death', `Has perdido el duelo contra ${prev.opponent_username}. Tranquilo: no pierdes nada y recuperas la vida.`);
+  else _feedLogFn?.('info', 'Duelo finalizado.');
 }
 
 export function getActiveDuel() {
@@ -279,6 +291,8 @@ function ensureCss() {
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       min-width: 160px;
     }
+    /* 19 oct — en el móvil tapaba la vida (orbes de arriba): debajo de los orbes */
+    @media (max-width: 700px) { .duel-hud { top: calc(env(safe-area-inset-top, 0px) + 206px); font-size: 12px; padding: 6px 12px; } }
     .duel-hud.casting {
       cursor: default;
       border-color: #d44;

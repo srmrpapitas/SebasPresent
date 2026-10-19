@@ -45,6 +45,7 @@ import * as combatStyles from './combat_styles.js'; // Sesión 33 día 2 — sel
 import { hasSpecialAttack, specialOf } from './shared/equip_reqs.js';   // Sesión 50/51
 import * as specFx from './spec_fx.js';                                  // Sesión 51
 import * as realtime from './realtime.js';                               // Sesión 51 — los demás ven el especial
+import * as duel from './duel.js';                                      // 19 oct — devolver golpes solo si se puede (duelo / zona salvaje)
 
 // Sesión 25 — TICK_MS sincronizado con server (combat_engine.js). 900ms.
 const TICK_MS = 900;
@@ -316,7 +317,9 @@ export async function engageNpc(npcId) {
  * Sesión 27 Bloque 3 — engagePlayer
  * Mismo flujo que engageNpc pero target = otro player.
  */
-export async function engagePlayer(targetUserId) {
+let engagedByRetaliate = false;   // 19 oct
+export async function engagePlayer(targetUserId, auto = false) {
+  engagedByRetaliate = !!auto;
   clog('engagePlayer(', targetUserId, ') — caller:', new Error().stack?.split('\n')[2]?.trim());
   if (currentTargetPlayerId === targetUserId && attackTimer) return;
   // Sesión 39 — fix exploit: mismo patrón que engageNpc.
@@ -330,7 +333,7 @@ export async function engagePlayer(targetUserId) {
   lastAutoEngagedAttackerKey = null;
   const peer = multiplayer.getPeerById?.(targetUserId);
   const name = peer?.username || 'jugador';
-  feedLog('info', `Atacas a ${name}.`);
+  if (!auto) feedLog('info', `Atacas a ${name}.`);
   // Animación: enterCombat (sin npcId concreto, le pasamos targetUserId
   // como identificador genérico — el hook solo lo usa para desenvainar.)
   if (typeof window !== 'undefined' && typeof window.__playerEnterCombat === 'function') {
@@ -838,8 +841,10 @@ async function doAttackTickPlayer(gen = attackGen) {
     }
     if (result.error === 'not_in_wilderness_no_duel') {
       // Sesión 28 — fuera de wilderness solo PVP si hay duelo activo.
+      // 19 oct — si fue «devolver golpes» automático (p. ej. justo al acabar
+      // un duelo), sin mensaje: no lo pediste tú.
       const who = result.reason === 'target' ? 'tu objetivo está' : 'estás';
-      feedLog('warning', `${who} fuera del Wilderness. Reta a duelo o entrad ambos al wild.`);
+      if (!engagedByRetaliate) feedLog('warning', `${who} fuera del Wilderness. Reta a duelo o entrad ambos al wild.`);
       disengage();
       return;
     }
@@ -1052,6 +1057,7 @@ async function doAttackTickPlayer(gen = attackGen) {
 
   // 19 oct — duelo amistoso terminado: nadie muere ni pierde nada; vida llena
   if (result.duel_over) {
+    try { duel.noteEnded?.(); } catch {}   // el aviso de duel.js no se repite
     feedLog(result.duel_won ? 'levelup' : 'death', result.duel_won ? `🏆 ¡Has ganado el duelo contra ${targetName}!` : `Has perdido el duelo contra ${targetName}. No pierdes nada.`);
     try { if (Number.isFinite(result.your_hp)) window.__setHpInstant?.(result.your_hp, result.your_hp_max ?? undefined); } catch {}
     try { audio.synth?.(result.duel_won ? 'craft_done' : 'pray_off', { volume: 0.9 }); } catch {}
@@ -1459,10 +1465,16 @@ function tryAutoRetaliate() {
     // NPC me atacó → engagear NPC (atk.id es npc_instance_id)
     engageNpc(atk.id).catch(e => console.warn('[auto-retaliate npc]', e));
   } else if (atk.type === 0) {
+    // 19 oct — solo si se le puede atacar: duelo con él o estás en la zona
+    // salvaje. Antes, al acabar un duelo, el perdedor intentaba devolver el
+    // golpe en bucle y el registro se llenaba de «fuera del Wilderness».
+    const myPos = window.__getPlayerPosition?.();
+    const inWild = myPos && myPos.x < -1024;
+    if (!duel.canAttack?.(atk.id) && !inWild) return;
     // Player me atacó → engagear player (19 oct: nunca a uno del grupo ni
     // fuera del Malpaís/duelo; el servidor no lo dejaría y el log confunde)
     if (multiplayer.isPeerAttackable && !multiplayer.isPeerAttackable(atk.id)) return;
-    engagePlayer(atk.id).catch(e => console.warn('[auto-retaliate player]', e));
+    engagePlayer(atk.id, true).catch(e => console.warn('[auto-retaliate player]', e));
   }
 }
 
