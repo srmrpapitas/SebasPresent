@@ -31,7 +31,7 @@ const views = [['front', 0], ['back', Math.PI], ['right', -Math.PI / 2], ['3q', 
 const cam = new THREE.PerspectiveCamera(35, W / H / 1, 0.1, 50);
 const out = {};
 for (const [name, ang] of views) {
-  cam.position.set(Math.sin(ang) * (+q.get("d")||4.2), 1.1, Math.cos(ang) * (+q.get("d")||4.2)); cam.lookAt(0, 0.95, 0);
+  const ly = +(q.get("ly")||0.95); cam.position.set(Math.sin(ang) * (+q.get("d")||4.2), ly + 0.15, Math.cos(ang) * (+q.get("d")||4.2)); cam.lookAt(0, ly, 0);
   // capa: deja que su onBeforeRender/update corra unos frames
   for (let i = 0; i < 5; i++) r.render(scene, cam);
   out[name] = r.domElement.toDataURL('image/png');

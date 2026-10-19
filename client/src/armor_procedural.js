@@ -53,6 +53,7 @@ const TIER = { cuero: 0, bronze: 0, hierro: 1, acero: 2, oro: 3, obsidiana: 4, b
   lobo: 0, escorpion: 1, yeti: 1, escama: 2,                                  // Sesión 52
   algodon: 0, lino: 0, seda: 0, cabildo: 0, magister: 0 };
 const ROBE_MATS = new Set(['algodon', 'lino', 'seda', 'cabildo', 'magister']);   // Sesión 52
+const ARCHER_MATS = new Set(['cuero', 'lobo', 'escorpion', 'yeti', 'escama']);   // 19 oct — ropa de arquero
 const PROC_SLOTS = new Set(['helm', 'body', 'legs', 'boots', 'gloves', 'shield']);
 
 export function materialOf(itemId) {
@@ -1035,6 +1036,14 @@ function _buildProceduralArmor(itemId, slot, root) {
     catch (e) { console.warn('[armor] dragón falló, uso el genérico:', e?.message); parts = null; }
     if (parts) return parts;
   }
+  if (ARCHER_MATS.has(matId)) {   // 19 oct — ropa de arquero (capucha, chaqueta, pantalón, brazales, botas)
+    try {
+      parts = slot === 'helm' ? buildHood(root, matId) : slot === 'body' ? buildJerkin(root, matId)
+        : slot === 'legs' ? buildTrousers(root, matId) : slot === 'gloves' ? buildBracers(root, matId)
+        : slot === 'boots' ? buildSoftBoots(root, matId) : null;
+    } catch (e) { console.warn('[armor] arquero falló, uso el genérico:', e?.message); parts = null; }
+    if (parts) { for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } }); return parts; }
+  }
   if (ROBE_MATS.has(matId) && (slot === 'helm' || slot === 'body' || slot === 'legs')) {   // Sesión 52 — ropa de mago
     try { parts = slot === 'helm' ? buildMageHat(root, matId) : slot === 'body' ? buildRobeBody(root, matId) : buildRobeSkirt(root, matId); }
     catch (e) { console.warn('[armor] túnica falló:', e?.message); parts = null; }
@@ -1269,6 +1278,287 @@ function buildRobeSkirt(root, matId) {
 }
 
 export const DRAGON_HELPERS = { findBone, childNamed, boneBasis, orient, boneVerts, fitBox, framed, tune, spineFrame };
+
+// ---------------- Ropa de arquero (19 oct) ----------------
+// Antes el cuero usaba las piezas de la armadura de metal (yelmo, peto con
+// hombreras, grebas): parecía un caballero gris. Ahora: capucha con esclavina,
+// chaqueta de cuero ceñida con bandolera y faldón, pantalón con rodilleras
+// cosidas, brazales de arquero en el antebrazo y botas altas de caña blanda.
+// Los tiers cambian color y detalles (pelo en el lobo/yeti, placas en el
+// escorpión, escamas en el dragón).
+function archerExtras(matId) {
+  return { fur: matId === 'lobo' || matId === 'yeti', plates: matId === 'escorpion', scales: matId === 'escama' };
+}
+function buildHood(root, matId) {
+  const head = findBone(root, 'Head');
+  if (!head) return null;
+  const top = childNamed(head, 'HeadTop_End');
+  const { fwd, up } = boneBasis(root, head);
+  const basis = orient(top ? top.position.clone().normalize() : up, fwd);
+  const M = mats(matId), tn = tune('helm'), X = archerExtras(matId);
+  let box = fitBox(boneVerts(root, [head, ...(top ? [top] : [])], head), basis);
+  if (!box) {
+    const L = top ? top.position.length() : fallbackLen(head, 0.2);
+    box = new THREE.Box3(new THREE.Vector3(-0.45 * L, -0.1 * L, -0.5 * L), new THREE.Vector3(0.45 * L, 1.05 * L, 0.55 * L));
+  }
+  const h = box.max.y - box.min.y;
+  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2 + h * tn.z;
+  const rx = (box.max.x - box.min.x) / 2 * 1.2 * tn.s, rz = (box.max.z - box.min.z) / 2 * 1.2 * tn.s;
+  const cy = box.min.y + h * (0.55 + tn.y);
+  const g = framed(basis);
+  // Cogulla: esfera abierta por delante (la cara se ve)
+  const cowl = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10, Math.PI * 0.72, Math.PI * 1.56, 0, Math.PI * 0.78), M.baseDS);
+  // (el hueco de phi 0,28π–0,72π queda mirando a +z = delante)
+  cowl.scale.set(rx, (box.max.y - cy) * 1.15, rz * 1.02);
+  cowl.position.set(cx, cy, cz - rz * 0.04);
+  g.add(cowl);
+  // Pico de la capucha hacia atrás
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(rx * 0.35, h * 0.55, 6), M.base);
+  tip.position.set(cx, cy + (box.max.y - cy) * 0.55, cz - rz * 1.05);
+  tip.rotation.x = -2.0;
+  g.add(tip);
+  // Ribete de la cara
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 4, 16, Math.PI * 1.2), M.trim);
+  rim.rotation.z = -Math.PI * 0.1;
+  rim.scale.set(rx * 0.9, h * 0.55, rx * 0.3);
+  rim.position.set(cx, cy - h * 0.08, cz + rz * 0.82);
+  g.add(rim);
+  // Esclavina sobre los hombros
+  // Cuello de la capucha (cae sobre la nuca y el cuello)
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(rx * 0.8, rx * 1.15, h * 0.32, 14, 1, true), M.baseDS);
+  neck.position.set(cx, box.min.y - h * 0.04, cz - rz * 0.12);
+  g.add(neck);
+  if (X.fur) {   // pelo en el borde del cuello
+    const fur = new THREE.Mesh(new THREE.CylinderGeometry(rx * 1.16, rx * 1.22, h * 0.08, 14, 1, true), M.trim);
+    fur.material = M.trim;
+    fur.position.set(cx, box.min.y - h * 0.18, cz - rz * 0.12);
+    g.add(fur);
+  }
+  return [{ bone: head, mesh: g }];
+}
+function buildJerkin(root, matId) {
+  const M = mats(matId), tn = tune('body'), X = archerExtras(matId), s = tn.s;
+  const hips = findBone(root, 'Hips'), sp = findBone(root, 'Spine'), sp1 = findBone(root, 'Spine1'), sp2 = findBone(root, 'Spine2');
+  if (!sp || !sp2) return null;
+  const out = [];
+  // Pecho (Spine2): chaqueta ceñida + cuello alto + bandolera + cordones
+  {
+    const basis = spineFrame(root, sp2, 'Neck');
+    const box = fitBox(boneVerts(root, [sp2], sp2), basis);
+    if (box) {
+      const g = framed(basis);
+      const h = box.max.y - box.min.y;
+      const rx = (box.max.x - box.min.x) / 2 * 1.13 * s, rz = (box.max.z - box.min.z) / 2 * 1.18 * s;
+      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+      const y0 = box.min.y - h * 0.15, y1 = box.max.y - h * 0.04;
+      const shell = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.94, 1, 14, 1, true), M.baseDS);
+      shell.scale.set(rx, y1 - y0, rz); shell.position.set(cx, (y0 + y1) / 2, cz);
+      g.add(shell);
+      const yoke = new THREE.Mesh(new THREE.RingGeometry(0.5, 1, 14, 1), M.baseDS);
+      yoke.rotation.x = -Math.PI / 2; yoke.scale.set(rx, rz, 1); yoke.position.set(cx, y1, cz);
+      g.add(yoke);
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, 1, 12, 1, true), M.baseDS);
+      collar.scale.set(rx, h * 0.18, rz); collar.position.set(cx, y1 + h * 0.08, cz);
+      g.add(collar);
+      // Cordones del pecho
+      for (let i = 0; i < 4; i++) {
+        const lace = new THREE.Mesh(new THREE.BoxGeometry(rx * 0.32, h * 0.025, rz * 0.04), M.trim);
+        lace.position.set(cx, y1 - h * (0.12 + i * 0.13), cz + rz * 0.99);
+        lace.rotation.z = (i % 2 ? 0.35 : -0.35);
+        g.add(lace);
+      }
+      // Bandolera del hombro derecho a la cadera izquierda (delante y detrás)
+      for (const zs of [1, -1]) {
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(rx * 0.22, (y1 - y0) * 1.25, rz * 0.06), M.trim);
+        strap.position.set(cx, (y0 + y1) / 2, cz + zs * rz * 1.01);
+        strap.rotation.z = zs * 0.62;
+        g.add(strap);
+      }
+      if (X.plates || X.scales) {   // placas de escorpión / escamas en el pecho
+        const n = X.scales ? 6 : 3;
+        for (let i = 0; i < n; i++) {
+          const pl = new THREE.Mesh(X.scales ? new THREE.OctahedronGeometry(1, 0) : new THREE.BoxGeometry(1, 1, 1), M.trim);
+          const col = i % 2, row = Math.floor(i / 2);
+          pl.scale.set(rx * (X.scales ? 0.16 : 0.5), h * (X.scales ? 0.1 : 0.14), rz * 0.08);
+          pl.position.set(X.scales ? cx + (col ? 0.3 : -0.3) * rx : cx - rx * 0.35, y1 - h * (0.25 + row * 0.22), cz + rz * 0.97);
+          g.add(pl);
+        }
+      }
+      if (X.fur) {
+        const fur = new THREE.Mesh(new THREE.TorusGeometry(1, 0.12, 5, 14), M.trim);
+        fur.rotation.x = Math.PI / 2; fur.scale.set(rx * 0.62, rz * 0.62, 1); fur.position.set(cx, y1 + h * 0.16, cz);
+        g.add(fur);
+      }
+      out.push({ bone: sp2, mesh: g });
+    }
+  }
+  // Vientre (Spine/Spine1)
+  {
+    const fb = sp1 || sp;
+    const basis = spineFrame(root, fb, sp1 ? 'Spine2' : 'Spine1');
+    const box = fitBox(boneVerts(root, [sp, ...(sp1 ? [sp1] : [])], fb), basis);
+    if (box) {
+      const g = framed(basis);
+      const h = box.max.y - box.min.y;
+      const rx = (box.max.x - box.min.x) / 2 * 1.14 * s, rz = (box.max.z - box.min.z) / 2 * 1.18 * s;
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(1, 0.98, 1, 14, 1, true), M.baseDS);
+      tube.scale.set(rx, h * 1.05, rz); tube.position.set((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2);
+      g.add(tube);
+      out.push({ bone: fb, mesh: g });
+    }
+  }
+  // Cinturón + faldón partido (Hips)
+  if (hips) {
+    const basis = spineFrame(root, hips, 'Spine');
+    const box = fitBox(boneVerts(root, [hips], hips), basis);
+    if (box) {
+      const g = framed(basis);
+      const h = box.max.y - box.min.y;
+      const rx = (box.max.x - box.min.x) / 2 * 1.16 * s, rz = (box.max.z - box.min.z) / 2 * 1.22 * s;
+      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+      const beltY = box.max.y - h * 0.15;
+      const belt = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 14, 1, true), M.trim);
+      belt.scale.set(rx * 1.02, h * 0.14, rz * 1.02); belt.position.set(cx, beltY, cz);
+      g.add(belt);
+      const buckle = new THREE.Mesh(new THREE.TorusGeometry(rx * 0.1, rx * 0.025, 4, 8), M.dark);
+      buckle.position.set(cx, beltY, cz + rz * 1.03);
+      g.add(buckle);
+      // Faldón: cuatro paños (delante, detrás y lados), más largos atrás
+      for (const [ang, w, len] of [[0, 0.8, 0.75], [Math.PI, 0.9, 0.95], [-1.4, 0.55, 0.7], [1.4, 0.55, 0.7]]) {
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(rx * w, h * len, rz * 0.06), M.base);
+        panel.position.set(cx + Math.sin(ang) * rx * 1.04, beltY - h * (0.07 + len / 2), cz + Math.cos(ang) * rz * 1.04);
+        panel.rotation.y = ang; panel.rotation.x = 0.1;
+        g.add(panel);
+      }
+      out.push({ bone: hips, mesh: g });
+    }
+  }
+  // Mangas al brazo (sin hombreras)
+  for (const side of ['Left', 'Right']) {
+    const arm = findBone(root, side + 'Arm');
+    if (!arm) continue;
+    const fore = childNamed(arm, side + 'ForeArm');
+    const dir = fore ? fore.position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+    const basis = orient(dir, boneBasis(root, arm).fwd);
+    const box = fitBox(boneVerts(root, [arm], arm), basis);
+    if (!box) continue;
+    const g = framed(basis);
+    const L = box.max.y - Math.max(0, box.min.y);
+    g.add(tubeFromBox(box, Math.max(0, box.min.y), Math.max(0, box.min.y) + L * 0.85, M.base, 1.12 * s, 0.9));
+    out.push({ bone: arm, mesh: g });
+  }
+  return out.length ? out : null;
+}
+function buildTrousers(root, matId) {
+  const M = mats(matId), tn = tune('legs'), X = archerExtras(matId);
+  const out = [];
+  for (const side of ['Left', 'Right']) {
+    const up = findBone(root, side + 'UpLeg'), leg = findBone(root, side + 'Leg');
+    if (!up || !leg) continue;
+    const foot = childNamed(leg, side + 'Foot') || findBone(root, side + 'Foot');
+    const bT = orient((childNamed(up, side + 'Leg') || leg).position.clone().normalize(), boneBasis(root, up).fwd);
+    const boxT = fitBox(boneVerts(root, [up], up), bT);
+    if (boxT) {
+      const gT = framed(bT);
+      const h = boxT.max.y - boxT.min.y;
+      gT.add(tubeFromBox(boxT, boxT.min.y + h * 0.02, boxT.max.y, M.base, 1.08 * tn.s, 0.9));
+      // Correa del muslo
+      gT.add(tubeFromBox(boxT, boxT.min.y + h * 0.42, boxT.min.y + h * 0.48, M.trim, 1.12 * tn.s, 1));
+      out.push({ bone: up, mesh: gT });
+    }
+    const bS = orient(foot ? foot.position.clone().normalize() : new THREE.Vector3(0, 1, 0), boneBasis(root, leg).fwd);
+    const boxS = fitBox(boneVerts(root, [leg], leg), bS);
+    if (boxS) {
+      const gS = framed(bS);
+      const h = boxS.max.y - boxS.min.y;
+      gS.add(tubeFromBox(boxS, boxS.min.y, boxS.max.y - h * 0.3, M.base, 1.08 * tn.s, 0.85));
+      // Rodillera cosida (parche, no metal)
+      const rz = (boxS.max.z - boxS.min.z) / 2;
+      const patch = new THREE.Mesh(new THREE.BoxGeometry(rz * 1.1, h * 0.16, rz * 0.12), X.plates || X.scales ? M.trim : M.dark);
+      patch.position.set((boxS.min.x + boxS.max.x) / 2, boxS.min.y + h * 0.08, boxS.max.z * 1.07);
+      gS.add(patch);
+      out.push({ bone: leg, mesh: gS });
+    }
+  }
+  return out.length ? out : null;
+}
+function buildBracers(root, matId) {
+  const M = mats(matId), tn = tune('gloves'), X = archerExtras(matId);
+  const out = [];
+  for (const side of ['Left', 'Right']) {
+    const fore = findBone(root, side + 'ForeArm'), hand = findBone(root, side + 'Hand');
+    if (fore) {
+      const hb = childNamed(fore, side + 'Hand') || hand;
+      const basis = orient(hb ? hb.position.clone().normalize() : new THREE.Vector3(0, 1, 0), boneBasis(root, fore).fwd);
+      const box = fitBox(boneVerts(root, [fore], fore), basis);
+      if (box) {
+        const g = framed(basis);
+        const h = box.max.y - Math.max(0, box.min.y), y0 = Math.max(0, box.min.y);
+        g.add(tubeFromBox(box, y0 + h * 0.35, y0 + h * 0.98, M.base, 1.22 * tn.s, 0.86));
+        // Correas del brazal
+        for (const f of [0.5, 0.7, 0.88]) g.add(tubeFromBox(box, y0 + h * f, y0 + h * (f + 0.04), M.trim, 1.27 * tn.s, 1));
+        if (X.plates || X.scales || X.fur) {
+          const ridge = new THREE.Mesh(new THREE.BoxGeometry((box.max.x - box.min.x) * 0.25, h * 0.5, (box.max.z - box.min.z) * 0.2), M.trim);
+          ridge.position.set((box.min.x + box.max.x) / 2, y0 + h * 0.68, box.max.z * 1.1);
+          g.add(ridge);
+        }
+        out.push({ bone: fore, mesh: g });
+      }
+    }
+    if (hand) {   // guante sin dedos
+      const mid = childNamed(hand, side + 'HandMiddle1');
+      const basis = orient(mid ? mid.position.clone().normalize() : new THREE.Vector3(0, 1, 0), boneBasis(root, hand).fwd);
+      const box = fitBox(boneVerts(root, [hand], hand), basis);
+      if (box) {
+        const g = framed(basis);
+        const L = box.max.y - Math.max(box.min.y, 0);
+        const w = (box.max.x - box.min.x) * 1.08 * tn.s, d = (box.max.z - box.min.z) * 1.12 * tn.s;
+        const glove = new THREE.Mesh(new THREE.BoxGeometry(w, L * 0.6, d), M.dark);
+        glove.position.set((box.min.x + box.max.x) / 2, L * 0.3, (box.min.z + box.max.z) / 2);
+        g.add(glove);
+        out.push({ bone: hand, mesh: g });
+      }
+    }
+  }
+  return out.length ? out : null;
+}
+function buildSoftBoots(root, matId) {
+  const M = mats(matId), tn = tune('boots'), X = archerExtras(matId);
+  const out = [];
+  for (const side of ['Left', 'Right']) {
+    const foot = findBone(root, side + 'Foot');
+    if (!foot) continue;
+    const toe = childNamed(foot, side + 'ToeBase');
+    const toeEnd = toe ? childNamed(toe, side + 'Toe_End') : null;
+    const dir = toe ? toe.position.clone().normalize() : new THREE.Vector3(0, 0, 1);
+    const { up } = boneBasis(root, foot);
+    const z = dir.clone().sub(up.clone().multiplyScalar(dir.dot(up))).normalize();
+    const y = up.clone().normalize();
+    const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(y, z).normalize(), y, z);
+    const box = fitBox(boneVerts(root, [foot, ...(toe ? [toe] : []), ...(toeEnd ? [toeEnd] : [])], foot), basis);
+    if (!box) continue;
+    const g = framed(basis);
+    const w = (box.max.x - box.min.x) * 1.1 * tn.s, len = (box.max.z - box.min.z) * 1.06, hgt = box.max.y - box.min.y;
+    const cx = (box.min.x + box.max.x) / 2;
+    // Pie redondeado
+    const shoe = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1, 3, 8), M.base);
+    shoe.rotation.x = Math.PI / 2;
+    shoe.scale.set(w, len * 0.5, hgt * 1.05);
+    shoe.position.set(cx, box.min.y + hgt * 0.5, (box.min.z + box.max.z) / 2);
+    g.add(shoe);
+    // Caña alta hasta media espinilla, con vuelta
+    const shaftH = hgt * 3.0;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.6, w * 0.55, shaftH, 10, 1, true), M.baseDS);
+    shaft.position.set(cx, box.min.y + hgt * 0.6 + shaftH / 2, box.min.z + len * 0.25);
+    g.add(shaft);
+    const fold = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.7, w * 0.62, hgt * 0.6, 10, 1, true), X.fur ? M.trim : M.dark);
+    fold.material = fold.material.side === THREE.DoubleSide ? fold.material : fold.material;
+    fold.position.set(cx, box.min.y + hgt * 0.6 + shaftH - hgt * 0.25, box.min.z + len * 0.25);
+    g.add(fold);
+    out.push({ bone: foot, mesh: g });
+  }
+  return out.length ? out : null;
+}
 
 // ---------------- Carcaj (19 oct) ----------------
 // Antes era un GLB pegado a la espalda: con capa quedaba DENTRO de la tela (la
