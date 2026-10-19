@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"/__three/build/three.module.js","three/addons/":"/__three/examples/jsm/"}}</script>
+<style>body{margin:0;background:#8ab}</style></head><body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { buildProceduralArmor } from './src/armor_procedural.js';
+const q = new URLSearchParams(location.search);
+const W = 900, H = 600;
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(W, H); document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8aaabb);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.2));
+const dl = new THREE.DirectionalLight(0xffffff, 1.5); dl.position.set(3, 5, 4); scene.add(dl);
+const gltf = await new GLTFLoader().loadAsync('/assets/npcs/m38.glb');
+const root = gltf.scene;
+root.updateMatrixWorld(true);
+const bw = (n) => { let o=null; root.traverse(x=>{ if(!o && x.name.replace(/^mixamorig/,'')===n) o=x; }); const v=new THREE.Vector3(); o.getWorldPosition(v); return v; };
+const head = bw('HeadTop_End'), foot = bw('LeftToe_End');
+const sc = 1.8 / (head.y - foot.y); root.scale.multiplyScalar(sc); root.updateMatrixWorld(true);
+const f2 = bw('LeftToe_End'), hp = bw('Hips'); root.position.set(-hp.x, -f2.y, -hp.z); root.updateMatrixWorld(true);
+scene.add(root);
+const items = (q.get('items') || 'body_dragon:body,cape_magma:cape,quiver_bronze:quiver').split(',');
+for (const it of items) {
+  const [id, slot] = it.split(':');
+  const parts = buildProceduralArmor(id, slot, root);
+  if (!parts) { console.log('NO PARTS', id); continue; }
+  for (const p of parts) p.bone.add(p.mesh);
+}
+root.updateMatrixWorld(true);
+const views = [['front', 0], ['back', Math.PI], ['right', -Math.PI / 2], ['3q', Math.PI * 0.75]];
+const cam = new THREE.PerspectiveCamera(35, W / H / 1, 0.1, 50);
+const out = {};
+for (const [name, ang] of views) {
+  cam.position.set(Math.sin(ang) * (+q.get("d")||4.2), 1.1, Math.cos(ang) * (+q.get("d")||4.2)); cam.lookAt(0, 0.95, 0);
+  // capa: deja que su onBeforeRender/update corra unos frames
+  for (let i = 0; i < 5; i++) r.render(scene, cam);
+  out[name] = r.domElement.toDataURL('image/png');
+}
+window.__shots = out; window.__done = true;
+</script></body></html>

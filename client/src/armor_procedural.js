@@ -62,6 +62,7 @@ export function materialOf(itemId) {
 
 export function isProceduralArmor(itemId, slot) {
   if (slot === 'cape' && (PROC_CAPES[itemId] || CAPE_IDS.has(itemId))) return true;   // Sesión 50/51 — capas procedurales
+  if (slot === 'quiver' && String(itemId || '').startsWith('quiver')) return true;   // 19 oct — carcaj a la cadera
   return PROC_SLOTS.has(slot) && !!materialOf(itemId);
 }
 const PROC_CAPES = { cape_fuego: true };
@@ -1016,6 +1017,11 @@ export function buildProceduralArmor(itemId, slot, root) {
 }
 
 function _buildProceduralArmor(itemId, slot, root) {
+  if (slot === 'quiver' && root) {   // 19 oct
+    const parts = buildQuiver(root, itemId);
+    if (parts) for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    return parts;
+  }
   if (slot === 'cape' && CAPE_IDS.has(itemId) && root) {
     const parts = buildCape(itemId, DRAGON_HELPERS, root);
     if (parts) for (const p of parts) p.mesh.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
@@ -1263,6 +1269,90 @@ function buildRobeSkirt(root, matId) {
 }
 
 export const DRAGON_HELPERS = { findBone, childNamed, boneBasis, orient, boneVerts, fitBox, framed, tune, spineFrame };
+
+// ---------------- Carcaj (19 oct) ----------------
+// Antes era un GLB pegado a la espalda: con capa quedaba DENTRO de la tela (la
+// capa cuelga por fuera de la armadura y se mueve) y parecía que solo se podía
+// llevar una de las dos cosas; además los demás jugadores no lo veían (solo se
+// copian las piezas procedurales). Ahora va colgado de la CADERA derecha, un
+// poco hacia atrás, inclinado como en los arqueros clásicos: se ve con
+// cualquier capa y también en los demás jugadores.
+const QUIVER_LOOK = {
+  quiver_bronze: { leather: 0x6b3f1f, trim: 0x2e1a0c, fletch: [0xf2f2f2, 0xc8302a] },
+};
+const _qMats = new Map();
+function quiverMats(itemId) {
+  const L = QUIVER_LOOK[itemId] || QUIVER_LOOK.quiver_bronze;
+  const key = itemId in QUIVER_LOOK ? itemId : 'quiver_bronze';
+  if (_qMats.has(key)) return _qMats.get(key);
+  const m = {
+    leather: new THREE.MeshStandardMaterial({ color: L.leather, roughness: 0.9, metalness: 0, flatShading: true }),
+    trim: new THREE.MeshStandardMaterial({ color: L.trim, roughness: 0.85, metalness: 0.05, flatShading: true }),
+    wood: new THREE.MeshStandardMaterial({ color: 0xc8a06a, roughness: 0.8, flatShading: true }),
+    fletch: L.fletch.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, side: THREE.DoubleSide, flatShading: true })),
+  };
+  _qMats.set(key, m);
+  return m;
+}
+function buildQuiver(root, itemId) {
+  const hips = findBone(root, 'Hips');
+  if (!hips) return null;
+  const basis = spineFrame(root, hips, 'Spine');   // y = arriba, z = delante, +x = izquierda
+  const upLegs = ['LeftUpLeg', 'RightUpLeg'].map(n => findBone(root, n)).filter(Boolean);
+  const box = fitBox(boneVerts(root, [hips, ...upLegs], hips), basis) || fitBox(boneVerts(root, [hips], hips), basis);
+  const tn = tune('quiver');
+  let k, cx, cz, rx, rz, yTop;
+  if (box) {
+    rx = (box.max.x - box.min.x) / 2; rz = (box.max.z - box.min.z) / 2;
+    cx = (box.min.x + box.max.x) / 2; cz = (box.min.z + box.max.z) / 2;
+    k = (rx * 2) / 0.36;   // unidades del hueso por metro (cadera ≈ 36 cm de ancho)
+    yTop = box.max.y;
+  } else {
+    k = fallbackLen(hips, 1); rx = 0.18 * k; rz = 0.12 * k; cx = 0; cz = 0; yTop = 0.1 * k;
+  }
+  k *= tn.s;
+  const M = quiverMats(itemId);
+  const g = framed(basis);
+  const q = new THREE.Group();
+  // Cuerpo de cuero (más ancho arriba), fondo y dos ribetes
+  const len = 0.52 * k, rTop = 0.062 * k, rBot = 0.05 * k;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, len, 10, 1, true), M.leather);
+  q.add(body);
+  const bottom = new THREE.Mesh(new THREE.CircleGeometry(rBot, 10), M.trim);
+  bottom.rotation.x = Math.PI / 2; bottom.position.y = -len / 2;
+  q.add(bottom);
+  for (const [y, r] of [[len / 2 - 0.012 * k, rTop], [-len / 2 + 0.03 * k, rBot]]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(r * 1.02, 0.008 * k, 4, 12), M.trim);
+    band.rotation.x = Math.PI / 2; band.position.y = y;
+    q.add(band);
+  }
+  // Flechas asomando (astil + plumas cruzadas)
+  const shaftGeo = new THREE.CylinderGeometry(0.004 * k, 0.004 * k, 0.2 * k, 4);
+  const fGeo = new THREE.PlaneGeometry(0.022 * k, 0.07 * k);
+  const spots = [[0, 0], [0.55, 0.2], [-0.5, 0.25], [0.2, -0.55], [-0.3, -0.45]];
+  spots.forEach(([ax, az], i) => {
+    const a = new THREE.Group();
+    const shaft = new THREE.Mesh(shaftGeo, M.wood);
+    a.add(shaft);
+    for (let j = 0; j < 2; j++) {
+      const f = new THREE.Mesh(fGeo, M.fletch[(i + j) % M.fletch.length]);
+      f.position.y = 0.06 * k; f.rotation.y = j * Math.PI / 2;
+      a.add(f);
+    }
+    a.position.set(ax * rTop * 0.75, len / 2 + 0.07 * k + (i % 2) * 0.015 * k, az * rTop * 0.75);
+    a.rotation.set(az * 0.12, 0, -ax * 0.12);
+    q.add(a);
+  });
+  // Correa al cinturón
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.02 * k, 0.12 * k, 0.012 * k), M.trim);
+  strap.position.set(-rTop * 0.2, len * 0.28, rTop * 0.95);
+  q.add(strap);
+  // Colocación: cadera DERECHA (−x), algo por detrás; boca arriba-atrás-fuera
+  q.rotation.set(-0.42, 0, 0.26);
+  q.position.set(cx - rx * 1.08 + tn.x * k, yTop - len * 0.28 + tn.y * k, cz - rz * 0.6 + tn.z * k);
+  g.add(q);
+  return [{ bone: hips, mesh: g }];
+}
 
 // ---------------- Capa de fuego (Sesión 50) ----------------
 let _fireTex = null;

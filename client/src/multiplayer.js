@@ -1147,7 +1147,7 @@ function cleanupInheritedWeapons(clonedMesh) {
 // ============================================================
 // Sesión 50 — Armadura de los peers
 // ============================================================
-const PEER_ARMOR_SLOTS = ['helm', 'body', 'legs', 'boots', 'gloves', 'shield', 'cape'];   // S51: + capa (después del torso)
+const PEER_ARMOR_SLOTS = ['helm', 'body', 'legs', 'boots', 'gloves', 'shield', 'cape', 'quiver'];   // S51: + capa (después del torso) · 19 oct: + carcaj
 
 /** Quita todo lo que cuelga de los huesos del clone que no sea hueso/malla del personaje. */
 function removeInheritedAttachments(root) {
