@@ -1045,6 +1045,15 @@ async function doAttackTickPlayer(gen = attackGen) {
   if (isTabOpen) render();
   notify();
 
+  // 19 oct — duelo amistoso terminado: nadie muere ni pierde nada; vida llena
+  if (result.duel_over) {
+    feedLog(result.duel_won ? 'levelup' : 'death', result.duel_won ? `🏆 ¡Has ganado el duelo contra ${targetName}!` : `Has perdido el duelo contra ${targetName}. No pierdes nada.`);
+    try { if (Number.isFinite(result.your_hp)) window.__setHpInstant?.(result.your_hp, result.your_hp_max ?? undefined); } catch {}
+    try { audio.synth?.(result.duel_won ? 'craft_done' : 'pray_off', { volume: 0.9 }); } catch {}
+    disengage();
+    await refresh();
+    return;
+  }
   // Target murió
   if (result.target_killed) {
     feedLog('kill', `¡Has matado a ${targetName}!`);

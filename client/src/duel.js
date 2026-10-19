@@ -90,8 +90,11 @@ export function onSnapshotMe(me) {
     _feedLogFn?.('info', `Duelo iniciado contra ${lastDuel.opponent_username} (lvl ${lastDuel.opponent_combat_lvl}).`);
     showHud();
   } else if (prev && !lastDuel) {
-    // Duelo terminó.
-    _feedLogFn?.('info', 'Duelo finalizado.');
+    // Duelo terminó. 19 oct — si el último golpe que recibiste fue de tu rival
+    // hace nada, has perdido (el que gana ya lo ve en su respuesta de ataque).
+    const lost = me.last_hit_from_user_id === prev.opponent_user_id && me.last_hit_at && (Date.now() - me.last_hit_at) < 15000;
+    _feedLogFn?.(lost ? 'death' : 'info', lost ? `Has perdido el duelo contra ${prev.opponent_username}. Tranquilo: no pierdes nada y recuperas la vida.` : 'Duelo finalizado.');
+    try { window.__combatDisengage?.(); } catch {}
     removeHud();
   }
   if (lastDuel) updateHud();

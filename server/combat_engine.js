@@ -194,6 +194,7 @@ const SPAWN_Z = 0;
 // Valor: 3 unidades. PVE usa "slots" (DEATH_KEEP_TOP_N_SLOTS); aquí
 // usamos "unidades virtuales".
 const PVP_DEATH_KEEP_TOP_N = 3;
+const PVP_COUNTER_IDLE_MS = 4000;   // 19 oct — contragolpe automático solo si el objetivo lleva 4 s sin atacar
 
 // Sesión 27 Bloque 3 — PVP solo permitido en la zona wilderness, igual
 // que en OSRS clásico. La zona wilderness es todo lo que está a la
@@ -1728,6 +1729,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   const attackerInWild = attackerPos.x < WILDERNESS_X_BORDER && attackerTrusted.server.x < WILDERNESS_X_BORDER;
   const targetInWild   = targetPosServer.x < WILDERNESS_X_BORDER;
 
+  let duelFight = null;   // 19 oct — duelo amistoso: nadie pierde objetos ni "muere"
   if (attackerInWild && targetInWild) {
     // ambos en wild → libre. Si attacker tenía duelo activo (con
     // cualquiera, no solo target), cancelar.
@@ -1763,6 +1765,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     }
     // Hay duelo → permitir attack. (No cancelar el duelo aquí — solo
     // se cancela al morir alguno o al entrar wild ambos.)
+    duelFight = duel;
   }
 
   // -------- Cooldown attacker --------
@@ -1956,6 +1959,9 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   userHit.damage = dmgToTarget;
   const targetHpAfter = targetStats.hp_current - dmgToTarget;
   const targetKilled = targetHpAfter <= 0;
+  // 19 oct — en un duelo amistoso, el golpe final GANA el duelo: el perdedor no
+  // muere ni suelta nada; los dos quedan con la vida llena y el duelo se cierra.
+  let duelWonBy = (duelFight && targetKilled) ? attackerId : null;
 
   // -------- Sesión 32 — Guardar el hit recibido en target stats --------
   // El target lo lee del snapshot.me y muestra hitsplat + anim de reacción.
@@ -1998,7 +2004,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
 
   // -------- Persist target damage --------
   targetStats.hp_current = targetKilled ? 0 : targetHpAfter;
-  if (targetKilled) targetStats.last_died_at = now;
+  if (targetKilled && !duelWonBy) targetStats.last_died_at = now;
 
   // -------- Target counter-attack (auto-retaliate) --------
   // El target devuelve el golpe si:
@@ -2015,9 +2021,13 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // propio arco/bastón con su auto-respuesta normal).
   const inMeleeReach = d <= Math.min(PVP_PLAYER_BASE_RANGE + RANGE_TOLERANCE, PVP_MELEE_MAX_RANGE);
   if (!targetKilled && inMeleeReach) {
+    // 19 oct — el contragolpe automático del servidor SOLO si el objetivo no
+    // está peleando él mismo (está quieto / AFK). Antes saltaba en cada golpe
+    // y le ponía en enfriamiento: en un duelo, el que recibía no podía atacar
+    // con su botón (sus golpes salían solos, sin animación y a otro ritmo).
     const targetCooldownMs = cooldownMs; // simplificación: usa el del attacker
-    const targetReady = !targetStats.last_attack_at ||
-                        (now - targetStats.last_attack_at) >= targetCooldownMs;
+    const targetIdle = !targetStats.last_attack_at || (now - targetStats.last_attack_at) > PVP_COUNTER_IDLE_MS;
+    const targetReady = targetIdle;
     if (targetReady) {
       // El target da un golpe defensivo (style: defensive simulado).
       // Usamos su strength real pero stance "neutra".
@@ -2027,7 +2037,11 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
       if (attackerFx.protectMelee) targetCounterHit.damage = Math.floor(targetCounterHit.damage * 0.6);   // S50
       dmgToAttacker = Math.min(targetCounterHit.damage, attackerStats.hp_current);
       const attackerHpAfter = attackerStats.hp_current - dmgToAttacker;
-      if (attackerHpAfter <= 0) {
+      if (attackerHpAfter <= 0 && duelFight) {
+        // 19 oct — duelo: el contragolpe gana el duelo para el objetivo
+        duelWonBy = targetId;
+        attackerStats.hp_current = 0;
+      } else if (attackerHpAfter <= 0) {
         attackerKilled = true;
         attackerStats.hp_current = 0;
         attackerStats.last_died_at = now;
@@ -2065,7 +2079,10 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
         attackerStats.last_hit_is_crit = 0;
       }
     }
-  } else {
+  } else if (targetKilled && !duelWonBy) {
+    // 19 oct — antes era un `else` a secas: desde lejos (arco/magia, sin
+    // contragolpe) se entraba aquí SIN haber matado y el objetivo soltaba
+    // sus objetos y se cerraba el duelo. Solo si de verdad ha muerto.
     // Target murió por el golpe → drop sus items en la pos PERSISTIDA
     // del server. Sesión 27 Bloque 3 — usar PVP drop (descompone stacks,
     // incluye equipment, conserva top-N más valiosos por valor unitario).
@@ -2087,6 +2104,13 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   }
 
   attackerStats.last_attack_at = stampPvp;   // 19 oct — ver attackStamp
+
+  // 19 oct — fin de duelo: los dos con la vida llena, sin muerte ni pérdidas
+  if (duelWonBy) {
+    targetStats.hp_current = levelFromXp(targetStats.hp_xp || 0);
+    attackerStats.hp_current = levelFromXp(attackerStats.hp_xp || 0);
+    try { await closeDuelById(db, duelFight.id, now); } catch {}
+  }
 
   // -------- Persist attacker --------
   const specAfterPvp    = specActivePvp ? (specEnergyNowPvp - specCostPvp) : null;
@@ -2220,7 +2244,9 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     cooldown_ms:   cooldownMs,
     weapon_type:   weaponType,
     stance:        stanceKey,
-    target_killed: targetKilled,
+    target_killed: targetKilled && !duelWonBy,
+    duel_over:     !!duelWonBy,                   // 19 oct
+    duel_won:      duelWonBy === attackerId,
     skulled: isSkulled(attackerStats, now),   // Sesión 50
     skulled_now: skulledNow,
     target_hp:     targetStats.hp_current,
