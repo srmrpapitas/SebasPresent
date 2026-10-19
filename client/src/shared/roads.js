@@ -13,6 +13,7 @@ import { CASONAS } from './casonas.js';
 import { HOUSE_PORTALS } from './houses.js';
 import { BOSSES } from './bosses.js';
 import { FOSA } from './fosa.js';
+import { TOWN_BUILDINGS } from './town_buildings.js';
 
 export const ROAD_HALF_W = 2.6;          // medio ancho (m)
 
@@ -53,6 +54,7 @@ function obstacles() {
   for (const p of PONDS) o.push([p.x, p.z, p.r + 7]);
   for (const c of CASONAS) o.push([c.x, c.z, 30]);
   for (const h of HOUSE_PORTALS) o.push([h.x, h.z, 30]);
+  for (const b of TOWN_BUILDINGS) o.push([b.x, b.z, Math.max(b.w, b.d) / 2 + 4]);   // 19 oct — taberna, herrería…
   for (const b of Object.values(BOSSES)) o.push([b.x, b.z, (b.lairR || 12) + 4]);
   o.push([FOSA.x, FOSA.z, FOSA.r + 8]);
   for (const [x, z] of [[30, 0], [-260, -660], [1460, 60]]) o.push([x, z, 14]);   // edificios del banco

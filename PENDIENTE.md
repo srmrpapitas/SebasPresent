@@ -23,8 +23,14 @@
        (tabernas, herreros, casas con historia, misiones cortas). Empezar por los pueblos principales.
 7. [ ] Dejarlo todo impecable: probar en móvil y PC antes de cada push, un commit por arreglo.
 
+   - [x] (19 oct) La Laguna: **Taberna La Vieja Aguere** (Fefo vende comida, Don Pancho cuenta la historia de La Laguna,
+     Chago el del timple) + misión «El vino que no llegó». Santa Cruz: **Herrería del Muelle** (Maestro Chano cuenta la
+     historia de Santa Cruz y El Tigre, la aprendiza Iballa) + misión «El Tigre de Paso Alto» (Herrería 15).
+     Sistema reutilizable: `shared/town_buildings.js` (ver INVARIANTS §36).
+   - [ ] Siguen: La Orotava, Icod, Güímar, Adeje/Los Cristianos, Vilaflor (1 edificio + lore + misión corta cada uno).
+
 ### Notas del 19 oct (tarea programada)
-- Siguiente: punto 6 (pueblos). Empezar por La Laguna y Santa Cruz: lore + 1 edificio con NPC dentro + 1 misión corta cada uno.
+- Siguiente: punto 6 (pueblos). Hechos La Laguna y Santa Cruz; seguir con La Orotava e Icod (casa con historia / bodega).
 - Pruebas locales: `scripts/local/server.mjs` (API + cliente con SQLite; three.js se clona de GitHub r160 porque
   no hay CDN ni npm en el entorno) y `scripts/local/armor_shots.mjs` (fotos de armaduras sin R2).
   Los modelos de R2 no cargan en local: el personaje sale como cápsula.

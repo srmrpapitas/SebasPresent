@@ -320,7 +320,7 @@ function renderTab() {
       const tg = ev.target.closest('[data-toggle]');
       if (tg) { const id = tg.dataset.toggle; if (openIds.has(id)) openIds.delete(id); else openIds.add(id); renderTab(); return; }
       const gd = ev.target.closest('[data-guide]');   // Sesión 53 — Llévame
-      if (gd) { ev.stopPropagation(); const q = QUESTS[gd.dataset.guide]; const g = q && TOWN_NPCS_BY_ID[q.giver]; if (g) guideTo(g.x, g.z, g.name); return; }
+      if (gd) { ev.stopPropagation(); const q = QUESTS[gd.dataset.guide]; const g = q && TOWN_NPCS_BY_ID[q.giver]; if (g) guideTo(g.door?.x ?? g.x, g.door?.z ?? g.z, g.name); return; }
       const tr = ev.target.closest('[data-track]');
       if (tr) { ev.stopPropagation(); track(tr.dataset.track); return; }
       const sk = ev.target.closest('[data-skip]');
@@ -387,7 +387,11 @@ function computeHint() {
   }
   if (h.talk) {   // Sesión 50 — el NPC con el que hay que hablar
     const n = TOWN_NPCS_BY_ID[h.talk];
-    return n ? { x: n.x, z: n.z } : null;
+    if (!n) return null;
+    // 19 oct — vecino dentro de un edificio: a la puerta (o a él si ya estás dentro)
+    const p = getPlayer?.();
+    if (n.door && !(p && Math.hypot(p.position.x - n.x, p.position.z - n.z) < 40)) return { x: n.door.x, z: n.door.z };
+    return { x: n.x, z: n.z };
   }
   if (h.bank) {   // Sesión 50 — el cofre de banco más cercano
     const p = getPlayer?.();

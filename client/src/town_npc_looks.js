@@ -17,6 +17,12 @@ const BANKER = { model: 'm36' };
 export const NPC_LOOKS = {
   // La Laguna
   guia_aldric:         { model: 'm41' },
+  // 19 oct — dentro de la Taberna La Vieja Aguere y la Herrería del Muelle
+  tabernero_fefo:      { model: 'm38' },
+  parroquiano_pancho:  { model: 'm43', tint: { sat: 0.5 } },
+  timplista_chago:     { model: 'm40', tint: { hue: 0.02, sat: 1.3 } },
+  herrero_chano:       { model: 'm37', armor: ['gloves_hierro'] },
+  aprendiza_iballa:    { model: 'f40' },
   banquero_gerardo:    { model: 'm36' },
   lia_artesana:        { model: 'f45' },
   morgana_maga:        { model: 'f44', tint: { hue: 0.72, sat: 1.5 } },

@@ -19,6 +19,7 @@ export const TALK_DIST_M = 3.0;        // cliente
 export const TALK_DIST_SERVER_M = 9.0; // server (posición del heartbeat con algo de retraso)
 
 import { CASONAS, bankerSpot } from './casonas.js';
+import { inRoom, DOOR_SERVER_SLACK_M } from './town_buildings.js';   // 19 oct — vecinos dentro de edificios
 const CASONA_LOOK = {
   banquera_dacil:    { name: 'Dácil',    title: 'Banquera de Santa Cruz',     look: { skin: 0xc8946a, shirt: 0x2a4a6a, pants: 0x1f1f24, hair: 0x1a1008, acc: 'apron' } },
   banquero_acaymo:   { name: 'Acaymo',   title: 'Banquero de Adeje',          look: { skin: 0xb07a52, shirt: 0x5a1f2a, pants: 0x1f1f24, hair: 0x1a1a1a, acc: 'hat' } },
@@ -526,6 +527,50 @@ export const TOWN_NPCS = [
       'Si te pegan, te caes del caballo. Y si te atacan, el animal se asusta: espera un poquito antes de volver a montar.',
       'Mis dragones nacen en los riscos de Anaga. Por tierra corren a cuatro patas; cuando seas fuerte (nivel 25), te llevan volando por encima del Teide.',
     ] },
+  // ------------------------------------------------ 19 oct — dentro de los edificios (shared/town_buildings.js)
+  // Taberna La Vieja Aguere (La Laguna)
+  { id: 'tabernero_fefo', name: 'Fefo', title: 'Tabernero de La Vieja Aguere', ...inRoom('taberna_laguna', 0, 2.9), rotY: Math.PI, role: '🍷',
+    look: { skin: 0xd9a57a, shirt: 0xf0ece0, pants: 0x2a2a2a, hair: 0x2a1a10, acc: 'apron' },
+    actions: ['shop:taberna_laguna'],
+    lines: [
+      '¡Pasa, pasa, que fuera hace frío! Bienvenido a La Vieja Aguere, la taberna más antigua de La Laguna.',
+      'Aquí no se viene solo a beber, ¿eh? Se viene a enterarse de todo. Lo que no se sabe en esta barra, no ha pasado.',
+      'Si tienes hambre, tengo pan, gofio, pollo y ternera. Y si vas a pelear, llévate comida: los muertos no pagan la cuenta.',
+      'Don Pancho lleva sentado en esa mesa desde antes de que yo naciera. Pregúntale por la laguna, que le encanta.',
+      'Chago toca el timple los viernes. Y los lunes. Y cuando le pagan una ronda, que es casi siempre.',
+    ] },
+  { id: 'parroquiano_pancho', name: 'Don Pancho', title: 'Parroquiano de toda la vida', ...inRoom('taberna_laguna', -4.2, -1.25), rotY: Math.PI, role: '🍷',
+    look: { skin: 0xe0b08a, shirt: 0x4a4a5a, pants: 0x2a2a30, hair: 0xd0d0d0, acc: 'hat' },
+    lines: [
+      'Siéntate, siéntate. A mi edad uno ya no se levanta por cualquiera.',
+      'Yo vi secarse los últimos charcos de la laguna. Bueno, eso dice mi abuelo que vio él. Viene a ser lo mismo.',
+      'Cuando hay niebla en La Laguna, no te fíes de las sombras de la Plaza del Adelantado. Algunas no son de nadie.',
+      'El mejor vino de la isla es el de Tacoronte. El segundo mejor, también.',
+    ] },
+  { id: 'timplista_chago', name: 'Chago', title: 'Músico del timple', ...inRoom('taberna_laguna', 4.2, -1.55), rotY: Math.PI, role: '🎶',
+    look: { skin: 0xc8946a, shirt: 0x8a2a2a, pants: 0x2a2a2a, hair: 0x1a1008, acc: 'hat' },
+    lines: [
+      '¡Una folía pa\'l forastero! ♪ Ay, Laguna, Laguna mía, con tu niebla y tu llovizna… ♪',
+      'El timple tiene cinco cuerdas y ninguna se calla. Como mi suegra.',
+      'Dicen que en las cumbres, de noche, todavía se oye el silbo de los pastores guanches. Yo lo he intentado y solo me sale un pitido.',
+      'Si un día ves la taberna vacía, es que Fefo ha cerrado la cuenta. Y eso es más peligroso que cualquier dragón.',
+    ] },
+  // Herrería del Muelle (Santa Cruz)
+  { id: 'herrero_chano', name: 'Maestro Chano', title: 'Herrero del Muelle', ...inRoom('herreria_santacruz', 1.6, 2.6), rotY: Math.PI, role: '⚒',
+    look: { skin: 0xb07a52, shirt: 0x3a3028, pants: 0x2a2620, hair: 0x2a2a2a, acc: 'apron' },
+    lines: [
+      'Cuidado con la forja, que quema más que el sol de agosto en el muelle.',
+      'Herraduras para los caballeros de Anaga, anclas para los barcos, rejas para el castillo… Aquí no se para nunca.',
+      'El buen hierro se trabaja al rojo cereza, no al blanco. Si sale chispa blanca, ya te has pasado.',
+      'Ese cañón del rincón es El Tigre. No lo toques, que está de baja.',
+    ] },
+  { id: 'aprendiza_iballa', name: 'Iballa', title: 'Aprendiza de herrera', ...inRoom('herreria_santacruz', -1.5, 2.9), rotY: Math.PI * 1.15, role: '🔨',
+    look: { skin: 0xd9a57a, shirt: 0x6a3a2a, pants: 0x2a2620, hair: 0x3a2010, acc: 'apron' },
+    lines: [
+      '¡Hola! Perdona el hollín, es que hoy me tocó limpiar la forja. Y ayer. Y anteayer.',
+      'El Maestro Chano dice que en cinco años me deja tocar el yunque. Yo ya practico con una cuchara.',
+      'Si picas hierro, fúndelo en el horno de la Cantera de La Laguna. El de aquí es solo para el Maestro.',
+    ] },
   // Sesión 50 — casas de jugador
   { id: 'nauzet_inmobiliaria', name: 'Nauzet', title: 'Agente inmobiliario', x: 50, z: 50, rotY: 0.8, role: '🏠',
     look: { skin: 0xd0a07a, shirt: 0x2a3a6a, pants: 0x1a1a2a, hair: 0x1a1a1a, acc: 'glasses' },
@@ -554,6 +599,8 @@ export function wanderPos(n, t) {
 }
 /** Distancia de (x,z) al NPC; si pasea, a su recorrido (el server no sabe dónde va exactamente). */
 export function npcDist(n, x, z) {
+  // 19 oct — dentro de un edificio: el server solo sabe que estás en la puerta
+  if (n.door) return Math.max(0, Math.hypot(x - n.door.x, z - n.door.z) - DOOR_SERVER_SLACK_M);
   if (!n.wander) return Math.hypot(x - n.x, z - n.z);
   return Math.max(0, Math.abs(Math.hypot(x - n.wander.cx, z - n.wander.cz) - n.wander.r) - 1.2);
 }

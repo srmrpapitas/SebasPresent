@@ -51,7 +51,8 @@ const SHOP_TITLES = { general_store: '🛒 Tienda', magic_store: '🔮 Tienda de
   ferreteria_arico: '🔧 Ferretería de Arico',
   flecheria_chayofa: '🏹 Flechería de Chayofa',
   pescaderia_faro: '🐟 Pescadería del Faro',
-  bazar_guimar: '🐫 Bazar de Samir' };
+  bazar_guimar: '🐫 Bazar de Samir',
+  taberna_laguna: '🍷 Taberna La Vieja Aguere' };
 
 export async function open(shopId = 'general_store') {
   currentShopId = shopId;

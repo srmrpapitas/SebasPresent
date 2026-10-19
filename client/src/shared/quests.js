@@ -472,7 +472,9 @@ export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'pri
   'mago_huesos', 'encargo_herrera', 'escorpiones', 'golems_mina', 'bestia_blanca',
   // Sesión 50
   'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones',
-  'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror', 'cronicas_achinech'];
+  'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror', 'cronicas_achinech',
+  // 19 oct — pueblos
+  'vino_tacoronte', 'el_tigre'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {
@@ -506,6 +508,7 @@ export const QUEST_REQS = {
   matadragones:       { combat: 70, quests: ['rey_de_las_cumbres', 'huesos_ruinas'] },
   dia_de_pierna:      { levels: { herblore: 8 }, quests: ['primeras_pociones'] },
   el_tagoror:         { combat: 35 },
+  el_tigre:           { levels: { smithing: 15 } },
   sombra_cabildo:     { combat: 60, levels: { herblore: 35, prayer: 37 }, quests: ['primeras_pociones', 'bruja_niebla'] },
 };
 
@@ -921,4 +924,52 @@ Object.assign(QUEST_REQS, {
   saga_traicion:  { combat: 55, levels: { prayer: 37 }, quests: ['saga_llaves'] },
   saga_corona:    { combat: 65, quests: ['saga_traicion'] },
   saga_despertar: { combat: 70, levels: { prayer: 43 }, quests: ['saga_corona'] },
+});
+
+// ============================================================
+// 19 oct — Misiones cortas de los pueblos (edificios: shared/town_buildings.js)
+// ============================================================
+Object.assign(QUESTS, {
+  vino_tacoronte: {
+    id: 'vino_tacoronte', name: 'El vino que no llegó', giver: 'tabernero_fefo',
+    summary: 'Fefo, el tabernero de La Vieja Aguere (La Laguna), se ha quedado sin el vino de Tacoronte. Recomendado: combate 3.',
+    offer: ['El carro del vino de Tacoronte tenía que llegar ayer… y aquí no ha llegado ni una gota.', 'El arriero jura que dejó los barriles en la plaza. Y en la plaza, ¿quién duerme? Adonay. Pregúntale, anda.'],
+    accept: 'Voy a hablar con Adonay.', doing: 'Adonay pasea por la plaza de La Laguna. Si no lo ves, sigue el olor.',
+    thanks: '¿Las ratas? ¿Y Adonay se bebió un barril entero? ¡Ese sinvergüenza! Bueno, al menos el resto se salva. Toma, invita la casa.',
+    steps: [
+      { id: 'adonay', event: 'talk', match: 'adonay_vagabundo', count: 1, hint: { talk: 'adonay_vagabundo' },
+        text: 'Pregunta a Adonay, el vagabundo de la plaza, por el vino.', tip: 'Da vueltas por la plaza de La Laguna.',
+        scene: [
+          '¿El vino? ¿Qué vino? Yo no he visto ningún vino, mi niño. *hip*',
+          N('Adonay lleva la camisa manchada de morado hasta el cuello.'),
+          'Bueno… a lo mejor me caí encima de un barril. Y a lo mejor se abrió. Y a lo mejor me lo bebí pa\' que no se perdiera. ¡Por civismo!',
+          'Los otros dos se los llevaron rodando unas ratas gordísimas pa\'l campo del este. ¡Grandes como cabras, te lo juro!',
+        ] },
+      { id: 'ratas', event: 'kill', match: 'rat', count: 3, hint: { npc: 'rat' },
+        text: 'Espanta a las ratas que se llevaron los barriles: mata 3 ratas gigantes.', tip: 'En los Campos de las ratas, al este de La Laguna.' },
+      talkBack('tabernero_fefo', 'Vuelve con Fefo a la Taberna La Vieja Aguere.', 20),
+    ],
+    reward: { coins: 150, items: [['pan', 4], ['cooked_beef', 3]], xp: { cooking: 300, attack: 150 }, text: '150 monedas · 4 panes · 3 de ternera · 300 XP Cocina · 150 XP Ataque' },
+  },
+  el_tigre: {
+    id: 'el_tigre', name: 'El Tigre de Paso Alto', giver: 'herrero_chano',
+    summary: 'El Maestro Chano, herrero del muelle de Santa Cruz, quiere reparar El Tigre, el viejo cañón del puerto.',
+    offer: ['¿Ves ese cañón del rincón? Es El Tigre. Hace muchos años echó del puerto a una flota entera.', 'Sir Beneharo quiere que dispare en las fiestas, pero tiene los aros de hierro rotos… y yo no tengo hierro.', 'Tráeme 3 lingotes de hierro y te enseño cómo se trabaja en el muelle.'],
+    accept: 'Le traeré el hierro, Maestro.', doing: '3 lingotes de hierro. Pica hierro y fúndelo en un horno (nivel 15 de Herrería).',
+    thanks: '¡Mira cómo brilla! Ya no es un cañón: es un tigre otra vez. Toma, que te lo has ganado, y aprende lo que viste.',
+    steps: [
+      { id: 'hierro', event: 'deliver', npc: 'herrero_chano', items: [['bar_hierro', 3]], count: 1, hint: { talk: 'herrero_chano' },
+        text: 'Lleva 3 lingotes de hierro al Maestro Chano (Herrería del Muelle, Santa Cruz).', tip: 'Pica hierro en la Cantera de La Laguna y fúndelo en su horno.',
+        scene: [N('Chano mete los lingotes en la forja. El taller se llena de chispas y del ruido del martillo.'), 'Ya está. Aros nuevos, como el primer día. Ahora ve a avisar a Sir Beneharo: está en la plaza, haciéndose el importante.'] },
+      { id: 'beneharo', event: 'talk', match: 'caballero_anaga', count: 1, hint: { talk: 'caballero_anaga' },
+        text: 'Avisa a Sir Beneharo, en la plaza de Santa Cruz, de que El Tigre está listo.', tip: 'Junto a la casona del banco.',
+        scene: [
+          P('Sir Beneharo, el Maestro Chano dice que El Tigre ya está reparado.'),
+          '¿De verdad? ¡Por fin! Ese cañón defendió el puerto cuando nadie más podía.',
+          'En las fiestas dispararemos una salva por los que cayeron aquel verano. Dile a Chano que el café de esta semana corre de mi cuenta.',
+        ] },
+      talkBack('herrero_chano', 'Vuelve con el Maestro Chano a la Herrería del Muelle.'),
+    ],
+    reward: { coins: 400, items: [['bar_hierro', 2]], xp: { smithing: 1500 }, text: '400 monedas · 2 lingotes de hierro · 1.500 XP Herrería' },
+  },
 });

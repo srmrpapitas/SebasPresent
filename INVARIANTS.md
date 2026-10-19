@@ -765,3 +765,10 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Herbología (`client/src/shared/herblore.js`): recetas en `shared/crafting.js` (skill 'herblore', evento de misión 'herb'). Pociones de 3/2/1 dosis; `POST /api/potion/drink` gasta la dosis con guarda. Las subidas se guardan en `combat_stats.boosts` (migración 008, EJECUTADA) y entran al combate por `prayerFx().flat` → `boostLvls`, la defensa de los monstruos/jefes y el nivel de Magia. Seed 011 (EJECUTADO): objetos y tienda `aso`.
 - Monstruos a distancia: `npc_defs.style` 'magic'/'ranged' atacan desde `attack_range` en `tickNpcAggro` y la protección correspondiente los bloquea. El snapshot manda `style` y `last_attack_at` → `boss_fx` dibuja el proyectil.
 - Cabildo: los acólitos (`acolito_cabildo`) y el jefe Magister Perdomo (`magister_cabildo` en bosses.js) están en el Monte de Las Mercedes (-40,-600). Seed 012 (EJECUTADO).
+
+## 36. Edificios de los pueblos en los que se entra (19 oct)
+- Datos: `client/src/shared/town_buildings.js` (fuera: x,z,dir,w,d; dentro: `room` lejos del mapa, 14000+). Cliente: `client/src/town_buildings.js` (fachada con `buildCasa` de houses.js, sala con `interiors.enterRoom`, luces SOLO del pool).
+- Los vecinos de dentro son habitantes normales de `shared/town_npcs.js` con `...inRoom(id, lx, lz)` → x,z en la sala + `inside` + `door`. El server solo conoce la posición de la puerta (interiors fija el heartbeat al entrar), así que `npcDist` mide a `door` con `DOOR_SERVER_SLACK_M` de margen. Minimapa y guía de misiones usan `door` si estás fuera.
+- Dentro, los toques van a `room.onTap` (town_buildings): primero vecinos (`townNpcs.tryHandleTap`), luego muebles (salir / examinar).
+- Taberna La Vieja Aguere (La Laguna, tienda `taberna_laguna`, seed 029 EJECUTADO) y Herrería del Muelle (Santa Cruz). Misiones: `vino_tacoronte`, `el_tigre`.
+- Para añadir otro: entrada en TOWN_BUILDINGS (room sin solaparse), un `buildX` en town_buildings.js para su `kind`, y sus vecinos con `inRoom`.

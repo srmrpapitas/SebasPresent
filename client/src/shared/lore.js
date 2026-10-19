@@ -214,4 +214,25 @@ export const LORE = {
       'Ahora vuelve con Aldric, en La Laguna. Ya conoces la historia de Achinech mejor que muchos que nacieron aquí.',
     ],
   },
+  // 19 oct — los pueblos por dentro (shared/town_buildings.js)
+  parroquiano_pancho: {
+    label: '📖 Cuéntame la historia de La Laguna',
+    pages: [
+      'Aquí donde estás hubo una laguna de verdad: la laguna de Aguere. Los guanches traían sus cabras a beber y los menceyes se reunían en la orilla.',
+      'Cuando llegaron los castellanos secaron la laguna y trazaron las calles a cordel, rectas como una regla. Dicen que ese dibujo lo copiaron después ciudades al otro lado del mar.',
+      'Por eso aquí siempre hay niebla y siempre cae un chirimiri: el agua se acuerda de dónde vivía.',
+      'Esta taberna es más vieja que el Cabildo. Aquí se cerraron tratos, se perdieron fortunas a las cartas y se cantaron más folías que en toda la isla.',
+      'Y una cosa te digo, en voz baja: desde que los magos del Cabildo visten de rojo, aquí no ha vuelto ni un consejero. Los que beben, hablan. Y esos no quieren hablar.',
+    ],
+  },
+  herrero_chano: {
+    label: '📖 Cuéntame la historia de Santa Cruz',
+    pages: [
+      'Santa Cruz era un puertito de pescadores al pie de Anaga. Los guanches llamaban a esta playa Añazo.',
+      'Con los barcos llegó el comercio, y con el comercio, los piratas. Por eso hay castillos por toda la costa: San Cristóbal, Paso Alto, San Juan…',
+      'Un verano de 1797 apareció una flota enorme a por el puerto. Tres días de pelea. Al final se marcharon, y su almirante se dejó aquí un brazo.',
+      'Esa noche disparó El Tigre, el cañón que tengo en el taller. Por eso lo cuido como a un hijo.',
+      'Hoy el muelle huele a pescado, a brea y a café. Y de Anaga bajan los caballeros de Sir Beneharo a por herraduras. Ellos dicen que vigilan la costa; yo digo que vienen por el café.',
+    ],
+  },
 };

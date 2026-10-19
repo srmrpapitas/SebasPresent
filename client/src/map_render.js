@@ -276,6 +276,15 @@ export function drawIcon(ctx, kind, x, y, r = 6, extra = {}) {
       ctx.fillStyle = '#2f6a3a'; ctx.fillRect(x - r * 0.13, y + r * 0.2, r * 0.26, r * 0.35);
       break;
     }
+    case 'tavern': {   // 19 oct — taberna: jarra de vino
+      disc(ctx, x, y, r, '#7a1a2a', '#200008');
+      ctx.fillStyle = '#f4e8d0';
+      ctx.fillRect(x - r * 0.38, y - r * 0.45, r * 0.6, r * 0.9);
+      ctx.strokeStyle = '#f4e8d0'; ctx.lineWidth = Math.max(1, r * 0.16);
+      ctx.beginPath(); ctx.arc(x + r * 0.25, y, r * 0.25, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+      ctx.fillStyle = '#a0203a'; ctx.fillRect(x - r * 0.3, y - r * 0.1, r * 0.44, r * 0.48);
+      break;
+    }
     case 'cave': {     // Sesión 50 — boca de cueva: montaña gris con arco negro
       disc(ctx, x, y, r, '#5a5048', '#1a1410');
       ctx.fillStyle = '#8a7e70'; ctx.beginPath();

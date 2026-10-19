@@ -32,6 +32,8 @@ import * as fosa from './fosa.js';              // Sesión 50 — Fosa de Guayot
 import * as potions from './potions.js';        // Sesión 50 — pociones
 import * as guancheVillage from './guanche_village.js';   // Sesión 50 — poblado guanche
 import * as houses from './houses.js';                     // Sesión 50 — casas de jugador
+import * as townBuildings from './town_buildings.js';      // 19 oct — taberna, herrería… (se entra)
+import { TOWN_BUILDINGS } from './shared/town_buildings.js';
 import * as roadsRender from './roads_render.js';          // Sesión 50 — caminos y postes
 import * as mounts from './mounts.js';                     // Sesión 50 — monturas
 import { MOUNT_RUN_MULT } from './shared/mounts.js';
@@ -323,6 +325,7 @@ export async function startWorld(loggedInUser, token) {
     try { fosa.registerKeepouts(terrain); } catch {}
     try { guancheVillage.registerKeepouts(terrain); } catch {}
     try { houses.registerKeepouts(terrain); } catch {}
+    try { townBuildings.registerKeepouts(terrain); } catch {}   // 19 oct
     try { menceyes.registerKeepouts(terrain); } catch {}
     try { caves.registerKeepouts(terrain); } catch {}
     // Sesión 50 — guaridas de jefes sin árboles
@@ -421,11 +424,14 @@ export async function startWorld(loggedInUser, token) {
         // arriba (pitch→1.3), va a clipar el techo, pero la geometría
         // probablemente es one-sided (visible desde dentro, invisible desde
         // afuera/arriba), así que no debería verse "agujereado".
-        cameraOrbital.pushInteriorOverrides(buildingId === 'house' ? { dist: 11, pitch: 0.8 } : { dist: 14, pitch: 0.55 });
+        // 19 oct — en la taberna/herrería: cámara desde la puerta (sur) mirando a la barra
+        const isTown = TOWN_BUILDINGS.some(b => b.id === buildingId);
+        cameraOrbital.pushInteriorOverrides(isTown ? { dist: 11, pitch: 0.8, yaw: Math.PI } : buildingId === 'house' ? { dist: 11, pitch: 0.8 } : { dist: 14, pitch: 0.55 });
         // Forzar refresh del label de región tras salir/entrar
         lastRegionName = '';
         const el = document.getElementById('worldRegion');
-        if (el) { el.textContent = buildingId === 'house' ? '🏠 Tu casa' : 'Interior'; el.style.opacity = '1'; }
+        const tb = TOWN_BUILDINGS.find(b => b.id === buildingId);   // 19 oct
+        if (el) { el.textContent = buildingId === 'house' ? '🏠 Tu casa' : tb ? tb.name : 'Interior'; el.style.opacity = '1'; }
         // Sesión 13 — SFX puerta al entrar; pausar música ambient
         try { audio.sfx('door_open'); audio.music(null); } catch {}
       },
@@ -1074,6 +1080,14 @@ export async function startWorld(loggedInUser, token) {
         onOpenBank: openBankHere,
       });
     } catch (e) { console.warn('[world] houses start:', e); }
+    try {   // 19 oct — edificios de los pueblos en los que se entra
+      townBuildings.start({
+        scene, camera, canvas,
+        getPlayer: () => player,
+        setPlayerTarget: (x, z) => setPlayerTarget(x, z),
+        feedLog: (type, msg) => combat.feedLog?.(type, msg),
+      });
+    } catch (e) { console.warn('[world] town buildings start:', e); }
     try {
       mounts.start({
         scene,
@@ -1278,6 +1292,7 @@ export function stopWorld() {
   try { menceyes.stop(); } catch {}
   try { caves.stop(); } catch {}
   try { houses.stop(); } catch {}
+  try { townBuildings.stop(); } catch {}
   try { mounts.stop(); } catch {}
   try { trade.stop(); social.stop(); follow.stop(true); } catch {}
   if (minimapCanvas) minimapCanvas.style.display = 'none';
@@ -1515,7 +1530,7 @@ function drawMinimap() {
       const [sx, sy] = S(b.x, b.z);
       mapRender.drawIcon(ctx, 'bank', sx, sy, IR);
     }
-    for (const m of [...houses.getMapIcons(), ...caves.getMapIcons()]) {   // Sesión 50
+    for (const m of [...houses.getMapIcons(), ...caves.getMapIcons(), ...townBuildings.getMapIcons()]) {   // Sesión 50
       if (!inView(m.x, m.z)) continue;
       const [sx, sy] = S(m.x, m.z);
       mapRender.drawIcon(ctx, m.kind, sx, sy, IR * 1.1);
@@ -1751,7 +1766,7 @@ function setupFullMap() {
   const footer = fullMapOverlay.querySelector('.osrs-fullmap-footer');
   if (footer) {
     footer.innerHTML = [
-      ['bank', 'Banco'], ['house', 'Tu casa'], ['quest', 'Misión'], ['anvil', 'Herrería'], ['altar', 'Altar'], ['fish', 'Pesca'], ['boss', 'Jefe'],
+      ['bank', 'Banco'], ['house', 'Tu casa'], ['quest', 'Misión'], ['anvil', 'Herrería'], ['tavern', 'Taberna'], ['altar', 'Altar'], ['fish', 'Pesca'], ['boss', 'Jefe'],
     ].map(([k, t]) => `<span class="fm-leg"><canvas data-ic="${k}" width="36" height="36"></canvas>${t}</span>`).join('')
       + '<span class="fm-leg fm-hint">Arrastra para moverte · pellizca para zoom</span>';
     for (const c of footer.querySelectorAll('canvas[data-ic]')) {
@@ -1927,7 +1942,7 @@ function drawFullMap() {
   if (ppm >= 0.18) {
     try {
       for (const b of bankChests.getBanksForMinimap()) if (vis(b.x, b.z)) mapRender.drawIcon(ctx, 'bank', ...S(b.x, b.z), IR);
-      for (const m of [...houses.getMapIcons(), ...caves.getMapIcons()]) if (vis(m.x, m.z)) mapRender.drawIcon(ctx, m.kind, ...S(m.x, m.z), IR * 1.15);
+      for (const m of [...houses.getMapIcons(), ...caves.getMapIcons(), ...townBuildings.getMapIcons()]) if (vis(m.x, m.z)) mapRender.drawIcon(ctx, m.kind, ...S(m.x, m.z), IR * 1.15);
       for (const st of smithing.getStationsForMinimap()) if (vis(st.x, st.z)) mapRender.drawIcon(ctx, st.kind === 'furnace' ? 'furnace' : 'anvil', ...S(st.x, st.z), IR);
       for (const a of prayer.getAltarsForMinimap()) if (vis(a.x, a.z)) mapRender.drawIcon(ctx, 'altar', ...S(a.x, a.z), IR);
       for (const pd of fishing.getPondsForMinimap()) if (vis(pd.x, pd.z)) mapRender.drawIcon(ctx, 'fish', ...S(pd.x, pd.z + pd.r + 6), IR * 0.9);
@@ -3212,6 +3227,7 @@ function doCanvasTap(clientX, clientY) {
   try { smithing.stopWork?.('tap_ground'); } catch {}
   try { prayer.cancel?.(); } catch {}
   try { houses.cancel?.(); } catch {}
+  try { townBuildings.cancel?.(); } catch {}
   try { caves.cancel?.(); } catch {}
   try { follow.stop(); } catch {}   // Sesión 50 — tocar en cualquier sitio deja de seguir
   try { bankChests.cancel?.(); } catch {}
@@ -3252,6 +3268,7 @@ function doCanvasTap(clientX, clientY) {
   try { if (menceyes.tryHandleTap(raycaster)) return; } catch {}
   try { if (caves.tryHandleTap(raycaster)) return; } catch (e) { console.warn('[caves] tap', e); }
   try { if (houses.tryHandleTap(raycaster)) return; } catch (e) { console.warn('[houses] tap', e); }
+  try { if (townBuildings.tryHandleTap(raycaster)) return; } catch (e) { console.warn('[town_buildings] tap', e); }
 
   // 2a-) Tap cofre de banco → caminar + abrir banco (Sesión 50).
   if (bankChests.tryHandleTap(raycaster)) return;
@@ -3498,6 +3515,7 @@ function animate() {
   try { potions.update(dt); } catch {}
   try { guancheVillage.update(dt); } catch {}
   try { houses.update(dt); } catch {}
+  try { townBuildings.update(dt); } catch {}
   try { caves.update(dt); } catch {}
   try { follow.update(dt); } catch {}
   try { mounts.update(dt); } catch (e) { if (!window.__mtErr) { window.__mtErr = e; console.warn('[mounts]', e); } }
@@ -3567,7 +3585,8 @@ function collideStep(x0, z0, x1, z1) {
   const a2 = buildings.applyCollision(x0, z0, a1.x, a1.z);
   const a3 = bossFx.applyCollision(x0, z0, a2.x, a2.z);          // rocas de jefes
   const a4 = guancheVillage.applyCollision(x0, z0, a3.x, a3.z);  // casas guanches
-  const a6 = houses.applyCollision(x0, z0, a4.x, a4.z);          // urbanizaciones, casonas, Arico
+  const a5 = houses.applyCollision(x0, z0, a4.x, a4.z);          // urbanizaciones, casonas, Arico
+  const a6 = townBuildings.applyCollision(x0, z0, a5.x, a5.z);   // 19 oct — taberna, herrería…
   const a7 = menceyes.applyCollision(x0, z0, a6.x, a6.z);        // estatuas de Candelaria
   const a8 = caves.applyCollision(x0, z0, a7.x, a7.z);           // montañas / paredes de las cuevas
   const a9 = places.applyCollision(x0, z0, a8.x, a8.z);          // Sesión 53 — lugares (Observatorio…)
@@ -3581,7 +3600,8 @@ function groundFreeAt(x, z) {
     const a2 = buildings.applyCollision(x + dx, z + dz, a1.x, a1.z);
     const a3 = bossFx.applyCollision(x + dx, z + dz, a2.x, a2.z);
     const a4 = guancheVillage.applyCollision(x + dx, z + dz, a3.x, a3.z);
-    const a6 = houses.applyCollision(x + dx, z + dz, a4.x, a4.z);
+    const a5 = houses.applyCollision(x + dx, z + dz, a4.x, a4.z);
+    const a6 = townBuildings.applyCollision(x + dx, z + dz, a5.x, a5.z);   // 19 oct
     const a9 = places.applyCollision(x + dx, z + dz, a6.x, a6.z);   // Sesión 53
     return Math.hypot(a9.x - x, a9.z - z) < 0.05;
   });

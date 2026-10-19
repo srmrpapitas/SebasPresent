@@ -27,6 +27,7 @@ import * as story from './story.js';   // Sesión 52 — escenas y decisiones de
 import { TOWN_NPCS, TOWN_NPCS_BY_ID, TALK_DIST_M, wanderPos } from './shared/town_npcs.js';
 import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — personajes Mixamo
 import { lookFor } from './town_npc_looks.js';
+import * as interiors from './interiors.js';   // 19 oct — marcas del minimapa de los vecinos de dentro
 import { QUESTS, QUEST_ORDER, questsOfNpc } from './shared/quests.js';
 
 const VIEW_DIST = 180;
@@ -432,7 +433,7 @@ async function talkTo(o) {
     for (const a of n.actions || []) {
       if (!a.startsWith('shop:')) continue;
       const shopId = a.slice(5);
-      opts.push({ label: shopId === 'magic_store' ? '🔮 Ver la tienda de magia' : shopId === 'aso' ? '🌿 Ver las hierbas' : '🛒 Ver la tienda', run: async () => {
+      opts.push({ label: shopId === 'magic_store' ? '🔮 Ver la tienda de magia' : shopId === 'aso' ? '🌿 Ver las hierbas' : shopId === 'taberna_laguna' ? '🍽️ ¿Qué hay de comer?' : '🛒 Ver la tienda', run: async () => {
         if (shopId === 'aso' && !(await asoDoor(d))) return;   // Sesión 50 — solo socios
         d.end(); onOpenShop(shopId);
       } });
@@ -471,7 +472,10 @@ async function doTurnIns(d, n) {
           quests.applyServerRows(r?.quests, r?.flags);
           // Sesión 52 — los items entregados salen de la mochila: refrescarla ya.
           try { window.inventory?.refresh?.(); } catch {}
-          await afterProgress(d, t.q);
+          // 19 oct — escena al entregar (p. ej. el herrero se pone a forjar)
+          const dl = story.stepLines(t.step, quests.getFlags());
+          if (dl.length && !(await story.play(d, dl, n))) return;
+          await afterProgress(d, t.q, !!dl.length);
           progressed = true;
         } catch (err) {
           await d.npc(err?.code === 'missing_items' ? 'Te falta algo… revisa tu mochila.' : 'Acércate un poco más.');
@@ -684,7 +688,7 @@ export function registerKeepouts(terrain) {
       if (n.wander) {
         terrain.addRingKeepout?.(n.wander.cx, n.wander.cz, n.wander.r, 3);
         for (let a = 0; a < 16; a++) terrain.clearTreesNear?.(n.wander.cx + Math.cos(a / 16 * 6.283) * n.wander.r, n.wander.cz + Math.sin(a / 16 * 6.283) * n.wander.r, n.wander.r * 0.45);
-      } else { terrain.addKeepout?.(n.x, n.z, 2); terrain.clearTreesNear?.(n.x, n.z, 2); }
+      } else if (!n.inside) { terrain.addKeepout?.(n.x, n.z, 2); terrain.clearTreesNear?.(n.x, n.z, 2); }
     } catch {}
   }
 }
@@ -764,13 +768,20 @@ function goSteal(o) {
 }
 
 export function cancel() { pending = null; pendingSteal = null; }
+/** 19 oct — al entrar en un edificio: aparecer ya los vecinos de dentro (sin esperar al segundo). */
+export function resync() { syncTimer = 99; }
 
 /** Para el minimapa: [{ x, z, mark }] */
 /** Sesión 53 — el muñeco 3D de un vecino (para su cara en el diálogo). */
 export function getRoot(id) { return objs.get(id)?.root || null; }
 
 export function getMinimapMarks() {
-  return TOWN_NPCS.map(n => ({ x: n.x, z: n.z, mark: objs.get(n.id)?.mark || markFor(n.id) }));
+  // 19 oct — los de dentro de un edificio salen en su puerta (si estás fuera)
+  const out = !!interiors.isActive?.();
+  return TOWN_NPCS.map(n => {
+    const at = n.door && !out ? n.door : n;
+    return { x: at.x, z: at.z, mark: objs.get(n.id)?.mark || markFor(n.id) };
+  });
 }
 function markFor(id) {
   const info = npcQuestInfo(id);
