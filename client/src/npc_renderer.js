@@ -475,6 +475,21 @@ export function tryHandleTap(clientX, clientY) {
 }
 
 /**
+ * 19 oct — Distancia en pantalla (px) del monstruo que cogería este toque,
+ * 0 si el rayo le da de lleno, null si no hay ninguno. Sirve para que un
+ * jugador al lado no le "robe" el toque al monstruo.
+ */
+export function npcTapScreenDist(clientX, clientY) {
+  if (!started) return null;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera({ x: nx, y: ny }, camera);
+  const npc = findNpcNearTap(clientX, clientY);
+  return npc ? (npc._tapDist ?? 0) : null;
+}
+
+/**
  * Long-press: abrir menú contextual. Si no hay NPC bajo el tap, no abre.
  * Devuelve true si abrió menú.
  */
@@ -1058,7 +1073,7 @@ function findNpcNearTap(clientX, clientY) {
     if (npcHits.length > 0) {
       const npcId = npcHits[0].object.userData.npcId;
       const npc = npcDataList.find(n => n.id === npcId);
-      if (npc) return npc;
+      if (npc) { npc._tapDist = 0; return npc; }
     }
   }
   // Paso 2: proximidad screen-space dentro de NPC_TAP_SCREEN_PX
@@ -1080,6 +1095,7 @@ function findNpcNearTap(clientX, clientY) {
     const d = Math.hypot(sx - localX, sy - localY);
     if (d < bestDist) { bestDist = d; best = npcData; }
   }
+  if (best) best._tapDist = bestDist;
   return best;
 }
 

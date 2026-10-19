@@ -3225,7 +3225,11 @@ function doCanvasTap(clientX, clientY) {
   // Sesión 27 Bloque 3 — Tap PVP: ¿el tap impacta otro player?
   // Primero peers (PVP), después NPCs. Si el peer cae bajo el tap,
   // multiplayer maneja el auto-walk + engagePlayer.
-  if (multiplayer.tryHandleTap(clientX, clientY)) return;
+  // 19 oct — solo si el jugador se puede atacar y está más cerca del dedo que
+  // cualquier monstruo (ver multiplayer.tryHandleTap).
+  let npcTapD = null;
+  try { npcTapD = npcRenderer.npcTapScreenDist?.(clientX, clientY) ?? null; } catch {}
+  if (multiplayer.tryHandleTap(clientX, clientY, npcTapD)) return;
 
   // 1) Tap NPC → auto-walk hacia él y engage cuando lleguemos cerca.
   //    npcRenderer hace raycast + proximidad screen-space (más perdonable en móvil)

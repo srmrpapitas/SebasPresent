@@ -1398,7 +1398,9 @@ function tryAutoRetaliate() {
     // NPC me atacó → engagear NPC (atk.id es npc_instance_id)
     engageNpc(atk.id).catch(e => console.warn('[auto-retaliate npc]', e));
   } else if (atk.type === 0) {
-    // Player me atacó → engagear player
+    // Player me atacó → engagear player (19 oct: nunca a uno del grupo ni
+    // fuera del Malpaís/duelo; el servidor no lo dejaría y el log confunde)
+    if (multiplayer.isPeerAttackable && !multiplayer.isPeerAttackable(atk.id)) return;
     engagePlayer(atk.id).catch(e => console.warn('[auto-retaliate player]', e));
   }
 }

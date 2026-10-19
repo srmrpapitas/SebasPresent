@@ -48,6 +48,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as worldSnapshot from './world_snapshot.js';
 import * as party from './party.js';   // Sesión 27 Bloque 3 — colorear según party
 import * as duel from './duel.js';     // Sesión 28 — Retar a duelo desde action menu
+import { WILDERNESS_X } from './terrain.js';   // 19 oct — solo se ataca a jugadores en el Malpaís o en duelo
 import * as equipment from './equipment.js';  // Sesión 37 — engage range dinámico (mismo pattern que npc_renderer S35)
 // Sesión 34 — B-001b: peers ven el arma REAL que tiene cada uno equipada,
 // no la del local player heredada por SkeletonUtils.clone.
@@ -319,7 +320,8 @@ export function getPeersForTap() {
 // (auto-walk + engagePlayer / menú contextual) y devuelve true para que
 // world.js no siga propagando a NPC, ground items, etc.
 //
-const PEER_TAP_SCREEN_PX = 90;       // hit-box generosa móvil
+const PEER_TAP_SCREEN_PX = 90;       // hit-box generosa móvil (menú de pulsación larga)
+const PEER_TAP_STRICT_PX = 48;       // 19 oct — para ATACAR hay que tocar al jugador de verdad
 // Sesión 37 — engage range dinámico según arma equipada. Mismo bug que S35
 // fixeó para NPCs (con bow te obligaba a melee range antes de la 1ra flecha),
 // pero quedó pendiente en este módulo. Sin esto: tap a un peer con bow y el
@@ -372,12 +374,35 @@ export function setFeedLog(fn) {
  * wilderness, el server devuelve 'not_in_wilderness' y mostramos un
  * warning en el feed. UX más simple que deshabilitar el botón.
  */
-export function tryHandleTap(clientX, clientY) {
+export function tryHandleTap(clientX, clientY, npcScreenDist = null) {
   if (!started || !camera || !canvas || !playerRef) return false;
-  const peer = findPeerNearTap(clientX, clientY);
+  // 19 oct — Un toque solo ataca a un jugador si se le toca EXPLÍCITAMENTE
+  // (radio corto), se le puede atacar (Malpaís o duelo, nunca a uno del grupo)
+  // y no hay un monstruo más cerca del dedo. Si no, el toque sigue su camino
+  // (monstruo, suelo…). Antes: radio de 90 px y prioridad sobre los monstruos
+  // → atacando al yeti con un compañero al lado salía "Atacas a Sebas6".
+  const peer = findPeerNearTap(clientX, clientY, PEER_TAP_STRICT_PX);
   if (!peer) return false;
+  if (!isPeerAttackable(peer.user_id)) return false;
+  if (npcScreenDist != null && npcScreenDist <= peer.screenDist) return false;
   triggerPeerTap(peer.user_id);
   return true;
+}
+
+/**
+ * 19 oct — ¿Se puede atacar a este jugador ahora mismo?
+ *   - nunca a uno de tu grupo
+ *   - sí si tienes un duelo con él
+ *   - sí si los dos estáis en el Malpaís (x < WILDERNESS_X)
+ * El servidor lo vuelve a comprobar todo (esto solo evita toques equivocados).
+ */
+export function isPeerAttackable(userId) {
+  const peer = mpLastPeerMap.get(userId);
+  if (!peer || !peer.group || !playerRef) return false;
+  const myPartyId = party.getMyPartyId?.();
+  if (myPartyId != null && peer.partyId === myPartyId) return false;
+  if (duel.isInDuelWith?.(userId)) return true;
+  return playerRef.position.x < WILDERNESS_X && peer.group.position.x < WILDERNESS_X;
 }
 
 /**
@@ -417,7 +442,7 @@ export function openActionMenuAt(cx, cy) {
     <div class="pvp-action-row" data-act="trade">🤝 Comerciar</div>
     <div class="pvp-action-row" data-act="follow">👣 Seguir</div>
     ${window.__thieving?.playerMenuLabel?.() ? `<div class="pvp-action-row" data-act="steal">${window.__thieving.playerMenuLabel()}</div>` : ''}
-    <div class="pvp-action-row danger" data-act="attack">⚔ Atacar</div>
+    ${peerIsInMyParty ? '' : `<div class="pvp-action-row danger" data-act="attack">⚔ Atacar</div>`}
     ${showDuel ? `<div class="pvp-action-row" data-act="duel">🤺 Retar a duelo</div>` : ''}
     ${showInvite ? `<div class="pvp-action-row" data-act="invite">👥 Invitar a grupo</div>` : ''}
     <div class="pvp-action-row" data-act="examine">🔍 Examinar</div>
@@ -547,13 +572,13 @@ export function flashPeerHit(userId) {
 }
 
 // ---------- helpers internos PVP ----------
-function findPeerNearTap(clientX, clientY) {
+function findPeerNearTap(clientX, clientY, radiusPx = PEER_TAP_SCREEN_PX) {
   const rect = canvas.getBoundingClientRect();
   const localX = clientX - rect.left;
   const localY = clientY - rect.top;
   const tmpV = new THREE.Vector3();
   let best = null;
-  let bestDist = PEER_TAP_SCREEN_PX;
+  let bestDist = radiusPx;
   for (const [userId, peer] of mpLastPeerMap) {
     if (!peer.group) continue;
     tmpV.set(peer.group.position.x, peer.group.position.y + 1.0, peer.group.position.z);
@@ -569,6 +594,7 @@ function findPeerNearTap(clientX, clientY) {
         username: peer.username,
         x: peer.group.position.x,
         z: peer.group.position.z,
+        screenDist: d,
       };
     }
   }
