@@ -98,7 +98,16 @@ export function getAllStates() { return { ...state }; }
 /** Sesión 50 — aplicar filas que devuelve el server tras hablar/aceptar/entregar. */
 export function applyServerRows(rows, newFlags) {
   if (newFlags && typeof newFlags === 'object') flags = { ...newFlags };   // Sesión 52
+  const now = Date.now();
+  for (const r of rows || []) directAt[r.quest_id] = now;   // 19 oct — ver regresses()
   applyRows(rows || [], true);
+}
+const directAt = {};
+const rank = (r) => (r.status || 0) * 1e6 + (r.step || 0) * 1e3 + (r.progress || 0);
+function regresses(r) {
+  const s = state[r.quest_id];
+  if (!s || !QUESTS[r.quest_id] || !(Date.now() - (directAt[r.quest_id] || 0) < 15_000)) return false;
+  return rank(r) < rank(s);
 }
 /** Sesión 52 — decisiones guardadas del jugador. */
 export function getFlags() { return { ...flags }; }
@@ -422,7 +431,12 @@ export function update(dt) {
   syncTimer += dt;
   if (syncTimer >= 0.5) {
     syncTimer = 0;
-    const rows = getSnapshot?.()?.me?.quests;
+    let rows = getSnapshot?.()?.me?.quests;
+    // 19 oct — un snapshot pedido ANTES de hablar/entregar llegaba después y
+    // devolvía la misión al paso anterior: la escena se repetía y el NPC volvía
+    // a ofrecer el paso. Durante 15 s tras una respuesta directa del server,
+    // el snapshot no puede hacer retroceder una misión.
+    if (Array.isArray(rows)) rows = rows.filter(r => !regresses(r));
     if (Array.isArray(rows) && rows.length) {
       const changed = rows.some(r => {
         if (!QUESTS[r.quest_id]) return false;   // Sesión 53 — diarias aparte (no repintar cada 0,5 s)
