@@ -603,6 +603,38 @@ export const TOWN_NPCS = [
       'Este año la vendimia viene buena… si los tibicenas nos dejan subir a las viñas del norte.',
       'Mi abuela decía que cuando se quemó el puerto de Garachico con el volcán, el vino de Icod se quedó sin barcos. Tardamos cien años en recuperarnos.',
     ] },
+  // Molino de gofio La Majada (Güímar)
+  { id: 'molinera_benita', name: 'Tía Benita', title: 'Molinera de La Majada', ...inRoom('molino_guimar', -2.6, 2.6), rotY: Math.PI * 0.9, role: '🌾',
+    look: { skin: 0xc8946a, shirt: 0x5a4a3a, pants: 0x2a2620, hair: 0xd0d0d0, acc: 'apron' },
+    lines: [
+      'Entra, entra, pero no toques la tolva, que está llena. ¿Gofio de millo o de trigo? Aquí se muele de los dos.',
+      'Primero se tuesta, luego se muele y luego se come con todo: con leche, con caldo, con miel… Mi marido lo comía hasta con sardinas.',
+      'Las muelas son de piedra del malpaís. La lava que bajó de la montaña lo quemó todo, pero nos dejó la mejor piedra de la isla.',
+      'En agosto media isla pasa por aquí caminando hacia Candelaria. Y todos paran a por gofio. ¡Todos!',
+    ] },
+  { id: 'cabrero_ancor', name: 'Ancor', title: 'Cabrero del malpaís', ...inRoom('molino_guimar', 3.8, -1.2), rotY: Math.PI * 1.2, role: '🐐',
+    look: { skin: 0xb07a52, shirt: 0x8a6a3a, pants: 0x3a3020, hair: 0x1a1008, acc: 'hat' },
+    lines: [
+      'Mis cabras comen tabaiba y cardón en el malpaís. Por eso su leche sabe a monte.',
+      'Las pirámides están ahí abajo, junto al barranco. Escalones de piedra negra, uno encima de otro. Yo creo que eran para quitar piedras de los huertos. Mi primo dice que eran para mirar el sol.',
+      'En verano, el día más largo del año, el sol se pone justo detrás de una montaña, mirando desde las pirámides. Eso no es casualidad, ¿no?',
+    ] },
+  // Casa Fuerte de Adeje
+  { id: 'guarda_tome', name: 'Don Tomé', title: 'Guarda de la Casa Fuerte', ...inRoom('casafuerte_adeje', -2.8, 2.5), rotY: Math.PI * 0.95, role: '🏰',
+    look: { skin: 0xd0a07a, shirt: 0x2a3a5a, pants: 0x1f1f24, hair: 0x8a8a8a, acc: 'hat' },
+    lines: [
+      'Esta casa la levantaron para aguantar piratas. Muros de un metro y un cañón en cada ventana. Y aguantó.',
+      'Dentro se guardaba el azúcar del ingenio. El azúcar era oro blanco: por eso venían los piratas.',
+      'No subas a las almenas, que hay viento. Siempre hay viento. Bueno, casi siempre.',
+      'Si tienes buen brazo, tengo un trabajo para ti. Los cochinos del barranco nos tienen fritos.',
+    ] },
+  { id: 'cartografa_nayra', name: 'Nayra', title: 'Aprendiz de cartógrafa', ...inRoom('casafuerte_adeje', 3.6, 1.4), rotY: Math.PI, role: '🗺️',
+    look: { skin: 0xc8946a, shirt: 0x3a6a6a, pants: 0x2a2a3a, hair: 0x1a0a04, acc: 'glasses' },
+    lines: [
+      'Estoy dibujando el Barranco del Infierno, sendero a sendero. Al fondo hay una cascada que no se seca nunca.',
+      'Los guanches de Adeje enterraban a sus muertos en cuevas del barranco. Por eso le pusieron ese nombre tan feo: no hay ningún infierno, hay sombra y agua.',
+      'Desde las almenas se ve La Gomera. Dicen que los pastores de allí hablan silbando de un monte a otro. Algún día voy a ir a dibujarlos.',
+    ] },
   // Sesión 50 — casas de jugador
   { id: 'nauzet_inmobiliaria', name: 'Nauzet', title: 'Agente inmobiliario', x: 50, z: 50, rotY: 0.8, role: '🏠',
     look: { skin: 0xd0a07a, shirt: 0x2a3a6a, pants: 0x1a1a2a, hair: 0x1a1a1a, acc: 'glasses' },

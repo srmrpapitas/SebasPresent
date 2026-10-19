@@ -28,6 +28,11 @@ export const NPC_LOOKS = {
   sobrino_bentor:      { model: 'm44', tint: { hue: 0.3, sat: 1.2 } },
   bodeguero_goyo:      { model: 'm35', tint: { hue: 0.95, sat: 1.1 } },
   vendimiadora_nieves: { model: 'f36' },
+  // 19 oct — Molino de La Majada (Güímar) y Casa Fuerte de Adeje
+  molinera_benita:     { model: 'f41', tint: { sat: 0.6 } },
+  cabrero_ancor:       { model: 'm42', tint: { hue: 0.08, sat: 1.1 } },
+  guarda_tome:         { model: 'm34', tint: { hue: 0.6, sat: 1.0 } },
+  cartografa_nayra:    { model: 'f46', tint: { hue: 0.45, sat: 1.1 } },
   banquero_gerardo:    { model: 'm36' },
   lia_artesana:        { model: 'f45' },
   morgana_maga:        { model: 'f44', tint: { hue: 0.72, sat: 1.5 } },

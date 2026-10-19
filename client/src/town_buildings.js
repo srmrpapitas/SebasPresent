@@ -53,7 +53,7 @@ function mats() {
   M.hit = new THREE.MeshBasicMaterial({ visible: false });
   M.leaves = L(0x3f7a2e); M.leavesD = L(0x2a5a22); M.grapes = L(0x4a1a4a); M.tea = L(0x7a3a1e); M.linen = L(0xf4f0e4);
   M.flowers = [0xd0304a, 0xe8a030, 0xd060a0].map(c => L(c));
-  M.cellar = L(0xb8a888);
+  M.cellar = L(0xb8a888); M.fort = L(0xb4a68a); M.skin = L(0x8a6a48);
   M.water = new THREE.MeshLambertMaterial({ color: 0x3a7a9a, transparent: true, opacity: 0.85 });
   return M;
 }
@@ -81,7 +81,8 @@ function buildExterior() {
   exterior = new THREE.Group();
   exterior.userData.kind = 'town-buildings';
   for (const b of TOWN_BUILDINGS) {
-    const k = buildCasa({ w: b.w, d: b.d, color: b.color, twoFloors: !!b.twoFloors, balcony: !!b.twoFloors, sign: b.sign });
+    const k = buildCasa({ w: b.w, d: b.d, color: b.color, twoFloors: !!b.twoFloors, balcony: !!b.twoFloors && b.roof !== 'flat', sign: b.sign,
+      roof: b.roof || 'teja', trim: b.trim || 'green', base: b.base || 'stone', chimney: !!b.chimney });
     const g = k.group;
     g.position.set(b.x, 0, b.z); g.rotation.y = b.dir;
     // Detalles de la fachada según lo que hay dentro
@@ -115,6 +116,30 @@ function buildExterior() {
       const vine = box(5.4, 0.22, 2.2, M.leaves, 0, 2.75, b.d / 2 + 1.1); g.add(vine);
       for (let k = 0; k < 6; k++) { const gr = new THREE.Mesh(new THREE.SphereGeometry(0.13, 6, 5), M.grapes); gr.position.set(-2 + k * 0.8, 2.5, b.d / 2 + 0.6 + (k % 2) * 0.9); gr.scale.y = 1.5; g.add(gr); }
       for (const [sx, sz] of [[3.4, 0.7], [3.4, 1.6]]) { const br = cyl(0.42, 0.42, 0.95, M.wood, sx, 0.43, b.d / 2 + sz, 12); br.rotation.x = Math.PI / 2; g.add(br); }
+    } else if (b.kind === 'molino') {
+      // muela vieja apoyada en la fachada, sacos de millo y un molinillo de aspas en la azotea
+      const mu = cyl(0.85, 0.85, 0.28, M.stone, -2.9, 0.86, b.d / 2 + 0.35, 16); mu.rotation.x = Math.PI / 2 - 0.12; g.add(mu);
+      g.add(cyl(0.16, 0.16, 0.3, M.stoneD, -2.9, 0.86, b.d / 2 + 0.5, 8).rotateX(Math.PI / 2));
+      for (const [sx, sz, y] of [[2.6, 0.7, 0], [3.3, 0.8, 0], [2.95, 0.75, 0.5]]) g.add(box(0.62, 0.55, 0.45, M.straw, sx, 0.28 + y, b.d / 2 + sz));
+      const tw = new THREE.Group(); tw.position.set(b.w / 2 - 1.6, 3.4, -b.d / 2 + 1.6);
+      tw.add(cyl(0.45, 0.6, 2.0, M.wall, 0, 1.0, 0, 10), new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.7, 10), M.woodD).translateY(2.35));
+      const hub = new THREE.Group(); hub.position.set(0, 1.7, 0.62); tw.add(hub);
+      for (let k = 0; k < 4; k++) { const a = box(0.18, 1.6, 0.04, M.linen, 0, 0.8, 0); const arm = new THREE.Group(); arm.rotation.z = k * Math.PI / 2 + 0.3; arm.add(a); hub.add(arm); }
+      g.add(tw);
+    } else if (b.kind === 'casafuerte') {
+      // almenas en la azotea, garita en la esquina y un cañón junto a la puerta
+      const H = 3.4 * 1.8;
+      for (let x = -b.w / 2 + 0.4; x <= b.w / 2 - 0.3; x += 1.1) for (const z of [b.d / 2, -b.d / 2]) g.add(box(0.55, 0.6, 0.35, M.stone, x, H + 0.82, z));
+      for (let z = -b.d / 2 + 1.2; z <= b.d / 2 - 1.0; z += 1.1) for (const x of [b.w / 2, -b.w / 2]) g.add(box(0.35, 0.6, 0.55, M.stone, x, H + 0.82, z));
+      const ga = new THREE.Group(); ga.position.set(b.w / 2 - 0.2, H - 0.6, b.d / 2 - 0.2);
+      ga.add(cyl(0.6, 0.35, 1.8, M.stone, 0, 0.9, 0, 10), cyl(0.75, 0.75, 0.25, M.stoneD, 0, 1.9, 0, 10));
+      g.add(ga);
+      const cn = new THREE.Group(); cn.position.set(3.2, 0, b.d / 2 + 1.5); cn.rotation.y = 0.4;
+      cn.add(box(0.8, 0.3, 1.5, M.wood, 0, 0.42, 0));
+      for (const sx of [-0.5, 0.5]) { const w = cyl(0.3, 0.3, 0.1, M.woodD, sx, 0.3, 0.4, 12); w.rotation.z = Math.PI / 2; cn.add(w); }
+      const bar = cyl(0.14, 0.22, 1.8, M.iron, 0, 0.75, 0.3, 10); bar.rotation.x = Math.PI / 2 - 0.15; cn.add(bar);
+      g.add(cn);
+      for (let k = 0; k < 5; k++) { const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), M.iron); ball.position.set(2.4 + (k % 3) * 0.24, 0.12 + (k > 2 ? 0.2 : 0), b.d / 2 + 1.0 + (k > 2 ? 0.1 : 0)); g.add(ball); }
     }
     exterior.add(g);
     addOBB(b.x, b.z, b.dir, b.w / 2 + 0.3, b.d / 2 + 0.3);
@@ -419,12 +444,126 @@ function buildBodega(b, ctx) {
   for (const [x, z] of [[-0.9, bz], [0.9, bz]]) { const c = cyl(0.05, 0.05, 0.2, M.candle, x, 1.28, z, 6); g.add(c); ctx.flames.push(c); }
 }
 
+function buildMolino(b, ctx) {
+  const { g, cols, items, W, D } = ctx;
+  const exit = shell(g, W, D, M.floorStone, M.wall);
+  items.push({ kind: 'salida', x: 0, z: -D / 2 + 0.3, r: 1.8, mesh: exit });
+  // El molino: dos muelas de piedra sobre una plataforma, la tolva de madera encima y el cajón de la harina
+  const mx = 1.2, mz = D / 2 - 1.7;
+  const ml = new THREE.Group(); ml.position.set(mx, 0, mz);
+  ml.add(box(2.6, 0.6, 2.2, M.stone, 0, 0.3, 0));
+  ml.add(cyl(0.85, 0.85, 0.24, M.stoneD, 0, 0.72, 0, 16), cyl(0.85, 0.85, 0.24, M.stone, 0, 0.97, 0, 16));
+  for (const [a, c] of [[-0.7, -0.6], [0.7, -0.6], [-0.7, 0.6], [0.7, 0.6]]) ml.add(box(0.1, 1.4, 0.1, M.woodD, a, 1.6, c));
+  const tolva = new THREE.Mesh(new THREE.ConeGeometry(0.75, 0.9, 4), M.wood); tolva.rotation.set(Math.PI, Math.PI / 4, 0); tolva.position.y = 2.1; ml.add(tolva);
+  ml.add(box(0.12, 0.45, 0.12, M.woodL, 0, 1.45, 0));
+  ml.add(box(0.9, 0.5, 0.6, M.woodL, 0, 0.25, -1.45), box(0.8, 0.05, 0.5, M.linen, 0, 0.51, -1.45));
+  const palo = box(0.1, 0.1, 1.4, M.woodD, 0.55, 1.15, 0.2); palo.rotation.x = 0.25; ml.add(palo);   // la manivela
+  g.add(ml); cols.push({ x: mx, z: mz, hx: 1.35, hz: 1.15 }, { x: mx, z: mz - 1.45, hx: 0.5, hz: 0.35 });
+  items.push({ kind: 'examinar', x: mx, z: mz - 1.0, r: 3.0, mesh: ml,
+    text: '🌾 El molino de La Majada. El millo tostado cae de la tolva entre las dos muelas y sale gofio, fino como el polvo. Las muelas son de piedra del malpaís: no se gastan nunca.' });
+  // Tostador: hogar de piedra con fuego y la tostadora de barro (pared oeste)
+  const tx = -W / 2 + 0.8, tz = -0.4;
+  const hg = new THREE.Group(); hg.position.set(tx, 0, tz);
+  hg.add(box(1.0, 0.75, 1.6, M.stone, 0, 0.38, 0), box(0.6, 0.35, 1.1, M.coal, 0.25, 0.25, 0));
+  const fl = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 6), M.fire); fl.position.set(0.3, 0.42, 0); hg.add(fl);
+  hg.add(cyl(0.55, 0.45, 0.12, M.pot, 0.1, 0.82, 0, 14));
+  for (let k = 0; k < 7; k++) hg.add(box(0.07, 0.05, 0.07, M.straw, -0.2 + (k % 4) * 0.13, 0.9, -0.2 + Math.floor(k / 4) * 0.25));
+  hg.add(box(0.7, 1.6, 0.9, M.stone, -0.15, 1.8, 0));
+  g.add(hg); cols.push({ x: tx, z: tz, hx: 0.6, hz: 0.85 });
+  ctx.flames.push(fl);
+  items.push({ kind: 'examinar', x: tx + 0.9, z: tz, r: 2.8, mesh: hg,
+    text: '🔥 La tostadora de barro. Aquí se tuesta el millo hasta que cruje; si se quema, el gofio sale amargo y Tía Benita te lo hace comer igual.' });
+  ctx.lights.push([poolLight(0xffa050, 1.2, 10, 1.4), tx + 1.0, 1.2, tz]);
+  // Sacos de millo y de gofio (pared este)
+  const sx0 = W / 2 - 0.75, sz0 = 1.9;
+  const sk = new THREE.Group(); sk.position.set(sx0, 0, sz0);
+  for (const [x, z, y] of [[0, -0.6, 0], [0, 0.1, 0], [0, 0.8, 0], [-0.05, -0.25, 0.52], [-0.05, 0.45, 0.52]]) sk.add(box(0.7, 0.55, 0.62, M.straw, x, 0.28 + y, z));
+  for (const z of [-0.6, 0.1, 0.8]) sk.add(box(0.72, 0.08, 0.64, M.woodD, 0, 0.55, z));
+  g.add(sk); cols.push({ x: sx0, z: sz0, hx: 0.45, hz: 1.15 });
+  items.push({ kind: 'examinar', x: sx0 - 0.8, z: sz0, r: 2.6, mesh: sk,
+    text: '🌽 Sacos de millo de las medianías y de trigo de Arico. En cada saco hay escrito con carbón de quién es: el molino muele para todo el pueblo.' });
+  // Mesa con el zurrón de piel de cabra
+  const mt = table(g, cols, -2.4, -2.6, false);
+  const zu = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), M.skin); zu.scale.set(1, 0.75, 1.3); zu.position.set(0.3, 1.02, 0); mt.add(zu);
+  mt.add(cyl(0.05, 0.07, 0.14, M.skin, 0.3, 1.2, -0.3, 6));
+  items.push({ kind: 'examinar', x: -2.4, z: -2.6, r: 2.8, mesh: mt,
+    text: '🐐 Un zurrón de piel de cabra. Se echa gofio, agua y una pizca de sal, se amasa apretando el zurrón… y ya tienes comida para todo el día en el monte.' });
+  // Dibujo de las pirámides colgado en la pared este
+  const pir = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.0), new THREE.MeshBasicMaterial({ map: boardTexture(['PIRÁMIDES', '▲  ▲  ▲', 'de Güímar'], '#e8dcc0', '#5a3a1a') }));
+  pir.position.set(W / 2 - 0.22, 1.75, -1.6); pir.rotation.y = -Math.PI / 2; g.add(pir);
+  items.push({ kind: 'examinar', x: W / 2 - 0.9, z: -1.6, r: 3.0, mesh: pir,
+    text: '🔺 Un dibujo de las pirámides de Güímar: escalones de piedra negra sin argamasa. Ancor ha escrito debajo: «¿Quién las hizo?». Y alguien ha contestado: «Yo no».' });
+  // Cayado y cencerros de Ancor junto a la entrada
+  const cy = box(0.07, 1.7, 0.07, M.woodD, 4.6, 0.85, -3.9); cy.rotation.z = 0.15; g.add(cy);
+  for (let k = 0; k < 3; k++) g.add(cyl(0.08, 0.1, 0.14, M.bronze, W / 2 - 0.3, 1.5, -3.6 + k * 0.25, 6));
+  // Luz de día que entra por la puerta
+  ctx.lights.push([poolLight(0xfff2d8, 0.8, 12, 1.5), 0.5, 2.5, -1.0]);
+}
+
+function buildCasaFuerte(b, ctx) {
+  const { g, cols, items, W, D } = ctx;
+  const exit = shell(g, W, D, M.floorStone, M.fort);
+  items.push({ kind: 'salida', x: 0, z: -D / 2 + 0.3, r: 1.8, mesh: exit });
+  // Aspilleras en la pared norte (ranuras de luz)
+  for (const x of [-4, 0, 4]) { g.add(box(0.22, 1.0, 0.1, M.candle, x, 1.7, D / 2 - 0.19)); g.add(box(0.5, 1.2, 0.06, M.stoneD, x, 1.7, D / 2 - 0.17)); }
+  // Cañón mirando a la aspillera central
+  const cx = 0.3, cz = D / 2 - 1.7;
+  const cn = new THREE.Group(); cn.position.set(cx, 0, cz);
+  cn.add(box(1.0, 0.35, 2.0, M.wood, 0, 0.5, 0));
+  for (const sx of [-0.62, 0.62]) for (const sz of [-0.65, 0.65]) { const w = cyl(0.36, 0.36, 0.12, M.woodD, sx, 0.36, sz, 12); w.rotation.z = Math.PI / 2; cn.add(w); }
+  const br = cyl(0.18, 0.28, 2.2, M.iron, 0, 0.95, 0.35, 12); br.rotation.x = Math.PI / 2 - 0.1; cn.add(br);
+  g.add(cn); cols.push({ x: cx, z: cz, hx: 0.75, hz: 1.2 });
+  items.push({ kind: 'examinar', x: cx, z: cz - 1.4, r: 3.0, mesh: cn,
+    text: '💣 Un cañón de hierro apuntando al mar. Desde aquí se veían llegar los barcos piratas por la costa de Adeje. Don Tomé lo limpia cada lunes aunque no se dispara desde hace siglos.' });
+  const pb = barrel(g, cx - 1.4, cz + 0.4); cols.push({ x: cx - 1.4, z: cz + 0.4, hx: 0.45, hz: 0.45 });
+  for (let k = 0; k < 6; k++) { const ball = new THREE.Mesh(new THREE.SphereGeometry(0.13, 6, 5), M.iron); ball.position.set(cx + 1.2 + (k % 3) * 0.27, 0.13 + (k > 2 ? 0.22 : 0), cz + 0.5 + (k > 2 ? 0.12 : 0)); g.add(ball); }
+  items.push({ kind: 'examinar', x: cx - 1.4, z: cz - 0.6, r: 2.4, mesh: pb, text: '🛢️ Un barril con letras rojas: «PÓLVORA». Está vacío. Don Tomé dice que mejor así.' });
+  // Mesa de mapas (Nayra detrás)
+  const mx = 3.6, mz = 0.0;
+  const mt = new THREE.Group(); mt.position.set(mx, 0, mz);
+  mt.add(box(1.9, 0.08, 1.1, M.woodL, 0, 0.82, 0));
+  for (const [a, c] of [[-0.85, -0.45], [0.85, -0.45], [-0.85, 0.45], [0.85, 0.45]]) mt.add(box(0.08, 0.82, 0.08, M.woodD, a, 0.41, c));
+  const map = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.9).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: boardTexture(['COSTA SUR', '⚓  ☠  ⚓', 'Adeje · La Caleta'], '#e8d8b0', '#3a2a14') }));
+  map.position.y = 0.87; map.rotation.y = Math.PI; mt.add(map);
+  mt.add(cyl(0.04, 0.04, 0.5, M.bronze, 0.7, 0.9, 0.3, 6).rotateZ(Math.PI / 2));   // catalejo
+  g.add(mt); cols.push({ x: mx, z: mz, hx: 1.0, hz: 0.6 });
+  items.push({ kind: 'examinar', x: mx, z: mz - 1.0, r: 3.0, mesh: mt,
+    text: '🗺️ Un mapa de la costa sur, de Los Cristianos a La Caleta. Las calaveras marcan dónde desembarcaban los piratas. Nayra está añadiendo los senderos del Barranco del Infierno.' });
+  // Armero con arcabuces y picas (pared oeste)
+  const rk = new THREE.Group(); rk.position.set(-W / 2 + 0.45, 0, -0.4);
+  rk.add(box(0.3, 1.9, 2.8, M.woodD, 0, 0.95, 0));
+  for (let k = 0; k < 5; k++) { rk.add(box(0.05, 1.5, 0.07, M.wood, -0.2, 1.0, -1.1 + k * 0.55), box(0.06, 0.4, 0.05, M.iron, -0.2, 1.6, -1.1 + k * 0.55)); }
+  rk.add(box(0.04, 2.3, 0.04, M.woodL, -0.22, 1.15, 1.25), new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.3, 4), M.ironL).translateX(-0.22).translateY(2.4).translateZ(1.25));
+  g.add(rk); cols.push({ x: -W / 2 + 0.45, z: -0.4, hx: 0.3, hz: 1.45 });
+  items.push({ kind: 'examinar', x: -W / 2 + 1.1, z: -0.4, r: 3.0, mesh: rk,
+    text: '🔫 Arcabuces viejos y una pica. Con esto se defendía la casa cuando sonaba la campana de aviso. Ninguno dispara ya; uno tiene un nido de pájaro dentro.' });
+  // Cofre del azúcar (pared este, junto a la puerta)
+  const ch = new THREE.Group(); ch.position.set(W / 2 - 0.65, 0, -2.6);
+  ch.add(box(0.8, 0.6, 1.3, M.wood, 0, 0.3, 0), box(0.84, 0.12, 1.34, M.woodD, 0, 0.66, 0), box(0.1, 0.18, 0.18, M.iron, -0.41, 0.52, 0));
+  g.add(ch); cols.push({ x: W / 2 - 0.65, z: -2.6, hx: 0.45, hz: 0.7 });
+  items.push({ kind: 'examinar', x: W / 2 - 1.3, z: -2.6, r: 2.6, mesh: ch,
+    text: '🍬 Un cofre con cerradura de hierro. Dentro guardaban los panes de azúcar del ingenio antes de mandarlos al barco. Ahora guarda las llaves de todo y un bocadillo de Don Tomé.' });
+  // Estandarte de la casa (pared este)
+  const st = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.4), new THREE.MeshBasicMaterial({ map: boardTexture(['ADEJE', '⚜', 'Casa Fuerte'], '#6a1a1a', '#e8c560') }));
+  st.position.set(W / 2 - 0.22, 1.9, 1.8); st.rotation.y = -Math.PI / 2; g.add(st);
+  // Escalera de piedra a las almenas (esquina SO)
+  const es = new THREE.Group(); es.position.set(-W / 2 + 1.3, 0, -D / 2 + 1.6);
+  for (let k = 0; k < 6; k++) es.add(box(1.2, 0.3 * (k + 1), 0.4, M.stone, 0, 0.15 * (k + 1), 1.2 - k * 0.4));
+  g.add(es); cols.push({ x: -W / 2 + 1.3, z: -D / 2 + 1.6, hx: 0.65, hz: 1.25 });
+  items.push({ kind: 'examinar', x: -W / 2 + 1.3, z: -D / 2 + 3.2, r: 2.6, mesh: es,
+    text: '🪜 La escalera sube a las almenas. Hay una cuerda cruzada y un cartel: «CERRADO POR VIENTO». Lleva ahí desde hace años, haga el viento que haga.' });
+  // Luz: antorchas en la pared y la de las aspilleras
+  ctx.lights.push([poolLight(0xffb060, 1.1, 11, 1.4), -3.0, 2.3, 2.6]);
+  ctx.lights.push([poolLight(0xfff0d0, 0.7, 12, 1.5), 2.0, 2.5, -1.0]);
+  for (const [x, z] of [[-2.0, D / 2 - 0.3], [2.0, D / 2 - 0.3]]) { g.add(box(0.08, 0.4, 0.08, M.woodD, x, 2.0, z)); const f = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.25, 6), M.fire); f.position.set(x, 2.32, z); g.add(f); ctx.flames.push(f); }
+}
+
 function buildInterior(b) {
   mats();
   const R = b.room, W = R.W, D = R.D;
   const g = new THREE.Group(); g.position.set(R.x, 0, R.z);
   const ctx = { g, cols: [], items: [], flames: [], lights: [], W, D };
-  const BUILD = { taberna: buildTaberna, herreria: buildHerreria, casa: buildCasaBalcones, bodega: buildBodega };
+  const BUILD = { taberna: buildTaberna, herreria: buildHerreria, casa: buildCasaBalcones, bodega: buildBodega, molino: buildMolino, casafuerte: buildCasaFuerte };
   (BUILD[b.kind] || buildHerreria)(b, ctx);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(W + 6, D + 6).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
@@ -442,6 +581,8 @@ const ENTER_MSG = {
   herreria: (b) => `⚒ Entras en la ${b.name}. El martillo suena como una campana.`,
   casa: (b) => `🏛 Entras en la ${b.name}. Un patio con helechos, una fuente y un balcón de madera roja.`,
   bodega: (b) => `🍇 Entras en la ${b.name}. Fresquito, oscuro y con olor a mosto.`,
+  molino: (b) => `🌾 Entras en el ${b.name}. Huele a millo tostado y todo tiene una capa de polvo blanco.`,
+  casafuerte: (b) => `🏰 Entras en la ${b.name}. Muros de un metro, aspilleras y olor a pólvora vieja.`,
 };
 function enterBuilding(b) {
   if (interiors.isActive() || inside) return;
@@ -574,13 +715,13 @@ export function applyCollision(x0, z0, x1, z1) {
 
 export function registerKeepouts(terrain) {
   for (const b of TOWN_BUILDINGS) {
-    const r = Math.max(b.w, b.d) / 2 + 5;
+    const r = b.clear || Math.max(b.w, b.d) / 2 + 5;
     try { terrain.addKeepout?.(b.x, b.z, r); terrain.clearTreesNear?.(b.x, b.z, r); } catch {}
   }
 }
 
 export function getMapIcons() {
-  const ICON = { taberna: 'tavern', bodega: 'tavern', herreria: 'anvil', casa: 'history' };
+  const ICON = { taberna: 'tavern', bodega: 'tavern', herreria: 'anvil', casa: 'history', molino: 'history', casafuerte: 'history' };
   return TOWN_BUILDINGS.map(b => ({ x: b.x, z: b.z, kind: ICON[b.kind] || 'quest', name: b.name }));
 }
 

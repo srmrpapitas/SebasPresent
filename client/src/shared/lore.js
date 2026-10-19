@@ -255,4 +255,24 @@ export const LORE = {
       'Dicen que el drago tiene mil años. Doña Carmen dice que muchos menos. Yo digo que, mientras dé sombra, que tenga los que quiera.',
     ],
   },
+  molinera_benita: {
+    label: '📖 Cuéntame la historia de Güímar',
+    pages: [
+      'Güímar era un menceyato, uno de los nueve reinos guanches. Su mencey vivía en una cueva grande del barranco y desde allí mandaba sobre la costa y el malpaís.',
+      'Cuando llegaron los de fuera, el mencey de Güímar fue de los primeros en pactar con ellos. Unos dicen que fue listo; otros, que fue un traidor. En el molino se discute mucho de eso.',
+      'Luego vino el agua. Se hicieron galerías y acequias desde el monte, y con el agua llegaron los huertos, las viñas… y los molinos como este.',
+      'Abajo, junto al barranco, están las pirámides: escalones de piedra negra que nadie sabe del todo quién puso ni para qué. Hasta vino un explorador de barba a decir que eran de marinos de muy lejos.',
+      'Yo lo que sé es que en agosto media isla baja caminando a Candelaria, y que todos paran aquí a por gofio. Eso sí que es historia.',
+    ],
+  },
+  guarda_tome: {
+    label: '📖 Cuéntame la historia de Adeje',
+    pages: [
+      'Dicen que aquí tuvo su corte Tinerfe el Grande, el último mencey de toda la isla. Cuando murió, sus hijos se la repartieron, y Adeje se quedó para el mayor.',
+      'El mencey de Adeje fue de los bandos de paz: no peleó contra los de fuera. Por eso el pueblo se salvó, pero cambió de dueños.',
+      'Los nuevos señores plantaron caña y montaron un ingenio para hacer azúcar. El azúcar valía tanto que llegaban piratas por mar a robarlo.',
+      'Así que levantaron esta Casa Fuerte: muros gruesos, aspilleras y cañones. Los piratas la atacaron más de una vez y nunca la tomaron.',
+      'Hoy los barcos que llegan a la costa traen turistas en vez de piratas. Algunos días no sé qué es peor. ¡Es broma! Pasa, pasa.',
+    ],
+  },
 };

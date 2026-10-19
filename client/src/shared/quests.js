@@ -474,7 +474,7 @@ export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'pri
   'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones',
   'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror', 'cronicas_achinech',
   // 19 oct — pueblos
-  'vino_tacoronte', 'el_tigre', 'balcon_tea', 'sangre_drago'];
+  'vino_tacoronte', 'el_tigre', 'balcon_tea', 'sangre_drago', 'gofio_romeria', 'cochinos_barranco'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {
@@ -511,6 +511,7 @@ export const QUEST_REQS = {
   el_tigre:           { levels: { smithing: 15 } },
   balcon_tea:         { levels: { woodcutting: 15 } },
   sangre_drago:       { combat: 25 },
+  gofio_romeria:      { levels: { fishing: 5 } },
   sombra_cabildo:     { combat: 60, levels: { herblore: 35, prayer: 37 }, quests: ['primeras_pociones', 'bruja_niebla'] },
 };
 
@@ -1019,5 +1020,51 @@ Object.assign(QUESTS, {
       talkBack('bodeguero_goyo', 'Vuelve con Goyo a la Bodega El Drago (Icod).'),
     ],
     reward: { coins: 700, items: [['cooked_beef', 5]], xp: { attack: 1500, strength: 1500, defence: 1000 }, text: '700 monedas · 5 de ternera · 1.500 XP Ataque · 1.500 XP Fuerza · 1.000 XP Defensa' },
+  },
+});
+
+// 19 oct — Güímar (Molino de gofio La Majada) y Adeje (Casa Fuerte)
+Object.assign(QUESTS, {
+  gofio_romeria: {
+    id: 'gofio_romeria', name: 'Gofio para la romería', giver: 'molinera_benita',
+    summary: 'Tía Benita, la molinera de Güímar, prepara comida para los romeros que caminan a Candelaria, pero le falta el pescado. Recomendado: Pesca 5.',
+    offer: ['Mañana pasan los romeros camino de Candelaria y les doy gofio con pescado, como siempre.', 'El pescado me lo tenía que traer Ayoze, el de la plaza. Y no ha venido. Ve a ver qué le pasó, anda.'],
+    accept: 'Voy a buscar a Ayoze.', doing: 'Ayoze suele estar dando tumbos por la plaza de Güímar.',
+    thanks: '¡Qué sardinas más buenas! Con esto y el gofio los romeros llegan a Candelaria cantando. Toma, para el camino tú también.',
+    steps: [
+      { id: 'ayoze', event: 'talk', match: 'ayoze_borracho', count: 1, hint: { talk: 'ayoze_borracho' },
+        text: 'Pregunta a Ayoze, en la plaza de Güímar, por el pescado de Tía Benita.', tip: 'Ayoze anda por la plaza, cerca de la piedra de teletransporte.',
+        scene: [
+          P('Tía Benita espera el pescado para los romeros.'),
+          '¿El pescado? Ah… el pescado. Estaba buenísimo. Digo… ¡estaba buenísimo para llevárselo!',
+          N('Ayoze se mira las botas. Huele a sardina asada desde lejos.'),
+          'Mira, tú pareces más formal que yo. Pesca unas sardinas, ásalas bien y llévaselas tú. Y no le digas nada, que me deja sin gofio un mes.',
+        ] },
+      { id: 'sardinas', event: 'deliver', npc: 'molinera_benita', items: [['sardine', 5]], count: 1, hint: { talk: 'molinera_benita' },
+        text: 'Lleva 5 sardinas asadas a Tía Benita (Molino La Majada, Güímar).', tip: 'Pesca sardinas con caña en la costa o en cualquier estanque y ásalas en un fuego o en una cocina (Pesca 5).',
+        scene: [N('Tía Benita envuelve las sardinas en hojas de parra junto a los zurrones de gofio. Dice algo de Ayoze entre dientes.')] },
+    ],
+    reward: { coins: 250, items: [['gofio', 5]], xp: { cooking: 700, fishing: 400 }, text: '250 monedas · 5 gofios · 700 XP Cocina · 400 XP Pesca' },
+  },
+  cochinos_barranco: {
+    id: 'cochinos_barranco', name: 'Cochinos en el barranco', giver: 'guarda_tome',
+    summary: 'Los jabalíes bajan de las lomas y destrozan los huertos de Adeje. Don Tomé, el guarda de la Casa Fuerte, busca a alguien con buen brazo. Para empezar.',
+    offer: ['Los cochinos salvajes bajan de las lomas del barranco y se comen las papas, las coles y hasta las flores del cura.', 'Nayra sabe por dónde bajan: lo tiene todo en su mapa. Pregúntale y luego ve a espantarlos.'],
+    accept: 'Hablaré con Nayra.', doing: 'Nayra está en la mesa de mapas, aquí mismo, en la Casa Fuerte.',
+    thanks: '¡Ni un cochino en los huertos! Esta noche se cena tranquilo en Adeje. Toma tu paga, que te la has ganado.',
+    steps: [
+      { id: 'dacil', event: 'talk', match: 'cartografa_nayra', count: 1, hint: { talk: 'cartografa_nayra' },
+        text: 'Pregunta a Nayra, en la Casa Fuerte de Adeje, por dónde bajan los jabalíes.', tip: 'Junto a la mesa de mapas, dentro de la Casa Fuerte.',
+        scene: [
+          P('Don Tomé dice que sabes por dónde bajan los jabalíes.'),
+          'Claro. Mira el mapa: salen del Cerro de los jabalíes, en las lomas del barranco, entre Vilaflor y Adeje. Bajan siempre por el mismo sendero.',
+          N('Nayra marca el cerro con una cruz de carbón y te da una copia pequeña del mapa.'),
+          'Son pequeños, pero muerden. Y cuidado con el grande, el que tiene un colmillo roto: ese no huye.',
+        ] },
+      { id: 'jabalies', event: 'kill', match: 'boar', count: 6, hint: { npc: 'boar' },
+        text: 'Espanta a los jabalíes: mata 6 jabalíes.', tip: 'En el Cerro de los jabalíes, entre Vilaflor y Adeje (también hay en el Monteverde, al norte de La Orotava).' },
+      talkBack('guarda_tome', 'Vuelve con Don Tomé a la Casa Fuerte de Adeje.'),
+    ],
+    reward: { coins: 350, items: [['pan', 3]], xp: { attack: 700, strength: 700, defence: 500 }, text: '350 monedas · 3 panes · 700 XP Ataque · 700 XP Fuerza · 500 XP Defensa' },
   },
 });

@@ -37,10 +37,15 @@
    - [x] (19 oct, tarde) La Orotava: **Casa de los Balcones** (Doña Mencía, bordadora: historia del valle de Taoro; su sobrino
      Bentor) + misión «El balcón de tea» (Tala 15, 5 troncos de roble). Icod: **Bodega El Drago** (Goyo, bodeguero: historia
      de Icod y Garachico; Nieves, vendimiadora) + misión «Sangre de drago» (combate 25, 4 tibicenas).
-   - [ ] Siguen: Güímar, Adeje/Los Cristianos, Vilaflor (1 edificio + lore + misión corta cada uno).
+   - [x] (19 oct, noche) Güímar: **Molino de gofio La Majada** (Tía Benita, molinera: historia de Güímar, el malpaís y las
+     pirámides; Ancor, cabrero) + misión «Gofio para la romería» (Pesca 5, pasa por Ayoze, 5 sardinas). Adeje: **Casa Fuerte**
+     (Don Tomé, guarda: Tinerfe, el azúcar y los piratas; Nayra, cartógrafa) + misión «Cochinos en el barranco» (6 jabalíes, para empezar).
+   - [ ] Siguen: Los Cristianos y Vilaflor (1 edificio + lore + misión corta cada uno). Luego el punto 6 queda hecho.
 
 ### Notas del 19 oct (tarea programada)
-- Siguiente: punto 6 (pueblos). Hechos La Laguna, Santa Cruz, La Orotava e Icod; seguir con Güímar y Adeje/Los Cristianos.
+- Siguiente: punto 6 (pueblos). Hechos La Laguna, Santa Cruz, La Orotava, Icod, Güímar y Adeje; faltan Los Cristianos y Vilaflor.
+- Para buscar hueco: script de colocación (huecos a 22–70 m del centro, roadDist 10–18, lejos de NPC/bancos/urbanizaciones/zonas de caza)
+  y la fachada mirando al punto de camino más cercano (dir = atan2(dx, dz)).
 - Para colocar un edificio nuevo sin pisar caminos/NPC: buscar huecos a 9–20 m del camino (roadDist) y lejos de NPC, bancos,
   hornos, estanques y casas (así se eligieron Orotava e Icod). La BD local no trae `coins` ni `oak_logs` en `items`: insertarlos a mano para probar.
 - Pruebas locales: `scripts/local/server.mjs` (API + cliente con SQLite; three.js se clona de GitHub r160 porque

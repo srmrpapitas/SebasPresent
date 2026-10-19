@@ -41,6 +41,18 @@ export const TOWN_BUILDINGS = [
     x: -698, z: -222, dir: 0, w: 10, d: 8, color: 0xe6d2a8,
     room: { x: 14300, z: 14000, W: 13, D: 10 },
   },
+  {
+    id: 'molino_guimar', kind: 'molino', town: 'Güímar',
+    name: 'Molino de gofio La Majada', sign: ['🌾 MOLINO', 'La Majada'],
+    x: 1490, z: 126, dir: -2.46, w: 10, d: 8, color: 0xead8b4, base: 'lava', chimney: true, roof: 'flat',
+    room: { x: 14400, z: 14000, W: 12, D: 10 },
+  },
+  {
+    id: 'casafuerte_adeje', kind: 'casafuerte', town: 'Adeje',
+    name: 'Casa Fuerte de Adeje', sign: ['🏰 CASA FUERTE', 'de Adeje'],
+    x: 988, z: 1222, dir: -2.85, w: 11, d: 9, color: 0xcdbd9c, twoFloors: true, roof: 'flat', trim: 'blue', clear: 18,
+    room: { x: 14500, z: 14000, W: 13, D: 10 },
+  },
 ];
 
 export const TOWN_BUILDINGS_BY_ID = Object.fromEntries(TOWN_BUILDINGS.map(b => [b.id, b]));
