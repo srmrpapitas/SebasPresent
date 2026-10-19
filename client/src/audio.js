@@ -189,7 +189,8 @@ export function hasSfx(name) {
   const def = SFX_DEFS[name];
   if (!def) return false;
   const key = def.variants ? def.variants[0] : def.url;
-  return sfxBuffers.has(key);
+  const b = sfxBuffers.get(key);
+  return !!b && !b._raw;   // 19 oct — solo si ya está decodificado (si no, no suena)
 }
 
 /**
@@ -238,7 +239,9 @@ export function synth(name, opts = {}) {
       o.start(t0 + start); o.stop(t0 + start + dur + 0.02);
     };
 
-    if (name === 'pray_on') {
+    if (name === 'step') {                   // 19 oct — paso de reserva si el archivo no ha llegado de R2
+      noiseBurst(0.07, 'lowpass', 700 * pitch, 0.7, 0.22); noiseBurst(0.04, 'bandpass', 1800 * pitch, 1.2, 0.05);
+    } else if (name === 'pray_on') {
       tone(523, 0, 0.35, 0.16); tone(784, 0.05, 0.4, 0.14); tone(1046, 0.1, 0.5, 0.1);
     } else if (name === 'pray_off') {
       tone(784, 0, 0.25, 0.14); tone(523, 0.08, 0.35, 0.12);
@@ -390,7 +393,8 @@ export function step() {
   const now = performance.now();
   if (now - lastStepTime < 220) return;   // mínimo 220ms entre pasos
   lastStepTime = now;
-  sfx('step', { pitch: 0.92 + Math.random() * 0.16 });
+  if (hasSfx('step')) sfx('step', { pitch: 0.92 + Math.random() * 0.16 });
+  else synth('step', { pitch: 0.9 + Math.random() * 0.2, volume: 0.8 });   // 19 oct — sin archivo, paso sintetizado
 }
 
 // ============================================================
@@ -593,33 +597,38 @@ async function preloadSfx() {
 function attachUnlockListener() {
   if (unlockListenerAttached) return;
   unlockListenerAttached = true;
-  // Cualquier interacción humana → desbloquear AudioContext y decodificar
-  // los SFX que llegaron como raw.
+  // 19 oct — En iPhone el audio solo arranca dentro de un gesto "de verdad"
+  // (touchend / click / tecla; pointerdown y touchstart NO cuentan en muchos
+  // iOS). Antes escuchábamos solo pointerdown/touchstart UNA vez: el
+  // AudioContext se quedaba suspendido para siempre → sin pasos ni ambiente.
+  // Ahora: escuchamos todos los gestos y no paramos hasta que el contexto
+  // esté de verdad en marcha; y se vuelve a despertar si iOS lo interrumpe
+  // (llamada, pantalla bloqueada, cambiar de app).
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}   // iOS 17+: suena aunque el interruptor de silencio esté puesto
+  let decodedPending = false;
   const unlock = async () => {
     const ctx = ensureAudioContext();
     if (ctx) {
-      if (ctx.state === 'suspended') {
+      if (ctx.state !== 'running') {
         try { await ctx.resume(); } catch {}
+        // truco clásico de iOS: un sonido vacío dentro del gesto
+        try { const b = ctx.createBuffer(1, 1, 22050); const s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0); } catch {}
       }
-      // Decodificar pendientes
-      for (const [file, val] of sfxBuffers.entries()) {
-        if (val && val._raw) {
-          try {
-            const buf = await ctx.decodeAudioData(val._raw);
-            sfxBuffers.set(file, buf);
-          } catch (err) {
-            console.warn(`[audio] decode '${file}' falló:`, err.message);
+      if (!decodedPending) {
+        decodedPending = true;
+        for (const [file, val] of sfxBuffers.entries()) {
+          if (val && val._raw) {
+            try { sfxBuffers.set(file, await ctx.decodeAudioData(val._raw)); }
+            catch (err) { console.warn(`[audio] decode '${file}' falló:`, err.message); }
           }
         }
       }
-      // Re-disparar SFX que se intentaron antes del unlock
-      const queued = pendingFirstPlay.splice(0);
-      for (const q of queued) sfx(q.name, q.opts);
+      if (ctx.state === 'running') {
+        const queued = pendingFirstPlay.splice(0);
+        for (const q of queued) sfx(q.name, q.opts);
+      }
     }
-
     // Sesión 13 v4 — Marcar audio desbloqueado y arrancar música pendiente.
-    // Sin chequear muted: si user muteó, prefs.music=0 y la música arranca
-    // silenciosa pero arranca (puede subir volumen luego).
     audioUnlocked = true;
     if (pendingMusicName) {
       const toPlay = pendingMusicName;
@@ -627,16 +636,15 @@ function attachUnlockListener() {
       musicCurrentName = null;
       music(toPlay);
     }
-
-    // Una sola vez es suficiente
-    window.removeEventListener('pointerdown', unlock);
-    window.removeEventListener('touchstart', unlock);
-    window.removeEventListener('keydown', unlock);
-    console.log('[audio] unlock done — audioUnlocked=true');
+    // si iOS pausó la música (pantalla bloqueada…), reanudarla con el gesto
+    if (musicAudio && musicAudio.paused && musicAudio.src && !prefs.muted && prefs.music > 0) musicAudio.play().catch(() => {});
   };
-  window.addEventListener('pointerdown', unlock, { once: true });
-  window.addEventListener('touchstart', unlock, { once: true });
-  window.addEventListener('keydown', unlock, { once: true });
+  for (const ev of ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown']) {
+    window.addEventListener(ev, () => {
+      const ctx = audioContext;
+      if (!ctx || ctx.state !== 'running' || !audioUnlocked || (musicAudio && musicAudio.paused && musicAudio.src && !prefs.muted && prefs.music > 0)) unlock();
+    }, { capture: true, passive: true });
+  }
 }
 
 function fadeAudioElement(audioEl, targetVol, durationMs, onDone) {
