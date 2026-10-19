@@ -617,6 +617,17 @@ async function doAttackTickNpc(gen = attackGen) {
     try { inventory.decrementItem(result.special.second_arrow.item_id, 1); } catch {}
   }
 
+  // 19 oct — flechas y hechizos hacen daño AL LLEGAR (no al disparar): el
+  // número, el destello y el sonido esperan al vuelo del proyectil. Así un
+  // disparo y un golpe cuerpo a cuerpo pueden caer a la vez.
+  let impactMs = 0;
+  if (!result.special && (result.arrow_consumed || spellCast) && npc) {
+    const pp = window.__getPlayerPosition?.();
+    const dd = pp ? Math.hypot(npc.x - pp.x, npc.z - pp.z) : 6;
+    impactMs = led(spellCast ? 250 : 200) + (window.__projectileTravelMs?.(dd, spellCast ? 'spell' : 'arrow') || 0);
+  }
+  const atImpact = (fn) => { if (impactMs > 0) setTimeout(() => { try { fn(); } catch {} }, impactMs); else fn(); };
+  atImpact(() => {
   if (result.your_hit) {
     if (result.special) {
       feedLog('hit', specFeedText(result.special, npcName));
@@ -632,7 +643,7 @@ async function doAttackTickNpc(gen = attackGen) {
     if (spellCast) {
       const IMPACT_SFX = { ice_spear: 'spell_ice_impact' };
       const sfxName = IMPACT_SFX[spellCast.spell_id] || 'spell_impact';
-      setTimeout(() => { try { audio.sfx(sfxName); } catch {} }, 300);
+      try { audio.sfx(sfxName); } catch {}   // 19 oct — ya estamos en el momento del impacto
     } else {
       try { audio.sfx('hit_blade'); } catch {}
     }
@@ -656,6 +667,7 @@ async function doAttackTickNpc(gen = attackGen) {
       try { window.__worldSpawnHitsplat(npcId, result.your_damage || 0); } catch {}
     }
   }
+  });   // 19 oct — fin de atImpact
   // Sesion 44 — actualizar barra de spec con el valor del server (sin esperar
   // al proximo poll) y desarmar si el spec se ejecuto.
   if (result.special) {
@@ -971,6 +983,15 @@ async function doAttackTickPlayer(gen = attackGen) {
     specArmed = false;
   }
 
+  // 19 oct — flechas y hechizos: el daño se ve al llegar (combo con cuerpo a cuerpo)
+  let impactPvp = 0;
+  if (!result.special && (result.arrow_consumed || result.spell_cast)) {
+    const pp = window.__getPlayerPosition?.(), tg = multiplayer.getPeerById?.(targetId)?.group?.position;
+    const dd = pp && tg ? Math.hypot(tg.x - pp.x, tg.z - pp.z) : 6;
+    impactPvp = led(result.spell_cast ? 250 : 200) + (window.__projectileTravelMs?.(dd, result.spell_cast ? 'spell' : 'arrow') || 0);
+  }
+  const atImpactPvp = (fn) => { if (impactPvp > 0) setTimeout(() => { try { fn(); } catch {} }, impactPvp); else fn(); };
+  atImpactPvp(() => {
   // Mensaje de hit/miss
   if (result.your_hit) {
     if (result.is_crit) {
@@ -998,6 +1019,7 @@ async function doAttackTickPlayer(gen = attackGen) {
       try { window.__worldSpawnPlayerHitsplat(targetId, result.your_damage || 0); } catch {}
     }
   }
+  });   // 19 oct — fin de atImpactPvp
 
   // XP drops (igual que NPC)
   if (typeof window !== 'undefined' && typeof window.__spawnXpDrops === 'function' && result.xp_gained) {

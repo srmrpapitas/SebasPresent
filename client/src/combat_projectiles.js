@@ -178,6 +178,19 @@ export function stop() {
   arrowLoadPromise = null;
 }
 
+/**
+ * 19 oct — tiempo de vuelo según la distancia (antes era fijo: 350 ms flecha,
+ * 420 ms hechizo). El daño se enseña AL LLEGAR (combat.js usa esto mismo),
+ * así un disparo y un golpe cuerpo a cuerpo pueden caer a la vez (combo).
+ */
+export function travelMs(dist, type = 'arrow') {
+  const d = Math.max(0, Number(dist) || 0);
+  if (type === 'dragonhead') return 520;
+  if (type === 'spell') return Math.round(Math.min(800, Math.max(350, 260 + d * 28)));
+  return Math.round(Math.min(750, Math.max(250, 180 + d * 32)));
+}
+if (typeof window !== 'undefined') window.__projectileTravelMs = travelMs;
+
 export function fireProjectile(fromVec3, toVec3, opts = {}) {
   if (!started || !scene) return;
   if (!fromVec3 || !toVec3) return;
@@ -203,7 +216,8 @@ export function fireProjectile(fromVec3, toVec3, opts = {}) {
     return;
   }
 
-  const durationMs  = opts.durationMs || 350;
+  const flatD = Math.hypot((toVec3.x || 0) - (fromVec3.x || 0), (toVec3.z || 0) - (fromVec3.z || 0));
+  const durationMs  = opts.durationMs || travelMs(flatD, opts.type === 'spell' ? 'spell' : opts.type === 'dragonhead' ? 'dragonhead' : 'arrow');   // 19 oct
   const arrowItemId = opts.arrowItemId || 'arrow_bronze';
 
   // Aproximación de altura: salir del pecho del shooter, llegar a altura del
@@ -223,7 +237,7 @@ export function fireProjectile(fromVec3, toVec3, opts = {}) {
     liveProjectiles.push({
       obj: fx.obj,
       spawnedAt: performance.now(),
-      durationMs: opts.type === 'dragonhead' ? 520 : 420,
+      durationMs,   // 19 oct — según la distancia (travelMs)
       from: fromAdj.clone(),
       to:   toAdj.clone(),
       isLine: false,

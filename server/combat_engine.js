@@ -84,6 +84,12 @@ const ATTACK_SPEEDS_BY_WEAPON_TYPE = {
   'bow':      1150,
   'unarmed':  1250,
 };
+// 19 oct — armas concretas más lentas que su tipo (como en OSRS: los arcos
+// grandes disparan más despacio). Pedido de Nico: el arco de dragón iba
+// demasiado rápido (y menos peticiones = mejor para el servidor).
+const ATTACK_SPEED_BY_ITEM = {
+  bow_dragon: 1900,
+};
 
 /**
  * Multiplicadores BASE de damage del arma sobre el roll del player.
@@ -1111,7 +1117,7 @@ async function attackNpc(db, userId, npcInstanceId, opts = {}) {
   if (isMagic && spell.kind) return { error: 'self_spell', weapon_type: weaponType };   // Sesión 50 — se lanzan aparte
   const stanceKey = STYLE_TO_STANCE[style] || 'smash';
   const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
-  const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
+  const baseSpeed = ATTACK_SPEED_BY_ITEM[weaponItemId] || ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
   const cooldownMs = Math.round(baseSpeed * stanceMods.speed_mult);
 
   if (onCooldown(stats.last_attack_at, now, cooldownMs)) {
@@ -1771,7 +1777,7 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
   // -------- Cooldown attacker --------
   const stanceKey = STYLE_TO_STANCE[attackerStyle] || 'smash';
   const stanceMods = STANCE_MODIFIERS[stanceKey] || STANCE_MODIFIERS.smash;
-  const baseSpeed = ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
+  const baseSpeed = ATTACK_SPEED_BY_ITEM[weaponItemIdPvp] || ATTACK_SPEEDS_BY_WEAPON_TYPE[weaponType] || TICK_MS;
   const cooldownMs = Math.round(baseSpeed * stanceMods.speed_mult);
 
   if (onCooldown(attackerStats.last_attack_at, now, cooldownMs)) {
