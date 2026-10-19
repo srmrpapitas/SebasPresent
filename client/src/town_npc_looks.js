@@ -23,6 +23,11 @@ export const NPC_LOOKS = {
   timplista_chago:     { model: 'm40', tint: { hue: 0.02, sat: 1.3 } },
   herrero_chano:       { model: 'm37', armor: ['gloves_hierro'] },
   aprendiza_iballa:    { model: 'f40' },
+  // 19 oct — Casa de los Balcones (La Orotava) y Bodega El Drago (Icod)
+  bordadora_mencia:    { model: 'f34', tint: { sat: 0.4 } },
+  sobrino_bentor:      { model: 'm44', tint: { hue: 0.3, sat: 1.2 } },
+  bodeguero_goyo:      { model: 'm35', tint: { hue: 0.95, sat: 1.1 } },
+  vendimiadora_nieves: { model: 'f36' },
   banquero_gerardo:    { model: 'm36' },
   lia_artesana:        { model: 'f45' },
   morgana_maga:        { model: 'f44', tint: { hue: 0.72, sat: 1.5 } },

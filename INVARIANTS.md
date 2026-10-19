@@ -771,4 +771,6 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Los vecinos de dentro son habitantes normales de `shared/town_npcs.js` con `...inRoom(id, lx, lz)` → x,z en la sala + `inside` + `door`. El server solo conoce la posición de la puerta (interiors fija el heartbeat al entrar), así que `npcDist` mide a `door` con `DOOR_SERVER_SLACK_M` de margen. Minimapa y guía de misiones usan `door` si estás fuera.
 - Dentro, los toques van a `room.onTap` (town_buildings): primero vecinos (`townNpcs.tryHandleTap`), luego muebles (salir / examinar).
 - Taberna La Vieja Aguere (La Laguna, tienda `taberna_laguna`, seed 029 EJECUTADO) y Herrería del Muelle (Santa Cruz). Misiones: `vino_tacoronte`, `el_tigre`.
+- Casa de los Balcones (La Orotava, `kind: 'casa'`, Doña Mencía + Bentor, misión `balcon_tea`) y Bodega El Drago (Icod, `kind: 'bodega'`, Goyo + Nieves, misión `sangre_drago`). Sin seeds.
+- Salas usadas: x = 14000, 14100, 14200, 14300 (z 14000). La siguiente, 14400. Luz 0 parpadea salvo `ctx.flicker = false`.
 - Para añadir otro: entrada en TOWN_BUILDINGS (room sin solaparse), un `buildX` en town_buildings.js para su `kind`, y sus vecinos con `inRoom`.

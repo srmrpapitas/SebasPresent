@@ -2,7 +2,8 @@
  * SebasPresent — Edificios de los pueblos en los que se entra (19 oct)
  *
  * FUERA: casas canarias (buildCasa) con cartel: la Taberna La Vieja Aguere en
- * La Laguna, la Herrería del Muelle en Santa Cruz… (datos en
+ * La Laguna, la Herrería del Muelle en Santa Cruz, la Casa de los Balcones en
+ * La Orotava, la Bodega El Drago en Icod… (datos en
  * shared/town_buildings.js). Tocas la puerta, vas andando y entras.
  *
  * DENTRO: la sala se monta por código lejos del mapa (b.room) con la sala de
@@ -50,6 +51,10 @@ function mats() {
   M.ember = new THREE.MeshBasicMaterial({ color: 0xff5a1a });
   M.candle = new THREE.MeshBasicMaterial({ color: 0xffe0a0 });
   M.hit = new THREE.MeshBasicMaterial({ visible: false });
+  M.leaves = L(0x3f7a2e); M.leavesD = L(0x2a5a22); M.grapes = L(0x4a1a4a); M.tea = L(0x7a3a1e); M.linen = L(0xf4f0e4);
+  M.flowers = [0xd0304a, 0xe8a030, 0xd060a0].map(c => L(c));
+  M.cellar = L(0xb8a888);
+  M.water = new THREE.MeshLambertMaterial({ color: 0x3a7a9a, transparent: true, opacity: 0.85 });
   return M;
 }
 const box = (w, h, d, m, x = 0, y = 0, z = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); return b; };
@@ -96,6 +101,20 @@ function buildExterior() {
       shoe.position.set(0, 2.95, b.d / 2 + 0.12); shoe.rotation.z = -Math.PI * 0.15 - Math.PI / 2; g.add(shoe);
       // chimenea de la forja
       g.add(box(1.1, 2.2, 1.1, M.stone, -b.w / 2 + 1.2, b.twoFloors ? 6.8 : 4.4, -b.d / 2 + 1.2));
+    } else if (b.kind === 'casa') {
+      // macetas con geranios a los lados de la puerta y una placa de piedra
+      for (const sx of [-1.6, 1.6, -3.6, 3.6]) {
+        g.add(cyl(0.3, 0.22, 0.45, M.pot, sx, 0.23, b.d / 2 + 0.55, 10));
+        const fl = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), M.flowers[Math.abs(sx * 10) % 3]); fl.position.set(sx, 0.62, b.d / 2 + 0.55); fl.scale.y = 0.7; g.add(fl);
+      }
+      g.add(box(1.0, 0.6, 0.06, M.stone, 2.3, 2.1, b.d / 2 + 0.06));
+    } else if (b.kind === 'bodega') {
+      // parra sobre la puerta (postes + emparrado verde) y barricas fuera
+      for (const sx of [-2.4, 2.4]) g.add(box(0.14, 2.6, 0.14, M.woodD, sx, 1.3, b.d / 2 + 2.0));
+      g.add(box(5.2, 0.1, 0.12, M.woodD, 0, 2.6, b.d / 2 + 2.0), box(5.2, 0.1, 0.12, M.woodD, 0, 2.6, b.d / 2 + 0.2));
+      const vine = box(5.4, 0.22, 2.2, M.leaves, 0, 2.75, b.d / 2 + 1.1); g.add(vine);
+      for (let k = 0; k < 6; k++) { const gr = new THREE.Mesh(new THREE.SphereGeometry(0.13, 6, 5), M.grapes); gr.position.set(-2 + k * 0.8, 2.5, b.d / 2 + 0.6 + (k % 2) * 0.9); gr.scale.y = 1.5; g.add(gr); }
+      for (const [sx, sz] of [[3.4, 0.7], [3.4, 1.6]]) { const br = cyl(0.42, 0.42, 0.95, M.wood, sx, 0.43, b.d / 2 + sz, 12); br.rotation.x = Math.PI / 2; g.add(br); }
     }
     exterior.add(g);
     addOBB(b.x, b.z, b.dir, b.w / 2 + 0.3, b.d / 2 + 0.3);
@@ -251,23 +270,179 @@ function buildHerreria(b, ctx) {
     text: '💥 El Tigre: cañón de bronce del castillo de Paso Alto. Defendió el puerto en el verano de 1797. Huele a pólvora vieja.' });
 }
 
+function helecho(g, x, z, s = 1) {   // maceta con helecho (patio canario)
+  const h = new THREE.Group(); h.position.set(x, 0, z);
+  h.add(cyl(0.32 * s, 0.24 * s, 0.5 * s, M.pot, 0, 0.25 * s, 0, 10));
+  for (let k = 0; k < 7; k++) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.12 * s, 0.9 * s, 4), k % 2 ? M.leaves : M.leavesD);
+    const a = k / 7 * Math.PI * 2;
+    f.position.set(Math.cos(a) * 0.22 * s, 0.75 * s, Math.sin(a) * 0.22 * s);
+    f.rotation.set(Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7);
+    h.add(f);
+  }
+  g.add(h);
+  return h;
+}
+
+function buildCasaBalcones(b, ctx) {
+  const { g, cols, items, W, D } = ctx;
+  const exit = shell(g, W, D, M.floorWood, M.wall);
+  items.push({ kind: 'salida', x: 0, z: -D / 2 + 0.3, r: 1.8, mesh: exit });
+  // Patio canario en el centro: losas, fuente de piedra y helechos
+  const px = 0.5, pz = 0.6;
+  g.add(box(4.2, 0.04, 3.4, M.stone, px, 0.02, pz), box(3.9, 0.045, 3.1, M.floorStone, px, 0.022, pz));
+  const fu = new THREE.Group(); fu.position.set(px, 0, pz);
+  fu.add(cyl(0.95, 1.05, 0.55, M.stone, 0, 0.28, 0, 14), cyl(0.85, 0.85, 0.05, M.water, 0, 0.52, 0, 14));
+  fu.add(cyl(0.12, 0.16, 0.9, M.stone, 0, 0.9, 0, 8), cyl(0.38, 0.2, 0.16, M.stone, 0, 1.38, 0, 10));
+  const jet = cyl(0.03, 0.05, 0.35, M.water, 0, 1.6, 0, 6); fu.add(jet);
+  g.add(fu); cols.push({ x: px, z: pz, hx: 1.05, hz: 1.05 });
+  ctx.flames.push(jet);
+  items.push({ kind: 'examinar', x: px, z: pz, r: 2.8, mesh: fu,
+    text: '⛲ La fuente del patio. El agua baja del monte por una acequia que tiene más años que la casa.' });
+  for (const [x, z] of [[px - 1.8, pz - 1.4], [px + 1.8, pz - 1.4], [px - 1.8, pz + 1.4], [px + 1.8, pz + 1.4]]) helecho(g, x, z);
+  // Galería de tea (pared norte): pies derechos, viga y barandilla de balaustres
+  const gz = D / 2 - 1.5;
+  for (let x = -W / 2 + 1; x <= W / 2 - 1; x += 2.2) { g.add(box(0.2, 2.6, 0.2, M.tea, x, 1.3, gz)); cols.push({ x, z: gz, hx: 0.12, hz: 0.12 }); }
+  g.add(box(W - 0.8, 0.22, 0.26, M.tea, 0, 2.5, gz));
+  g.add(box(W - 0.8, 0.08, 0.14, M.tea, 0, 2.05, gz));
+  for (let x = -W / 2 + 0.7; x < W / 2 - 0.5; x += 0.32) g.add(box(0.06, 0.4, 0.06, M.tea, x, 2.27, gz));
+  // Bastidor de calados de Doña Mencía (a su derecha) con el lino tensado
+  const bx = -4.6, bz = 1.0;
+  const bs = new THREE.Group(); bs.position.set(bx, 0, bz); bs.rotation.y = 0.35;
+  for (const sx of [-0.6, 0.6]) bs.add(box(0.07, 0.95, 0.07, M.woodD, sx, 0.47, 0));
+  const lin = box(1.3, 0.03, 0.9, M.linen, 0, 0.95, 0); lin.rotation.x = -0.35; bs.add(lin);
+  for (let k = 0; k < 5; k++) { const h = box(0.9 - k * 0.12, 0.035, 0.03, M.cloth, 0, 0.97 + k * 0.03, -0.25 + k * 0.12); h.rotation.x = -0.35; bs.add(h); }
+  g.add(bs); cols.push({ x: bx, z: bz, hx: 0.65, hz: 0.5 });
+  items.push({ kind: 'examinar', x: bx, z: bz, r: 3.0, mesh: bs,
+    text: '🧵 Un calado a medio hacer: Doña Mencía saca hilos del lino uno a uno y borda flores con los que quedan. Lleva así desde el verano.' });
+  // Mesa con el dibujo de la alfombra del Corpus
+  const tx = -3.6, tz = -2.4;
+  const tbl = new THREE.Group(); tbl.position.set(tx, 0, tz);
+  tbl.add(box(1.8, 0.08, 1.0, M.tea, 0, 0.8, 0));
+  for (const [a, c] of [[-0.8, -0.4], [0.8, -0.4], [-0.8, 0.4], [0.8, 0.4]]) tbl.add(box(0.08, 0.8, 0.08, M.woodD, a, 0.4, c));
+  const plan = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.75).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: boardTexture(['CORPUS', '✿ ❀ ✿ ❀ ✿', 'tierras del Teide'], '#efe4c8', '#6a2a1a') }));
+  plan.position.y = 0.85; plan.rotation.y = Math.PI; tbl.add(plan);
+  g.add(tbl); cols.push({ x: tx, z: tz, hx: 0.95, hz: 0.55 });
+  items.push({ kind: 'examinar', x: tx, z: tz, r: 3.0, mesh: tbl,
+    text: '🌸 El dibujo de la alfombra de este año: flores rojas de los geranios, pétalos amarillos y tierras del Teide de siete colores. Cada cuadrito lleva un nombre de quién lo rellena.' });
+  // Alfombra de flores a medio hacer (junto a la entrada, este)
+  const af = new THREE.Group(); af.position.set(3.4, 0, -2.7);
+  const AC = [M.flowers[0], M.flowers[1], M.flowers[2], M.straw, M.leaves, M.tea];
+  for (let i = 0; i < 7; i++) for (let j = 0; j < 4; j++) {
+    if (i > 4 && j > 1) continue;   // sin terminar
+    af.add(box(0.36, 0.03, 0.36, AC[(i * 3 + j * 2 + (i * j) % 3) % AC.length], -1.1 + i * 0.37, 0.016, -0.55 + j * 0.37));
+  }
+  af.add(box(0.5, 0.25, 0.4, M.straw, 1.5, 0.12, 0.5));   // cesta de pétalos
+  g.add(af);
+  const afHit = box(2.8, 0.3, 1.6, M.hit, 3.4, 0.15, -2.7); g.add(afHit);
+  items.push({ kind: 'examinar', x: 3.4, z: -2.7, r: 2.6, mesh: afHit,
+    text: '🌺 Una alfombra de flores sin terminar. Bentor ensaya aquí para el Corpus. Se rellena a mano, pétalo a pétalo, y la primera procesión la deshace.' });
+  // Arcón de tea (pared este) y retrato (pared oeste)
+  const ar = box(1.5, 0.75, 0.7, M.tea, W / 2 - 0.55, 0.38, -0.2); ar.rotation.y = Math.PI / 2; g.add(ar);
+  g.add(box(1.55, 0.06, 0.75, M.woodD, W / 2 - 0.55, 0.77, -0.2).rotateY(Math.PI / 2));
+  cols.push({ x: W / 2 - 0.55, z: -0.2, hx: 0.4, hz: 0.8 });
+  items.push({ kind: 'examinar', x: W / 2 - 0.55, z: -0.2, r: 2.6, mesh: ar,
+    text: '🗝️ Un arcón de tea con cerradura de hierro. Dentro hay manteles bordados, cartas viejas y olor a membrillo.' });
+  const rt = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.25), new THREE.MeshBasicMaterial({ map: boardTexture(['🎩', 'Don Lope', '1802'], '#3a2a1a', '#e8d8b0') }));
+  rt.position.set(-W / 2 + 0.22, 1.7, -0.9); rt.rotation.y = Math.PI / 2; g.add(rt);
+  items.push({ kind: 'examinar', x: -W / 2 + 0.9, z: -0.9, r: 3.0, mesh: rt,
+    text: '🖼️ Retrato de Don Lope, el primer dueño. Doña Mencía dice que miraba igual de serio a las visitas que a las cuentas.' });
+  // Luz de día del patio y una lámpara junto a la puerta (sin parpadeo)
+  ctx.flicker = false;
+  ctx.lights.push([poolLight(0xfff2d8, 1.1, 13, 1.4), px, 2.7, pz]);
+  ctx.lights.push([poolLight(0xffd8a0, 0.6, 11, 1.5), -3.0, 2.4, -2.0]);
+}
+
+function buildBodega(b, ctx) {
+  const { g, cols, items, W, D } = ctx;
+  const exit = shell(g, W, D, M.floorStone, M.cellar);
+  items.push({ kind: 'salida', x: 0, z: -D / 2 + 0.3, r: 1.8, mesh: exit });
+  // Mostrador (Goyo detrás, en z ≈ 2.9) con vasos y la botella de sangre de drago
+  const bz = 1.95;
+  g.add(box(5.4, 1.1, 0.7, M.wood, 0, 0.55, bz), box(5.6, 0.1, 0.85, M.woodL, 0, 1.13, bz));
+  for (let i = 0; i < 4; i++) g.add(cyl(0.05, 0.06, 0.16, M.glass[1], -1.8 + i * 0.6, 1.26, bz, 6));
+  cols.push({ x: 0, z: bz, hx: 2.8, hz: 0.45 });
+  const dj = new THREE.Group(); dj.position.set(2.2, 1.18, bz);
+  dj.add(cyl(0.11, 0.14, 0.32, new THREE.MeshLambertMaterial({ color: 0x8a0a0a, transparent: true, opacity: 0.9 }), 0, 0.16, 0, 8), cyl(0.04, 0.05, 0.12, M.woodD, 0, 0.38, 0, 6));
+  g.add(dj);
+  const djHit = box(0.5, 0.6, 0.5, M.hit, 2.2, 1.4, bz); g.add(djHit);
+  items.push({ kind: 'examinar', x: 2.2, z: bz - 0.8, r: 2.6, mesh: djHit,
+    text: '🩸 Un frasco de savia de drago, roja como la sangre. Goyo la usa para sellar las barricas buenas. «Ni se te ocurra bebértela».' });
+  // Estantería de botellas detrás del mostrador
+  const sz = D / 2 - 0.45;
+  g.add(box(5.0, 2.2, 0.4, M.woodD, 0, 1.1, sz));
+  for (let r = 0; r < 3; r++) {
+    g.add(box(4.8, 0.06, 0.42, M.woodL, 0, 0.55 + r * 0.6, sz - 0.02));
+    for (let k = 0; k < 9; k++) g.add(cyl(0.06, 0.07, 0.3, M.glass[k % 3 === 0 ? 0 : 1], -2.2 + k * 0.55, 0.74 + r * 0.6, sz - 0.05, 6));
+  }
+  cols.push({ x: 0, z: sz, hx: 2.6, hz: 0.3 });
+  // Barricas tumbadas en dos alturas (pared oeste)
+  const wx = -W / 2 + 0.7;
+  for (let z = -3.2; z <= 3.3; z += 0.95) { barrel(g, wx, z, true, 0); if (z > -2.5) barrel(g, wx, z + 0.47, true, 0.82); }
+  g.add(box(0.12, 0.1, 6.9, M.woodD, wx + 0.35, 0.05, 0.05), box(0.12, 0.1, 6.9, M.woodD, wx - 0.35, 0.05, 0.05));
+  cols.push({ x: wx, z: 0.05, hx: 0.55, hz: 3.5 });
+  const brHit = box(1.0, 1.8, 7, M.hit, wx, 0.9, 0.05); g.add(brHit);
+  items.push({ kind: 'examinar', x: wx + 0.6, z: 0, r: 2.6, mesh: brHit,
+    text: '🍷 Barricas de malvasía. Cada una lleva escrito con tiza el año y la viña. Una pone «NO TOCAR — Goyo» tres veces.' });
+  // Lagar de viga (este): tina de madera con mosto, viga larga y piedra de peso
+  const lx = W / 2 - 1.9, lz = 1.4;
+  const lg = new THREE.Group(); lg.position.set(lx, 0, lz);
+  lg.add(box(2.4, 0.7, 1.8, M.wood, 0, 0.35, 0), box(2.1, 0.04, 1.5, M.grapes, 0, 0.68, 0));
+  for (const sx of [-1.1, 1.1]) lg.add(box(0.25, 2.5, 0.25, M.woodD, sx, 1.25, -0.95));
+  const viga = box(4.2, 0.32, 0.32, M.woodD, -0.4, 2.2, 0); viga.rotation.z = -0.08; lg.add(viga);
+  lg.add(cyl(0.35, 0.35, 0.5, M.stone, -2.2, 0.25, 0, 10), box(0.08, 1.8, 0.08, M.iron, -2.2, 1.3, 0));
+  g.add(lg); cols.push({ x: lx, z: lz, hx: 1.3, hz: 1.0 }, { x: lx - 2.2, z: lz, hx: 0.4, hz: 0.4 });
+  items.push({ kind: 'examinar', x: lx, z: lz - 1.2, r: 3.0, mesh: lg,
+    text: '🍇 El lagar de viga. Se pisa la uva en la tina y luego la viga, con la piedra colgando, exprime lo que queda. Huele a mosto dulce.' });
+  // Cestas de uva junto a Nieves
+  for (const [x, z] of [[4.9, -2.6], [5.6, -1.9]]) {
+    g.add(cyl(0.38, 0.3, 0.45, M.straw, x, 0.23, z, 10));
+    for (let k = 0; k < 5; k++) { const gr = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), M.grapes); gr.position.set(x - 0.15 + (k % 3) * 0.15, 0.5, z - 0.1 + (k > 2 ? 0.18 : 0)); g.add(gr); }
+    cols.push({ x, z, hx: 0.4, hz: 0.4 });
+  }
+  // Mesa con vino y queso
+  table(g, cols, -2.4, -2.2);
+  // Un hijo del drago en una maceta (junto a la puerta, oeste)
+  const dr = new THREE.Group(); dr.position.set(-3.7, 0, -3.6);
+  dr.add(cyl(0.45, 0.35, 0.6, M.pot, 0, 0.3, 0, 10), cyl(0.12, 0.16, 1.2, M.stoneD, 0, 1.2, 0, 8));
+  for (let k = 0; k < 4; k++) {
+    const a = k / 4 * Math.PI * 2 + 0.4;
+    const br = cyl(0.06, 0.09, 0.7, M.stoneD, Math.cos(a) * 0.22, 1.95, Math.sin(a) * 0.22, 6); br.rotation.set(Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6); dr.add(br);
+    const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.45, 7), M.leaves); tuft.position.set(Math.cos(a) * 0.48, 2.35, Math.sin(a) * 0.48); tuft.rotation.x = Math.PI; dr.add(tuft);
+  }
+  g.add(dr); cols.push({ x: -3.7, z: -3.6, hx: 0.45, hz: 0.45 });
+  items.push({ kind: 'examinar', x: -3.7, z: -3.6, r: 2.6, mesh: dr,
+    text: '🌴 Un dragillo en una maceta, nacido de una semilla del drago de la plaza. Goyo dice que cuando tenga flores se jubila. Le quedan unos veinte años.' });
+  // Velas (luz cálida que parpadea un poco)
+  ctx.lights.push([poolLight(0xffc070, 1.2, 11, 1.4), 0, 2.4, 0.6]);
+  ctx.lights.push([poolLight(0xffd8a0, 0.6, 12, 1.5), -3.0, 2.4, -2.0]);
+  for (const [x, z] of [[-0.9, bz], [0.9, bz]]) { const c = cyl(0.05, 0.05, 0.2, M.candle, x, 1.28, z, 6); g.add(c); ctx.flames.push(c); }
+}
+
 function buildInterior(b) {
   mats();
   const R = b.room, W = R.W, D = R.D;
   const g = new THREE.Group(); g.position.set(R.x, 0, R.z);
   const ctx = { g, cols: [], items: [], flames: [], lights: [], W, D };
-  if (b.kind === 'taberna') buildTaberna(b, ctx);
-  else buildHerreria(b, ctx);
+  const BUILD = { taberna: buildTaberna, herreria: buildHerreria, casa: buildCasaBalcones, bodega: buildBodega };
+  (BUILD[b.kind] || buildHerreria)(b, ctx);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(W + 6, D + 6).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
   floor.position.set(R.x, 0.02, R.z); floor.userData = { kind: 'town-building-floor' };
   const lights = ctx.lights.map(([l, x, y, z]) => { l.position.set(R.x + x, y, R.z + z); return l; });
-  return { b, group: g, floor, items: ctx.items, cols: ctx.cols, flames: ctx.flames, lights, W, D, t: 0 };
+  return { b, group: g, floor, items: ctx.items, cols: ctx.cols, flames: ctx.flames, lights, W, D, t: 0,
+    flicker: ctx.flicker !== false, base: lights[0]?.intensity || 1 };
 }
 
 // ============================================================
 // Entrar / salir
 // ============================================================
+const ENTER_MSG = {
+  taberna: (b) => `🍷 Entras en la ${b.name}. Huele a leña, a vino y a gofio.`,
+  herreria: (b) => `⚒ Entras en la ${b.name}. El martillo suena como una campana.`,
+  casa: (b) => `🏛 Entras en la ${b.name}. Un patio con helechos, una fuente y un balcón de madera roja.`,
+  bodega: (b) => `🍇 Entras en la ${b.name}. Fresquito, oscuro y con olor a mosto.`,
+};
 function enterBuilding(b) {
   if (interiors.isActive() || inside) return;
   const h = buildInterior(b);
@@ -287,7 +462,7 @@ function enterBuilding(b) {
   }, b.id);
   if (!ok) { cleanupInside(); return; }
   try { townNpcs.resync?.(); } catch {}
-  feedLog('info', b.kind === 'taberna' ? `🍷 Entras en la ${b.name}. Huele a leña, a vino y a gofio.` : `⚒ Entras en la ${b.name}. El martillo suena como una campana.`);
+  feedLog('info', ENTER_MSG[b.kind]?.(b) || `Entras en ${b.name}.`);
 }
 
 function cleanupInside() {
@@ -342,7 +517,7 @@ function roomUpdate(dt) {
   inside.t += dt;
   const t = inside.t;
   for (const f of inside.flames) { f.scale.set(1, 1 + Math.sin(t * 10 + f.id) * 0.18, 1); }
-  inside.lights.forEach((l, i) => { if (i === 0) l.intensity = (inside.b.kind === 'herreria' ? 1.6 : 1.3) + Math.sin(t * 13) * 0.12 + Math.sin(t * 7.3) * 0.1; });
+  if (inside.flicker && inside.lights[0]) inside.lights[0].intensity = inside.base + Math.sin(t * 13) * 0.12 + Math.sin(t * 7.3) * 0.1;
   if (pendingUse) {
     const p = getPlayer(), R = inside.b.room;
     if (p && Math.hypot(p.position.x - (R.x + pendingUse.x), p.position.z - (R.z + pendingUse.z)) <= pendingUse.r) {
@@ -405,7 +580,8 @@ export function registerKeepouts(terrain) {
 }
 
 export function getMapIcons() {
-  return TOWN_BUILDINGS.map(b => ({ x: b.x, z: b.z, kind: b.kind === 'taberna' ? 'tavern' : 'anvil', name: b.name }));
+  const ICON = { taberna: 'tavern', bodega: 'tavern', herreria: 'anvil', casa: 'history' };
+  return TOWN_BUILDINGS.map(b => ({ x: b.x, z: b.z, kind: ICON[b.kind] || 'quest', name: b.name }));
 }
 
 export function start(opts) {

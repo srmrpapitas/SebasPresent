@@ -285,6 +285,14 @@ export function drawIcon(ctx, kind, x, y, r = 6, extra = {}) {
       ctx.fillStyle = '#a0203a'; ctx.fillRect(x - r * 0.3, y - r * 0.1, r * 0.44, r * 0.48);
       break;
     }
+    case 'history': {  // 19 oct — casa con historia: fachada con balcón
+      disc(ctx, x, y, r, '#2f5a2a', '#0c1a0a');
+      ctx.fillStyle = '#f2ead8'; ctx.fillRect(x - r * 0.5, y - r * 0.35, r, r * 0.8);
+      ctx.fillStyle = '#a0402a'; ctx.beginPath(); ctx.moveTo(x - r * 0.62, y - r * 0.32); ctx.lineTo(x, y - r * 0.72); ctx.lineTo(x + r * 0.62, y - r * 0.32); ctx.fill();
+      ctx.fillStyle = '#7a3a1e'; ctx.fillRect(x - r * 0.5, y - r * 0.05, r, r * 0.12);
+      ctx.fillStyle = '#2f6a3a'; ctx.fillRect(x - r * 0.12, y + r * 0.12, r * 0.24, r * 0.33);
+      break;
+    }
     case 'cave': {     // Sesión 50 — boca de cueva: montaña gris con arco negro
       disc(ctx, x, y, r, '#5a5048', '#1a1410');
       ctx.fillStyle = '#8a7e70'; ctx.beginPath();

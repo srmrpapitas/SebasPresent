@@ -29,6 +29,18 @@ export const TOWN_BUILDINGS = [
     x: 1655, z: -760, dir: Math.PI / 2, w: 10, d: 8, color: 0xe8c8a8,
     room: { x: 14100, z: 14000, W: 12, D: 10 },
   },
+  {
+    id: 'casa_balcones_orotava', kind: 'casa', town: 'La Orotava',
+    name: 'Casa de los Balcones', sign: ['🏛 CASA', 'de los Balcones'],
+    x: -314, z: -698, dir: Math.PI / 2, w: 11, d: 8, color: 0xf2ead8, twoFloors: true,
+    room: { x: 14200, z: 14000, W: 13, D: 10 },
+  },
+  {
+    id: 'bodega_icod', kind: 'bodega', town: 'Icod de los Vinos',
+    name: 'Bodega El Drago', sign: ['🍇 BODEGA', 'El Drago'],
+    x: -698, z: -222, dir: 0, w: 10, d: 8, color: 0xe6d2a8,
+    room: { x: 14300, z: 14000, W: 13, D: 10 },
+  },
 ];
 
 export const TOWN_BUILDINGS_BY_ID = Object.fromEntries(TOWN_BUILDINGS.map(b => [b.id, b]));

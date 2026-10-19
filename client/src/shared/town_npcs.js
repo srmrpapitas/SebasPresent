@@ -571,6 +571,38 @@ export const TOWN_NPCS = [
       'El Maestro Chano dice que en cinco años me deja tocar el yunque. Yo ya practico con una cuchara.',
       'Si picas hierro, fúndelo en el horno de la Cantera de La Laguna. El de aquí es solo para el Maestro.',
     ] },
+  // Casa de los Balcones (La Orotava)
+  { id: 'bordadora_mencia', name: 'Doña Mencía', title: 'Bordadora de calados', ...inRoom('casa_balcones_orotava', -3.2, 1.6), rotY: Math.PI * 0.9, role: '🧵',
+    look: { skin: 0xe0b08a, shirt: 0x2a2a3a, pants: 0x2a2a30, hair: 0xd8d8d8, acc: 'glasses' },
+    lines: [
+      'Pasa, mi niño, y limpia los pies, que el suelo es de tea y tiene más años que el Teide.',
+      'Esto es un calado: se sacan hilos del lino y con los que quedan se borda el dibujo. Una mantelería me lleva un invierno entero.',
+      'Desde ese balcón se ve todo el valle hasta el mar. Por eso los ricos de antes se hacían las casas aquí: para mirar por encima a los demás.',
+      'En el Corpus las calles se cubren de alfombras de flores y de tierras del Teide. Yo las dibujo; los chiquillos las rellenan.',
+    ] },
+  { id: 'sobrino_bentor', name: 'Bentor', title: 'Sobrino de Doña Mencía', ...inRoom('casa_balcones_orotava', 3.6, 1.2), rotY: Math.PI * 1.1, role: '🌺',
+    look: { skin: 0xc8946a, shirt: 0x3a6a3a, pants: 0x2a2a3a, hair: 0x1a1008 },
+    lines: [
+      'Mi tía dice que algún día heredaré la casa. Yo solo quiero heredar el balcón: desde ahí se tiran las mejores flores en el Corpus.',
+      'El patio lo regamos con agua de la acequia. Hay helechos más viejos que yo. Bueno, y que mi tía. No se lo digas.',
+      'En el monte de La Orotava hay pinos tan viejos que son de tea por dentro: madera roja que no se pudre nunca. Están protegidos.',
+    ] },
+  // Bodega El Drago (Icod de los Vinos)
+  { id: 'bodeguero_goyo', name: 'Goyo', title: 'Bodeguero de El Drago', ...inRoom('bodega_icod', 0, 2.9), rotY: Math.PI, role: '🍇',
+    look: { skin: 0xc8946a, shirt: 0x6a2a3a, pants: 0x2a2620, hair: 0x3a3a3a, acc: 'apron' },
+    lines: [
+      'Bienvenido a El Drago. Aquí el vino se hace como lo hacía mi abuelo: pisando la uva y con paciencia.',
+      'La malvasía de Icod la bebían en los palacios del otro lado del mar. Hoy la bebe quien la paga, que es más justo.',
+      'Las barricas de abajo son de castaño. Las de arriba, de roble. Las del rincón… mejor no preguntes.',
+      'Si te sobra valor, tengo un trabajo para ti. Si te sobra sed, también.',
+    ] },
+  { id: 'vendimiadora_nieves', name: 'Nieves', title: 'Vendimiadora', ...inRoom('bodega_icod', 4.0, -1.4), rotY: Math.PI * 1.15, role: '🍇',
+    look: { skin: 0xd9a57a, shirt: 0xe0d8c0, pants: 0x3a2a2a, hair: 0x2a1408, acc: 'hat' },
+    lines: [
+      'Llevo desde el amanecer en el lagar. Tengo los pies morados hasta las rodillas.',
+      'Este año la vendimia viene buena… si los tibicenas nos dejan subir a las viñas del norte.',
+      'Mi abuela decía que cuando se quemó el puerto de Garachico con el volcán, el vino de Icod se quedó sin barcos. Tardamos cien años en recuperarnos.',
+    ] },
   // Sesión 50 — casas de jugador
   { id: 'nauzet_inmobiliaria', name: 'Nauzet', title: 'Agente inmobiliario', x: 50, z: 50, rotY: 0.8, role: '🏠',
     look: { skin: 0xd0a07a, shirt: 0x2a3a6a, pants: 0x1a1a2a, hair: 0x1a1a1a, acc: 'glasses' },

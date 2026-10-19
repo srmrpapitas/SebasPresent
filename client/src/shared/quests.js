@@ -474,7 +474,7 @@ export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'pri
   'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones',
   'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror', 'cronicas_achinech',
   // 19 oct — pueblos
-  'vino_tacoronte', 'el_tigre'];
+  'vino_tacoronte', 'el_tigre', 'balcon_tea', 'sangre_drago'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {
@@ -509,6 +509,8 @@ export const QUEST_REQS = {
   dia_de_pierna:      { levels: { herblore: 8 }, quests: ['primeras_pociones'] },
   el_tagoror:         { combat: 35 },
   el_tigre:           { levels: { smithing: 15 } },
+  balcon_tea:         { levels: { woodcutting: 15 } },
+  sangre_drago:       { combat: 25 },
   sombra_cabildo:     { combat: 60, levels: { herblore: 35, prayer: 37 }, quests: ['primeras_pociones', 'bruja_niebla'] },
 };
 
@@ -971,5 +973,51 @@ Object.assign(QUESTS, {
       talkBack('herrero_chano', 'Vuelve con el Maestro Chano a la Herrería del Muelle.'),
     ],
     reward: { coins: 400, items: [['bar_hierro', 2]], xp: { smithing: 1500 }, text: '400 monedas · 2 lingotes de hierro · 1.500 XP Herrería' },
+  },
+});
+
+// 19 oct — La Orotava (Casa de los Balcones) e Icod (Bodega El Drago)
+Object.assign(QUESTS, {
+  balcon_tea: {
+    id: 'balcon_tea', name: 'El balcón de tea', giver: 'bordadora_mencia',
+    summary: 'A Doña Mencía, en la Casa de los Balcones de La Orotava, se le está cayendo un trozo del balcón. Recomendado: Tala 15.',
+    offer: ['¿Oyes ese crujido? Es el balcón. Tiene trescientos años y le falta una viga.', 'Antes se hacía todo de tea, pero eso ya no se puede cortar. Pregúntale a Joaquín, el leñador, qué madera me sirve.'],
+    accept: 'Voy a hablar con Joaquín.', doing: 'Joaquín el leñador anda por la plaza de La Orotava. Él sabe de maderas.',
+    thanks: '¡Mira qué viga! Ahora sí que aguanta el balcón para el Corpus. Toma, y quédate a ver las alfombras, que este año salgo yo dibujando.',
+    steps: [
+      { id: 'joaquin', event: 'talk', match: 'joaquin_lenador', count: 1, hint: { talk: 'joaquin_lenador' },
+        text: 'Pregunta a Joaquín, el leñador de La Orotava, qué madera sirve para el balcón.', tip: 'En la plaza de La Orotava.',
+        scene: [
+          P('Doña Mencía necesita una viga para su balcón. ¿Puedo cortar tea?'),
+          '¿Tea? ¡Ni se te ocurra! Esos pinos viejos están protegidos: tardan cien años en hacerse rojos por dentro.',
+          'Para una viga, roble. Duro, sano y aquí hay de sobra. Córtale cinco troncos buenos y llévaselos.',
+          N('Joaquín te enseña cómo se elige un roble sin nudos.'),
+        ] },
+      { id: 'roble', event: 'deliver', npc: 'bordadora_mencia', items: [['oak_logs', 5]], count: 1, hint: { talk: 'bordadora_mencia' },
+        text: 'Lleva 5 troncos de roble a Doña Mencía (Casa de los Balcones, La Orotava).', tip: 'Hay robles por todo el bosque de La Orotava (nivel 15 de Tala).',
+        scene: [N('Bentor sube los troncos al balcón. Durante un rato solo se oyen martillazos y a Doña Mencía dando órdenes.')] },
+    ],
+    reward: { coins: 300, items: [['pan', 3]], xp: { woodcutting: 800, crafting: 400 }, text: '300 monedas · 3 panes · 800 XP Tala · 400 XP Artesanía' },
+  },
+  sangre_drago: {
+    id: 'sangre_drago', name: 'Sangre de drago', giver: 'bodeguero_goyo',
+    summary: 'Goyo, el bodeguero de El Drago (Icod), no puede vendimiar: los tibicenas rondan las viñas del norte. Recomendado: combate 30.',
+    offer: ['Las mejores uvas están en las viñas del norte, y allí ya no sube nadie. Por las noches se oyen aullidos.', 'Doña Carmen, la que cuida el drago, sabe de esas bestias más que nadie. Habla con ella y luego… bueno, luego haz lo que haya que hacer.'],
+    accept: 'Hablaré con Doña Carmen.', doing: 'Doña Carmen está junto al drago, en la plaza de Icod.',
+    thanks: '¡Ya bajan las cestas llenas! Esta cosecha lleva tu nombre, aunque en la etiqueta ponga El Drago. Toma, que es poco para lo que vale.',
+    steps: [
+      { id: 'carmen', event: 'talk', match: 'dona_carmen', count: 1, hint: { talk: 'dona_carmen' },
+        text: 'Pregunta a Doña Carmen, junto al drago de Icod, por los aullidos de las viñas.', tip: 'En la plaza de Icod de los Vinos.',
+        scene: [
+          P('Goyo dice que algo ronda las viñas del norte.'),
+          'Tibicenas. Perros negros de Guayota, con los ojos como brasas. Bajan cuando la montaña está inquieta.',
+          N('Doña Carmen moja un dedo en la savia roja del drago y te lo pasa por la frente.'),
+          'Sangre de drago: los guanches se la ponían antes de pelear. No te hará invencible, pero te recordará que no vas solo. Están al norte, en el bosque. Ten cuidado.',
+        ] },
+      { id: 'tibicenas', event: 'kill', match: 'tibicena', count: 4, hint: { npc: 'tibicena' },
+        text: 'Espanta a los tibicenas de las viñas: mata 4 tibicenas.', tip: 'En el Bosque de los tibicenas, unos 560 m al norte de Icod.' },
+      talkBack('bodeguero_goyo', 'Vuelve con Goyo a la Bodega El Drago (Icod).'),
+    ],
+    reward: { coins: 700, items: [['cooked_beef', 5]], xp: { attack: 1500, strength: 1500, defence: 1000 }, text: '700 monedas · 5 de ternera · 1.500 XP Ataque · 1.500 XP Fuerza · 1.000 XP Defensa' },
   },
 });

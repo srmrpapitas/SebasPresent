@@ -235,4 +235,24 @@ export const LORE = {
       'Hoy el muelle huele a pescado, a brea y a café. Y de Anaga bajan los caballeros de Sir Beneharo a por herraduras. Ellos dicen que vigilan la costa; yo digo que vienen por el café.',
     ],
   },
+  bordadora_mencia: {
+    label: '📖 Cuéntame la historia de La Orotava',
+    pages: [
+      'Antes de que hubiera casas, esto era el valle de Taoro, el reino más rico de la isla. Su mencey, Bencomo, tenía más cabras que nadie y más guerreros que nadie.',
+      'Taoro fue el último en rendirse. Cuando por fin cayó, los vencedores se repartieron el valle: el agua, las tierras buenas y las vistas al mar.',
+      'Con el dinero del azúcar y del vino levantaron estas casonas, con patios llenos de helechos y balcones de tea, la madera roja del corazón del pino, que no se la come ni la carcoma.',
+      'Un sabio viajero que pasó por aquí dijo que era el valle más bonito que había visto en su vida. Y eso que había visto medio mundo.',
+      'Hoy los dueños ya no están, pero las casas sí. Y en el Corpus las calles se llenan de alfombras de flores y de tierras del Teide de todos los colores. Eso no lo tiene ningún otro sitio.',
+    ],
+  },
+  bodeguero_goyo: {
+    label: '📖 Cuéntame la historia de Icod',
+    pages: [
+      'Icod era uno de los nueve reinos guanches. Su gente vivía entre barrancos y cuevas, y el drago ya estaba ahí, mirándolo todo.',
+      'Después llegaron las viñas. La malvasía de estas laderas se hizo famosa: la cargaban en Garachico, el puerto de al lado, y se la bebían reyes al otro lado del mar.',
+      'Hasta que en 1706 el volcán echó un río de lava sobre Garachico y se tragó el puerto. Sin puerto no hay barcos, y sin barcos no hay venta.',
+      'Icod aguantó como aguanta el drago: sin prisa. Hoy hacemos el vino para nosotros y para quien suba hasta aquí a buscarlo.',
+      'Dicen que el drago tiene mil años. Doña Carmen dice que muchos menos. Yo digo que, mientras dé sombra, que tenga los que quiera.',
+    ],
+  },
 };

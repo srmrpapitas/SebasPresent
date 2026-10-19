@@ -34,10 +34,15 @@
      Chago el del timple) + misión «El vino que no llegó». Santa Cruz: **Herrería del Muelle** (Maestro Chano cuenta la
      historia de Santa Cruz y El Tigre, la aprendiza Iballa) + misión «El Tigre de Paso Alto» (Herrería 15).
      Sistema reutilizable: `shared/town_buildings.js` (ver INVARIANTS §36).
-   - [ ] Siguen: La Orotava, Icod, Güímar, Adeje/Los Cristianos, Vilaflor (1 edificio + lore + misión corta cada uno).
+   - [x] (19 oct, tarde) La Orotava: **Casa de los Balcones** (Doña Mencía, bordadora: historia del valle de Taoro; su sobrino
+     Bentor) + misión «El balcón de tea» (Tala 15, 5 troncos de roble). Icod: **Bodega El Drago** (Goyo, bodeguero: historia
+     de Icod y Garachico; Nieves, vendimiadora) + misión «Sangre de drago» (combate 25, 4 tibicenas).
+   - [ ] Siguen: Güímar, Adeje/Los Cristianos, Vilaflor (1 edificio + lore + misión corta cada uno).
 
 ### Notas del 19 oct (tarea programada)
-- Siguiente: punto 6 (pueblos). Hechos La Laguna y Santa Cruz; seguir con La Orotava e Icod (casa con historia / bodega).
+- Siguiente: punto 6 (pueblos). Hechos La Laguna, Santa Cruz, La Orotava e Icod; seguir con Güímar y Adeje/Los Cristianos.
+- Para colocar un edificio nuevo sin pisar caminos/NPC: buscar huecos a 9–20 m del camino (roadDist) y lejos de NPC, bancos,
+  hornos, estanques y casas (así se eligieron Orotava e Icod). La BD local no trae `coins` ni `oak_logs` en `items`: insertarlos a mano para probar.
 - Pruebas locales: `scripts/local/server.mjs` (API + cliente con SQLite; three.js se clona de GitHub r160 porque
   no hay CDN ni npm en el entorno) y `scripts/local/armor_shots.mjs` (fotos de armaduras sin R2).
   Los modelos de R2 no cargan en local: el personaje sale como cápsula.
