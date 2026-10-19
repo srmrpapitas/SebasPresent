@@ -54,6 +54,7 @@ function mats() {
   M.leaves = L(0x3f7a2e); M.leavesD = L(0x2a5a22); M.grapes = L(0x4a1a4a); M.tea = L(0x7a3a1e); M.linen = L(0xf4f0e4);
   M.flowers = [0xd0304a, 0xe8a030, 0xd060a0].map(c => L(c));
   M.cellar = L(0xb8a888); M.fort = L(0xb4a68a); M.skin = L(0x8a6a48);
+  M.boatB = L(0x2a5a9a); M.boatW = L(0xf0efe8); M.boatR = L(0xb03a2a); M.cork = L(0xe0782a); M.fish = L(0xb8c4cc); M.pinocha = L(0xa0682a); M.net = L(0x8a7a5a);
   M.water = new THREE.MeshLambertMaterial({ color: 0x3a7a9a, transparent: true, opacity: 0.85 });
   return M;
 }
@@ -139,7 +140,19 @@ function buildExterior() {
       for (const sx of [-0.5, 0.5]) { const w = cyl(0.3, 0.3, 0.1, M.woodD, sx, 0.3, 0.4, 12); w.rotation.z = Math.PI / 2; cn.add(w); }
       const bar = cyl(0.14, 0.22, 1.8, M.iron, 0, 0.75, 0.3, 10); bar.rotation.x = Math.PI / 2 - 0.15; cn.add(bar);
       g.add(cn);
-      for (let k = 0; k < 5; k++) { const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), M.iron); ball.position.set(2.4 + (k % 3) * 0.24, 0.12 + (k > 2 ? 0.2 : 0), b.d / 2 + 1.0 + (k > 2 ? 0.1 : 0)); g.add(ball); }
+      for (let k = 0; k < 5; k++) { const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), M.iron); ball.position.set(2.4 + (k % 3) * 0.24, 0.12 + (k > 2 ? 0.2 : 0), b.d / 2 + 1.0 + (k > 2 ? 0.1 : 0)); g.add(ball); }    } else if (b.kind === 'cofradia') {
+      // barquita varada delante, nasas y un ancla apoyada en la pared
+      const bt = boat(); bt.position.set(-2.8, 0, b.d / 2 + 2.2); bt.rotation.y = 0.3; g.add(bt);
+      for (const [sx, sz] of [[2.7, 0.8], [3.4, 1.4]]) { const n = cyl(0.35, 0.45, 0.6, M.straw, sx, 0.3, b.d / 2 + sz, 10); g.add(n); }
+      const an = new THREE.Group(); an.position.set(1.6, 0, b.d / 2 + 0.3);
+      an.add(box(0.12, 1.5, 0.12, M.iron, 0, 0.9, 0), box(0.6, 0.1, 0.1, M.iron, 0, 1.45, 0));
+      const hk = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.06, 6, 12, Math.PI), M.iron); hk.rotation.z = Math.PI; hk.position.y = 0.55; an.add(hk);
+      an.rotation.x = -0.15; g.add(an);
+    } else if (b.kind === 'pinero') {
+      // leña apilada, una rodaja de pino y un montón de pinocha
+      for (let r = 0; r < 3; r++) for (let k = 0; k < 5 - r; k++) { const l = cyl(0.17, 0.17, 1.6, M.wood, 2.2 + k * 0.36 + r * 0.18, 0.17 + r * 0.31, b.d / 2 + 0.7, 8); l.rotation.z = Math.PI / 2; l.rotation.y = Math.PI / 2; g.add(l); }
+      const pc = new THREE.Mesh(new THREE.ConeGeometry(1.0, 0.8, 9), M.pinocha); pc.position.set(-3.0, 0.4, b.d / 2 + 1.4); g.add(pc);
+      const ro = cyl(0.38, 0.38, 0.12, M.woodL, -1.3, 1.45, b.d / 2 + 0.1, 16); ro.rotation.x = Math.PI / 2; g.add(ro, cyl(0.14, 0.14, 0.13, M.tea, -1.3, 1.45, b.d / 2 + 0.11, 12).rotateX(Math.PI / 2));
     }
     exterior.add(g);
     addOBB(b.x, b.z, b.dir, b.w / 2 + 0.3, b.d / 2 + 0.3);
@@ -558,12 +571,129 @@ function buildCasaFuerte(b, ctx) {
   for (const [x, z] of [[-2.0, D / 2 - 0.3], [2.0, D / 2 - 0.3]]) { g.add(box(0.08, 0.4, 0.08, M.woodD, x, 2.0, z)); const f = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.25, 6), M.fire); f.position.set(x, 2.32, z); g.add(f); ctx.flames.push(f); }
 }
 
+function boat() {   // barquita de pesca (casco blanco, borda azul)
+  const g = new THREE.Group();
+  g.add(box(1.2, 0.5, 3.4, M.boatW, 0, 0.45, 0), box(1.3, 0.14, 3.5, M.boatB, 0, 0.74, 0), box(1.0, 0.12, 3.0, M.wood, 0, 0.62, 0));
+  const pr = new THREE.Mesh(new THREE.ConeGeometry(0.65, 1.0, 4), M.boatW); pr.rotation.set(Math.PI / 2, Math.PI / 4, 0); pr.scale.set(1, 1, 0.75); pr.position.set(0, 0.5, 2.15); g.add(pr);
+  g.add(box(0.1, 0.12, 1.2, M.boatR, 0.61, 0.5, 0), box(0.1, 0.12, 1.2, M.boatR, -0.61, 0.5, 0));
+  for (const z of [-1.2, 0.2]) g.add(box(1.05, 0.06, 0.3, M.woodL, 0, 0.7, z));
+  for (const z of [-1.3, 1.1]) g.add(box(1.5, 0.22, 0.2, M.woodD, 0, 0.11, z));   // varaderas
+  return g;
+}
+
+function buildCofradia(b, ctx) {
+  const { g, cols, items, W, D } = ctx;
+  const exit = shell(g, W, D, M.floorStone, M.wall);
+  items.push({ kind: 'salida', x: 0, z: -D / 2 + 0.3, r: 1.8, mesh: exit });
+  // Redes colgadas en la pared oeste, con corchos
+  const rx = -W / 2 + 0.25;
+  const nt = new THREE.Group(); nt.position.set(rx, 0, 0.6);
+  for (let k = 0; k <= 10; k++) nt.add(box(0.03, 1.9, 0.03, M.net, 0, 1.25, -2.0 + k * 0.4));
+  for (let k = 0; k <= 6; k++) nt.add(box(0.03, 0.03, 4.0, M.net, 0, 0.35 + k * 0.3, 0));
+  for (let k = 0; k < 9; k++) { const c = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), M.cork); c.position.set(0.06, 2.2, -1.9 + k * 0.48); nt.add(c); }
+  g.add(nt);
+  const ntHit = box(0.5, 2.2, 4.2, M.hit, rx + 0.2, 1.2, 0.6); g.add(ntHit);
+  items.push({ kind: 'examinar', x: rx + 0.9, z: 0.6, r: 2.8, mesh: ntHit,
+    text: '🕸️ Redes de trasmallo puestas a secar, con sus corchos naranjas. Huelen a mar aunque lleven una semana aquí colgadas.' });
+  // La barca en sus caballetes (centro-este)
+  const bx = 2.6, bz = 0.8;
+  const bt = boat(); bt.position.set(bx, 0.35, bz); bt.rotation.y = 0.15; g.add(bt);
+  for (const z of [-1.0, 1.0]) g.add(box(1.4, 0.35, 0.25, M.woodD, bx + Math.sin(0.15) * z, 0.18, bz + z));
+  const nm = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.32), new THREE.MeshBasicMaterial({ map: boardTexture(['LA CARMENCITA'], '#f0efe8', '#2a5a9a') }));
+  nm.position.set(0.66, 0.9, 0.9); nm.rotation.y = Math.PI / 2; bt.add(nm);
+  cols.push({ x: bx, z: bz, hx: 0.85, hz: 2.2 });
+  items.push({ kind: 'examinar', x: bx - 1.3, z: bz, r: 3.0, mesh: bt,
+    text: '⛵ «La Carmencita», la barca del Patrón Isidro, recién pintada. Tiene más años que él y, según él, más paciencia.' });
+  // Mesa de remendar (Rosario al lado) con red amontonada y la aguja
+  const mt = table(g, cols, 3.4, -2.6, false);
+  const pile = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), M.net); pile.scale.set(1.3, 0.35, 0.8); pile.position.set(-0.1, 0.95, 0); mt.add(pile);
+  mt.add(box(0.03, 0.02, 0.3, M.woodL, 0.55, 0.86, 0.2));
+  items.push({ kind: 'examinar', x: 3.4, z: -2.6, r: 2.8, mesh: mt,
+    text: '🪡 Una red con un agujero del tamaño de un perro. La aguja de remendar es de madera y Rosario la maneja más rápido que tú un tenedor.' });
+  // Cajas de pescado y barriles de salazón (esquina NE)
+  for (const [x, z] of [[W / 2 - 0.7, D / 2 - 0.7], [W / 2 - 1.6, D / 2 - 0.7]]) {
+    g.add(box(0.8, 0.3, 0.55, M.woodL, x, 0.15, z));
+    for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), M.fish); f.scale.set(1, 0.5, 3); f.position.set(x - 0.27 + k * 0.18, 0.33, z); g.add(f); }
+  }
+  cols.push({ x: W / 2 - 1.15, z: D / 2 - 0.7, hx: 0.9, hz: 0.35 });
+  const sl = barrel(g, W / 2 - 0.6, D / 2 - 1.7); barrel(g, W / 2 - 0.6, D / 2 - 2.6);
+  cols.push({ x: W / 2 - 0.6, z: D / 2 - 2.15, hx: 0.45, hz: 0.9 });
+  items.push({ kind: 'examinar', x: W / 2 - 1.3, z: D / 2 - 2.0, r: 2.6, mesh: sl,
+    text: '🧂 Barriles de pescado salado. Así se guardaba el pescado antes de que hubiera neveras: sal gorda de las salinas y mucha paciencia.' });
+  // Pizarra de mareas y estandarte del Carmen (pared norte)
+  const mr = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), new THREE.MeshBasicMaterial({ map: boardTexture(['MAREAS', 'pleamar 07:12', 'bajamar 13:30']) }));
+  mr.position.set(-0.6, 1.75, D / 2 - 0.21); mr.rotation.y = Math.PI; g.add(mr);
+  items.push({ kind: 'examinar', x: -0.6, z: D / 2 - 0.9, r: 3.2, mesh: mr,
+    text: '🌊 La pizarra de las mareas. Debajo alguien ha escrito: «Si sale el Patrón, NO hay mala mar».' });
+  const es = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.3), new THREE.MeshBasicMaterial({ map: boardTexture(['CARMEN', '⚓', '16 de julio'], '#2a4a7a', '#f0e0a0') }));
+  es.position.set(2.4, 1.85, D / 2 - 0.21); es.rotation.y = Math.PI; g.add(es);
+  items.push({ kind: 'examinar', x: 2.4, z: D / 2 - 0.9, r: 3.0, mesh: es,
+    text: '🎏 El estandarte de la fiesta del Carmen. En julio sacan a la Virgen en barca por la bahía y todo el pueblo sale detrás, en barcas, en flotadores o nadando.' });
+  // Luces: farol de barco y la luz del mar que entra por la puerta
+  ctx.flicker = false;
+  ctx.lights.push([poolLight(0xfff0d8, 1.1, 12, 1.4), 0.5, 2.6, 0.5]);
+  ctx.lights.push([poolLight(0xd8e8ff, 0.6, 11, 1.5), -2.5, 2.4, -2.5]);
+  const fa = cyl(0.12, 0.12, 0.3, M.candle, 0.5, 2.3, 0.5, 8); g.add(fa, box(0.03, 0.4, 0.03, M.iron, 0.5, 2.6, 0.5));
+}
+
+function buildPinero(b, ctx) {
+  const { g, cols, items, W, D } = ctx;
+  const exit = shell(g, W, D, M.floorWood, M.wall);
+  items.push({ kind: 'salida', x: 0, z: -D / 2 + 0.3, r: 1.8, mesh: exit });
+  // Cocina de leña en la esquina NO (hace frío en Vilaflor)
+  const fx = -W / 2 + 1.1, fz = D / 2 - 1.0;
+  const fg = new THREE.Group(); fg.position.set(fx, 0, fz);
+  fg.add(box(1.6, 0.9, 1.2, M.stone, 0, 0.45, 0), box(0.8, 0.45, 0.2, M.coal, 0, 0.42, -0.55), box(1.7, 0.1, 1.3, M.iron, 0, 0.95, 0));
+  const fl = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.4, 6), M.fire); fl.position.set(0, 0.4, -0.55); fg.add(fl);
+  fg.add(cyl(0.22, 0.2, 0.3, M.iron, 0.35, 1.15, 0, 10), box(0.4, 2.2, 0.4, M.stone, -0.4, 2.0, 0.3));
+  g.add(fg); cols.push({ x: fx, z: fz, hx: 0.85, hz: 0.65 });
+  ctx.flames.push(fl);
+  ctx.lights.push([poolLight(0xffa050, 1.3, 10, 1.4), fx + 0.4, 1.1, fz - 1.2]);
+  items.push({ kind: 'examinar', x: fx + 0.5, z: fz - 1.3, r: 2.8, mesh: fg,
+    text: '🔥 La cocina de leña, encendida hasta en agosto. En la olla hay potaje de berros. Don Eusebio dice que en Vilaflor el frío se quita por dentro.' });
+  // Rodaja de pino canario colgada (pared norte)
+  const ro = new THREE.Group(); ro.position.set(1.2, 1.8, D / 2 - 0.3);
+  const disc = cyl(0.8, 0.8, 0.14, M.woodL, 0, 0, 0, 20); disc.rotation.x = Math.PI / 2; ro.add(disc);
+  for (const [r, m] of [[0.6, M.wood], [0.4, M.woodL], [0.25, M.tea]]) { const c = cyl(r, r, 0.15, m, 0, 0, -0.005, 18); c.rotation.x = Math.PI / 2; ro.add(c); }
+  g.add(ro);
+  items.push({ kind: 'examinar', x: 1.2, z: D / 2 - 1.0, r: 3.0, mesh: ro,
+    text: '🌲 Una rodaja de pino canario con el corazón rojo de tea. Tiene más de trescientos anillos. El pino canario aguanta el fuego: se quema por fuera y al año siguiente vuelve a echar hojas.' });
+  // Montón de pinocha y rastrillo (pared este)
+  const px = W / 2 - 1.1, pz = 1.6;
+  const pc = new THREE.Mesh(new THREE.ConeGeometry(1.0, 0.9, 10), M.pinocha); pc.position.set(px, 0.45, pz); pc.scale.set(1, 1, 1.3); g.add(pc);
+  const rs = box(0.06, 1.8, 0.06, M.woodD, px + 0.6, 0.9, pz - 1.4); rs.rotation.z = -0.2; g.add(rs, box(0.6, 0.06, 0.06, M.iron, px + 0.42, 0.06, pz - 1.4));
+  cols.push({ x: px, z: pz, hx: 0.95, hz: 1.2 });
+  items.push({ kind: 'examinar', x: px - 1.2, z: pz, r: 2.8, mesh: pc,
+    text: '🍂 Pinocha: las agujas secas del pino. Se recoge en el monte para cama de las cabras y para empaquetar los plátanos. Pincha, pero huele de maravilla.' });
+  // Mesa con piñas, el botijo de agua y el mapa del pinar
+  const mt = table(g, cols, -2.2, -1.8, false);
+  for (let k = 0; k < 3; k++) { const pn = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 7), M.wood); pn.position.set(-0.5 + k * 0.2, 0.97, 0.15); mt.add(pn); }
+  const bo = new THREE.Group(); bo.position.set(0.45, 0.85, -0.1);
+  bo.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), M.pot).translateY(0.17), cyl(0.03, 0.04, 0.16, M.pot, 0.09, 0.36, 0, 6));
+  mt.add(bo);
+  items.push({ kind: 'examinar', x: -2.2, z: -1.8, r: 2.8, mesh: mt,
+    text: '💧 Un botijo con agua de los manantiales de Vilaflor, fresquita aunque fuera haga sol. Dicen que es la mejor agua de la isla; aquí nadie lo discute.' });
+  // Herramientas en la pared oeste: hacha, sierra y la azada
+  const tr = new THREE.Group(); tr.position.set(-W / 2 + 0.25, 0, -1.2);
+  tr.add(box(0.06, 0.08, 2.4, M.woodD, 0, 2.1, 0));
+  tr.add(box(0.05, 1.0, 0.07, M.woodL, 0.05, 1.5, -0.8), box(0.05, 0.25, 0.35, M.ironL, 0.05, 1.95, -0.75));
+  tr.add(box(0.03, 0.25, 1.0, M.ironL, 0.05, 1.7, 0.25), box(0.05, 0.3, 0.1, M.woodD, 0.05, 1.7, 0.8));
+  g.add(tr);
+  items.push({ kind: 'examinar', x: -W / 2 + 0.9, z: -1.2, r: 2.8, mesh: tr,
+    text: '🪓 El hacha del pinero, más vieja que el propio Don Eusebio. Solo se usa con los pinos caídos: los vivos no se tocan.' });
+  // Sacos de papas junto a la puerta
+  for (const [x, z] of [[-4.6, -3.7], [-3.9, -3.9]]) g.add(box(0.6, 0.55, 0.5, M.straw, x, 0.28, z));
+  cols.push({ x: -4.25, z: -3.8, hx: 0.65, hz: 0.35 });
+  ctx.lights.push([poolLight(0xffd8a0, 0.7, 12, 1.5), 1.5, 2.6, -0.5]);
+}
+
 function buildInterior(b) {
   mats();
   const R = b.room, W = R.W, D = R.D;
   const g = new THREE.Group(); g.position.set(R.x, 0, R.z);
   const ctx = { g, cols: [], items: [], flames: [], lights: [], W, D };
-  const BUILD = { taberna: buildTaberna, herreria: buildHerreria, casa: buildCasaBalcones, bodega: buildBodega, molino: buildMolino, casafuerte: buildCasaFuerte };
+  const BUILD = { taberna: buildTaberna, herreria: buildHerreria, casa: buildCasaBalcones, bodega: buildBodega, molino: buildMolino, casafuerte: buildCasaFuerte,
+    cofradia: buildCofradia, pinero: buildPinero };
   (BUILD[b.kind] || buildHerreria)(b, ctx);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(W + 6, D + 6).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
@@ -583,6 +713,8 @@ const ENTER_MSG = {
   bodega: (b) => `🍇 Entras en la ${b.name}. Fresquito, oscuro y con olor a mosto.`,
   molino: (b) => `🌾 Entras en el ${b.name}. Huele a millo tostado y todo tiene una capa de polvo blanco.`,
   casafuerte: (b) => `🏰 Entras en la ${b.name}. Muros de un metro, aspilleras y olor a pólvora vieja.`,
+  cofradia: (b) => `⚓ Entras en la ${b.name}. Redes colgadas, olor a salitre y una radio que habla del tiempo.`,
+  pinero: (b) => `🌲 Entras en la ${b.name}. Huele a resina y a leña. Fuera hace frío: estás en el pueblo más alto de la isla.`,
 };
 function enterBuilding(b) {
   if (interiors.isActive() || inside) return;
@@ -721,7 +853,7 @@ export function registerKeepouts(terrain) {
 }
 
 export function getMapIcons() {
-  const ICON = { taberna: 'tavern', bodega: 'tavern', herreria: 'anvil', casa: 'history', molino: 'history', casafuerte: 'history' };
+  const ICON = { taberna: 'tavern', bodega: 'tavern', herreria: 'anvil', casa: 'history', molino: 'history', casafuerte: 'history', cofradia: 'history', pinero: 'history' };
   return TOWN_BUILDINGS.map(b => ({ x: b.x, z: b.z, kind: ICON[b.kind] || 'quest', name: b.name }));
 }
 

@@ -635,6 +635,38 @@ export const TOWN_NPCS = [
       'Los guanches de Adeje enterraban a sus muertos en cuevas del barranco. Por eso le pusieron ese nombre tan feo: no hay ningún infierno, hay sombra y agua.',
       'Desde las almenas se ve La Gomera. Dicen que los pastores de allí hablan silbando de un monte a otro. Algún día voy a ir a dibujarlos.',
     ] },
+  // Cofradía de Pescadores (Los Cristianos)
+  { id: 'patron_isidro', name: 'Patrón Isidro', title: 'Patrón de la Cofradía', ...inRoom('cofradia_cristianos', -2.6, 2.6), rotY: Math.PI * 0.9, role: '⚓',
+    look: { skin: 0xa87650, shirt: 0x2a3a6a, pants: 0x2a2a30, hair: 0xd8d8d8, acc: 'hat' },
+    lines: [
+      'Cincuenta años saliendo a la mar y todavía me mareo. No se lo digas a nadie.',
+      'Aquí se pescaba vieja, sama y cherne. Y en verano, cuando se acercaban los atunes, no dormía nadie en el pueblo.',
+      'La mar es como mi señora: cuando está tranquila, no te fíes; cuando está brava, tampoco.',
+      'Desde el muelle salen los barcos para La Gomera. En un día claro se ve tan cerca que parece que se llega nadando. No lo intentes.',
+    ] },
+  { id: 'remendadora_rosario', name: 'Rosario', title: 'Remendadora de redes', ...inRoom('cofradia_cristianos', 4.4, -1.4), rotY: Math.PI * 1.25, role: '🪡',
+    look: { skin: 0xc8946a, shirt: 0x3a7a9a, pants: 0x2a2a3a, hair: 0x2a1408, acc: 'apron' },
+    lines: [
+      'Una red bien remendada dura veinte años. Una mal remendada, una mañana.',
+      'Mi madre remendaba aquí mismo, y mi abuela en la playa, sentada en la arena. Las manos son las mismas.',
+      'Algo se está comiendo las redes por las noches. Y no son los peces, que esos no tienen dientes tan pequeños.',
+    ] },
+  // Casa del Pinero (Vilaflor)
+  { id: 'pinero_eusebio', name: 'Don Eusebio', title: 'Pinero de Vilaflor', ...inRoom('casa_pinero_vilaflor', -2.0, 2.5), rotY: Math.PI * 0.9, role: '🌲',
+    look: { skin: 0xd0a07a, shirt: 0x3a5a2a, pants: 0x3a3020, hair: 0x9a9a9a, acc: 'hat' },
+    lines: [
+      'Bienvenido al pueblo más alto de la isla. Aquí arriba el aire es tan limpio que se ven las estrellas de día. Bueno, casi.',
+      'Mi trabajo es cuidar el pinar: limpiar los cortafuegos, vigilar el humo y contar los pinos. Van por catorce mil. Creo.',
+      'El pino canario es el más terco del mundo: se le quema todo y al año siguiente vuelve a echar hojas por el tronco.',
+      'Más arriba está el Pino Gordo: hacen falta seis personas para abrazarlo. Yo lo he abrazado solo, a ratos.',
+    ] },
+  { id: 'pinochera_saray', name: 'Saray', title: 'Recogedora de pinocha', ...inRoom('casa_pinero_vilaflor', 2.6, -0.8), rotY: Math.PI * 1.2, role: '🍂',
+    look: { skin: 0xd9a57a, shirt: 0xa06a3a, pants: 0x3a3a2a, hair: 0x3a2010, acc: 'hood' },
+    lines: [
+      'Recojo pinocha desde que tengo memoria. Se baja al valle en fardos, para las cabras y para las fincas de plátanos.',
+      'En Vilaflor se crían las mejores papas de la isla. Con el frío salen dulces. Arrugadas con mojo… ay.',
+      'Si subes al pinar, no hagas fuego. Don Eusebio te encuentra. Siempre te encuentra.',
+    ] },
   // Sesión 50 — casas de jugador
   { id: 'nauzet_inmobiliaria', name: 'Nauzet', title: 'Agente inmobiliario', x: 50, z: 50, rotY: 0.8, role: '🏠',
     look: { skin: 0xd0a07a, shirt: 0x2a3a6a, pants: 0x1a1a2a, hair: 0x1a1a1a, acc: 'glasses' },

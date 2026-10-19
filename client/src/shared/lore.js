@@ -275,4 +275,24 @@ export const LORE = {
       'Hoy los barcos que llegan a la costa traen turistas en vez de piratas. Algunos días no sé qué es peor. ¡Es broma! Pasa, pasa.',
     ],
   },
+  patron_isidro: {
+    label: '📖 Cuéntame la historia de Los Cristianos',
+    pages: [
+      'Esto antes era un puñado de casas blancas, un muelle de piedra y las barcas varadas en la arena. Los guanches de Adeje ya bajaban aquí a mariscar.',
+      '¿El nombre? Unos dicen que por unos cristianos que desembarcaron hace siglos; otros, que por una cruz que había en la montaña. Yo digo que da igual: aquí todos somos de la mar.',
+      'Detrás está la Montaña de Guaza, que nos tapa el viento. Por eso la bahía es mansa y aquí se refugiaban los barcos cuando había temporal.',
+      'Luego vinieron los de fuera a tomar el sol, y donde había tomateras hoy hay hoteles. Pero la cofradía sigue, y la barca sale cada madrugada.',
+      'Y en julio sacamos a la Virgen del Carmen en barca por la bahía. Ese día no pesca nadie: ese día se canta.',
+    ],
+  },
+  pinero_eusebio: {
+    label: '📖 Cuéntame la historia de Vilaflor',
+    pages: [
+      'Vilaflor es el pueblo más alto de la isla: estamos casi a mil quinientos metros. Aquí arriba nieva algún invierno y en verano refresca por la noche.',
+      'Los guanches subían con las cabras a estos pinares en verano, cuando abajo no quedaba hierba. Todavía se encuentran sus cuevas y sus tagoror entre las rocas.',
+      'El pinar lo ha dado todo: madera, tea para los balcones de La Orotava, resina, pez para calafatear los barcos… y pinocha, que se bajaba a lomo de burro.',
+      'Después se cortó demasiado, y hubo que volver a plantar. Ese pinar que ves ahí abajo lo plantaron nuestros abuelos con sus manos, árbol a árbol.',
+      'Y el agua: de estos montes salen manantiales que dan la mejor agua de la isla. Por eso digo que Vilaflor no es un pueblo: es una fuente con casas alrededor.',
+    ],
+  },
 };

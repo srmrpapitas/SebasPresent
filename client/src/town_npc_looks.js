@@ -33,6 +33,11 @@ export const NPC_LOOKS = {
   cabrero_mauro:       { model: 'm42', tint: { hue: 0.08, sat: 1.1 } },
   guarda_tome:         { model: 'm34', tint: { hue: 0.6, sat: 1.0 } },
   cartografa_iraya:    { model: 'f46', tint: { hue: 0.45, sat: 1.1 } },
+  // 19 oct — Cofradía de Pescadores (Los Cristianos) y Casa del Pinero (Vilaflor)
+  patron_isidro:       { model: 'm39', tint: { hue: 0.6, sat: 0.9 } },
+  remendadora_rosario: { model: 'f43', tint: { hue: 0.5, sat: 1.1 } },
+  pinero_eusebio:      { model: 'm45', tint: { hue: 0.28, sat: 1.0 } },
+  pinochera_saray:     { model: 'f38', tint: { hue: 0.08, sat: 1.1 } },
   banquero_gerardo:    { model: 'm36' },
   lia_artesana:        { model: 'f45' },
   morgana_maga:        { model: 'f44', tint: { hue: 0.72, sat: 1.5 } },

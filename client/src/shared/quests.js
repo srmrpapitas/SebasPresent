@@ -474,7 +474,7 @@ export const QUEST_ORDER = ['tutorial', 'pescador', 'artesano', 'banquero', 'pri
   'viaje_relampago', 'huesos_ruinas', 'la_fosa', 'bruja_niebla', 'terror_mareas', 'rey_de_las_cumbres', 'matadragones',
   'primeras_pociones', 'dia_de_pierna', 'sombra_cabildo', 'el_tagoror', 'cronicas_achinech',
   // 19 oct — pueblos
-  'vino_tacoronte', 'el_tigre', 'balcon_tea', 'sangre_drago', 'gofio_romeria', 'cochinos_barranco'];
+  'vino_tacoronte', 'el_tigre', 'balcon_tea', 'sangre_drago', 'gofio_romeria', 'cochinos_barranco', 'ratas_redes', 'lena_invierno'];
 
 /** Misiones que ofrece un NPC. */
 export function questsOfNpc(npcId) {
@@ -1066,5 +1066,47 @@ Object.assign(QUESTS, {
       talkBack('guarda_tome', 'Vuelve con Don Tomé a la Casa Fuerte de Adeje.'),
     ],
     reward: { coins: 350, items: [['pan', 3]], xp: { attack: 700, strength: 700, defence: 500 }, text: '350 monedas · 3 panes · 700 XP Ataque · 700 XP Fuerza · 500 XP Defensa' },
+  },
+});
+
+// 19 oct — Los Cristianos (Cofradía de Pescadores) y Vilaflor (Casa del Pinero)
+Object.assign(QUESTS, {
+  ratas_redes: {
+    id: 'ratas_redes', name: 'Ratas en las redes', giver: 'remendadora_rosario',
+    summary: 'Algo se come las redes de la Cofradía de Los Cristianos por las noches. Rosario, la remendadora, ya no da abasto. Para empezar.',
+    offer: ['Cada mañana encuentro las redes llenas de agujeros, y no son de peces. Son de dientes.', 'El Patrón Isidro dice que sabe de dónde vienen. Pregúntale a él, que está ahí al lado.'],
+    accept: 'Hablaré con el Patrón Isidro.', doing: 'El Patrón Isidro está aquí, en la Cofradía, junto a la pizarra de las mareas.',
+    thanks: '¡Ni un agujero nuevo esta mañana! Ya puedo remendar tranquila. Toma, que en esta casa nunca falta el pescado.',
+    steps: [
+      { id: 'isidro', event: 'talk', match: 'patron_isidro', count: 1, hint: { talk: 'patron_isidro' },
+        text: 'Pregunta al Patrón Isidro, en la Cofradía de Los Cristianos, quién se come las redes.', tip: 'Dentro de la Cofradía de Pescadores, junto a la pizarra.',
+        scene: [
+          P('Rosario dice que algo se come las redes por las noches.'),
+          'Ratas. Ratas de playa, gordas como gatos. Vienen de Montaña Pelada, siguiendo la orilla, y huelen el pescado de las redes desde lejos.',
+          N('El Patrón Isidro escupe al suelo y luego se arrepiente, porque el suelo es suyo.'),
+          'Ve a la playa de Montaña Pelada, al este, y dales un buen susto. Con cinco que no vuelvan, las demás aprenden.',
+        ] },
+      { id: 'ratas', event: 'kill', match: 'rat', count: 5, hint: { npc: 'rat' },
+        text: 'Espanta a las ratas de playa: mata 5 ratas.', tip: 'En la Playa de Montaña Pelada, unos 560 m al este de Los Cristianos.' },
+      talkBack('remendadora_rosario', 'Vuelve con Rosario a la Cofradía de Pescadores (Los Cristianos).'),
+    ],
+    reward: { coins: 250, items: [['sardine', 5]], xp: { fishing: 500, attack: 300, strength: 300 }, text: '250 monedas · 5 sardinas · 500 XP Pesca · 300 XP Ataque · 300 XP Fuerza' },
+  },
+  lena_invierno: {
+    id: 'lena_invierno', name: 'Leña para el invierno', giver: 'pinero_eusebio',
+    summary: 'En Vilaflor ya aprieta el frío. Don Eusebio, el pinero, quiere que la abuela Petra no pase el invierno sin leña. Para empezar.',
+    offer: ['La abuela Petra vive sola y este invierno viene frío. Yo no puedo bajar, que tengo el pinar a mi cargo.', 'Córtale cinco troncos, de árboles normales, que los pinos no se tocan, y llévaselos a su casa. Ella sabrá agradecértelo.'],
+    accept: 'Le llevaré la leña a Petra.', doing: 'Cinco troncos normales para la abuela Petra, que está en la plaza de Vilaflor.',
+    thanks: 'Petra ya me ha mandado recado: dice que eres más formal que su nieto. Viniendo de ella, es una medalla. Toma.',
+    steps: [
+      { id: 'lena', event: 'deliver', npc: 'petra_abuela', items: [['logs', 5]], count: 1, hint: { talk: 'petra_abuela' },
+        text: 'Lleva 5 troncos a la abuela Petra (plaza de Vilaflor).', tip: 'Tala árboles normales con el hacha (Tala 1). Hay de sobra alrededor de Vilaflor.',
+        scene: [
+          N('Petra cuenta los troncos dos veces, por si acaso.'),
+          '¡Cinco troncos! Con esto y el guiso, ni me entero del invierno. Dile a Eusebio que suba un día a comer, que está muy flaco.',
+        ] },
+      talkBack('pinero_eusebio', 'Vuelve con Don Eusebio a la Casa del Pinero (Vilaflor).'),
+    ],
+    reward: { coins: 200, items: [['pan', 2]], xp: { woodcutting: 600, firemaking: 300 }, text: '200 monedas · 2 panes · 600 XP Tala · 300 XP Fuego' },
   },
 });

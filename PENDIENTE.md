@@ -19,7 +19,7 @@
 5. [x] **Ropa de arquero completa** (19 oct, fe6b35b — piezas propias de arquero; mago ya tenía sombrero/túnica/falda; guantes y botas de mago siguen con la forma genérica, quedan tapados por la túnica) (no solo "armadura de cuero"): capucha/cofia, pechera, pierneras, brazales,
        botas por tiers, igual que la armadura de melee. **Ropa de mago** completa (sombrero, túnica, falda,
        guantes, botas) por tiers. Que se vea en el modelo, se pueda conseguir (tiendas/drops/crafteo) y tenga bonos.
-6. [ ] **Pueblos vacíos**: lore y cosas que hacer en cada pueblo; edificios en los que entrar con NPC dentro
+6. [x] **Pueblos vacíos** (19 oct — un edificio con lore y misión en los 8 pueblos principales): lore y cosas que hacer en cada pueblo; edificios en los que entrar con NPC dentro
        (tabernas, herreros, casas con historia, misiones cortas). Empezar por los pueblos principales.
 7. [ ] Dejarlo todo impecable: probar en móvil y PC antes de cada push, un commit por arreglo.
 8. [ ] **Jugabilidad (pedido 19 oct, 09:02 — lo primero ahora)**: partida de prueba completa en móvil y PC como
@@ -40,10 +40,14 @@
    - [x] (19 oct, noche) Güímar: **Molino de gofio La Majada** (Tía Benita, molinera: historia de Güímar, el malpaís y las
      pirámides; Mauro, cabrero) + misión «Gofio para la romería» (Pesca 5, pasa por Ayoze, 5 sardinas). Adeje: **Casa Fuerte**
      (Don Tomé, guarda: Tinerfe, el azúcar y los piratas; Iraya, cartógrafa) + misión «Cochinos en el barranco» (6 jabalíes, para empezar).
-   - [ ] Siguen: Los Cristianos y Vilaflor (1 edificio + lore + misión corta cada uno). Luego el punto 6 queda hecho.
+   - [x] (19 oct, noche) Los Cristianos: **Cofradía de Pescadores** (Patrón Isidro: historia del pueblo y el Carmen; Rosario, remendadora)
+     + misión «Ratas en las redes» (5 ratas en Montaña Pelada). Vilaflor: **Casa del Pinero** (Don Eusebio: el pinar, la tea y el agua;
+     Saray, pinochera) + misión «Leña para el invierno» (5 troncos a la abuela Petra).
+   - Idea para más adelante (no urgente): segundo edificio en Santiago del Teide, La Esperanza, Arico y Chayofa.
 
 ### Notas del 19 oct (tarea programada)
-- Siguiente: punto 6 (pueblos). Hechos La Laguna, Santa Cruz, La Orotava, Icod, Güímar y Adeje; faltan Los Cristianos y Vilaflor.
+- Punto 6 hecho. Siguiente: punto 8 (jugabilidad: partida de prueba completa) y luego el 9 (aventureros simulados en el cliente).
+- Nombres repetidos que ya había: Gara (vigia_gara, gara_pieles) y Yeray (pastor y borracho). Al poner vecinos nuevos, mirar que el nombre no exista.
 - Para buscar hueco: script de colocación (huecos a 22–70 m del centro, roadDist 10–18, lejos de NPC/bancos/urbanizaciones/zonas de caza)
   y la fachada mirando al punto de camino más cercano (dir = atan2(dx, dz)).
 - Para colocar un edificio nuevo sin pisar caminos/NPC: buscar huecos a 9–20 m del camino (roadDist) y lejos de NPC, bancos,

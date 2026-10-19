@@ -774,5 +774,6 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Casa de los Balcones (La Orotava, `kind: 'casa'`, Doña Mencía + Bentor, misión `balcon_tea`) y Bodega El Drago (Icod, `kind: 'bodega'`, Goyo + Nieves, misión `sangre_drago`). Sin seeds.
 - Molino de gofio La Majada (Güímar, `kind: 'molino'`, Tía Benita + Mauro, misión `gofio_romeria`) y Casa Fuerte de Adeje (`kind: 'casafuerte'`, Don Tomé + Iraya, misión `cochinos_barranco`). Sin seeds.
 - Datos opcionales de fachada: `roof` ('teja'|'flat'), `trim` ('green'|'blue'), `base` ('stone'|'lava'), `chimney`, `clear` (radio sin árboles, por defecto max(w,d)/2+5).
-- Salas usadas: x = 14000, 14100, 14200, 14300, 14400, 14500 (z 14000). La siguiente, 14600. Luz 0 parpadea salvo `ctx.flicker = false`.
+- Cofradía de Pescadores (Los Cristianos, `kind: 'cofradia'`, Patrón Isidro + Rosario, misión `ratas_redes`) y Casa del Pinero (Vilaflor, `kind: 'pinero'`, Don Eusebio + Saray, misión `lena_invierno`, entrega a Petra). Sin seeds.
+- Salas usadas: x = 14000 … 14700 (de 100 en 100, z 14000). La siguiente, 14800. Luz 0 parpadea salvo `ctx.flicker = false`.
 - Para añadir otro: entrada en TOWN_BUILDINGS (room sin solaparse), un `buildX` en town_buildings.js para su `kind`, y sus vecinos con `inRoom`.

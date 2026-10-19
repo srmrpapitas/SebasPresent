@@ -53,6 +53,18 @@ export const TOWN_BUILDINGS = [
     x: 988, z: 1222, dir: -2.85, w: 11, d: 9, color: 0xcdbd9c, twoFloors: true, roof: 'flat', trim: 'blue', clear: 18,
     room: { x: 14500, z: 14000, W: 13, D: 10 },
   },
+  {
+    id: 'cofradia_cristianos', kind: 'cofradia', town: 'Los Cristianos',
+    name: 'Cofradía de Pescadores', sign: ['⚓ COFRADÍA', 'de Pescadores'],
+    x: -328, z: 1705, dir: 2.77, w: 10, d: 8, color: 0xf4f4ee, roof: 'flat', trim: 'blue',
+    room: { x: 14600, z: 14000, W: 12, D: 10 },
+  },
+  {
+    id: 'casa_pinero_vilaflor', kind: 'pinero', town: 'Vilaflor',
+    name: 'Casa del Pinero', sign: ['🌲 CASA', 'del Pinero'],
+    x: -424, z: 386, dir: 2.1, w: 10, d: 8, color: 0xe8dcc4, chimney: true,
+    room: { x: 14700, z: 14000, W: 12, D: 10 },
+  },
 ];
 
 export const TOWN_BUILDINGS_BY_ID = Object.fromEntries(TOWN_BUILDINGS.map(b => [b.id, b]));
