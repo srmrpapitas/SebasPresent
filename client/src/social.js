@@ -49,7 +49,7 @@ function render() {
     const nl = near.filter(q => !friendIds.has(q.user_id)).map(q => row(q.user_id, q.username || 'Jugador', true, `a ${Math.round(Math.hypot(q.x - p.position.x, q.z - p.position.z))} m`, false, true)).join('')
       || '<div class="soc-empty">No hay nadie cerca.</div>';
     body = `
-      <form class="soc-add"><input name="n" placeholder="Nombre del jugador" maxlength="32" autocomplete="off"><button>Añadir</button></form>
+      <form class="soc-add"><input name="n" placeholder="Nombre" maxlength="32" autocomplete="off"><button>Añadir</button></form>
       <div class="soc-h">Amigos (${friends.filter(f => f.online).length}/${friends.length} conectados)</div>${fl}
       <div class="soc-h">Cerca de ti</div>${nl}`;
   } else {

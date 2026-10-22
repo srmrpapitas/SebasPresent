@@ -2451,7 +2451,7 @@ function injectSkillsPanel() {
       }
       .skill-slot-max {
         position: absolute;
-        bottom: 3px;
+        top: 16px;   /* 22 oct — debajo del actual: abajo pisaba el nombre ("Herbolo1") */
         right: 5px;
         font-family: 'IM Fell English', serif;
         font-size: 11px;
@@ -2463,12 +2463,16 @@ function injectSkillsPanel() {
       .skill-slot-name {
         position: absolute;
         bottom: 3px;
-        left: 6px;
+        left: 4px;
+        right: 3px;
         font-size: 9px;
         color: rgba(232, 197, 96, 0.7);
         font-family: 'Cinzel', serif;
-        letter-spacing: 0.02em;
+        letter-spacing: 0;
         line-height: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       /* Special slots: combat level y total level */
       .skill-slot.special {
