@@ -186,7 +186,7 @@ async function onClick() {
     if (!r.ok || data.error) {
       if (data.error === 'on_cooldown' && data.cooldown_remaining_ms) {
         cooldownUntil = Date.now() + data.cooldown_remaining_ms;
-        feedLog('warn', data.message || 'En cooldown');
+        feedLog('warn', data.message || 'Aún no puedes volver a casa: espera un poco.');
       } else {
         feedLog('warn', rejectMessage(data, 'No puedes teletransportarte ahora.'));
       }

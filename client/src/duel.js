@@ -441,7 +441,7 @@ async function onHudClick(ev) {
   try {
     const r = await api.duelLeave();
     if (r?.ok) {
-      _feedLogFn?.('info', `Cast iniciado: 5s para salir del duelo.`);
+      _feedLogFn?.('info', `Saliendo del duelo… (5 s)`);
       // No actualizamos lastDuel localmente — el siguiente snapshot
       // traerá my_leaving_at + leave_cast_ends_at frescos.
     } else {
