@@ -471,11 +471,22 @@ function mergeLite(data, cx, cz) {
 //
 // Ignoramos hits con age > 3s para que un re-login no spawnee el splat de
 // un hit viejo.
+// 22 oct — contragolpes de PvP que ya pintó combat.js con la respuesta de
+// /attack_player: el servidor los guarda también como last_hit, y sin esto
+// salían dos veces (dos hitsplats y «X te pega N HP.» repetido).
+const _counterAts = new Set();
+export function noteCounterHit(serverTs) {
+  if (typeof serverTs !== 'number') return;
+  _counterAts.add(serverTs);
+  if (_counterAts.size > 20) _counterAts.delete(_counterAts.values().next().value);
+}
+
 function handleIncomingHit(me) {
   if (!me) return;
   const hitAt = me.last_hit_at;
   if (!hitAt || typeof hitAt !== 'number') return;
   if (hitAt <= _lastProcessedHitAt) return;  // ya procesado
+  if (_counterAts.has(hitAt)) { _counterAts.delete(hitAt); _lastProcessedHitAt = hitAt; return; }
 
   const age = Date.now() - hitAt;
   if (age > 3000) {

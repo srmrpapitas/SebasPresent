@@ -1048,6 +1048,9 @@ async function doAttackTickPlayer(gen = attackGen) {
 
   // Contraataque del target sobre nosotros
   if (result.target_hit !== null && result.target_hit !== undefined) {
+    // El servidor también apunta este contragolpe como «último golpe recibido»:
+    // avisar al snapshot para que no lo pinte y lo escriba otra vez.
+    if (result.counter_at) { try { worldSnapshot.noteCounterHit?.(result.counter_at); } catch {} }
     if (result.target_hit) feedLog('player-hit', result.target_damage > 0 ? `${targetName} te pega ${result.target_damage} HP.` : `${targetName} te da, pero no te hace daño.`);
     else feedLog('player-miss', `${targetName} falla el ataque.`);
     if (typeof window !== 'undefined' && typeof window.__spawnPlayerSplat === 'function') {

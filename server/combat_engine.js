@@ -2263,6 +2263,8 @@ async function attackPlayer(db, attackerId, targetId, opts = {}) {
     style:         attackerStyle,
     target_hit:    targetCounterHit ? targetCounterHit.hit : null,
     target_damage: dmgToAttacker,
+    // 22 oct — marca del contragolpe (= last_hit_at que verá tu snapshot) para no pintarlo dos veces
+    counter_at:    (targetCounterHit && targetCounterHit.hit && dmgToAttacker > 0) ? now : null,
     you_died:      attackerKilled,
     your_hp:       attackerStats.hp_current,
     your_hp_max:   xpAfter.hp,
