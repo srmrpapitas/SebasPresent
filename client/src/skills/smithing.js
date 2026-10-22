@@ -470,13 +470,10 @@ function workTick() {
     : api.smithingSmith(st.id, work.key);
   call.then(async res => {
     if (!work || work.gen !== gen) return;
-    work.waiting = false;
-    if (!res?.ok) return;
+    if (!res?.ok) { work.waiting = false; return; }
     work.done++;
     work.remaining--;
     audio.synth('craft_done', { volume: 0.5 });
-    try { await window.inventory?.refresh?.(); } catch {}
-    try { await skills.reload(); } catch {}
     const what = res.action === 'smelt'
       ? `Lingote de ${MATERIAL_NAMES[res.material] || res.material}`
       : (res.produced_name || res.produced);
@@ -485,6 +482,11 @@ function workTick() {
       feedLog('info', `¡Subes a nivel ${res.new_level} de Herrería!`);
       try { window.__spawnLevelUpBanner?.('smithing', res.new_level); } catch {}
     }
+    // El siguiente golpe espera a tener la mochila al día: si no, contaba el
+    // mineral/lingote ya gastado y mandaba una petición de más que fallaba.
+    try { await window.inventory?.refresh?.(); } catch {}
+    if (work && work.gen === gen) work.waiting = false;
+    try { await skills.reload(); } catch {}
     if (work && work.remaining <= 0) finishWork(null);
   }).catch(err => {
     if (!work || work.gen !== gen) return;
@@ -578,8 +580,8 @@ export function ensureCss() {   // Sesión 50 — también la usa skills/craftin
     .smith-btns button, .smith-tab { background: linear-gradient(#5a4520, #3a2a10); border: 1px solid #c8a043; color: #f0e0b0;
       border-radius: 4px; padding: 6px 9px; font-size: 13px; font-family: inherit; min-width: 36px; }
     .smith-btns button:active, .smith-tab:active { background: #c8a043; color: #000; }
-    .smith-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 2px 2px 8px; }
-    .smith-tab { white-space: nowrap; padding: 5px 8px; opacity: 0.7; }
+    .smith-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 2px 8px; }
+    .smith-tab { flex: 0 0 auto; white-space: nowrap; padding: 5px 8px; opacity: 0.7; }
     .smith-tab.on { opacity: 1; background: linear-gradient(#8a6a28, #5a4520); }
     .smith-tab small { color: #d8c89a; }
   `;
