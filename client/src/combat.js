@@ -654,7 +654,7 @@ async function doAttackTickNpc(gen = attackGen) {
     } else if (result.is_crit) {
       feedLog('hit', `⚡ ¡CRÍTICO! Golpe demoledor a ${npcName}: ${result.your_damage} HP.`);
     } else {
-      feedLog('hit', `Le pegas a ${npcName} y le quitas ${result.your_damage} HP.`);
+      feedLog('hit', result.your_damage > 0 ? `Le pegas a ${npcName} y le quitas ${result.your_damage} HP.` : `Le das a ${npcName}, pero no le haces daño.`);
     }
     // Sesión 32 — SFX hit. Solo en hits que conectan (los misses tendrán
     // su propio SFX más adelante cuando lo tengamos en R2).
@@ -721,7 +721,7 @@ async function doAttackTickNpc(gen = attackGen) {
   }
 
   if (result.npc_hit !== null && result.npc_hit !== undefined) {
-    if (result.npc_hit) feedLog('player-hit', `${npcName} te pega ${result.npc_damage} HP.`);
+    if (result.npc_hit) feedLog('player-hit', result.npc_damage > 0 ? `${npcName} te pega ${result.npc_damage} HP.` : `${npcName} te da, pero no te hace daño.`);
     else feedLog('player-miss', `${npcName} falla el ataque.`);
 
     if (typeof window !== 'undefined' && typeof window.__spawnPlayerSplat === 'function') {
@@ -1017,7 +1017,7 @@ async function doAttackTickPlayer(gen = attackGen) {
     if (result.is_crit) {
       feedLog('hit', `⚡ ¡CRÍTICO! ${targetName}: ${result.your_damage} HP.`);
     } else {
-      feedLog('hit', `Le pegas a ${targetName}: ${result.your_damage} HP.`);
+      feedLog('hit', result.your_damage > 0 ? `Le pegas a ${targetName}: ${result.your_damage} HP.` : `Le das a ${targetName}, pero no le haces daño.`);
     }
     // Sesión 32 — SFX hit (igual que NPC)
     try { audio.sfx('hit_blade'); } catch {}
@@ -1048,7 +1048,7 @@ async function doAttackTickPlayer(gen = attackGen) {
 
   // Contraataque del target sobre nosotros
   if (result.target_hit !== null && result.target_hit !== undefined) {
-    if (result.target_hit) feedLog('player-hit', `${targetName} te pega ${result.target_damage} HP.`);
+    if (result.target_hit) feedLog('player-hit', result.target_damage > 0 ? `${targetName} te pega ${result.target_damage} HP.` : `${targetName} te da, pero no te hace daño.`);
     else feedLog('player-miss', `${targetName} falla el ataque.`);
     if (typeof window !== 'undefined' && typeof window.__spawnPlayerSplat === 'function') {
       try { window.__spawnPlayerSplat(result.target_damage || 0, result.target_hit); } catch {}
