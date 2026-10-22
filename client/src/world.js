@@ -3558,6 +3558,7 @@ function animate() {
   try { drawMinimap(); } catch (e) { if (!window.__mmErr) { window.__mmErr = e; console.warn('[minimap]', e); } }
   updatePositionSave(dt);
   window.__mainCamera = camera;   // 19 oct — pruebas (proyectar a pantalla); ver INVARIANTS §5.3
+  window.__mainScene = scene;     // 22 oct — pruebas (buscar árboles/rocas con Playwright)
   renderer.render(scene, camera);
 }
 

@@ -26,6 +26,8 @@ if (fresh) {
     if (!fs.existsSync(d)) continue;
     for (const f of fs.readdirSync(d).filter(f => f.endsWith('.sql')).sort()) run(path.join(d, f));
   }
+  // Objetos básicos que en producción se metieron a mano (monedas, hacha, troncos…)
+  run(path.join(ROOT, 'scripts/local/items_base.sql'));
   console.log('[local] base de datos creada');
 }
 
