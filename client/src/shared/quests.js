@@ -508,7 +508,7 @@ export const QUEST_REQS = {
   matadragones:       { combat: 70, quests: ['rey_de_las_cumbres', 'huesos_ruinas'] },
   dia_de_pierna:      { levels: { herblore: 8 }, quests: ['primeras_pociones'] },
   el_tagoror:         { combat: 35 },
-  el_tigre:           { levels: { smithing: 15 } },
+  el_tigre:           { levels: { mining: 10, smithing: 15 } },
   balcon_tea:         { levels: { woodcutting: 15 } },
   sangre_drago:       { combat: 25 },
   gofio_romeria:      { levels: { fishing: 5 } },
@@ -958,7 +958,7 @@ Object.assign(QUESTS, {
     id: 'el_tigre', name: 'El Tigre de Paso Alto', giver: 'herrero_chano',
     summary: 'El Maestro Chano, herrero del muelle de Santa Cruz, quiere reparar El Tigre, el viejo cañón del puerto.',
     offer: ['¿Ves ese cañón del rincón? Es El Tigre. Hace muchos años echó del puerto a una flota entera.', 'Sir Beneharo quiere que dispare en las fiestas, pero tiene los aros de hierro rotos… y yo no tengo hierro.', 'Tráeme 3 lingotes de hierro y te enseño cómo se trabaja en el muelle.'],
-    accept: 'Le traeré el hierro, Maestro.', doing: '3 lingotes de hierro. Pica hierro y fúndelo en un horno (nivel 15 de Herrería).',
+    accept: 'Le traeré el hierro, Maestro.', doing: '3 lingotes de hierro. Pica hierro (Minería 10) y fúndelo en un horno (Herrería 5).',
     thanks: '¡Mira cómo brilla! Ya no es un cañón: es un tigre otra vez. Toma, que te lo has ganado, y aprende lo que viste.',
     steps: [
       { id: 'hierro', event: 'deliver', npc: 'herrero_chano', items: [['bar_hierro', 3]], count: 1, hint: { talk: 'herrero_chano' },
