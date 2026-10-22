@@ -2051,7 +2051,7 @@ function ensureStyles() {
 // ============================================================
 
 function pctFill(cur, max) { return max > 0 ? Math.max(0, Math.min(100, Math.round((cur / max) * 100))) : 0; }
-function skillLabel(key) { return { attack: 'Ataque', strength: 'Fuerza', defence: 'Defensa', hp: 'Vitalidad', ranged: 'Distancia', magic: 'Magia', prayer: 'Oración' }[key] || key; }
+function skillLabel(key) { return { attack: 'Ataque', strength: 'Fuerza', defence: 'Defensa', hp: 'Vitalidad', ranged: 'Distancia', magic: 'Magia', prayer: 'Plegaria' }[key] || key; }
 function formatXp(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
