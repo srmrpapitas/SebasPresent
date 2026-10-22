@@ -378,11 +378,11 @@ async function talkTo(o) {
   const info0 = npcQuestInfo(n.id);
 
   // 1) Lo más urgente primero: terminar / entregar / decidir (Sesión 52: en cadena)
-  await doTurnIns(d, n);
+  const progressed = await doTurnIns(d, n);
   if (d.closed) { talking = null; return; }
 
-  // 2) Menú de temas
-  let greeted = false;
+  // 2) Menú de temas (si acaba de contarte lo de una misión, sin volver a saludar)
+  let greeted = progressed;
   while (!d.closed) {
     const info = npcQuestInfo(n.id);
     if (!greeted) {
@@ -452,16 +452,18 @@ async function talkTo(o) {
 
 // Sesión 52 — pasos pendientes con este NPC, uno tras otro (p. ej. hablar →
 // decidir con el mismo personaje), con sus escenas de la historia.
+/** Devuelve true si ha avanzado alguna misión (para no saludar después como si nada). */
 async function doTurnIns(d, n) {
+  let any = false;
   for (let guard = 0; guard < 6 && !d.closed; guard++) {
     const info0 = npcQuestInfo(n.id);
-    if (!info0.turnIn.length) return;
+    if (!info0.turnIn.length) return any;
     let progressed = false;
     for (const t of info0.turnIn) {
-      if (d.closed) return;
+      if (d.closed) return any;
       if (t.choice) {
-        if (await story.runChoice(t.q, t.step, quests.storyContext(), d, n)) { progressed = true; await afterProgress(d, t.q); }
-        else return;
+        if (await story.runChoice(t.q, t.step, quests.storyContext(), d, n)) { progressed = true; any = true; await afterProgress(d, t.q); }
+        else return any;
         break;
       }
       if (t.deliver) {
@@ -475,37 +477,38 @@ async function doTurnIns(d, n) {
           try { window.inventory?.refresh?.(); } catch {}
           // 19 oct — escena al entregar (p. ej. el herrero se pone a forjar)
           const dl = story.stepLines(t.step, quests.getFlags());
-          if (dl.length && !(await story.play(d, dl, n))) return;
+          if (dl.length && !(await story.play(d, dl, n))) return any;
           await afterProgress(d, t.q, !!dl.length);
-          progressed = true;
+          progressed = true; any = true;
         } catch (err) {
           await d.npc(err?.code === 'missing_items' ? 'Te falta algo… revisa tu mochila.' : 'Acércate un poco más.');
-          return;
+          return any;
         }
         break;
       }
       // Sesión 50 — pasos de "escucha a…": primero te cuenta su capítulo entero
       if (t.step?.lore && LORE[n.id]) {
         for (const page of LORE[n.id].pages) { await d.npc(page); if (d.closed) break; }
-        if (d.closed) return;
+        if (d.closed) return any;
       }
       // Sesión 52 — escena de la historia (varios personajes, narrador, variantes)
       const lines = story.stepLines(t.step, quests.getFlags());
-      if (lines.length && !(await story.play(d, lines, n))) return;
+      if (lines.length && !(await story.play(d, lines, n))) return any;
       try {
         const r = await api.npcTalk(n.id);
         quests.applyServerRows(r?.quests, r?.flags);
         if (t.q.saga) quests.track(t.q.id);   // Sesión 52 — la historia pasa al rastreador
         await afterProgress(d, t.q, !!lines.length);
-        progressed = true;
+        progressed = true; any = true;
       } catch {
         await d.npc('Acércate un poco más, que no te oigo.');
-        return;
+        return any;
       }
       break;
     }
-    if (!progressed) return;
+    if (!progressed) return any;
   }
+  return any;
 }
 
 // Sesión 50 — Tanausú vende monturas
