@@ -1164,57 +1164,57 @@ export function feedLog(type, text) {
 
 const WEAPON_STANCES = {
   unarmed: {
-    name: 'Unarmed',
-    category: 'Unarmed',
+    name: 'Sin arma',
+    category: 'Puños',
     hasSpecial: false,
     stances: [
-      { id: 'punch', label: 'Punch', icon: '👊', server: 'accurate'   },
-      { id: 'kick',  label: 'Kick',  icon: '🦵', server: 'aggressive' },
-      { id: 'block', label: 'Block', icon: '🛡', server: 'defensive'  },
+      { id: 'punch', label: 'Puñetazo', icon: '👊', server: 'accurate'   },
+      { id: 'kick',  label: 'Patada', icon: '🦵', server: 'aggressive' },
+      { id: 'block', label: 'Bloquear', icon: '🛡', server: 'defensive'  },
     ],
   },
   // Preparado para futuro equipment (sesión 19+). No se renderizan hoy
   // porque detectEquippedWeapon() devuelve siempre 'unarmed'.
   '1h_sword': {
-    name: 'Bronze sword',
-    category: '1H Sword',
+    name: 'Espada',
+    category: 'Espada de una mano',
     hasSpecial: true,
     stances: [
-      { id: 'chop',  label: 'Chop',  icon: '⚔', server: 'accurate'   },
-      { id: 'slash', label: 'Slash', icon: '⚔', server: 'aggressive' },
-      { id: 'smash', label: 'Smash', icon: '💢', server: 'controlled' },
-      { id: 'block', label: 'Block', icon: '🛡', server: 'defensive'  },
+      { id: 'chop',  label: 'Tajo', icon: '⚔', server: 'accurate'   },
+      { id: 'slash', label: 'Corte', icon: '⚔', server: 'aggressive' },
+      { id: 'smash', label: 'Golpe', icon: '💢', server: 'controlled' },
+      { id: 'block', label: 'Bloquear', icon: '🛡', server: 'defensive'  },
     ],
   },
   '2h_sword': {
-    name: 'Two-handed sword',
-    category: '2H Sword',
+    name: 'Espadón',
+    category: 'Espada a dos manos',
     hasSpecial: true,
     stances: [
-      { id: 'chop',  label: 'Chop',  icon: '⚔', server: 'accurate'   },
-      { id: 'slash', label: 'Slash', icon: '⚔', server: 'aggressive' },
-      { id: 'smash', label: 'Smash', icon: '💢', server: 'controlled' },
-      { id: 'block', label: 'Block', icon: '🛡', server: 'defensive'  },
+      { id: 'chop',  label: 'Tajo', icon: '⚔', server: 'accurate'   },
+      { id: 'slash', label: 'Corte', icon: '⚔', server: 'aggressive' },
+      { id: 'smash', label: 'Golpe', icon: '💢', server: 'controlled' },
+      { id: 'block', label: 'Bloquear', icon: '🛡', server: 'defensive'  },
     ],
   },
   bow: {
-    name: 'Shortbow',
-    category: 'Bow',
+    name: 'Arco',
+    category: 'Arco',
     hasSpecial: true,
     stances: [
-      { id: 'accurate_bow', label: 'Accurate', icon: '🏹', server: 'accurate'   },
-      { id: 'rapid',        label: 'Rapid',    icon: '🏹', server: 'aggressive' },
-      { id: 'longrange',    label: 'Longrange',icon: '🎯', server: 'defensive'  },
+      { id: 'accurate_bow', label: 'Preciso', icon: '🏹', server: 'accurate'   },
+      { id: 'rapid',        label: 'Rápido', icon: '🏹', server: 'aggressive' },
+      { id: 'longrange',    label: 'Largo alcance', icon: '🎯', server: 'defensive'  },
     ],
   },
   staff: {
-    name: 'Staff',
-    category: 'Staff',
+    name: 'Bastón',
+    category: 'Bastón',
     hasSpecial: false,
     stances: [
-      { id: 'bash',  label: 'Bash',  icon: '🔨', server: 'accurate'   },
-      { id: 'pound', label: 'Pound', icon: '💥', server: 'aggressive' },
-      { id: 'focus', label: 'Focus', icon: '✨', server: 'defensive'  },
+      { id: 'bash',  label: 'Porrazo', icon: '🔨', server: 'accurate'   },
+      { id: 'pound', label: 'Machacar', icon: '💥', server: 'aggressive' },
+      { id: 'focus', label: 'Concentrar', icon: '✨', server: 'defensive'  },
     ],
   },
 };
@@ -1233,21 +1233,21 @@ function renderMageAutocast() {
   const svg = meta?.svg || '';
   const name = meta?.name || 'Ningún hechizo';
   const nextRow = nextMeta
-    ? `<div class="combat-mage-next">Next cast: <b>${escapeHtml(nextMeta.name)}</b></div>`
+    ? `<div class="combat-mage-next">Siguiente: <b>${escapeHtml(nextMeta.name)}</b></div>`
     : '';
   return `
     <div class="combat-mage-cast">
-      <div class="combat-mage-cast-label">Autocast</div>
+      <div class="combat-mage-cast-label">Lanzar solo</div>
       <button class="combat-mage-slot ${on ? 'on' : 'off'}" data-action="toggle-autocast"
-              title="${on ? 'Autocast ON (tocá para apagar)' : 'Autocast OFF (tocá para encender)'}">
+              title="${on ? 'Lanzar solo: SÍ (toca para apagar)' : 'Lanzar solo: NO (toca para encender)'}">
         <div class="combat-mage-slot-icon">${svg || '<span style="opacity:.5">—</span>'}</div>
         <div class="combat-mage-slot-text">
           <div class="combat-mage-slot-name">${escapeHtml(name)}</div>
-          <div class="combat-mage-slot-state">${on ? 'ON' : 'OFF'}</div>
+          <div class="combat-mage-slot-state">${on ? 'SÍ' : 'NO'}</div>
         </div>
       </button>
       ${nextRow}
-      <div class="combat-mage-hint">Elegí el hechizo en el tab Magia 🔮 (long-press para opciones).</div>
+      <div class="combat-mage-hint">Elige el hechizo en la pestaña Magia 🔮 (mantén pulsado para ver opciones).</div>
     </div>`;
 }
 
@@ -1559,7 +1559,7 @@ function render() {
 
       ${specialHtml}
 
-      ${dead ? '<button class="combat-respawn" data-action="respawn">⚱ Respawn</button>' : ''}
+      ${dead ? '<button class="combat-respawn" data-action="respawn">⚱ Reaparecer</button>' : ''}
 
       ${weaponKey === 'staff' ? renderMageAutocast() : ''}
 
@@ -1575,7 +1575,7 @@ function render() {
 
       <button class="combat-osrs-retaliate ${autoRetaliate ? 'on' : 'off'}" data-action="toggle-retaliate">
         <span class="combat-osrs-retaliate-icon">🛡</span>
-        Auto Retaliate (${autoRetaliate ? 'On' : 'Off'})
+        Contraatacar solo (${autoRetaliate ? 'Sí' : 'No'})
       </button>
 
     </div>`;
