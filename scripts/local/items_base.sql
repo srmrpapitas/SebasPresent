@@ -37,3 +37,19 @@ INSERT OR IGNORE INTO items (id,name,icon,stackable,description,created_at,base_
 ('gloves_bronze','Guantes de Bronce','🧤',0,'Guantes de Bronce. Tier 1.',1782000000000,45,'gloves',null,1,1,0,0,'#b87333','gloves','bronze',1,1,1),
 ('shrimp','Gambas','🦐',0,'Cura 3 de vida.',1790700000000,8,null,null,0,0,0,0,null,null,null,null,null,null),
 ('raw_shrimp','Gambas crudas','🦐',0,'Mejor cocinarlas.',1790700000000,5,null,null,0,0,0,0,null,null,null,null,null,null);
+
+-- Monstruos básicos (también metidos a mano en producción).
+INSERT OR IGNORE INTO npc_defs (id,name,max_hp,attack_lvl,strength_lvl,defence_lvl,attack_speed_ticks,max_hit,xp_per_kill,respawn_ms,spawn_x,spawn_z,attack_range,model,behavior,aggro_radius,style) VALUES
+('chicken','Pollo',3,1,1,1,4,1,3,20000,0,0,1.2,'chicken','passive',0,'melee'),
+('cow','Vaca',8,2,2,1,4,1,8,30000,150,200,1.5,'cow','passive',0,'melee'),
+('goblin','Goblin',12,5,5,1,4,2,15,45000,-1100,0,1.5,'goblin','aggressive',4,'melee'),
+('goblin_jefe','Goblin cabecilla',48,17,17,13,4,4,15,135000,-1100,0,1.95,'goblin_jefe','aggressive',7,'melee');
+
+-- Su botín (copiado de producción).
+INSERT INTO npc_loot_table (npc_def_id,item_id,qty_min,qty_max,weight,is_always)
+SELECT * FROM (VALUES
+('chicken','raw_chicken',1,1,1,1),('chicken','bones',1,1,1,1),('chicken','feather',5,5,30,0),
+('cow','raw_beef',1,1,1,1),('cow','bones',1,1,1,1),('cow','cowhide',1,1,1,1),
+('goblin','bones',1,1,1,1),('goblin','coins',5,15,60,0),('goblin','sword_bronze',1,1,8,0),('goblin','shield_bronze',1,1,7,0),('goblin','chest_bronze',1,1,5,0),
+('goblin_jefe','bones',2,3,1,1),('goblin_jefe','coins',10,45,60,0),('goblin_jefe','sword_bronze',2,3,8,0),('goblin_jefe','shield_bronze',2,3,7,0),('goblin_jefe','chest_bronze',2,3,5,0),('goblin_jefe','coins',24,96,1,1)
+) WHERE NOT EXISTS (SELECT 1 FROM npc_loot_table WHERE npc_def_id = 'chicken');
