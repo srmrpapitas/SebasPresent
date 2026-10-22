@@ -217,6 +217,9 @@ function findNpc(npcId) {
   if (a) return a;
   try { return worldSnapshot.getNpcs().find(n => n.id === npcId) || null; } catch { return null; }
 }
+// 22 oct — nombre del último monstruo atacado: al morir ya no está en el snapshot y el
+// registro decía "¡Has matado a el objetivo!".
+let lastTargetName = { id: null, name: null };
 
 export function getStateSnapshot() {
   return state ? {
@@ -301,7 +304,7 @@ export async function engageNpc(npcId) {
   // Reset anti-loop de auto-retaliate (engage manual recalibra)
   lastAutoEngagedAttackerKey = null;
   const npc = findNpc(npcId);
-  if (npc) feedLog('info', `Atacas: ${npc.name}.`);
+  if (npc) { feedLog('info', `Atacas: ${npc.name}.`); lastTargetName = { id: npcId, name: npc.name }; }
   currentTargetNpcId = npcId;
   currentTarget = npcId; // legacy alias
   // Slice 5d — animación: world.js decide si desenvainar (primera vez)
@@ -500,7 +503,8 @@ async function doAttackTickNpc(gen = attackGen) {
   }
 
   const npc = findNpc(npcId);
-  const npcName = npc ? npc.name : 'el objetivo';
+  if (npc?.name) lastTargetName = { id: npcId, name: npc.name };
+  const npcName = npc?.name || (lastTargetName.id === npcId ? lastTargetName.name : null);
 
   // Sesión 41 — info del hechizo (null si no fue magia).
   const spellCast = result.spell_cast || null;
@@ -651,7 +655,7 @@ async function doAttackTickNpc(gen = attackGen) {
       try { window.__worldFlashNpcHit(npcId); } catch {}
     }
   } else {
-    feedLog('miss', `Fallas a ${npcName}.`);
+    feedLog('miss', npcName ? `Fallas (${npcName}).` : 'Fallas.');
   }
   // Sesion 44 — SPECIAL: dos hitsplats (el 2º con delay, como dos golpes
   // reales). Normal: un hitsplat con el daño total (comportamiento de siempre).
@@ -758,7 +762,7 @@ async function doAttackTickNpc(gen = attackGen) {
   notify();
 
   if (result.npc_killed) {
-    feedLog('kill', `¡Has matado a ${npcName}!`);
+    feedLog('kill', npcName ? `¡Has acabado con ${npcName}!` : '¡Lo has derrotado!');
     try { window.__progressPoke?.('kill', result.npc_def_id); } catch {}   // Sesión 53 — logros/contador
     disengage();
     await refresh();
