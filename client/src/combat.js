@@ -220,6 +220,7 @@ function findNpc(npcId) {
 // 22 oct — nombre del último monstruo atacado: al morir ya no está en el snapshot y el
 // registro decía "¡Has matado a el objetivo!".
 let lastTargetName = { id: null, name: null };
+let outOfRangeRetries = 0;   // 22 oct — reintentos al quedar fuera de rango (ver doAttackTickNpc)
 
 export function getStateSnapshot() {
   return state ? {
@@ -305,6 +306,7 @@ export async function engageNpc(npcId) {
   lastAutoEngagedAttackerKey = null;
   const npc = findNpc(npcId);
   if (npc) { feedLog('info', `Atacas: ${npc.name}.`); lastTargetName = { id: npcId, name: npc.name }; }
+  outOfRangeRetries = 0;
   currentTargetNpcId = npcId;
   currentTarget = npcId; // legacy alias
   // Slice 5d — animación: world.js decide si desenvainar (primera vez)
@@ -434,7 +436,7 @@ async function doAttackTickNpc(gen = attackGen) {
     try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en combate
   } catch (err) {
     if (err.code) {
-      result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}) };
+      result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}), ...(err.max_range != null ? { max_range: err.max_range } : {}) };
     } else {
       disengage();
       if (isTabOpen) render();
@@ -448,6 +450,7 @@ async function doAttackTickNpc(gen = attackGen) {
   // dejar dos cadenas de ataque vivas a la vez. El daño ya lo aplicó el server
   // (autoritativo), pero NO seguimos atacando a este NPC viejo.
   if (gen !== attackGen || currentTargetNpcId !== npcId) return;
+  if (!result.error) outOfRangeRetries = 0;
 
   if (result.error) {
     if (result.error === 'on_cooldown') {
@@ -456,6 +459,19 @@ async function doAttackTickNpc(gen = attackGen) {
       return;
     }
     if (result.error === 'out_of_range') {
+      // 22 oct — el monstruo se movió un poco (los pasivos deambulan): en vez de dejar de
+      // pelear, acercarse y reintentar en el siguiente tick, como en OSRS (máx. 4 veces).
+      let np = null, me = null;
+      try { np = window.__getNpcPosition?.(npcId); me = window.__getPlayerPosition?.(); } catch {}
+      const d = (np && me) ? Math.hypot(np.x - me.x, np.z - me.z) : Infinity;
+      if (outOfRangeRetries < 4 && d < 20) {
+        outOfRangeRetries++;
+        const want = Math.max(1, (Number(result.max_range) || 2) * 0.6);
+        const k = d > want ? (d - want) / d : 0;
+        try { window.__setPlayerTarget?.(me.x + (np.x - me.x) * k, me.z + (np.z - me.z) * k); } catch {}
+        if (gen === attackGen) attackTimer = setTimeout(() => doAttackTick(gen), TICK_MS);
+        return;
+      }
       feedLog('warning', 'Fuera de rango. Acércate.');
       disengage();
       return;
@@ -824,7 +840,7 @@ async function doAttackTickPlayer(gen = attackGen) {
     try { worldSnapshot.markCombatActivity?.(); } catch {}  // Sesión 41 — poll rápido en PvP
   } catch (err) {
     if (err.code) {
-      result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}) };
+      result = { error: err.code, ...(err.cooldown_remaining_ms ? { cooldown_remaining_ms: err.cooldown_remaining_ms } : {}), ...(err.max_range != null ? { max_range: err.max_range } : {}) };
     } else {
       disengage();
       if (isTabOpen) render();

@@ -192,7 +192,7 @@ const NPC_REACT_KICK_DIST  = 0.35;
 // igual te acercaras a melee antes de tirar la primera flecha (defeated
 // el propósito del bow). Ahora getNpcEngageRange() lo calcula on-demand
 // según el arma equipada.
-const NPC_MELEE_ENGAGE_RANGE  = 2.0;
+const NPC_MELEE_ENGAGE_RANGE  = 1.5;   // 22 oct — 2.0 era justo el máximo del server: si el bicho se movía, «out_of_range»
 const NPC_RANGED_ENGAGE_RANGE = 8.0;
 
 function getNpcEngageRange() {

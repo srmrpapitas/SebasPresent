@@ -77,6 +77,8 @@ async function apiFetch(path, { method = 'GET', body, auth = false } = {}) {
     err.code = (data && data.error) || `http_${response.status}`;
     err.status = response.status;
     if (data && data.band) err.band = data.band;
+    if (data && data.max_range != null) err.max_range = data.max_range;   // 22 oct — combate: acercarse lo justo
+    if (data && data.cooldown_remaining_ms != null) err.cooldown_remaining_ms = data.cooldown_remaining_ms;
     throw err;
   }
   return data;
