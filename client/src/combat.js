@@ -778,7 +778,10 @@ async function doAttackTickNpc(gen = attackGen) {
   notify();
 
   if (result.npc_killed) {
-    feedLog('kill', npcName ? `¡Has acabado con ${npcName}!` : '¡Lo has derrotado!');
+    // 22 oct — con arco/magia el golpe se escribe al llegar el proyectil: la
+    // muerte espera también (antes salía «¡Has acabado con…!» antes que el golpe).
+    { const killMsg = npcName ? `¡Has acabado con ${npcName}!` : '¡Lo has derrotado!';
+      if (impactMs > 0) setTimeout(() => feedLog('kill', killMsg), impactMs + 20); else feedLog('kill', killMsg); }
     try { window.__progressPoke?.('kill', result.npc_def_id); } catch {}   // Sesión 53 — logros/contador
     disengage();
     await refresh();
