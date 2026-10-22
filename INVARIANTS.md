@@ -73,6 +73,8 @@ server/handlers/
 ### 1.3 Rango de combate
 - Server: `COMBAT_RANGE_TOLERANCE = 3.5m` en `worker.js`. Compensa los 3m del patrol radius visual de los NPCs.
 - Cliente: el NPC mesh visual está en `mesh.position`, el "centro de patrol" del server está en `npc.x/z`. Usar `mesh.position` para validaciones de rango cliente.
+- (22 oct) El cliente engancha cuerpo a cuerpo a `NPC_MELEE_ENGAGE_RANGE = 1.5` m (el server deja hasta `attack_range + tolerancia`, tope 3; para el pollo es 2,0). Si aun así llega `out_of_range`, `combat.js` se acerca y reintenta hasta 4 veces antes de soltar.
+- (22 oct) En `world.js` NUNCA usar `clock.getElapsedTime()`: llama a `getDelta()` y deja el siguiente fotograma con dt ≈ 0 (el toque para andar se perdía). Usar `clock.elapsedTime`.
 
 ### 1.4 Loot drops (en ms)
 - `LOOT_PRIVATE_MS = 60_000` (1min privado al killer)
