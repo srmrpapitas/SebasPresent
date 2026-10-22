@@ -84,6 +84,9 @@ let chopGen = 0;
 // Map de depletedKey → { restore() } para los árboles ocultados.
 // key = `${tree_type}|${xRound}|${zRound}` para identificar idéntico al server.
 const depletedHidden = new Map();
+// 22 oct — árboles que acabo de tumbar yo (clave → depleted_until), por si toco el árbol otra vez
+// antes de que llegue el snapshot que lo convierte en tocón.
+const justFelled = new Map();
 let depletedSyncTimer = 0;
 const DEPLETED_SYNC_INTERVAL_S = 0.5;  // chequear snapshot.depleted_trees cada 500ms
 
@@ -155,6 +158,13 @@ export function startChopAt(treeType, tx, tz) {
     maple: 45, mahogany: 50, yew: 60, magic: 75,
   };
   const reqLvl = TREE_LEVELS[treeType] || 1;
+
+  // 22 oct — tocar un tocón: avisar aquí y no gastar una petición que el server va a rechazar.
+  const dk = depletedKey(treeType, tx, tz);
+  if (depletedHidden.has(dk) || (justFelled.get(dk) || 0) > Date.now()) {
+    feedLog('info', 'Este árbol está talado. Volverá a crecer en un rato.');
+    return;
+  }
 
   // Caminar hacia el árbol (a APPROACH_DIST_M del centro).
   // Sesión 50 — SIEMPRE camina, aunque no tenga nivel (avisa igualmente).
@@ -359,6 +369,8 @@ async function attemptChop(treeType, tx, tz, gen = chopGen) {
     if (treeFalls) {
       const treeName = res.tree_type || treeType;
       feedLog('info', `El árbol cae.`);
+      if (res.depleted_until) justFelled.set(depletedKey(treeType, tx, tz), Math.min(Number(res.depleted_until), Date.now() + 30_000));
+      for (const [k, t] of justFelled) if (t < Date.now()) justFelled.delete(k);
       try { window.__snapshotFull?.(); } catch {}   // Sesión 51 — tocón en el próximo snapshot
       stopChop('depleted');
     }
