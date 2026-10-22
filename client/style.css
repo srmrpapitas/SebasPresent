@@ -2763,3 +2763,13 @@ body:has(#worldScreen:not(.hidden)) #splash {
   width: 100% !important;
   height: 100% !important;
 }
+
+/* 22 oct — Móvil: con el panel lateral abierto, el registro de combate quedaba
+   debajo del panel y los mensajes largos salían cortados. Se estrecha hasta el
+   borde del panel (y las líneas se parten solas). */
+@media (max-width: 600px) {
+  #osrsSidebar:not(.minimized) ~ #combatFeed {
+    width: calc(100vw - var(--sb-panel-w) - var(--sb-tabs-w) - 42px);
+    max-height: 190px;
+  }
+}
