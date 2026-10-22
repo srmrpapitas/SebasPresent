@@ -380,7 +380,15 @@ function onPointerUp(ev) {
     // activa, el tap es DESTINO de movimiento — tiene prioridad, así puedes
     // seguir moviendo comida/armadura con tap-to-tap.
     const data = slots[fromSlot];
-    if (selectedSlot === null && data && EDIBLE_ITEM_IDS.has(data.item_id)) {
+    const fmApi = (typeof window !== 'undefined') ? window.__firemaking : null;
+    if (selectedSlot === null && data && COOKABLE_ITEM_IDS.has(data.item_id)) {
+      // 22 oct — tocar comida cruda = COCINAR (antes se la comía cruda; la guía dice "toca el
+      // pollo crudo"). Comerla cruda sigue en el menú de mantener pulsado.
+      startCookAll(data.item_id);
+    } else if (selectedSlot === null && data && fmApi?.isLogItem?.(data.item_id) && hasTinderboxInInventory()) {
+      // 22 oct — tocar troncos (con yesquero) = encender fuego, como dice la misión.
+      fmApi.lightFireFromSlot?.(fromSlot)?.catch?.((err) => console.warn('[inventory] light_fire err:', err));
+    } else if (selectedSlot === null && data && EDIBLE_ITEM_IDS.has(data.item_id)) {
       eatInstant(fromSlot);
     } else if (selectedSlot === null && data && BURYABLE_ITEM_IDS.has(data.item_id)) {
       window.__prayer?.buryFromSlot?.(fromSlot);   // Sesión 50 — tocar huesos = enterrar
@@ -706,7 +714,7 @@ async function eatInstant(slotIdx) {
   if (prev) {
     slots[slotIdx] = (prev.stackable && prev.quantity > 1) ? { ...prev, quantity: prev.quantity - 1 } : null;
     renderAll();
-    try { window.__playSfx?.('drink'); } catch {}
+    try { window.__playSfx?.('item_grab', { pitch: 0.85, volume: 0.6 }); } catch {}
     if (hp0 && heal > 0 && hp0.hp > 0 && hp0.hp < hp0.max) {
       try { window.__setHpInstant?.(Math.min(hp0.max, hp0.hp + heal), hp0.max); } catch {}
     }
@@ -785,7 +793,7 @@ async function startCookAll(itemId) {
       if (res.result === 'burnt') burnt++; else cooked++;
       if (res.xp_gained) xpTotal += res.xp_gained;
       if (typeof res.level === 'number') lastLevel = res.level;
-      try { window.__playSfx?.('drink', { pitch: 0.9, volume: 0.5 }); } catch {}
+      try { window.__playSfx?.('cook_pot', { volume: 0.5 }); } catch {}
       if (res.level_up) {
         try { window.__feedLog?.('levelup', `¡Subes a nivel ${res.level} de Cocina!`); } catch {}
         try { window.__spawnLevelUpBanner?.('cooking', res.level); } catch {}
