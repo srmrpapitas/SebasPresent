@@ -752,8 +752,9 @@ button { font-family: inherit; cursor: pointer; }
 
 .inv-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
+  gap: 8px;   /* el panel centra la cabecera: sin hueco salía «Mochila10/20» */
   padding: 0 2px 6px 2px;
   margin-bottom: 6px;
   border-bottom: 1px solid rgba(200, 160, 67, 0.25);
