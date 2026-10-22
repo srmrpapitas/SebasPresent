@@ -25,6 +25,16 @@
 8. [ ] **Jugabilidad (pedido 19 oct, 09:02 — lo primero ahora)**: partida de prueba completa en móvil y PC como
        jugador nuevo y como nivel alto; apuntar y arreglar todo lo que se sienta lento, confuso o roto
        (andar, tocar objetivos, combate, botín, mochila, banco, diálogos, cámara). Probar PvP/duelo con 2 clientes.
+   - (22 oct, tarea programada — a medias) Partida de prueba de jugador nuevo en móvil 390×844 y PC (guía, talar, fuego,
+     pollo, cocinar, pestañas, diálogo, banco). Arreglado: ~1 de cada 10 toques para andar no movía al personaje
+     (`clock.getElapsedTime()` dejaba dt≈0) y ahora rodea árboles/rocas; «Demasiado lejos» al llegar a un árbol/roca/pesquero
+     (el server acepta la posición del cliente a ≤ 8 m); el combate ya no se corta con «Fuera de rango» si el bicho se aparta
+     (se acerca y reintenta; engancha a 1,5 m); tocar troncos = encender fuego y tocar crudo = cocinar (antes se lo comía crudo);
+     tocar un tocón no gasta petición; pestaña de combate en español; nombres de habilidades sin pisar; registro
+     «¡Has acabado con Pollo!»; borrachos callados durante la guía.
+     **Falta**: minería/fundir/forjar, banco a fondo, misiones de los pueblos, nivel alto (jefes, magia, arco) y
+     **PvP/duelo con 2 clientes**. En local la escena va a ~4 fps (SwiftShader), así que el "ritmo" no se puede juzgar aquí:
+     la latencia real hay que mirarla en producción.
 9. [ ] **Aventureros (bots que parecen jugadores)** (pedido 19 oct): cuando hay alguien conectado, que se vean
        «jugadores» con nombre haciendo cosas (andar entre pueblos, talar, pescar, pelear con monstruos, hablar con
        NPC, chatear poco). Simulados en el CLIENTE (cero coste de servidor), deterministas por hora para que dos
@@ -52,6 +62,10 @@
   y la fachada mirando al punto de camino más cercano (dir = atan2(dx, dz)).
 - Para colocar un edificio nuevo sin pisar caminos/NPC: buscar huecos a 9–20 m del camino (roadDist) y lejos de NPC, bancos,
   hornos, estanques y casas (así se eligieron Orotava e Icod). La BD local no trae `coins` ni `oak_logs` en `items`: insertarlos a mano para probar.
+- Pruebas locales (22 oct): `scripts/local/items_base.sql` mete en la BD local los objetos y monstruos básicos que en
+  producción se crearon a mano (hacha, monedas, troncos, pollo/vaca/goblin con botín). `window.__mainScene` para buscar
+  árboles (`userData.trees`), rocas, etc. con Playwright. En Playwright usar `deviceScaleFactor: 1` (con 2 va a 1–4 fps).
+  El registro de cuentas tiene tope por IP: en local, borrar `auth_limits` antes de crear cuentas de prueba.
 - Pruebas locales: `scripts/local/server.mjs` (API + cliente con SQLite; three.js se clona de GitHub r160 porque
   no hay CDN ni npm en el entorno) y `scripts/local/armor_shots.mjs` (fotos de armaduras sin R2).
   Los modelos de R2 no cargan en local: el personaje sale como cápsula.
