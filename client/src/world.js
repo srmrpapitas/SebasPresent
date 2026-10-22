@@ -164,6 +164,7 @@ let canvas = null;
 
 const SPAWN_POINT = { x: 0, z: 9 };   // 19 oct — igual que SPAWN_X/Z del servidor
 let playerTarget = null;
+let detourT = 0, detourSide = 1;   // 22 oct — rodeo de obstáculos al andar con toque
 let lastMovedAt = 0;   // 19 oct
 if (typeof window !== 'undefined') window.__playerMovedRecently = (ms = 700) => performance.now() - lastMovedAt < ms;
 let joyState = { active: false, x: 0, y: 0 };
@@ -3376,6 +3377,7 @@ function tryExamineTreeAt(clientX, clientY) {
 }
 
 function setPlayerTarget(x, z) {
+  detourT = 0;
   // Sesión 11c-1 — skip clamp si interior activo (coords 10000,10000 exceden WORLD_HALF)
   if (!interiors.isActive()) {
     x = Math.max(-WORLD_HALF + 2, Math.min(WORLD_HALF - 2, x));
@@ -3386,7 +3388,10 @@ function setPlayerTarget(x, z) {
   marker.scale.set(1, 1, 1);
   marker.material.opacity = 0.9;
   marker.visible = true;
-  marker.userData.spawnTime = clock.getElapsedTime();
+  // 22 oct — clock.elapsedTime (propiedad), NO getElapsedTime(): ese llama a getDelta() y el
+  // siguiente fotograma recibía dt ≈ 0, el paso salía < 0,01 m y el toque se tomaba como
+  // "bloqueado": el personaje no se movía (≈1 de cada 10 toques).
+  marker.userData.spawnTime = clock.elapsedTime;
 }
 
 // Sesión 27 Bloque 3 — exponer setPlayerTarget como hook global para
@@ -3716,20 +3721,42 @@ function updatePlayer(dt) {
         nextX = player.position.x + nx * step;
         nextZ = player.position.z + nz * step;
       }
-      const adjusted = collideStep(player.position.x, player.position.z, nextX, nextZ);
-      const moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
-      if (moved < 0.01) {
+      let adjusted = collideStep(player.position.x, player.position.z, nextX, nextZ);
+      let moved = Math.hypot(adjusted.x - player.position.x, adjusted.z - player.position.z);
+      // 22 oct — Rodear obstáculos pequeños (árbol, roca, cartel): antes, si el paso en línea
+      // recta chocaba, el destino se borraba y el personaje se quedaba quieto sin decir nada.
+      // Probamos a 45° y 90° (primero hacia el lado que funcionó la última vez); si llevamos
+      // más de 2,5 s rodeando sin poder ir recto, se abandona como antes.
+      let detoured = false;
+      const blockedEps = Math.min(0.01, step * 0.5);   // 22 oct — con dt pequeño el paso es < 1 cm
+      if (moved < blockedEps && detourT < 2.5) {
+        const base = Math.atan2(dz, dx);
+        const px0 = player.position.x, pz0 = player.position.z;
+        const sides = detourSide >= 0 ? [1, -1] : [-1, 1];
+        outer: for (const ang of [Math.PI / 4, Math.PI / 2]) {
+          for (const sd of sides) {
+            const a = base + sd * ang;
+            const r = collideStep(px0, pz0, px0 + Math.cos(a) * step, pz0 + Math.sin(a) * step);
+            const m = Math.hypot(r.x - px0, r.z - pz0);
+            if (m >= blockedEps) { adjusted = r; moved = m; detourSide = sd; detoured = true; break outer; }
+          }
+        }
+      }
+      if (detoured) detourT += dt; else if (moved >= blockedEps) detourT = 0;
+      if (moved < blockedEps) {
         playerTarget = null;
         marker.visible = false;
+        detourT = 0;
       } else {
+        const mvx = adjusted.x - player.position.x, mvz = adjusted.z - player.position.z;
         player.position.x = adjusted.x;
         player.position.z = adjusted.z;
-        if (step >= dist && moved >= dist - 0.05) {
+        if (!detoured && step >= dist && moved >= dist - 0.05) {
           playerTarget = null;
           marker.visible = false;
         }
-        moveWx = dx;
-        moveWz = dz;
+        moveWx = detoured ? mvx : dx;
+        moveWz = detoured ? mvz : dz;
         isMoving = true;
         moveSpeed = 1.0;
       }
@@ -3861,7 +3888,7 @@ function updatePlayer(dt) {
 
 function updateMarker() {
   if (!marker.visible) return;
-  const t = clock.getElapsedTime() - marker.userData.spawnTime;
+  const t = clock.elapsedTime - marker.userData.spawnTime;
   const pulse = 1 + Math.sin(t * 7) * 0.18;
   marker.scale.set(pulse, 1, pulse);
   if (t > 2.0) {
