@@ -53,3 +53,8 @@ SELECT * FROM (VALUES
 ('goblin','bones',1,1,1,1),('goblin','coins',5,15,60,0),('goblin','sword_bronze',1,1,8,0),('goblin','shield_bronze',1,1,7,0),('goblin','chest_bronze',1,1,5,0),
 ('goblin_jefe','bones',2,3,1,1),('goblin_jefe','coins',10,45,60,0),('goblin_jefe','sword_bronze',2,3,8,0),('goblin_jefe','shield_bronze',2,3,7,0),('goblin_jefe','chest_bronze',2,3,5,0),('goblin_jefe','coins',24,96,1,1)
 ) WHERE NOT EXISTS (SELECT 1 FROM npc_loot_table WHERE npc_def_id = 'chicken');
+
+-- Monstruos cuyos tipos se crean arriba (pollo/vaca/goblin): sus instancias de los seeds
+-- traen hp_current = -1 y el arreglo de los seeds ya pasó. En producción no pasa.
+UPDATE npc_instances SET hp_current = (SELECT max_hp FROM npc_defs WHERE id = npc_instances.def_id)
+ WHERE hp_current = -1 AND def_id IN (SELECT id FROM npc_defs);
