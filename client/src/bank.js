@@ -113,6 +113,12 @@ import { renderItemIcon } from './item_icons.js';
       border: 1px solid #3a2a1a; border-radius: 4px; background: rgba(0,0,0,0.25); padding: 3px;
     }
     .bank-inv-panel .bank-section-label { margin: 0 0 1px 2px !important; font-size: 11px; }
+    .bank-inv-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .bank-depall { height: 24px; padding: 0 8px; font: bold 11px 'IM Fell English', serif; color: #f0e0b0;
+      background: linear-gradient(#5a4520, #3a2a10); border: 1px solid #c8a043; border-radius: 3px;
+      cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    .bank-depall:active { background: #c8a043; color: #000; }
+    .bank-depall:disabled { opacity: 0.5; }
     .bank-inv-panel .bank-inv-grid {
       display: grid !important; grid-template-columns: repeat(10, 1fr) !important; gap: 2px !important; padding: 0 !important;
     }
@@ -223,7 +229,7 @@ export async function init() {
         </div>
 
         <div class="bank-inv-panel">
-          <div class="bank-section-label">Mochila</div>
+          <div class="bank-inv-head"><span class="bank-section-label">Mochila</span><button class="bank-depall" id="bankDepAll" title="Guardar toda la mochila en el banco">⇩ Guardar todo</button></div>
           <div class="bank-inv-grid" id="bankInvGrid"></div>
         </div>
       </div>
@@ -260,6 +266,24 @@ export async function init() {
     showError(withdrawAsNote ? 'Sacar como nota: SÍ' : 'Sacar como nota: NO', true);
   });
   ensureNoteCss();
+
+  // 22 oct — «Guardar todo»: toda la mochila al banco en una sola petición
+  const depAllBtn = document.getElementById('bankDepAll');
+  depAllBtn?.addEventListener('pointerup', async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (depAllBtn.disabled) return;
+    if (!invSlots.some(Boolean)) { showError('La mochila ya está vacía.', true); return; }
+    depAllBtn.disabled = true;
+    try {
+      await api.depositAllToBank();
+    } catch (err) {
+      if (err?.code !== 'busy') showError(err?.message || 'No se pudo guardar.');
+    } finally {
+      try { await refresh(); await inventory.refresh(); } catch {}
+      depAllBtn.disabled = false;
+    }
+  });
 
   // Buscador por nombre
   const searchEl = document.getElementById('bankSearch');

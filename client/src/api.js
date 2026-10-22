@@ -179,6 +179,11 @@ export async function depositToBank(invSlot, quantity) {
   });
 }
 
+/** 22 oct — «Guardar todo»: toda la mochila al banco en una petición. */
+export async function depositAllToBank() {
+  return apiFetch('/api/bank/deposit', { method: 'POST', auth: true, body: { all: true } });
+}
+
 export async function withdrawFromBank(bankSlot, quantity, targetInvSlot, asNote = false) {
   const body = { bank_slot: bankSlot, quantity };
   if (asNote) body.as_note = true;   // Sesión 50 — notas de banco

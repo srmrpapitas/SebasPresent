@@ -12,7 +12,7 @@ import { atHouseWith } from './house.js';   // Sesión 50
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
 import { INVENTORY_SLOTS, pickInvSlot } from './inventory.js';
-import { isNote, baseOfNote, noteOf } from '../../client/src/shared/notes.js';   // Sesión 50
+import { isNote, baseOfNote, noteOf, NOTE_SUFFIX } from '../../client/src/shared/notes.js';   // Sesión 50
 import { questEvent } from '../lib/quests.js';                                    // Sesión 50
 import { isNearAnyBank } from '../../client/src/shared/banks.js';                 // Sesión 50 — seguridad
 
@@ -71,6 +71,7 @@ export async function handleBankDeposit(request, env) {
 
   const body = await readJson(request);
   if (!body) return json({ error: 'bad_request' }, 400);
+  if (body.all === true) return depositWholeInventory(env, session.user_id);   // 22 oct — «Depositar mochila»
 
   const invSlot = body.inv_slot;
   let qty = body.quantity;
@@ -172,6 +173,61 @@ export async function handleBankDeposit(request, env) {
   }
   await questEvent(env, session.user_id, 'bank', bankItemId);   // Sesión 50
   return json({ ok: true, deposited: qty, unnoted: bankItemId !== itemId });
+}
+
+/**
+ * 22 oct — «Depositar mochila» (como el botón de OSRS): toda la mochila al banco
+ * en UNA petición (antes, un toque y una petición por objeto). Pocas sentencias
+ * (el plan gratis limita las consultas por invocación): todo en un batch y las
+ * cantidades se leen DENTRO de él, así que un cambio de mochila a la vez no duplica nada.
+ */
+async function depositWholeInventory(env, uid) {
+  const inv = await env.DB.prepare('SELECT item_id FROM user_inventory WHERE user_id = ?').bind(uid).all();
+  const invIds = [...new Set((inv.results || []).map(r => r.item_id))];
+  if (!invIds.length) return json({ ok: true, deposited: 0 });
+  const baseIds = [...new Set(invIds.map(baseOfNote))];
+  const ph = baseIds.map(() => '?').join(',');
+  const have = await env.DB.prepare(
+    `SELECT item_id FROM user_bank WHERE user_id = ? AND item_id IN (${ph})`
+  ).bind(uid, ...baseIds).all();
+  const inBank = new Set((have.results || []).map(r => r.item_id));
+  const missing = baseIds.filter(id => !inBank.has(id));
+  const now = Date.now();
+  const stmts = [];
+  if (missing.length) {
+    const maxRow = await env.DB.prepare(
+      'SELECT COALESCE(MAX(slot_index), -1) AS max_slot FROM user_bank WHERE user_id = ?'
+    ).bind(uid).first();
+    let slot = (maxRow?.max_slot ?? -1) + 1;
+    const vals = [];
+    const binds = [];
+    for (const id of missing) { vals.push('(?, ?, ?, 0, ?)'); binds.push(uid, slot++, id, now); }
+    stmts.push(env.DB.prepare(
+      `INSERT INTO user_bank (user_id, slot_index, item_id, quantity, updated_at) VALUES ${vals.join(',')}`
+    ).bind(...binds));
+  }
+  // Suma lo que haya en la mochila de ese objeto (y de su nota) y luego lo borra.
+  stmts.push(env.DB.prepare(
+    `UPDATE user_bank SET quantity = quantity + COALESCE((SELECT SUM(inv.quantity) FROM user_inventory inv
+              WHERE inv.user_id = user_bank.user_id
+                AND (inv.item_id = user_bank.item_id OR inv.item_id = user_bank.item_id || '${NOTE_SUFFIX}')), 0),
+            updated_at = ?
+      WHERE user_id = ? AND item_id IN (${ph})`
+  ).bind(now, uid, ...baseIds));
+  const ph2 = invIds.map(() => '?').join(',');
+  stmts.push(env.DB.prepare(
+    `DELETE FROM user_inventory WHERE user_id = ? AND item_id IN (${ph2})
+        AND EXISTS (SELECT 1 FROM user_bank b WHERE b.user_id = user_inventory.user_id
+                      AND (b.item_id = user_inventory.item_id OR b.item_id || '${NOTE_SUFFIX}' = user_inventory.item_id))`
+  ).bind(uid, ...invIds));
+  stmts.push(env.DB.prepare('DELETE FROM user_bank WHERE user_id = ? AND quantity <= 0').bind(uid));
+  try {
+    await env.DB.batch(stmts);
+  } catch (e) {
+    return json({ error: 'busy', message: 'Inténtalo otra vez.' }, 409);
+  }
+  await questEvent(env, uid, 'bank', baseIds[0]);
+  return json({ ok: true, deposited: invIds.length, all: true });
 }
 
 export async function handleBankWithdraw(request, env) {
