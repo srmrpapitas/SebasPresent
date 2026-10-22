@@ -62,8 +62,8 @@ export async function handleMiningMine(request, env) {
   const userId = session.user_id;
   const now = Date.now();
 
-  // 1) Distancia (posición del heartbeat, no la que diga el body)
-  const pos = await getPlayerPosition(env, userId);
+  // 1) Distancia (la del heartbeat, o la del body si está a <= 8 m de ella; ver _shared.js)
+  const pos = await getPlayerPosition(env, userId, body);
   if (!pos) return json({ error: 'no_position', message: 'Sin posición reciente.' }, 400);
   const dist = isWithinDistance(pos, vein.x, vein.z, MAX_MINE_DIST_M);
   if (!dist.ok) {

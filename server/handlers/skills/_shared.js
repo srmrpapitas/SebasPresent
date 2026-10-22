@@ -112,18 +112,31 @@ export async function findInventorySpotForItem(env, userId, itemId) {
   return { kind: 'full' };
 }
 
+// 22 oct — La posición guardada (online_users) se actualiza cada 5 m / 10 s, así que justo después
+// de caminar hasta un árbol/roca/pesquero suele ir atrasada y el primer intento salía "Demasiado
+// lejos" (otro tick perdido + una petición tirada). El cliente manda su posición (px, pz) y se
+// acepta si está a <= GATHER_POS_TOLERANCE_M de la guardada (mismo patrón que trustedAttackerPos).
+export const GATHER_POS_TOLERANCE_M = 8;
+
 /**
  * Calcula la posición del player en este momento (heartbeat más reciente).
+ * Si se pasa `claimed` ({px, pz} del body) y está cerca de la guardada, se usa esa.
  *
  * @param {object} env
  * @param {string} userId
+ * @param {{px?: number, pz?: number}} [claimed]
  * @returns {Promise<{x: number, z: number}|null>}
  */
-export async function getPlayerPosition(env, userId) {
+export async function getPlayerPosition(env, userId, claimed) {
   const row = await env.DB.prepare(
     'SELECT x, z FROM online_users WHERE user_id = ?'
   ).bind(userId).first();
   if (!row) return null;
+  const px = Number(claimed?.px), pz = Number(claimed?.pz);
+  if (claimed && Number.isFinite(px) && Number.isFinite(pz)
+      && Math.hypot(px - row.x, pz - row.z) <= GATHER_POS_TOLERANCE_M) {
+    return { x: px, z: pz };
+  }
   return { x: row.x, z: row.z };
 }
 

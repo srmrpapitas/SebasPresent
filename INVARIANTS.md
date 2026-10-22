@@ -89,6 +89,9 @@ server/handlers/
 - **EN COMBATE bajamos a 500ms** para que el server pueda validar rangos correctamente.
 - Sin esto: bug "pegar desde lejos" — el server creía que estabas cerca cuando ya te habías alejado.
 - `POSITION_SAVE_MIN_DELTA = 5m` default, **0.5m en combate**.
+- (22 oct) Talar, minar, pescar, fundir/forjar, encender fuego y cocinar mandan `px, pz` (posición del cliente,
+  `myPos()` en `api.js`); el server la usa si está a ≤ `GATHER_POS_TOLERANCE_M` (8 m, `server/handlers/skills/_shared.js`)
+  de `online_users`. Sin esto el primer intento al llegar salía "Demasiado lejos" (la guardada va hasta 5 m atrasada).
 
 ### 1.7 Chop tick (S30)
 - `woodcutting.js` cliente: `CHOP_TICK_S = 1.2s` — manda /chop cada 1.2 segundos.
@@ -238,6 +241,7 @@ server/handlers/
 | `__diag.forceChop(treeType, x, z)` | delega a __wcDebug | Forzar tala |
 | `__diag.testError()` | — | Probar error capture |
 | `__mainCamera` | cámara principal | Pruebas con Playwright: proyectar NPC/jugadores a pantalla |
+| `__mainScene` | escena principal | Pruebas con Playwright: buscar árboles, rocas, etc. por `userData` |
 
 ### 5.4 Skill-specific debug
 

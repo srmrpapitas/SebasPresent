@@ -108,7 +108,7 @@ export async function handleWoodcuttingChop(request, env) {
   const now = Date.now();
 
   // 1) Proximidad
-  const playerPos = await getPlayerPosition(env, userId);
+  const playerPos = await getPlayerPosition(env, userId, body);
   if (!playerPos) return json({ error: 'no_position', message: 'Sin heartbeat reciente.' }, 400);
   const dist = isWithinDistance(playerPos, x, z, MAX_CHOP_DIST_M);
   if (!dist.ok) {

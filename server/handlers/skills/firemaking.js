@@ -19,7 +19,7 @@
 import { json, readJson } from '../../lib/db.js';
 import { requireSession } from '../../lib/auth.js';
 import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.js';
-import { tableExists, hasItemAvailable } from './_shared.js';
+import { tableExists, hasItemAvailable, GATHER_POS_TOLERANCE_M } from './_shared.js';
 import { questEvent } from '../../lib/quests.js';   // Sesión 50
 
 // Logs encendibles. fmLevel = nivel firemaking requerido. xp = ganancia.
@@ -66,6 +66,13 @@ export async function handleFiremakingLight(request, env) {
     'SELECT x, z, yaw FROM online_users WHERE user_id = ?'
   ).bind(userId).first();
   if (!meRow) return json({ error: 'no_position' }, 400);
+  // 22 oct — la guardada va atrasada si acabas de andar; usar la del cliente si está cerca
+  {
+    const px = Number(body?.px), pz = Number(body?.pz);
+    if (Number.isFinite(px) && Number.isFinite(pz) && Math.hypot(px - meRow.x, pz - meRow.z) <= GATHER_POS_TOLERANCE_M) {
+      meRow.x = px; meRow.z = pz;
+    }
+  }
 
   // 2) Item en slot
   const invRow = await env.DB.prepare(

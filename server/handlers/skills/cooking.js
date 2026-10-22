@@ -20,7 +20,7 @@
 import { json, readJson } from '../../lib/db.js';
 import { requireSession } from '../../lib/auth.js';
 import { applyXpGrant, xpToLevel, startingXpFor } from '../../lib/skills_engine.js';
-import { tableExists } from './_shared.js';
+import { tableExists, getPlayerPosition } from './_shared.js';
 import { questEvent } from '../../lib/quests.js';   // Sesión 50
 import { EDIBLE, COOKABLE } from '../../../client/src/shared/food.js';
 import { pushRealtime } from '../../lib/realtime.js';   // Sesión 50
@@ -178,9 +178,7 @@ export async function handleCookingCook(request, env) {
   }
 
   // 2) Posición del player (heartbeat, igual que firemaking)
-  const meRow = await env.DB.prepare(
-    'SELECT x, z FROM online_users WHERE user_id = ?'
-  ).bind(userId).first();
+  const meRow = await getPlayerPosition(env, userId, body);   // 22 oct — acepta la del cliente si está cerca
   if (!meRow) return json({ error: 'no_position' }, 400);
 
   // 3) Fuego encendido cercano. Sesión 49 fix — radio 5m (antes 2.5m era
@@ -211,7 +209,7 @@ export async function handleCookingCook(request, env) {
     return json({
       error: 'no_fire',
       message: fireRows.length === 0
-        ? 'No hay ningún fuego encendido. Enciende uno con un log + yesquero.'
+        ? 'No hay ningún fuego cerca. Enciende uno: mantén pulsados unos troncos → «Encender fuego» (necesitas el yesquero).'
         : `Acércate más al fuego (estás a ${nearestDist === Infinity ? '∞' : nearestDist.toFixed(1)}m, necesitas ${FIRE_COOK_RADIUS_M}m).`,
       nearest_fire_dist_m: nearestDist === Infinity ? null : Number(nearestDist.toFixed(2)),
       fires_lit: fireRows.length,

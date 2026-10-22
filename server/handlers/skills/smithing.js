@@ -75,7 +75,7 @@ async function precheck(request, env, stationType) {
     return { res: json({ error: 'invalid_station', message: 'Ahí no hay ' + (stationType === 'furnace' ? 'un horno.' : 'un yunque.') }, 400) };
   }
   const userId = session.user_id;
-  const pos = await getPlayerPosition(env, userId);
+  const pos = await getPlayerPosition(env, userId, body);
   if (!pos) return { res: json({ error: 'no_position' }, 400) };
   const d = isWithinDistance(pos, station.x, station.z, STATION_USE_DIST_M);
   if (!d.ok) return { res: json({ error: 'out_of_range', message: 'Acércate más.', distance: +d.distance.toFixed(2) }, 400) };

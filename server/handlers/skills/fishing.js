@@ -60,7 +60,7 @@ export async function handleFishingFish(request, env) {
   }
 
   // 2) Distancia
-  const pos = await getPlayerPosition(env, userId);
+  const pos = await getPlayerPosition(env, userId, body);
   if (!pos) return json({ error: 'no_position', message: 'Sin posición reciente.' }, 400);
   const dist = isWithinDistance(pos, spot.x, spot.z, SPOT_USE_DIST_M);
   if (!dist.ok) {

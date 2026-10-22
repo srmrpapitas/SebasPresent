@@ -522,11 +522,21 @@ export async function chatRecent(since, channel = 'global') {
  *   - invalid_tree_type  → tree_type desconocido
  *   - wc_disabled        → tabla tree_state no migrada
  */
+// 22 oct — posición actual del jugador para las peticiones de recolección (el server la acepta
+// si está a <= 8 m de la guardada; así el primer golpe al llegar no sale "Demasiado lejos").
+function myPos() {
+  try {
+    const p = window.__getPlayerPosition?.();
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) return { px: Math.round(p.x * 100) / 100, pz: Math.round(p.z * 100) / 100 };
+  } catch {}
+  return {};
+}
+
 export async function wcChop(treeType, x, z) {
   return apiFetch('/api/woodcutting/chop', {
     method: 'POST',
     auth: true,
-    body: { tree_type: treeType, x, z },
+    body: { tree_type: treeType, x, z, ...myPos() },
   });
 }
 
@@ -538,7 +548,7 @@ export async function miningMine(veinId) {
   return apiFetch('/api/mining/mine', {
     method: 'POST',
     auth: true,
-    body: { vein_id: veinId },
+    body: { vein_id: veinId, ...myPos() },
   });
 }
 
@@ -571,10 +581,10 @@ export async function smithingRecipes() {
   return apiFetch('/api/smithing/recipes', { auth: true });
 }
 export async function smithingSmelt(stationId, material) {
-  return apiFetch('/api/smithing/smelt', { method: 'POST', auth: true, body: { station_id: stationId, material } });
+  return apiFetch('/api/smithing/smelt', { method: 'POST', auth: true, body: { station_id: stationId, material, ...myPos() } });
 }
 export async function smithingSmith(stationId, itemId) {
-  return apiFetch('/api/smithing/smith', { method: 'POST', auth: true, body: { station_id: stationId, item_id: itemId } });
+  return apiFetch('/api/smithing/smith', { method: 'POST', auth: true, body: { station_id: stationId, item_id: itemId, ...myPos() } });
 }
 
 /**
@@ -601,7 +611,7 @@ export async function fmLight(slot) {
   return apiFetch('/api/firemaking/light', {
     method: 'POST',
     auth: true,
-    body: { slot },
+    body: { slot, ...myPos() },
   });
 }
 
@@ -618,7 +628,7 @@ export async function cookFood(slot) {
   return apiFetch('/api/cooking/cook', {
     method: 'POST',
     auth: true,
-    body: { slot },
+    body: { slot, ...myPos() },
   });
 }
 
@@ -637,7 +647,7 @@ export async function fishingFish(spotId) {
   return apiFetch('/api/fishing/fish', {
     method: 'POST',
     auth: true,
-    body: { spot_id: spotId },
+    body: { spot_id: spotId, ...myPos() },
   });
 }
 
