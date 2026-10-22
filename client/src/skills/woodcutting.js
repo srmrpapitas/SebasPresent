@@ -352,6 +352,9 @@ async function attemptChop(treeType, tx, tz, gen = chopGen) {
     }
 
     // Llegamos acá → +1 log + XP
+    // Si el árbol cae, paramos el bucle YA (antes de esperar a recargar): si no,
+    // salía otro hachazo mientras tanto → petición de más y «El árbol se cayó.» repetido.
+    if (treeFalls) stopChop('depleted');
     // Refrescar skills cache (server es source of truth)
     try { await skills.reload(); } catch {}
     // Refrescar inventory para mostrar el nuevo log
@@ -372,7 +375,6 @@ async function attemptChop(treeType, tx, tz, gen = chopGen) {
       if (res.depleted_until) justFelled.set(depletedKey(treeType, tx, tz), Math.min(Number(res.depleted_until), Date.now() + 30_000));
       for (const [k, t] of justFelled) if (t < Date.now()) justFelled.delete(k);
       try { window.__snapshotFull?.(); } catch {}   // Sesión 51 — tocón en el próximo snapshot
-      stopChop('depleted');
     }
   } catch (err) {
     if (activeChop) activeChop.waitingResponse = false;

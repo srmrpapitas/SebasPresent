@@ -532,6 +532,10 @@ async function attemptMine(obj, gen) {
 
     audio.synth('mine_ore', { volume: 0.7 });
     spawnBurst(obj, 7, true);
+    // Si la veta se agota, se para el bucle YA (antes de esperar a recargar
+    // mochila/niveles): si no, salía otro golpe mientras tanto → petición de
+    // más y «La veta está agotada.» repetido.
+    if (res.depleted) stopMining('depleted');
     try { await skills.reload(); } catch {}
     try { await window.inventory?.refresh?.(); } catch {}
     const oreName = ORE_TIERS[res.tier]?.name?.replace('Veta', 'Mineral') || res.ore_item;
@@ -548,7 +552,6 @@ async function attemptMine(obj, gen) {
       audio.synth('vein_deplete', { volume: 0.6 });
       spawnBurst(obj, 10, false);
       feedLog('info', 'La veta se ha agotado.');
-      stopMining('depleted');
     }
   } catch (err) {
     if (gen !== mineGen) return;
