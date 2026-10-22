@@ -28,6 +28,7 @@ import { TOWN_NPCS, TOWN_NPCS_BY_ID, TALK_DIST_M, wanderPos } from './shared/tow
 import * as mixamoRig from './mixamo_rig.js';   // Sesión 50 — personajes Mixamo
 import { lookFor } from './town_npc_looks.js';
 import * as interiors from './interiors.js';   // 19 oct — marcas del minimapa de los vecinos de dentro
+import * as onboarding from './onboarding.js';   // 22 oct — sin avisos de borrachos durante la guía
 import { QUESTS, QUEST_ORDER, questsOfNpc } from './shared/quests.js';
 
 const VIEW_DIST = 180;
@@ -356,7 +357,7 @@ function showCallout(o) {
   calloutFor = o;
   calloutEl = document.createElement('div');
   calloutEl.className = 'npc-callout';
-  calloutEl.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);z-index:235;background:rgba(30,22,12,0.96);border:2px solid #c8a043;border-radius:10px;padding:9px 14px;color:#ffe8a0;font:bold 15px sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.6);cursor:pointer;display:flex;gap:10px;align-items:center';
+  calloutEl.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);box-sizing:border-box;z-index:235;background:rgba(30,22,12,0.96);border:2px solid #c8a043;border-radius:10px;padding:9px 14px;color:#ffe8a0;font:bold 15px sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.6);cursor:pointer;display:flex;gap:10px;align-items:center';
   calloutEl.innerHTML = `<span>${o.n.callout}</span><button style="background:#2f6a3a;color:#fff;border:1px solid #c8a043;border-radius:6px;padding:6px 10px;font-weight:bold">Hablar</button>`;
   calloutEl.addEventListener('pointerdown', (e) => e.stopPropagation());
   calloutEl.addEventListener('pointerup', (e) => { e.preventDefault(); e.stopPropagation(); const t = calloutFor; hideCallout(); if (t) goTalk(t); });
@@ -870,7 +871,7 @@ export function update(dt) {
     // Sesión 50 — "X quiere hablar contigo" al acercarte
     if (o.n.callout && p) {
       const d = Math.hypot(p.position.x - o.n.x, p.position.z - o.n.z);
-      if (d < 10 && talking !== o && !calloutEl && Date.now() - (o.calloutAt || 0) > 90_000) { o.calloutAt = Date.now(); showCallout(o); }
+      if (d < 10 && talking !== o && !calloutEl && !onboarding.isActive() && Date.now() - (o.calloutAt || 0) > 90_000) { o.calloutAt = Date.now(); showCallout(o); }
       else if (calloutEl && calloutFor === o && (d > 16 || talking === o)) hideCallout();
     }
     // Sesión 50 — personaje Mixamo: animación por huesos (solo si está cerca)
