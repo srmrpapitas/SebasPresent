@@ -32,9 +32,18 @@
      (se acerca y reintenta; engancha a 1,5 m); tocar troncos = encender fuego y tocar crudo = cocinar (antes se lo comía crudo);
      tocar un tocón no gasta petición; pestaña de combate en español; nombres de habilidades sin pisar; registro
      «¡Has acabado con Pollo!»; borrachos callados durante la guía.
-     **Falta**: minería/fundir/forjar, banco a fondo, misiones de los pueblos, nivel alto (jefes, magia, arco) y
-     **PvP/duelo con 2 clientes**. En local la escena va a ~4 fps (SwiftShader), así que el "ritmo" no se puede juzgar aquí:
-     la latencia real hay que mirarla en producción.
+   - (22 oct noche, tarea programada) Probado: minar → fundir → forjar, banco (guardar/sacar/notas), misión «El vino que no
+     llegó» entera (Fefo → Adonay → 3 ratas → Fefo), duelo con 2 clientes (retar, aceptar, pelear, salir) y arco a nivel alto.
+     Arreglado: golpe de más al agotarse la veta / caer el árbol (aviso repetido); horno/yunque mandaban una petición de más
+     y las pestañas de material se cortaban en móvil; botón **«Guardar todo»** en el banco (1 petición, `body.all` en
+     /api/bank/deposit); «Mochila10/20»; «le quitas 0 HP» → «no le haces daño»; el vecino ya no te vuelve a saludar tras
+     una escena de misión; textos de «El Tigre de Paso Alto» (Minería 10 ahora es requisito); contragolpe de PvP pintado
+     dos veces (`counter_at` en la respuesta); registro de combate tapado por el panel en móvil; «Cast iniciado» / «En
+     cooldown»; «¡Has acabado con…!» antes que el golpe de la flecha.
+     **Falta**: jefes y magia a nivel alto; mirar el ritmo del duelo en producción (en local los snapshots van cada ~7 s
+     con 2 navegadores y la escena a ~4 fps, así que el "ritmo" no se puede juzgar aquí).
+     Ideas vistas (sin hacer, son de diseño): las ratas gigantes (5 HP) cuestan ~45 s a puñetazos a un jugador de nivel 3;
+     al tocar flechas en la mochila solo se seleccionan (no van al carcaj).
 9. [ ] **Aventureros (bots que parecen jugadores)** (pedido 19 oct): cuando hay alguien conectado, que se vean
        «jugadores» con nombre haciendo cosas (andar entre pueblos, talar, pescar, pelear con monstruos, hablar con
        NPC, chatear poco). Simulados en el CLIENTE (cero coste de servidor), deterministas por hora para que dos
