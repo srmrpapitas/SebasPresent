@@ -396,6 +396,9 @@ function onPointerUp(ev) {
       window.__tablets?.breakTablet?.(fromSlot, data.item_id);   // Sesión 50 — tocar tableta = romperla
     } else if (selectedSlot === null && data && parsePotion(data.item_id)) {
       window.__potions?.drink?.(fromSlot);   // Sesión 50 — tocar poción = beber una dosis
+    } else if (selectedSlot === null && data && typeof data.item_id === 'string' &&
+               data.item_id.startsWith('arrow_') && hasQuiverEquipped()) {
+      arrowsToQuiver(fromSlot);   // 23 oct — tocar flechas con carcaj = meterlas (como en OSRS)
     } else if (selectedSlot === null && isEquipableItem(data)) {
       doEquip(fromSlot);
     } else if (selectedSlot === null) {
@@ -585,18 +588,7 @@ function showItemContextMenu(slotIdx, clientX, clientY) {
       if (act === 'equip') {
         await doEquip(slotIdx);
       } else if (act === 'to_quiver') {
-        // Sesion 45 — depositar el stack de flechas en el carcaj equipado.
-        try {
-          const res = await api.depositToQuiver(slotIdx);
-          if (res && res.ok) {
-            await refresh();
-          } else {
-            showError(res?.message || 'No se pudo meter las flechas al carcaj.');
-          }
-        } catch (err) {
-          console.warn('[inventory] to_quiver err:', err);
-          if (!handleChanged(err)) showError('No se pudo meter las flechas al carcaj.');   // Sesión 52
-        }
+        await arrowsToQuiver(slotIdx);
       } else if (act === 'craft_f' || act === 'craft_c' || act === 'craft_h') {
         window.__crafting?.open?.(item.item_id, act === 'craft_f' ? 'fletching' : act === 'craft_h' ? 'herblore' : 'crafting');
       } else if (act === 'drink') {
@@ -1015,6 +1007,27 @@ function hasTinderboxInInventory() {
     if (s && s.item_id === 'tinderbox') return true;
   }
   return false;
+}
+
+// Sesion 45 — depositar el stack de flechas en el carcaj equipado (menú y, desde el
+// 23 oct, también al tocarlas). Una petición; el servidor valida.
+let quiverBusy = false;
+async function arrowsToQuiver(slotIdx) {
+  if (quiverBusy) return;
+  quiverBusy = true;
+  try {
+    const res = await api.depositToQuiver(slotIdx);
+    if (res && res.ok) {
+      await refresh();
+    } else {
+      showError(res?.message || 'No se pudo meter las flechas al carcaj.');
+    }
+  } catch (err) {
+    console.warn('[inventory] to_quiver err:', err);
+    if (!handleChanged(err)) showError('No se pudo meter las flechas al carcaj.');   // Sesión 52
+  } finally {
+    quiverBusy = false;
+  }
 }
 
 // Sesion 45 — ¿hay un carcaj equipado? (para mostrar "Equipar en carcaj").

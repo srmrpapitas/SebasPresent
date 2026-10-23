@@ -43,6 +43,7 @@
 
 import { json, readJson } from '../lib/db.js';
 import { requireSession } from '../lib/auth.js';
+import { atomicBatch, guardConds, slotCond, changed } from '../lib/atomic.js';
 
 const INVENTORY_SLOTS = 20;
 
@@ -114,9 +115,35 @@ export async function handleDepositToQuiver(request, env) {
   ).bind(session.user_id).first();
 
   if (quiverState && quiverState.arrow_item_id && quiverState.arrow_item_id !== invRow.item_id) {
+    // 23 oct — como en OSRS: meter flechas de otro tipo las CAMBIA (las que había
+    // vuelven a la mochila, al mismo hueco). Solo con el montón entero; si se pide
+    // una parte, sigue el aviso de antes.
+    const whole = qtyRequest === null || qtyRequest >= invRow.quantity;
+    if (whole && quiverState.arrow_quantity > 0) {
+      const uid = session.user_id, now = Date.now();
+      const ok = await atomicBatch(env, [
+        guardConds(env, [
+          slotCond(uid, invRow.slot_index, invRow.item_id, invRow.quantity),
+          { sql: '(SELECT arrow_item_id = ? AND arrow_quantity = ? FROM user_quiver WHERE user_id = ?)',
+            params: [quiverState.arrow_item_id, quiverState.arrow_quantity, uid] },
+        ]),
+        env.DB.prepare('UPDATE user_inventory SET item_id = ?, quantity = ?, updated_at = ? WHERE user_id = ? AND slot_index = ?')
+          .bind(quiverState.arrow_item_id, quiverState.arrow_quantity, now, uid, invRow.slot_index),
+        env.DB.prepare('UPDATE user_quiver SET arrow_item_id = ?, arrow_quantity = ?, updated_at = ? WHERE user_id = ?')
+          .bind(invRow.item_id, invRow.quantity, now, uid),
+      ]);
+      if (!ok) return changed();
+      return json({
+        ok: true, swapped: true,
+        moved: invRow.quantity,
+        arrow_item_id: invRow.item_id,
+        inv_remaining: 0,
+        quiver_total: invRow.quantity,
+      });
+    }
     return json({
       error: 'arrow_type_mismatch',
-      message: `El carcaj ya tiene ${quiverState.arrow_item_id}; sacá esas primero.`,
+      message: 'El carcaj tiene otras flechas: sácalas primero.',
     }, 400);
   }
 
