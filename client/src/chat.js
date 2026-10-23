@@ -184,6 +184,7 @@ export function stop() {
   sendInFlight = false;
   if (typeof window !== 'undefined' && window.__chatDebug) {
     delete window.__chatDebug;
+    delete window.__chatBotSay;
   }
   started = false;
 }
@@ -679,6 +680,8 @@ function exposeDebug() {
   dbg.expand   = () => expand();
   dbg.minimize = () => minimize();
   window.__chatDebug = dbg;
+  // 23 oct — aventureros (adventurers.js): solo el bocadillo sobre la cabeza, no el chat
+  window.__chatBotSay = (uid, txt) => { if (uid < 0) showOverhead(uid, txt); };
 }
 
 // ============================================================

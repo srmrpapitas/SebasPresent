@@ -38,7 +38,8 @@ import * as roadsRender from './roads_render.js';          // Sesión 50 — cam
 import * as mounts from './mounts.js';                     // Sesión 50 — monturas
 import { MOUNT_RUN_MULT } from './shared/mounts.js';
 import * as trade from './trade.js';                       // Sesión 50 — comercio entre jugadores
-import * as follow from './follow.js';                     // Sesión 50 — seguir a un jugador
+import * as follow from './follow.js';
+import * as adventurers from './adventurers.js';   // 23 oct — aventureros simulados (punto 9)                     // Sesión 50 — seguir a un jugador
 import * as social from './social.js';                     // Sesión 50 — pestaña Amigos / Monturas
 import * as menceyes from './menceyes.js';
 import * as caves from './caves.js';   // Sesión 50 — montañas con cueva
@@ -511,6 +512,21 @@ export async function startWorld(loggedInUser, token) {
       authToken,
       apiBase: API_BASE,
     });
+    // 23 oct — aventureros: «jugadores» simulados en el cliente (cero peticiones)
+    try {
+      adventurers.start({
+        getPlayer: () => player,
+        getTrees: (x, z, r) => {
+          const out = [];
+          for (const m of terrain.getInteractableMeshes()) {
+            if (m.userData?.kind !== 'tree-trunk' || !Array.isArray(m.userData.trees)) continue;
+            if (m.userData.typeId === 'bush' || m.userData.typeId === 'bush_small') continue;
+            for (const t of m.userData.trees) if (Math.abs(t.x - x) < r && Math.abs(t.z - z) < r) out.push(t);
+          }
+          return out;
+        },
+      });
+    } catch (e) { console.warn('[adventurers.start]', e); }
 
     // Sesión 27 Bloque 3 — arrancar party. Lee el user_id propio via api.me()
     // y empieza a hacer poll cada 4s para detectar invites + actualizar
@@ -3532,6 +3548,7 @@ function animate() {
   updateRegionTracking();
   npcRenderer.update(dt);
   multiplayer.update(dt);
+  try { adventurers.update(dt); } catch (e) { if (!window.__advErr) { window.__advErr = e; console.warn('[adventurers]', e); } }
   worldSnapshot.update(dt);   // Sesión 27 Bloque 1
   realtime.update();          // Sesión 50 — posición por WebSocket
   chat.update(dt);            // Sesión 29 — refrescar pos overhead bubbles

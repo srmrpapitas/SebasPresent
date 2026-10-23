@@ -244,6 +244,8 @@ server/handlers/
 | `__diag.testError()` | — | Probar error capture |
 | `__mainCamera` | cámara principal | Pruebas con Playwright: proyectar NPC/jugadores a pantalla |
 | `__mainScene` | escena principal | Pruebas con Playwright: buscar árboles, rocas, etc. por `userData` |
+| `__adventurers()` | `{ hour, shown: [{id, name, x, z, act}] }` | Aventureros simulados que se están pintando (23 oct, `adventurers.js`) |
+| `__chatBotSay(id, texto)` | — | Bocadillo sobre un aventurero (id negativo). Solo bocadillo, nunca el chat |
 
 ### 5.4 Skill-specific debug
 
@@ -783,3 +785,12 @@ de nuevo a menos que se vuelva a reducir el tamaño del inventario.
 - Cofradía de Pescadores (Los Cristianos, `kind: 'cofradia'`, Patrón Isidro + Rosario, misión `ratas_redes`) y Casa del Pinero (Vilaflor, `kind: 'pinero'`, Don Eusebio + Saray, misión `lena_invierno`, entrega a Petra). Sin seeds.
 - Salas usadas: x = 14000 … 14700 (de 100 en 100, z 14000). La siguiente, 14800. Luz 0 parpadea salvo `ctx.flicker = false`.
 - Para añadir otro: entrada en TOWN_BUILDINGS (room sin solaparse), un `buildX` en town_buildings.js para su `kind`, y sus vecinos con `inRoom`.
+
+## 37. Aventureros (23 oct)
+- `client/src/adventurers.js`: «jugadores» simulados SOLO en el cliente (cero peticiones). Horario determinista por
+  (hora UTC del servidor, hueco 0–39): dos jugadores en el mismo sitio ven lo mismo. Nunca en el Malpaís.
+- Se pintan con `multiplayer.upsertBot/removeBot/botAttack` (ids negativos `-1000 - hueco`, `peer.isBot`):
+  no se pueden atacar (`isPeerAttackable` → false), su menú solo tiene Seguir/Examinar, el snapshot no los borra.
+- Como mucho 7 a la vez y a ≤ 110 m (aguantan hasta 135 m). Van a 7 m/s (como un jugador andando) para poder seguirlos.
+- No tocan monstruos ni botín: «pelean» haciendo la animación al lado de uno que nadie esté atacando.
+

@@ -222,10 +222,12 @@ export function update(dt) {
       if (_peerState === 'run')         desiredName = 'run_forward';
       else if (_peerState === 'walk')   desiredName = 'walk_forward';
       else if (_peerState === 'attack') desiredName = 'attack_1';
-      // Fallback chain: el clip pedido → run_forward → idle.
+      else if (_peerState === 'chop')   desiredName = 'punching';   // 23 oct — aventureros talando (mismo clip que el jugador)
+      // Fallback chain: el clip pedido → run_forward (solo si se mueve) → idle.
+      const moving = _peerState === 'run' || _peerState === 'walk';
       const desiredAction =
         peer.actions[desiredName] ||
-        peer.actions.run_forward ||
+        (moving ? peer.actions.run_forward : null) ||
         peer.actions.idle;
       if (desiredAction && desiredAction !== peer.currentAction) {
         desiredAction.reset();
@@ -399,6 +401,7 @@ export function tryHandleTap(clientX, clientY, npcScreenDist = null) {
 export function isPeerAttackable(userId) {
   const peer = mpLastPeerMap.get(userId);
   if (!peer || !peer.group || !playerRef) return false;
+  if (peer.isBot) return false;   // 23 oct — a los aventureros no se les ataca
   const myPartyId = party.getMyPartyId?.();
   if (myPartyId != null && peer.partyId === myPartyId) return false;
   if (duel.isInDuelWith?.(userId)) return true;
@@ -418,6 +421,7 @@ export function openActionMenuAt(cx, cy) {
 
   const peerData = mpLastPeerMap.get(peer.user_id);
   const lvl = peerData?.combatLvl || 1;
+  if (peerData?.isBot) return openBotMenu(peer, lvl, cx, cy);   // 23 oct
   const myPartyId = party.getMyPartyId?.();
   const peerIsInMyParty = myPartyId != null && peerData?.partyId === myPartyId;
   // Mostrar "Invitar a grupo" solo si:
@@ -476,6 +480,71 @@ export function openActionMenuAt(cx, cy) {
 
   setTimeout(() => { if (pvpActionMenuEl === menu) closeActionMenu(); }, 5000);
   return true;
+}
+
+// 23 oct — aventureros (adventurers.js): solo seguir y examinar; nada que vaya al servidor.
+function openBotMenu(peer, lvl, cx, cy) {
+  const menu = document.createElement('div');
+  menu.className = 'pvp-action-menu';
+  menu.innerHTML = `
+    <div class="pvp-action-menu-header">${escapeHtmlSafe(peer.username || 'Jugador')} <span class="pvp-action-lvl">(lvl ${lvl})</span></div>
+    <div class="pvp-action-row" data-act="follow">👣 Seguir</div>
+    <div class="pvp-action-row" data-act="examine">🔍 Examinar</div>
+    <div class="pvp-action-row" data-act="cancel">✕ Cancelar</div>
+  `;
+  document.body.appendChild(menu);
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = cx + 8, top = cy + 8;
+  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+  if (top + mh > window.innerHeight - 4) top = cy - mh - 8;
+  if (top < 4) top = 4;
+  menu.style.left = left + 'px';
+  menu.style.top  = top + 'px';
+  pvpActionMenuEl = menu;
+  menu.querySelectorAll('[data-act]').forEach(row => {
+    row.addEventListener('pointerup', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      const act = row.getAttribute('data-act');
+      closeActionMenu();
+      if (act === 'follow') window.__follow?.follow?.(peer.user_id, peer.username);
+      else if (act === 'examine') _feedLogFn?.('info', `${peer.username} — nivel ${lvl}. Un aventurero de la isla.`);
+    });
+  });
+  setTimeout(() => { if (pvpActionMenuEl === menu) closeActionMenu(); }, 5000);
+  return true;
+}
+
+/**
+ * 23 oct — Aventureros simulados en el cliente (ver adventurers.js). Usan el
+ * mismo modelo, armadura, nombre y animaciones que un jugador real, con id
+ * negativo y `isBot` (no se atacan, no comercian, el snapshot no los borra).
+ */
+export function upsertBot(b) {
+  if (!started || !scene) return;
+  let peer = mpLastPeerMap.get(b.user_id);
+  if (peer && peer.username !== b.username) { removePeer(b.user_id); peer = null; }
+  if (!peer) {
+    peer = createPeer(b);
+    peer.isBot = true;
+    mpLastPeerMap.set(b.user_id, peer);
+  }
+  applyPeerEquip(peer, b.weapon_item_id || null, b.weapon_type || null, b.equip || '');
+  peer.fromX = peer.toX = b.x;
+  peer.fromZ = peer.toZ = b.z;
+  peer.fromYaw = peer.toYaw = b.yaw || 0;
+  peer.state = b.state || 'idle';
+  peer.interpStart = 0;
+  peer.lastUpdate = Date.now();
+  peer.hp = b.hp_current; peer.hpMax = b.hp_max;
+  peer.combatLvl = b.combat_lvl;
+}
+export function removeBot(id) {
+  const peer = mpLastPeerMap.get(id);
+  if (peer?.isBot) removePeer(id);
+}
+export function botAttack(id) {
+  const peer = mpLastPeerMap.get(id);
+  if (peer?.isBot) triggerPeerAttackAnim(peer);
 }
 
 export function closeActionMenu() {
@@ -789,6 +858,7 @@ function processSnapshotPeers() {
   for (const userId of mpLastPeerMap.keys()) {
     if (!seenIds.has(userId)) {
       const peer = mpLastPeerMap.get(userId);
+      if (peer.isBot) continue;   // 23 oct — aventureros: los gestiona adventurers.js
       if (Date.now() - peer.lastUpdate > 2000) {
         removePeer(userId);
       }
