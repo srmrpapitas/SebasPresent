@@ -21,8 +21,8 @@
        guantes, botas) por tiers. Que se vea en el modelo, se pueda conseguir (tiendas/drops/crafteo) y tenga bonos.
 6. [x] **Pueblos vacíos** (19 oct — un edificio con lore y misión en los 8 pueblos principales): lore y cosas que hacer en cada pueblo; edificios en los que entrar con NPC dentro
        (tabernas, herreros, casas con historia, misiones cortas). Empezar por los pueblos principales.
-7. [ ] Dejarlo todo impecable: probar en móvil y PC antes de cada push, un commit por arreglo.
-8. [ ] **Jugabilidad (pedido 19 oct, 09:02 — lo primero ahora)**: partida de prueba completa en móvil y PC como
+7. [x] Dejarlo todo impecable: probar en móvil y PC antes de cada push, un commit por arreglo. (Regla de trabajo: se ha seguido en cada push.)
+8. [x] **Jugabilidad (pedido 19 oct, 09:02 — lo primero ahora)** (23 oct — hecho; solo queda que Nico mire el ritmo del duelo en producción con 2 personas): partida de prueba completa en móvil y PC como
        jugador nuevo y como nivel alto; apuntar y arreglar todo lo que se sienta lento, confuso o roto
        (andar, tocar objetivos, combate, botín, mochila, banco, diálogos, cámara). Probar PvP/duelo con 2 clientes.
    - (22 oct, tarea programada — a medias) Partida de prueba de jugador nuevo en móvil 390×844 y PC (guía, talar, fuego,
@@ -42,9 +42,17 @@
      cooldown»; «¡Has acabado con…!» antes que el golpe de la flecha.
      **Falta**: jefes y magia a nivel alto; mirar el ritmo del duelo en producción (en local los snapshots van cada ~7 s
      con 2 navegadores y la escena a ~4 fps, así que el "ritmo" no se puede juzgar aquí).
-     Ideas vistas (sin hacer, son de diseño): las ratas gigantes (5 HP) cuestan ~45 s a puñetazos a un jugador de nivel 3;
-     al tocar flechas en la mochila solo se seleccionan (no van al carcaj).
-9. [ ] **Aventureros (bots que parecen jugadores)** (pedido 19 oct): cuando hay alguien conectado, que se vean
+     Ideas vistas (sin hacer, son de diseño): las ratas gigantes (5 HP) cuestan ~45 s a puñetazos a un jugador de nivel 3.
+   - (23 oct, tarea programada) Jefes y magia a nivel alto (Rey Yeti con espada, arco y bastón + fuego automático, móvil y PC):
+     todo funciona (golpes, flechas del carcaj, maná, muerte y volver al spawn). Arreglado: sin flechas, devolver el golpe
+     repetía «Atacas…» + «Necesitas flechas…» cada segundo; **tocar flechas con carcaj las mete en el carcaj** y si tenía
+     otras se cambian (antes solo se seleccionaban y el aviso decía «sacá esas primero» con el id en crudo).
+     **DECISIÓN PENDIENTE (Nico)**: ninguna arma tiene bonus de fuerza (`strength_bonus` = 0 en todas, también en
+     producción), así que el golpe máximo cuerpo a cuerpo a nivel 99 es 11 (16 con mandoble) y con arco de dragón ~17.
+     A nivel alto la espada pega la mitad que el arco. Propuesta: dar bonus de fuerza a las armas por tier (bronce +6 …
+     teiderio +60, mandobles ×1,5, Tindaya/garras ~+70) con un seed. No se ha tocado porque cambia el equilibrio de todo
+     el combate (PvP incluido).
+9. [x] **Aventureros (bots que parecen jugadores)** (pedido 19 oct; hecho el 23 oct — `client/src/adventurers.js`, INVARIANTS §37): cuando hay alguien conectado, que se vean
        «jugadores» con nombre haciendo cosas (andar entre pueblos, talar, pescar, pelear con monstruos, hablar con
        NPC, chatear poco). Simulados en el CLIENTE (cero coste de servidor), deterministas por hora para que dos
        jugadores en el mismo sitio vean lo mismo, cerca del jugador, sin bloquear ni robar monstruos ni botín.
