@@ -2,6 +2,7 @@
 -- (se metieron a mano al principio). Solo para pruebas locales: server.mjs lo aplica al
 -- crear la base. Copiados de producción el 22 oct 2026.
 INSERT OR IGNORE INTO items (id,name,icon,stackable,description,created_at,base_price,equip_slot,weapon_type,attack_bonus,defence_bonus,ranged_bonus,strength_bonus,tint_hex,base_model,material,tier,smith_level,bars_required) VALUES
+('quiver_bronze','Carcaj de cuero','quiver_bronze',0,'Almacena flechas y suma +3 a Distancia. Long-press una flecha para meterla.',1749564000000,50,'quiver',null,0,0,3,0,null,null,null,null,null,null),
 ('coins','Monedas','🪙',1,'La moneda de la isla.',1715500000000,1,null,null,0,0,0,0,null,null,null,null,null,null),
 ('logs','Troncos','🪵',0,'Madera comun.',1715500000000,50,null,null,0,0,0,0,null,null,null,null,null,null),
 ('oak_logs','Troncos roble','🪵',0,'Madera de roble.',1715500000000,120,null,null,0,0,0,0,null,null,null,null,null,null),
