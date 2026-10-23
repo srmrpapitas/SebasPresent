@@ -1476,6 +1476,7 @@ const AUTO_RETALIATE_CHECK_MS = 300;
 const AUTO_RETALIATE_FRESHNESS_MS = 5000;
 let autoRetaliateTimer = null;
 let lastAutoEngagedAttackerKey = null;   // anti-loop: no re-engagear al mismo
+let lastRetaliateBlockedMsgAt = -1e9;    // 23 oct — aviso «sin flechas» al devolver el golpe
 
 function startAutoRetaliateLoop() {
   if (autoRetaliateTimer) return;
@@ -1507,6 +1508,20 @@ function tryAutoRetaliate() {
   const key = `${atk.type}:${atk.id}:${atk.at}`;
   if (key === lastAutoEngagedAttackerKey) return;
   lastAutoEngagedAttackerKey = key;
+  // 23 oct — sin flechas (u otro motivo del estilo) no devolver el golpe: antes
+  // cada golpe del monstruo volvía a engancharte y el registro se llenaba de
+  // «Atacas…» + «Necesitas flechas…» cada segundo. El aviso, como mucho cada 10 s.
+  try {
+    const can = combatStyles.getActiveStyle().canAttack();
+    if (can && !can.ok) {
+      const t = performance.now();
+      if (t - lastRetaliateBlockedMsgAt > 10000) {
+        lastRetaliateBlockedMsgAt = t;
+        feedLog('warning', can.message || 'No puedes atacar ahora.');
+      }
+      return;
+    }
+  } catch {}
 
   clog('tryAutoRetaliate → ENGAGE (retaliate ON). atacante:', atk);
   if (atk.type === 1) {
